@@ -502,3 +502,77 @@ describe("tablasDeSql (Kysely sql`…`)", () => {
     expect(r("INSERT INTO top (a, b) VALUES (?, ?) ON DUPLICATE KEY UPDATE b = VALUES(b)")).toEqual(["escribe_en top +0"]);
   });
 });
+
+describe("ts-parser: pantallas y navegación del front", () => {
+  let dir: string;
+  beforeAll(async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    dir = await mkdtemp(join(tmpdir(), "brain-front-"));
+    const w = async (p: string, t: string[]) => {
+      await mkdir(dirname(join(dir, p)), { recursive: true });
+      await writeFile(join(dir, p), t.join("\n"));
+    };
+    await w("package.json", ['{ "name": "front", "dependencies": { "react-router": "7.0.0" } }']);
+    await w("src/rutas.ts", ['export const ROUTES = { login: "/login", home: "/", perfil: "/perfil/:id" } as const;']);
+    await w("src/lib.tsx", [
+      "export declare function Navigate(p: any): any;",
+      "export declare function Link(p: any): any;",
+      "export declare function useNavigate(): (to: string) => void;",
+      "export declare function memo<T>(f: T): T;",
+      "export const lazyScreen = (load: () => Promise<any>, pick: (m: any) => any) => async () => ({ Component: pick(await load()) });",
+    ]);
+    await w("src/api.ts", ["export const api = { login: (u: string) => fetch(`/api/login?u=${u}`) };"]);
+    await w("src/Perfil.tsx", ["export function Perfil() { return null; }"]);
+    await w("src/Login.tsx", [
+      'import { memo, useNavigate, Link } from "./lib";',
+      'import { ROUTES } from "./rutas";',
+      'import { api } from "./api";',
+      "function Formulario(p: { onOk: () => void }) { api.login(\"x\"); p.onOk(); return null; }",
+      "export const Login = memo(() => {",
+      "  const navigate = useNavigate();",
+      "  return <div><Formulario onOk={() => navigate(ROUTES.home)} /><Link to={`/perfil/${7}`} /></div>;",
+      "});",
+    ]);
+    await w("src/router.tsx", [
+      'import { Navigate, lazyScreen } from "./lib";',
+      'import { ROUTES } from "./rutas";',
+      'import { Login } from "./Login";',
+      "function RequireAuth() { return <Navigate to={ROUTES.login} replace />; }",
+      "function Shell() { return null; }",
+      "const MENU = [{ path: ROUTES.perfil, titulo: \"Perfil\" }];",
+      "export const rutas = [",
+      "  { element: <RequireAuth />, children: [",
+      "    { path: ROUTES.home, element: <Shell />, children: [",
+      '      { path: "perfil/:id", lazy: lazyScreen(() => import("./Perfil"), (m) => m.Perfil) },',
+      "    ] },",
+      "  ] },",
+      "  { path: ROUTES.login, element: <Login /> },",
+      "];",
+    ]);
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("rutas con su componente (directo, memo o diferido), paths anidados y lo que las envuelve", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const p = x.pantallas.map((s) => `${s.ruta} ${s.componente?.simbolo} [${s.envuelta.map((e) => e.simbolo).join(">")}] L${s.linea}`).sort();
+    expect(p).toEqual(["/login Login [] L13", "/perfil/{id} Perfil [RequireAuth>Shell] L10"]);
+  });
+
+  it("navegaciones: navigate, enlaces, redirecciones de guardas e ítems de menú", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const n = x.navegaciones.map((v) => `${v.tipo} ${v.ruta} ${v.desde} ${v.archivo}#L${v.linea}`).sort();
+    expect(n).toEqual([
+      "enlace /perfil/{id} null src/router.tsx#L6",
+      "enlace /perfil/{param} Login src/Login.tsx#L7",
+      "navega / Login src/Login.tsx#L7",
+      "redirige /login RequireAuth src/router.tsx#L4",
+    ]);
+  });
+
+  it("un componente envuelto en memo es un símbolo y dibujar <X /> cuenta como llamarlo", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const login = x.archivos.find((a) => a.ruta === "src/Login.tsx")!;
+    expect(login.simbolos.map((s) => s.nombre)).toContain("Login");
+    expect(login.invoca?.filter((i) => i.desde === "Login").map((i) => i.simbolo)).toContain("Formulario");
+  });
+});

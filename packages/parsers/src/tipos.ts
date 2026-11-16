@@ -92,6 +92,36 @@ export interface ModeloCrudo {
   linea: number;
 }
 
+/** Símbolo del repo: archivo y nombre (`funcion` o `Clase.metodo`). */
+export interface RefSimbolo {
+  archivo: string;
+  simbolo: string;
+}
+
+/** Pantalla del front: una ruta del router y el componente que la dibuja. */
+export interface PantallaCruda {
+  paquete: string;
+  /** Ruta normalizada (`/players/{id}`). */
+  ruta: string;
+  /** Dónde se declara la ruta. */
+  archivo: string;
+  linea: number;
+  componente: RefSimbolo | null;
+  /** Componentes de rutas contenedoras sin `path` (`<RequireAuth />`): guardas o layouts. */
+  envuelta: RefSimbolo[];
+}
+
+/** Navegación hacia una ruta del front: `navigate("/x")`, `<Link to="/x">`, `<Navigate to="/x">` o un ítem de menú. */
+export interface NavegacionCruda {
+  paquete: string;
+  archivo: string;
+  linea: number;
+  /** Función o método que navega; `null` si está a nivel de archivo (un menú declarado como dato). */
+  desde: string | null;
+  ruta: string;
+  tipo: "navega" | "enlace" | "redirige";
+}
+
 export type Forma = Record<string, string>;
 
 export interface Extraccion {
@@ -101,6 +131,8 @@ export interface Extraccion {
   llamadas: LlamadaCruda[];
   tablas: AccesoTabla[];
   modelos: ModeloCrudo[];
+  pantallas: PantallaCruda[];
+  navegaciones: NavegacionCruda[];
   /** Formas de tipos declarados, por paquete y nombre. */
   formas: Record<string, Record<string, Forma>>;
   /** Paquetes cuyos endpoints declara este parser con autoridad (OpenAPI). */
@@ -120,6 +152,8 @@ export const extraccionVacia = (parser: string): Extraccion => ({
   llamadas: [],
   tablas: [],
   modelos: [],
+  pantallas: [],
+  navegaciones: [],
   formas: {},
   autoritativo: [],
 });

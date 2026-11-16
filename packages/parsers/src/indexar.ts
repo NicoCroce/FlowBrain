@@ -52,7 +52,11 @@ export interface ResultadoIndex {
   accesos: AristaExtraida[];
   pendientes: Pendiente[];
   contratos: Contrato[];
-  archivos: { archivos: Extraccion["archivos"]; repo: string; commit?: string; /** Ruta del clon relativa al brain, para comparar su HEAD actual con `commit`. */ raiz: string };
+  archivos: {
+    archivos: Extraccion["archivos"];
+    pantallas?: Extraccion["pantallas"];
+    navegaciones?: Extraccion["navegaciones"];
+    repo: string; commit?: string; /** Ruta del clon relativa al brain, para comparar su HEAD actual con `commit`. */ raiz: string };
 }
 
 export const normalizar = (s: string) =>
@@ -121,7 +125,7 @@ export function fusionar(xs: Extraccion[]): Extraccion {
   const autoritativos = new Set(xs.flatMap((x) => x.autoritativo));
   const archivos = new Map<string, Extraccion["archivos"][number]>();
   const formas: Record<string, Record<string, Forma>> = {};
-  const out: Extraccion = { parser: xs.map((x) => x.parser).join("+"), archivos: [], endpoints: [], llamadas: [], tablas: [], modelos: [], formas, autoritativo: [...autoritativos].sort(cmp) };
+  const out: Extraccion = { parser: xs.map((x) => x.parser).join("+"), archivos: [], endpoints: [], llamadas: [], tablas: [], modelos: [], pantallas: [], navegaciones: [], formas, autoritativo: [...autoritativos].sort(cmp) };
   // Un endpoint declarado por una spec autoritativa pisa al inferido del código con el mismo (paquete, método, ruta);
   // los que solo existen en el código se conservan.
   const clave = (e: { paquete: string; metodo: string; ruta: string }) => `${e.paquete}\u0000${e.metodo}\u0000${e.ruta}`;
@@ -135,6 +139,8 @@ export function fusionar(xs: Extraccion[]): Extraccion {
     out.llamadas.push(...x.llamadas.filter((l) => !esArchivoDeTest(l.archivo)));
     out.tablas.push(...x.tablas.filter((t) => !esArchivoDeTest(t.archivo)));
     out.modelos.push(...x.modelos);
+    out.pantallas.push(...(x.pantallas ?? []).filter((p) => !esArchivoDeTest(p.archivo)));
+    out.navegaciones.push(...(x.navegaciones ?? []).filter((n) => !esArchivoDeTest(n.archivo)));
     for (const [p, fs] of Object.entries(x.formas)) Object.assign((formas[p] ??= {}), fs);
   }
   out.archivos = [...archivos.values()].sort((a, b) => cmp(a.ruta, b.ruta));
@@ -369,7 +375,11 @@ export async function indexar(
     accesos,
     pendientes,
     contratos: contratos.sort((a, b) => cmp(a.svc, b.svc)),
-    archivos: { archivos: x.archivos, raiz: ubicacion, repo: repoId, ...(commit ? { commit } : {}) },
+    archivos: {
+      archivos: x.archivos,
+      ...(x.pantallas.length ? { pantallas: x.pantallas } : {}),
+      ...(x.navegaciones.length ? { navegaciones: x.navegaciones } : {}),
+      raiz: ubicacion, repo: repoId, ...(commit ? { commit } : {}) },
   };
 }
 

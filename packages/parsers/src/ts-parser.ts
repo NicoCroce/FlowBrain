@@ -4,6 +4,7 @@ import ts from "typescript";
 import { cmp, normalizarRuta } from "@brain/core";
 import { analizarUrl, type Parte } from "./url.js";
 import {
+  type RefSimbolo,
   extraccionVacia,
   paqueteDe,
   type AccesoTabla,
@@ -321,6 +322,11 @@ function extraer(repo: RepoFuente): Extraccion {
     .filter((a) => a === "package.json" || a.endsWith("/package.json"))
     .some((a) => /"kysely"\s*:/.test(readFileSync(join(repo.raiz, a), "utf8")));
 
+  // Router del front: solo si algún paquete declara uno (evita leer como pantalla cualquier objeto con `path`).
+  const usaRouter = repo.archivos
+    .filter((a) => a === "package.json" || a.endsWith("/package.json"))
+    .some((a) => /"(react-router|react-router-dom|@remix-run\/react|@tanstack\/react-router|vue-router|@angular\/router)"\s*:/.test(readFileSync(join(repo.raiz, a), "utf8")));
+
   // ---------- Recorrido ----------
   const fuentes = programa
     .getSourceFiles()
@@ -414,8 +420,18 @@ function extraer(repo: RepoFuente): Extraccion {
     while (ts.isAsExpression(p) || ts.isSatisfiesExpression(p) || ts.isParenthesizedExpression(p)) p = p.parent;
     return ts.isVariableDeclaration(p) && ts.isIdentifier(p.name) && ts.isVariableStatement(p.parent.parent) && ts.isSourceFile(p.parent.parent.parent) ? p.name.text : null;
   };
-  const funcionLiteral = (e: ts.Expression | undefined): ts.ArrowFunction | ts.FunctionExpression | null =>
-    e && (ts.isArrowFunction(e) || ts.isFunctionExpression(e)) ? e : null;
+  /** Función literal, también envuelta en un HOC de componentes (`memo(() => …)`, `forwardRef(function …)`). */
+  const HOC = new Set(["memo", "forwardRef", "observer"]);
+  const funcionLiteral = (e: ts.Expression | undefined): ts.ArrowFunction | ts.FunctionExpression | null => {
+    if (!e) return null;
+    if (ts.isArrowFunction(e) || ts.isFunctionExpression(e)) return e;
+    if (ts.isCallExpression(e) && e.arguments.length >= 1) {
+      const c = e.expression;
+      const n = ts.isIdentifier(c) ? c.text : ts.isPropertyAccessExpression(c) ? c.name.text : "";
+      if (HOC.has(n)) return funcionLiteral(e.arguments[0]);
+    }
+    return null;
+  };
   /** Funciones de un objeto literal de nivel superior: `[nombre, nodo, cuerpo]`. */
   const funcionesDeObjeto = (o: ts.ObjectLiteralExpression): Array<[string, ts.Node, ts.Node]> => {
     const out: Array<[string, ts.Node, ts.Node]> = [];
@@ -438,7 +454,7 @@ function extraer(repo: RepoFuente): Extraccion {
       const es = ts.isMethodDeclaration(d) || !!funcionLiteral(d.initializer);
       return o && es && d.name && (ts.isIdentifier(d.name) || ts.isStringLiteral(d.name)) ? [{ archivo: rel(sf), simbolo: `${o}.${d.name.text}` }] : [];
     }
-    if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) {
+    if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && funcionLiteral(d.initializer)) {
       return [{ archivo: rel(sf), simbolo: d.name.text }];
     }
     if (ts.isClassDeclaration(d) && d.name) return [{ archivo: rel(sf), simbolo: d.name.text }];
@@ -508,6 +524,11 @@ function extraer(repo: RepoFuente): Extraccion {
           if ((!d && receptorAny(e)) || huerfana) sinResolver.push({ desde, linea: linea(n), llamada: e.getText().replace(/\s+/g, " ").slice(0, 80) });
         }
         if (d) agregar(d, n);
+      } else if ((ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) && /^[A-Z]/.test(n.tagName.getText().split(".").pop()!)) {
+        // `<Formulario />` dibuja (llama) al componente.
+        const t = n.tagName;
+        const d = ts.isIdentifier(t) || ts.isPropertyAccessExpression(t) ? declDe(t) : undefined;
+        if (d && (esFuncion(d) || ts.isClassDeclaration(d))) agregar(d, n);
       } else if ((ts.isPropertyAccessExpression(n) || ts.isIdentifier(n)) && comoValor(n)) {
         // Una función pasada como valor (`mutationFn: api.remove`, `onClick={guardar}`, `.then(procesar)`) se va a llamar.
         const d = real(checker.getSymbolAtLocation(ts.isPropertyAccessExpression(n) ? n.name : n))?.declarations?.[0];
@@ -542,7 +563,7 @@ function extraer(repo: RepoFuente): Extraccion {
         return m && esFuncionMiembro(p) ? `${p.parent.name.text}.${m}` : null;
       }
       if (ts.isFunctionDeclaration(p) && p.name && ts.isSourceFile(p.parent)) return p.name.text;
-      if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name) && p.initializer && (ts.isArrowFunction(p.initializer) || ts.isFunctionExpression(p.initializer))) {
+      if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name) && funcionLiteral(p.initializer)) {
         if (ts.isVariableStatement(p.parent.parent) && ts.isSourceFile(p.parent.parent.parent)) return p.name.text;
       }
     }
@@ -596,6 +617,132 @@ function extraer(repo: RepoFuente): Extraccion {
     }
   };
 
+  // ---------- Pantallas y navegación del front ----------
+  /** Ruta de navegación evaluada estáticamente (`ROUTES.x`, `buildPath(ROUTES.y, {id})`, "/a/" + id). */
+  const rutaFront = (e: ts.Expression | undefined): string | null => {
+    if (!e) return null;
+    const partes = evaluar(e);
+    if (!partes.length || !("lit" in partes[0]!)) return null;
+    const t = partes.map((p) => ("lit" in p ? p.lit : `{${/^[A-Za-z_]\w*$/.test(p.din.split(/\W+/).filter(Boolean).pop() ?? "") ? p.din.split(/\W+/).filter(Boolean).pop() : "param"}}`)).join("");
+    return /^[/\w{]/.test(t) && !/^https?:/.test(t) && !/\s/.test(t) ? t.split(/[?#]/)[0]! : null;
+  };
+  const MARCAS_PANTALLA = ["element", "Component", "component", "lazy", "loadComponent"];
+  const esObjetoRuta = (o: ts.ObjectLiteralExpression) => !!propiedad(o, "path") || propiedad(o, "index")?.kind === ts.SyntaxKind.TrueKeyword;
+  /** Componente (función o clase del repo) de una expresión: `<X />`, `X`, `lazy(() => import("./x"), m => m.X)`. */
+  const componenteDe = (e: ts.Expression | undefined): RefSimbolo | null => {
+    if (!e) return null;
+    let x: ts.Expression = e;
+    while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x)) x = x.expression;
+    if (ts.isJsxSelfClosingElement(x) || ts.isJsxElement(x)) {
+      const tag = ts.isJsxElement(x) ? x.openingElement.tagName : x.tagName;
+      const d = ts.isIdentifier(tag) || ts.isPropertyAccessExpression(tag) ? declDe(tag) : undefined;
+      return d ? (destinos(d)[0] ?? null) : null;
+    }
+    if (ts.isIdentifier(x) || ts.isPropertyAccessExpression(x)) {
+      const d = declDe(x);
+      if (d && (esFuncion(d) || ts.isClassDeclaration(d))) return destinos(d)[0] ?? null;
+      // `lazy: zoneScreen` con `const zoneScreen = lazyScreen(…)`: se mira su valor.
+      return d && ts.isVariableDeclaration(d) && d.initializer && d.getSourceFile() === x.getSourceFile() ? componenteDe(d.initializer) : null;
+    }
+    // Carga diferida: el módulo del `import("…")` y el nombre que se elige (`m => m.X`, `.then(m => m.X)`), o el default.
+    let modulo: ts.Symbol | undefined;
+    let elegido: string | null = null;
+    const ver = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && n.expression.kind === ts.SyntaxKind.ImportKeyword && n.arguments[0] && !modulo) modulo = checker.getSymbolAtLocation(n.arguments[0]);
+      if ((ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && n.parameters.length === 1 && !ts.isBlock(n.body)) {
+        const b = n.body;
+        const p = n.parameters[0]!.name;
+        if (ts.isPropertyAccessExpression(b) && ts.isIdentifier(b.expression) && ts.isIdentifier(p) && b.expression.text === p.text) elegido ??= b.name.text;
+      }
+      ts.forEachChild(n, ver);
+    };
+    ver(x);
+    if (!modulo) return null;
+    const exp = checker.getExportsOfModule(modulo).find((s) => s.name === (elegido ?? "default"));
+    const d = real(exp)?.declarations?.[0];
+    if (!d) return null;
+    const dd = ts.isExportAssignment(d) && ts.isIdentifier(d.expression) ? declDe(d.expression) : d;
+    return dd ? (destinos(dd)[0] ?? null) : null;
+  };
+  /** Rutas del router: objetos `{ path, element | Component | lazy | … }` y `<Route path element>`, con el path de sus padres. */
+  const pantallas = (n: ts.Node, archivo: string, paquete: string) => {
+    let path: string | null = null;
+    let comp: RefSimbolo | null = null;
+    let marca = false;
+    // Una ruta con hijas es un layout (`AppShell`): envuelve a sus pantallas, no es una.
+    if (ts.isObjectLiteralExpression(n) && esObjetoRuta(n) && !propiedad(n, "children")) {
+      const pe = propiedad(n, "path");
+      path = pe ? rutaFront(pe) : "";
+      for (const m of MARCAS_PANTALLA) {
+        const v = propiedad(n, m);
+        if (v) {
+          marca = true;
+          comp ??= componenteDe(v);
+        }
+      }
+    } else if (
+      (ts.isJsxSelfClosingElement(n) || ts.isJsxOpeningElement(n)) &&
+      n.tagName.getText() === "Route" &&
+      !(ts.isJsxOpeningElement(n) && n.parent.children.some((c) => (ts.isJsxElement(c) ? c.openingElement : c).getText().startsWith("<Route")))
+    ) {
+      const attr = (k: string) => n.attributes.properties.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && a.name.getText() === k);
+      const valor = (a: ts.JsxAttribute | undefined) => (a?.initializer && ts.isJsxExpression(a.initializer) ? a.initializer.expression : a?.initializer && ts.isStringLiteral(a.initializer) ? a.initializer : undefined);
+      const pa = attr("path");
+      if (!pa && !attr("index")) return;
+      path = pa ? rutaFront(valor(pa)) : "";
+      for (const m of ["element", "Component", "component"]) {
+        const v = valor(attr(m));
+        if (v) {
+          marca = true;
+          comp ??= componenteDe(v);
+        }
+      }
+    } else return;
+    if (path === null || !marca) return;
+    // Padres: objetos con `children` (o `<Route>` anidados). Sin path: guardas o layouts que envuelven a la pantalla.
+    const envuelta: RefSimbolo[] = [];
+    let completa = path;
+    for (let p: ts.Node | undefined = n.parent; p && !ts.isSourceFile(p); p = p.parent) {
+      let padre: { path: string | null; elemento: ts.Expression | undefined } | null = null;
+      if (ts.isObjectLiteralExpression(p) && p !== n) {
+        const hijos = propiedad(p, "children");
+        if (hijos && hijos.pos <= n.pos && n.end <= hijos.end) {
+          const pe = propiedad(p, "path");
+          padre = { path: pe ? rutaFront(pe) : null, elemento: propiedad(p, "element") ?? propiedad(p, "Component") ?? propiedad(p, "component") };
+        }
+      } else if (ts.isJsxElement(p) && p.openingElement !== n && p.openingElement.tagName.getText() === "Route") {
+        const at = (k: string) => p.openingElement.attributes.properties.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && a.name.getText() === k);
+        const v = (a: ts.JsxAttribute | undefined) => (a?.initializer && ts.isJsxExpression(a.initializer) ? a.initializer.expression : a?.initializer && ts.isStringLiteral(a.initializer) ? a.initializer : undefined);
+        padre = { path: at("path") ? rutaFront(v(at("path"))) : null, elemento: v(at("element")) };
+      }
+      if (!padre) continue;
+      const c = componenteDe(padre.elemento);
+      if (c) envuelta.unshift(c);
+      if (padre.path !== null && !completa.startsWith("/")) completa = `${padre.path.replace(/\/$/, "")}/${completa}`;
+    }
+    out.pantallas.push({ paquete, ruta: normalizarRuta(completa || "/"), archivo, linea: linea(n), componente: comp, envuelta });
+  };
+  const NAVEGA = new Set(["navigate", "push", "replace", "redirect", "navigateByUrl"]);
+  const navegaciones = (n: ts.Node, archivo: string, paquete: string) => {
+    const agregar = (destino: string | null, tipo: "navega" | "enlace" | "redirige") => {
+      if (destino === null || !destino.startsWith("/")) return;
+      out.navegaciones.push({ paquete, archivo, linea: linea(n), desde: simboloContenedor(n), ruta: normalizarRuta(destino), tipo });
+    };
+    if (ts.isCallExpression(n) && n.arguments.length) {
+      const e = n.expression;
+      const nombre = ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : null;
+      if (nombre && NAVEGA.has(nombre)) agregar(rutaFront(n.arguments[0]), nombre === "redirect" ? "redirige" : "navega");
+    } else if (ts.isJsxAttribute(n) && (n.name.getText() === "to" || n.name.getText() === "href") && n.initializer) {
+      const v = ts.isJsxExpression(n.initializer) ? n.initializer.expression : n.initializer;
+      const tag = n.parent.parent.tagName.getText();
+      if (tag !== "Route") agregar(rutaFront(v), /^(Navigate|Redirect)$/.test(tag) ? "redirige" : "enlace");
+    } else if (ts.isPropertyAssignment(n) && /^(path|to|href|route)$/.test(n.name.getText()) && ts.isObjectLiteralExpression(n.parent)) {
+      // Ítems de menú declarados como datos (`{ path: ROUTES.staff, title }`), salvo las propias definiciones de rutas.
+      const o = n.parent;
+      if (!MARCAS_PANTALLA.some((m) => propiedad(o, m)) && !propiedad(o, "children")) agregar(rutaFront(n.initializer), "enlace");
+    }
+  };
+
   for (const sf of fuentes) {
     const archivo = rel(sf);
     const paquete = paqueteDe(repo, archivo);
@@ -627,9 +774,10 @@ function extraer(repo: RepoFuente): Extraccion {
       else if (ts.isEnumDeclaration(st)) simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "enum", fin: finDe(st) });
       else if (ts.isVariableStatement(st)) {
         for (const d of st.declarationList.declarations) {
-          if (ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) {
+          const fl = ts.isIdentifier(d.name) ? funcionLiteral(d.initializer) : null;
+          if (fl && ts.isIdentifier(d.name)) {
             simbolos.push({ linea: linea(st), nombre: d.name.text, tipo: "funcion", fin: finDe(st) });
-            invocacionesDe(d.initializer, d.name.text, archivo, invoca, sinResolver);
+            invocacionesDe(fl, d.name.text, archivo, invoca, sinResolver);
           } else if (ts.isIdentifier(d.name) && d.initializer) {
             // `const api = { remove: (id) => http.delete(…) }`: cada función del objeto es un símbolo `api.remove`.
             let o: ts.Expression = d.initializer;
@@ -683,6 +831,10 @@ function extraer(repo: RepoFuente): Extraccion {
       if (ts.isClassDeclaration(n)) nest(n);
       mensajes(n, archivo);
       if (usaKysely && ts.isTaggedTemplateExpression(n)) sqlCrudo(n);
+      if (usaRouter && /\.[cm]?[jt]sx?$/.test(archivo)) {
+        pantallas(n, archivo, paquete);
+        navegaciones(n, archivo, paquete);
+      }
       if (ts.isCallExpression(n)) {
         ruta(n) || saliente(n) || prisma(n) || (usaKysely && kysely(n));
       }
