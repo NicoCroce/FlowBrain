@@ -246,7 +246,7 @@ export function compile(entradas: Entradas): Salidas {
         return;
       }
       const id = `${a.repo}:${arc.ruta}`;
-      estructura.set(id, { simbolos: arc.simbolos, importa: arc.importa ?? [], invoca: arc.invoca ?? [] });
+      estructura.set(id, { simbolos: arc.simbolos, importa: arc.importa ?? [], invoca: arc.invoca ?? [], sinResolver: arc.sinResolver });
       agregarNodo(generado(id, "archivo", arc.ruta, { lenguaje: arc.lenguaje, repo: a.repo, ruta: arc.ruta }), f.ruta, null);
       aristas.push(arista(a.repo, "contiene", id, "parser"));
     });

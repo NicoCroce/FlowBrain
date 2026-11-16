@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { AVISO_SIN_TABLA, capaDe, crearRecorredor, compile, podar, CompileError, dentroDe, dependenciasDelGrafo, impacto, leerEntradas, raizDeServicio, renderViewer, type Entradas } from "../src/index.js";
+import { AVISO_SIN_TABLA, capaDe, crearRecorredor, compile, podar, CompileError, dentroDe, dependenciasDelGrafo, impacto, leerEntradas, raizDeServicio, renderViewer, mapa3dDelGrafo, type Entradas } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -115,6 +115,32 @@ describe("funcionalidades", () => {
     expect(html).toContain("function impacto(deps, origen)");
   });
 
+  it("el mapa 3D cuelga endpoints, tablas y archivos de su funcionalidad o de su servicio", () => {
+    const { graph, funcionalidades } = compile(conFuncionalidades());
+    const m = mapa3dDelGrafo(graph, funcionalidades);
+    const ep = "svc-bff:POST:/checkout", archivo = "repo-tienda:apps/bff/src/routes/checkout.ts";
+    expect(m.padres.feat[ep]).toBe("feat-checkout");
+    expect(m.padres.svc[ep]).toBe("svc-bff");
+    expect(m.padres.feat[archivo]).toBe(ep);
+    expect(m.padres.feat["repo-tienda:apps/web/src/main.tsx"]).toBe("feat-carrito");
+    expect(m.padres.feat["repo-tienda:apps/payments/src/main.ts"]).toBe("repo-tienda");
+    expect(m.padres.feat["tabla-pagos"]).toBe("feat-checkout");
+    expect(m.padres.svc["tabla-pagos"]).toBe("db-tienda");
+    expect(m.padres.feat["svc-bff"]).toBe("repo-tienda");
+    // Las llamadas se cuentan por endpoint y cada relación aparece una vez, con sus veces.
+    expect(m.aristas).toContainEqual(["svc-web", ep, "llama_a", 1]);
+    expect(m.aristas).toContainEqual(["feat-carrito", ep, "llama_a", 2]);
+    expect(m.aristas).toContainEqual([ep, archivo, "recorrido", 1]);
+    expect(m.aristas.filter((a) => a[0] === "svc-bff" && a[1] === ep && a[2] === "contiene")).toHaveLength(1);
+    const claves = m.aristas.map((a) => a.slice(0, 3).join(" "));
+    expect(new Set(claves).size).toBe(claves.length);
+    expect([...claves].sort()).toEqual(claves);
+    // El uso no cuenta contiene ni vive_en.
+    expect(m.uso["repo-tienda"]).toBe(0);
+    expect(m.uso[ep]).toBe(m.aristas.filter((a) => (a[0] === ep || a[1] === ep) && a[2] !== "contiene").reduce((s, a) => s + a[3], 0));
+    expect(m.uso).not.toHaveProperty("contrato-svc-bff");
+  });
+
   it("capaDe clasifica por sufijo y, si no, por la carpeta más profunda", () => {
     expect(capaDe("modules/billing/infrastructure/http/payment.controller.ts")).toBe("entrada");
     expect(capaDe("modules/billing/payment/application/payment.service.ts")).toBe("logica");
@@ -180,5 +206,13 @@ describe("funcionalidades", () => {
       [1, "Svc.rec", "", "", ""],
       [2, "Svc.rec", "", "ciclo", ""],
     ]);
+  });
+  it("un paso al que se llega por evento o cola lleva la clave en via", () => {
+    const graph = { nodes: [], edges: [] } as unknown as Parameters<typeof crearRecorredor>[0];
+    const est = new Map([
+      ["r:a.ts", { simbolos: [{ nombre: "A.pedir", tipo: "metodo", linea: 1, fin: 3 }, { nombre: "A.mandar", tipo: "metodo", linea: 4, fin: 6 }], importa: [], invoca: [{ desde: "A.pedir", archivo: "a.ts", simbolo: "A.mandar", linea: 2, via: "AVISO_JOB" }] }],
+    ]);
+    const { pasos } = crearRecorredor(graph, est, []).desdeSimbolo("r:a.ts", "A.pedir");
+    expect(pasos.map((p) => `${p.nivel} ${p.simbolo} ${p.via ?? ""}`)).toEqual(["0 A.pedir ", "1 A.mandar AVISO_JOB"]);
   });
 });

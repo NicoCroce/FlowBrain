@@ -389,6 +389,63 @@ describe("ts-parser: estructura interna (símbolos, imports e invocaciones)", ()
   });
 });
 
+describe("ts-parser: llamadas indirectas (eventos, colas, inyección por token) y sin resolver", () => {
+  let dir: string;
+  beforeAll(async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    dir = await mkdtemp(join(tmpdir(), "brain-indirectas-"));
+    const w = async (p: string, t: string[]) => {
+      await mkdir(dirname(join(dir, p)), { recursive: true });
+      await writeFile(join(dir, p), t.join("\n") + "\n");
+    };
+    await w("package.json", [JSON.stringify({ name: "x", dependencies: { "@nestjs/common": "10" } })]);
+    await w("src/mail.port.ts", ['export const MAIL = Symbol("MAIL");', "export interface MailPort {", "  enviar(a: string): void;", "}", "export interface Huerfana {", "  nadie(): void;", "}"]);
+    await w("src/smtp.mail.ts", ["export class SmtpMail {", "  enviar(a: string) {}", "}"]);
+    await w("src/app.module.ts", ['import { MAIL } from "./mail.port";', 'import { SmtpMail } from "./smtp.mail";', "export const providers = [{ provide: MAIL, useExisting: SmtpMail }];"]);
+    await w("src/jobs.ts", ['export const AVISO_JOB = { name: "aviso" };', "export const nombres = new Set<string>();"]);
+    await w("src/aviso.service.ts", [
+      'import { Inject } from "@nestjs/common";',
+      'import { MAIL, type MailPort, type Huerfana } from "./mail.port";',
+      'import { AVISO_JOB, nombres } from "./jobs";',
+      "export class AvisoService {",
+      "  constructor(@Inject(MAIL) private readonly mail: MailPort, private readonly cola: any, private readonly bus: any, private readonly h: Huerfana) {}",
+      "  onModuleInit(registro: { register(k: unknown, h: unknown): void }) {",
+      '    registro.register(AVISO_JOB, { handle: (p: { a: string }) => this.mandar(p.a), failureMessage: () => "x" });',
+      "  }",
+      "  pedir(a: string) {",
+      "    this.cola.enqueue(AVISO_JOB, { a });",
+      '    this.bus.emit("usuario.creado", { a });',
+      "    nombres.add(a);",
+      "  }",
+      "  mandar(a: string) {",
+      "    this.mail.enviar(a);",
+      "    this.h.nadie();",
+      "  }",
+      "}",
+    ]);
+    await w("src/escucha.ts", ['import { OnEvent } from "@nestjs/event-emitter";', "export class Escucha {", '  @OnEvent("usuario.creado")', "  alCrear() {}", "}"]);
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("publicar con una clave llama en diferido a quien se suscribe con la misma; @Inject(TOKEN) va a la clase ligada", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const de = (r: string) => x.archivos.find((a) => a.ruta === r)!;
+    expect(de("src/aviso.service.ts").invoca).toEqual([
+      { desde: "AvisoService.mandar", archivo: "src/mail.port.ts", simbolo: "Huerfana.nadie", linea: 16 },
+      { desde: "AvisoService.mandar", archivo: "src/smtp.mail.ts", simbolo: "SmtpMail.enviar", linea: 15 },
+      { desde: "AvisoService.onModuleInit", archivo: "src/aviso.service.ts", simbolo: "AvisoService.mandar", linea: 7 },
+      { desde: "AvisoService.pedir", archivo: "src/aviso.service.ts", simbolo: "AvisoService.mandar", linea: 10, via: "AVISO_JOB" },
+      { desde: "AvisoService.pedir", archivo: "src/escucha.ts", simbolo: "Escucha.alCrear", linea: 11, via: '"usuario.creado"' },
+    ]);
+    // `any` e interfaz sin implementación: se registran; `Set.add` (de la librería estándar) no.
+    expect(de("src/aviso.service.ts").sinResolver).toEqual([
+      { desde: "AvisoService.pedir", linea: 10, llamada: "this.cola.enqueue" },
+      { desde: "AvisoService.pedir", linea: 11, llamada: "this.bus.emit" },
+      { desde: "AvisoService.mandar", linea: 16, llamada: "this.h.nadie" },
+    ]);
+  });
+});
+
 describe("tablasDeSql (Kysely sql`…`)", () => {
   it("escrituras, lecturas, comillas y esquema; ignora CTE y FROM de funciones", async () => {
     const { tablasDeSql } = await import("../src/ts-parser.js");

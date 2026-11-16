@@ -214,8 +214,9 @@ export const ArchivosSchema = z
           ),
           importa: z.array(z.string()).optional(),
           invoca: z
-            .array(z.object({ desde: z.string(), archivo: z.string(), simbolo: z.string(), linea: z.number().int().positive() }).strict())
+            .array(z.object({ desde: z.string(), archivo: z.string(), simbolo: z.string(), linea: z.number().int().positive(), via: z.string().optional() }).strict())
             .optional(),
+          sinResolver: z.array(z.object({ desde: z.string(), linea: z.number().int().positive(), llamada: z.string() }).strict()).optional(),
         })
         .strict(),
     ),

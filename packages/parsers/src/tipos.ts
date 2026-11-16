@@ -23,6 +23,15 @@ export interface Invocacion {
   archivo: string;
   simbolo: string;
   linea: number;
+  /** Llamada indirecta: por un evento o una cola con esta clave (`emit("x")` → `@OnEvent("x")`, `enqueue(JOB)` → `register(JOB, …)`). */
+  via?: string;
+}
+
+/** Llamada que el análisis no pudo atribuir a un símbolo del repo (tipo `any`, interfaz sin implementación conocida). */
+export interface LlamadaSinResolver {
+  desde: string;
+  linea: number;
+  llamada: string;
 }
 
 export interface ArchivoCrudo {
@@ -33,6 +42,7 @@ export interface ArchivoCrudo {
   importa?: string[];
   /** Llamadas de sus métodos y funciones a símbolos de otros archivos o clases del repo. */
   invoca?: Invocacion[];
+  sinResolver?: LlamadaSinResolver[];
 }
 
 export interface EndpointCrudo {

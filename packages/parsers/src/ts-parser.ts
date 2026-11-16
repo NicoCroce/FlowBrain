@@ -8,6 +8,7 @@ import {
   paqueteDe,
   type AccesoTabla,
   type ArchivoCrudo,
+  type LlamadaSinResolver,
   type EndpointCrudo,
   type Extraccion,
   type Forma,
@@ -345,6 +346,60 @@ function extraer(repo: RepoFuente): Extraccion {
     };
     ver(sf);
   }
+  // Ligaduras de inyección explícitas: `{ provide: TOKEN, useClass | useExisting: Clase }` (Nest y similares) y
+  // `bind(TOKEN).to(Clase)` (Inversify). Lo inyectado con `@Inject(TOKEN)` y tipado con una interfaz o clase abstracta
+  // se atribuye a esa clase aunque no declare `implements`.
+  const declDe = (e: ts.Expression | undefined): ts.Declaration | undefined => {
+    if (!e) return undefined;
+    const n = ts.isPropertyAccessExpression(e) ? e.name : ts.isIdentifier(e) ? e : null;
+    return n ? real(checker.getSymbolAtLocation(n))?.declarations?.[0] : undefined;
+  };
+  const ligadas = new Map<ts.Node, ts.ClassLikeDeclaration[]>();
+  const ligar = (token: ts.Declaration | undefined, clase: ts.Declaration | undefined) => {
+    if (!token || !clase || !ts.isClassLike(clase) || !delRepo(clase.getSourceFile())) return;
+    const l = ligadas.get(token) ?? [];
+    if (!l.includes(clase)) ligadas.set(token, [...l, clase]);
+  };
+  const agregarImpl = (tipo: ts.Node, clase: ts.ClassLikeDeclaration) => {
+    if (tipo === clase) return;
+    const l = implementan.get(tipo) ?? [];
+    if (!l.includes(clase)) implementan.set(tipo, [...l, clase]);
+  };
+  for (const sf of fuentes) {
+    const ver = (n: ts.Node): void => {
+      if (ts.isObjectLiteralExpression(n)) {
+        const provide = propiedad(n, "provide");
+        const clase = propiedad(n, "useClass") ?? propiedad(n, "useExisting");
+        if (provide && clase) ligar(declDe(provide), declDe(clase));
+      }
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "to") {
+        const b = n.expression.expression;
+        if (ts.isCallExpression(b) && ts.isPropertyAccessExpression(b.expression) && b.expression.name.text === "bind") ligar(declDe(b.arguments[0]), declDe(n.arguments[0]));
+      }
+      ts.forEachChild(n, ver);
+    };
+    ver(sf);
+  }
+  for (const [token, clases] of ligadas) {
+    // Un token que es la propia clase abstracta o interfaz.
+    if (ts.isClassLike(token) || ts.isInterfaceDeclaration(token)) for (const c of clases) agregarImpl(token, c);
+  }
+  for (const sf of fuentes) {
+    const ver = (n: ts.Node): void => {
+      if ((ts.isParameter(n) || ts.isPropertyDeclaration(n)) && n.type) {
+        const d = decorador(n, "Inject") ?? decorador(n, "inject");
+        const token = d && ts.isCallExpression(d) ? declDe(d.arguments[0]) : undefined;
+        const clases = token ? ligadas.get(token) : undefined;
+        if (clases && ts.isTypeReferenceNode(n.type)) {
+          const tipo = real(checker.getSymbolAtLocation(n.type.typeName))?.declarations?.[0];
+          if (tipo && (ts.isInterfaceDeclaration(tipo) || ts.isClassLike(tipo)) && delRepo(tipo.getSourceFile())) for (const c of clases) agregarImpl(tipo, c);
+        }
+      }
+      ts.forEachChild(n, ver);
+    };
+    ver(sf);
+  }
+
   /** Símbolo destino de una declaración: `Clase.metodo` o `funcion`, con su archivo. Varios si es una interfaz. */
   const destinos = (d: ts.Declaration): Array<{ archivo: string; simbolo: string }> => {
     const sf = d.getSourceFile();
@@ -364,12 +419,35 @@ function extraer(repo: RepoFuente): Extraccion {
     }
     return [];
   };
-  const invocacionesDe = (cuerpo: ts.Node, desde: string, archivo: string, out: Map<string, { desde: string; archivo: string; simbolo: string; linea: number }>) => {
+  /**
+   * El receptor está tipado explícitamente como `any` (`private readonly cola: any`, `(x: any) => x.y()`): la llamada
+   * existe pero no se sabe a dónde va. Lo inferido o de librerías no cuenta (sin lib, todo eso es desconocido).
+   */
+  const receptorAny = (e: ts.PropertyAccessExpression): boolean => {
+    const r = e.expression;
+    const n = ts.isPropertyAccessExpression(r) ? r.name : ts.isIdentifier(r) ? r : null;
+    const d = n ? checker.getSymbolAtLocation(n)?.declarations?.[0] : undefined;
+    const tipo = d && (ts.isParameter(d) || ts.isPropertyDeclaration(d) || ts.isVariableDeclaration(d) || ts.isPropertySignature(d)) ? d.type : undefined;
+    return tipo?.kind === ts.SyntaxKind.AnyKeyword;
+  };
+  const invocacionesDe = (
+    cuerpo: ts.Node,
+    desde: string,
+    archivo: string,
+    out: Map<string, { desde: string; archivo: string; simbolo: string; linea: number }>,
+    sinResolver?: LlamadaSinResolver[],
+  ) => {
     const ver = (n: ts.Node): void => {
       if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
         const e = n.expression;
         const nombre = ts.isPropertyAccessExpression(e) ? e.name : ts.isIdentifier(e) ? e : null;
         const d = nombre ? real(checker.getSymbolAtLocation(nombre))?.declarations?.[0] : undefined;
+        if (sinResolver && ts.isPropertyAccessExpression(e)) {
+          // Un método de un objeto `any`, o de una interfaz del repo que ninguna clase conocida implementa.
+          const c = d ? contenedor(d) : null;
+          const huerfana = !!d && delRepo(d.getSourceFile()) && (ts.isMethodSignature(d) || ts.isPropertySignature(d)) && !!c && !(implementan.get(c)?.length);
+          if ((!d && receptorAny(e)) || huerfana) sinResolver.push({ desde, linea: linea(n), llamada: e.getText().replace(/\s+/g, " ").slice(0, 80) });
+        }
         if (d) {
           for (const t of destinos(d)) {
             if (t.archivo === archivo && t.simbolo === desde) continue;
@@ -384,6 +462,84 @@ function extraer(repo: RepoFuente): Extraccion {
     ver(cuerpo);
   };
 
+  // ---------- Eventos y colas ----------
+  // Quien publica con una clave (`emit("x")`, `enqueue(JOB)`) llama, en diferido, a quien se suscribe con la misma
+  // clave (`@OnEvent("x")`, `on("x", h)`, `register(JOB, { handle })`). La clave es un literal o una constante del
+  // repo (la misma declaración en los dos lados), así un `Set.add(x)` no se confunde con una cola.
+  const porRuta = new Map<string, ArchivoCrudo>();
+  const publicaciones: Array<{ clave: string; texto: string; archivo: string; desde: string; linea: number }> = [];
+  const suscripciones = new Map<string, Array<{ archivo: string; simbolo: string }>>();
+  const claveMensaje = (e: ts.Expression | undefined): { clave: string; texto: string } | null => {
+    if (!e) return null;
+    if (ts.isStringLiteralLike(e)) return e.text ? { clave: `s:${e.text}`, texto: `"${e.text}"` } : null;
+    if (!ts.isIdentifier(e) && !ts.isPropertyAccessExpression(e)) return null;
+    const d = declDe(e);
+    if (!d || !delRepo(d.getSourceFile())) return null;
+    const ini = ts.isVariableDeclaration(d) || ts.isPropertyAssignment(d) || ts.isEnumMember(d) ? d.initializer : undefined;
+    if (ini && ts.isStringLiteralLike(ini)) return { clave: `s:${ini.text}`, texto: e.getText() };
+    return { clave: `d:${rel(d.getSourceFile())}:${d.pos}`, texto: e.getText() };
+  };
+  const simboloContenedor = (n: ts.Node): string | null => {
+    for (let p = n.parent; p; p = p.parent) {
+      if (ts.isClassElement(p) && p.parent && ts.isClassDeclaration(p.parent) && p.parent.name && ts.isSourceFile(p.parent.parent)) {
+        const m = nombreMiembro(p);
+        return m && esFuncionMiembro(p) ? `${p.parent.name.text}.${m}` : null;
+      }
+      if (ts.isFunctionDeclaration(p) && p.name && ts.isSourceFile(p.parent)) return p.name.text;
+      if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name) && p.initializer && (ts.isArrowFunction(p.initializer) || ts.isFunctionExpression(p.initializer))) {
+        if (ts.isVariableStatement(p.parent.parent) && ts.isSourceFile(p.parent.parent.parent)) return p.name.text;
+      }
+    }
+    return null;
+  };
+  const HANDLER = ["handle", "handler", "process", "run", "execute", "perform", "consume"];
+  const destinosHandler = (e: ts.Expression, archivo: string): Array<{ archivo: string; simbolo: string }> => {
+    if (ts.isArrowFunction(e) || ts.isFunctionExpression(e)) {
+      const tmp = new Map<string, { desde: string; archivo: string; simbolo: string; linea: number }>();
+      invocacionesDe(e.body, "\u0000", archivo, tmp);
+      return [...tmp.values()].map(({ archivo: a, simbolo }) => ({ archivo: a, simbolo }));
+    }
+    if (ts.isObjectLiteralExpression(e)) {
+      const p = HANDLER.map((h) => propiedad(e, h)).find(Boolean);
+      if (p) return destinosHandler(p, archivo);
+      const m = e.properties.find((x) => ts.isMethodDeclaration(x) && x.name && HANDLER.includes(x.name.getText()));
+      if (m && ts.isMethodDeclaration(m) && m.body) {
+        const tmp = new Map<string, { desde: string; archivo: string; simbolo: string; linea: number }>();
+        invocacionesDe(m.body, "\u0000", archivo, tmp);
+        return [...tmp.values()].map(({ archivo: a, simbolo }) => ({ archivo: a, simbolo }));
+      }
+      return [];
+    }
+    if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression) && e.expression.name.text === "bind") return destinosHandler(e.expression.expression, archivo);
+    const d = declDe(e);
+    return d ? destinos(d) : [];
+  };
+  const PUBLICA = new Set(["emit", "emitAsync", "publish", "enqueue", "add", "send", "dispatch", "trigger", "produce", "fire"]);
+  const SUSCRIBE = new Set(["on", "once", "addListener", "subscribe", "register", "registerHandler", "handle", "process", "consume", "listen"]);
+  const DECORADORES = ["OnEvent", "Process", "EventPattern", "MessagePattern", "Subscribe", "SqsMessageHandler", "OnQueueEvent"];
+  const suscribir = (clave: string, t: Array<{ archivo: string; simbolo: string }>) => suscripciones.set(clave, [...(suscripciones.get(clave) ?? []), ...t]);
+  const mensajes = (n: ts.Node, archivo: string) => {
+    if (ts.isMethodDeclaration(n) && ts.isClassDeclaration(n.parent) && n.parent.name) {
+      for (const nd of DECORADORES) {
+        const d = decorador(n, nd);
+        const k = d && ts.isCallExpression(d) ? claveMensaje(d.arguments[0]) : null;
+        const m = nombreMiembro(n);
+        if (k && m) suscribir(k.clave, [{ archivo, simbolo: `${n.parent.name.text}.${m}` }]);
+      }
+    }
+    if (!ts.isCallExpression(n) || !ts.isPropertyAccessExpression(n.expression) || !n.arguments.length) return;
+    const metodo = n.expression.name.text;
+    if (PUBLICA.has(metodo)) {
+      const k = claveMensaje(n.arguments[0]);
+      const desde = k ? simboloContenedor(n) : null;
+      if (k && desde) publicaciones.push({ ...k, archivo, desde, linea: linea(n) });
+    }
+    if (SUSCRIBE.has(metodo) && n.arguments.length >= 2) {
+      const k = claveMensaje(n.arguments[0]);
+      if (k) suscribir(k.clave, destinosHandler(n.arguments[1]!, archivo));
+    }
+  };
+
   for (const sf of fuentes) {
     const archivo = rel(sf);
     const paquete = paqueteDe(repo, archivo);
@@ -392,11 +548,12 @@ function extraer(repo: RepoFuente): Extraccion {
 
     // Símbolos, formas de tipos, imports e invocaciones.
     const invoca = new Map<string, { desde: string; archivo: string; simbolo: string; linea: number }>();
+    const sinResolver: LlamadaSinResolver[] = [];
     const importa = new Set<string>();
     for (const st of sf.statements) {
       if (ts.isFunctionDeclaration(st) && st.name) {
         simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "funcion", fin: finDe(st) });
-        if (st.body) invocacionesDe(st.body, st.name.text, archivo, invoca);
+        if (st.body) invocacionesDe(st.body, st.name.text, archivo, invoca, sinResolver);
       } else if (ts.isClassDeclaration(st) && st.name) {
         simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "clase", fin: finDe(st) });
         for (const m of st.members) {
@@ -407,7 +564,7 @@ function extraer(repo: RepoFuente): Extraccion {
           simbolos.push({ linea: linea(m.name!), nombre: sim, tipo: "metodo", fin: finDe(m) });
           // Solo el cuerpo: los decoradores del método (`@UseGuards(...)`) no son llamadas del método.
           const cuerpo = ts.isMethodDeclaration(m) ? m.body : (m as ts.PropertyDeclaration).initializer;
-          if (cuerpo) invocacionesDe(cuerpo, sim, archivo, invoca);
+          if (cuerpo) invocacionesDe(cuerpo, sim, archivo, invoca, sinResolver);
         }
       } else if (ts.isInterfaceDeclaration(st)) simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "interfaz", fin: finDe(st) });
       else if (ts.isTypeAliasDeclaration(st)) simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "tipo", fin: finDe(st) });
@@ -416,7 +573,7 @@ function extraer(repo: RepoFuente): Extraccion {
         for (const d of st.declarationList.declarations) {
           if (ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) {
             simbolos.push({ linea: linea(st), nombre: d.name.text, tipo: "funcion", fin: finDe(st) });
-            invocacionesDe(d.initializer, d.name.text, archivo, invoca);
+            invocacionesDe(d.initializer, d.name.text, archivo, invoca, sinResolver);
           }
         }
       }
@@ -430,8 +587,10 @@ function extraer(repo: RepoFuente): Extraccion {
     simbolos.sort((a, b) => a.linea - b.linea || cmp(a.nombre, b.nombre));
     const arc: ArchivoCrudo = { lenguaje: lenguajeDe(archivo), ruta: archivo, simbolos };
     if (importa.size) arc.importa = [...importa].sort(cmp);
-    if (invoca.size) arc.invoca = [...invoca.values()].sort((a, b) => cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo));
+    if (invoca.size) arc.invoca = [...invoca.values()];
+    if (sinResolver.length) arc.sinResolver = sinResolver.sort((a, b) => a.linea - b.linea || cmp(a.llamada, b.llamada));
     out.archivos.push(arc);
+    porRuta.set(archivo, arc);
 
     // Next.js app router: app/**/route.ts con exports GET/POST/…
     const next = /(?:^|\/)app\/((?:[^/]+\/)*)route\.[cm]?[jt]sx?$/.exec(archivo.slice(paquete ? paquete.length + 1 : 0));
@@ -454,6 +613,7 @@ function extraer(repo: RepoFuente): Extraccion {
 
     const visitar = (n: ts.Node): void => {
       if (ts.isClassDeclaration(n)) nest(n);
+      mensajes(n, archivo);
       if (usaKysely && ts.isTaggedTemplateExpression(n)) sqlCrudo(n);
       if (ts.isCallExpression(n)) {
         ruta(n) || saliente(n) || prisma(n) || (usaKysely && kysely(n));
@@ -625,6 +785,16 @@ function extraer(repo: RepoFuente): Extraccion {
 
     ts.forEachChild(sf, visitar);
   }
+
+  for (const p of publicaciones) {
+    const arc = porRuta.get(p.archivo);
+    for (const t of suscripciones.get(p.clave) ?? []) {
+      if (!arc || (t.archivo === p.archivo && t.simbolo === p.desde)) continue;
+      const inv = (arc.invoca ??= []);
+      if (!inv.some((i) => i.via && i.desde === p.desde && i.archivo === t.archivo && i.simbolo === t.simbolo)) inv.push({ desde: p.desde, archivo: t.archivo, simbolo: t.simbolo, linea: p.linea, via: p.texto });
+    }
+  }
+  for (const arc of porRuta.values()) arc.invoca?.sort((a, b) => cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo) || cmp(a.via ?? "", b.via ?? ""));
 
   ordenar(out);
   return out;

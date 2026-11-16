@@ -84,7 +84,9 @@ export function capaDe(ruta: string): Capa {
 export interface EstructuraArchivo {
   simbolos: Array<{ nombre: string; tipo: string; linea: number; fin?: number | undefined }>;
   importa: string[];
-  invoca: Array<{ desde: string; archivo: string; simbolo: string; linea: number }>;
+  invoca: Array<{ desde: string; archivo: string; simbolo: string; linea: number; via?: string | undefined }>;
+  /** Llamadas que el parser no pudo atribuir (tipo `any`, interfaz sin implementación conocida). */
+  sinResolver?: Array<{ desde: string; linea: number; llamada: string }> | undefined;
 }
 
 /** Lo que toca un paso: una tabla (`lee_de`/`escribe_en`) o un servicio o externo (`llama_a`). */
@@ -127,6 +129,8 @@ export interface Paso {
    * (él y lo que llama). `ciclo` si se llega a sí mismo mientras se recorre (recursión).
    */
   repite?: "antes" | "ciclo";
+  /** Se llega en diferido, por un evento o una cola con esta clave. */
+  via?: string;
 }
 
 export interface Recorrido {
@@ -178,7 +182,7 @@ export function aristasDeExtracciones(contenidos: string[]): AristaExtraccion[] 
 
 const MAX_PASOS = 40;
 const TIPOS_DOMINIO = new Set(["clase", "interfaz", "tipo", "enum"]);
-const ES_TEST = /[._-](test|spec)\.[^./]+$|(^|\/)(__tests__|__mocks__|tests?|e2e|cypress|fixtures)\//;
+export const ES_TEST = /[._-](test|spec)\.[^./]+$|(^|\/)(__tests__|__mocks__|tests?|e2e|cypress|fixtures)\//;
 
 /**
  * Deja los pasos que importan: métodos de clases y lo que toca datos o servicios. Las funciones sueltas que no tocan
@@ -266,7 +270,7 @@ export function crearRecorredor(
     let truncado = false;
     // Lo que tocó cada método visitado, sumando lo que llama; `null` mientras se está recorriendo (recursión).
     const resumen = new Map<string, Toque[] | null>();
-    const visitar = (archivo: string, simbolo: string, nivel: number, desde: string | null) => {
+    const visitar = (archivo: string, simbolo: string, nivel: number, desde: string | null, via?: string) => {
       const k = `${archivo}#${simbolo}`;
       if (pasos.length >= MAX_PASOS || nivel > MAX_NIVEL) {
         truncado = true;
@@ -275,7 +279,7 @@ export function crearRecorredor(
       const est = estructura.get(archivo);
       const s = est?.simbolos.find((x) => x.nombre === simbolo);
       const desdeL = s?.linea ?? 1, hastaL = s?.fin ?? desdeL;
-      const base = { simbolo, evidencia: `${archivo}#L${desdeL}`, capa: capaDe(archivo.slice(archivo.indexOf(":") + 1)), nivel, desde };
+      const base = { simbolo, evidencia: `${archivo}#L${desdeL}`, capa: capaDe(archivo.slice(archivo.indexOf(":") + 1)), nivel, desde, ...(via ? { via } : {}) };
       if (resumen.has(k)) {
         const r = resumen.get(k);
         pasos.push({ ...base, toca: r ? [...r] : [], repite: r ? "antes" : "ciclo" });
@@ -291,7 +295,7 @@ export function crearRecorredor(
       const desdeI = pasos.length;
       pasos.push({ ...base, toca });
       const repo = archivo.slice(0, archivo.indexOf(":"));
-      for (const i of est?.invoca ?? []) if (i.desde === simbolo) visitar(`${repo}:${i.archivo}`, i.simbolo, nivel + 1, simbolo);
+      for (const i of est?.invoca ?? []) if (i.desde === simbolo) visitar(`${repo}:${i.archivo}`, i.simbolo, nivel + 1, simbolo, i.via);
       const total: Toque[] = [];
       for (const p of pasos.slice(desdeI)) for (const t of p.toca) if (!total.some((x) => mismoToque(x, t))) total.push(t);
       resumen.set(k, total.sort(ordenToque));

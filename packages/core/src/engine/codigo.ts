@@ -4,6 +4,7 @@ import { commitDe } from "../git.js";
 import {
   aristasDeExtracciones,
   crearRecorredor,
+  ES_TEST,
   simboloDeLinea,
   tablasSinPagina,
   type EstructuraArchivo,
@@ -36,7 +37,7 @@ export interface IndiceCodigo {
   /** repo → HEAD actual del clon, leído al consultar (`actualizarHeads`); ausente si no se pudo leer. */
   actuales: Record<string, string>;
   /** `repo:ruta#Simbolo` → quién lo llama, con la línea de la llamada. */
-  llamadores: Map<string, Array<{ clave: string; linea: number }>>;
+  llamadores: Map<string, Array<{ clave: string; linea: number; via?: string | undefined }>>;
   /** Nombre de símbolo → claves `repo:ruta#Simbolo`. */
   porNombre: Map<string, string[]>;
   /** `repo:ruta#Simbolo` → endpoints que atiende. */
@@ -61,7 +62,7 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
       const j = JSON.parse(c) as { repo: string; commit?: string; raiz?: string; archivos: Array<{ ruta: string } & Partial<EstructuraArchivo>> };
       if (j.commit) commits[j.repo] = j.commit;
       if (j.raiz) raices[j.repo] = j.raiz;
-      for (const a of j.archivos ?? []) estructura.set(`${j.repo}:${a.ruta}`, { simbolos: a.simbolos ?? [], importa: a.importa ?? [], invoca: a.invoca ?? [] });
+      for (const a of j.archivos ?? []) estructura.set(`${j.repo}:${a.ruta}`, { simbolos: a.simbolos ?? [], importa: a.importa ?? [], invoca: a.invoca ?? [], sinResolver: a.sinResolver });
     } catch {
       /* ignorado */
     }
@@ -69,14 +70,14 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
   const aristas = aristasDeExtracciones(extracciones);
   const sinPagina = tablasSinPagina(extracciones);
   const recorredor = crearRecorredor(graph, estructura, aristas, sinPagina);
-  const llamadores = new Map<string, Array<{ clave: string; linea: number }>>();
+  const llamadores = new Map<string, Array<{ clave: string; linea: number; via?: string | undefined }>>();
   const porNombre = new Map<string, string[]>();
   for (const [archivo, e] of [...estructura.entries()].sort((a, b) => cmp(a[0], b[0]))) {
     const repo = archivo.slice(0, archivo.indexOf(":"));
     for (const s of e.simbolos) porNombre.set(s.nombre, [...(porNombre.get(s.nombre) ?? []), clave(archivo, s.nombre)]);
     for (const i of e.invoca) {
       const destino = clave(`${repo}:${i.archivo}`, i.simbolo);
-      llamadores.set(destino, [...(llamadores.get(destino) ?? []), { clave: clave(archivo, i.desde), linea: i.linea }]);
+      llamadores.set(destino, [...(llamadores.get(destino) ?? []), { clave: clave(archivo, i.desde), linea: i.linea, ...(i.via ? { via: i.via } : {}) }]);
     }
   }
   const atiende = new Map<string, string[]>();
@@ -204,8 +205,38 @@ const paso = (ix: IndiceCodigo, p: Paso) => ({
   ev: p.evidencia,
   ...(p.toca.length ? { toca: p.toca.map(toque) } : {}),
   ...(p.aviso ? { aviso: p.aviso } : {}),
+  ...(p.via ? { via: `en diferido, por evento o cola ${p.via}` } : {}),
   ...(p.repite ? { repite: p.repite === "ciclo" ? "llamada recursiva: no se expande" : "ya recorrido antes: toca resume lo que tocó (él y lo que llama)" } : {}),
 });
+
+/** Llamadas sin resolver dentro de los pasos de un recorrido: ahí el recorrido puede seguir y no lo sabemos. */
+function sinResolverEnPasos(ix: IndiceCodigo, pasos: Array<{ simbolo: string; ev: string }>): string[] {
+  const out: string[] = [];
+  const vistos = new Set<string>();
+  for (const p of pasos) {
+    const archivo = p.ev.replace(/#L\d+$/, "");
+    const k = `${archivo}#${p.simbolo}`;
+    if (vistos.has(k)) continue;
+    vistos.add(k);
+    for (const s of ix.estructura.get(archivo)?.sinResolver ?? []) if (s.desde === p.simbolo) out.push(`llamada sin resolver en ${p.simbolo}: ${s.llamada} (${archivo}#L${s.linea}); el recorrido puede seguir por ahí`);
+  }
+  return out.length > 8 ? [...out.slice(0, 8), `y ${out.length - 8} llamadas sin resolver más`] : out;
+}
+
+/** Llamadas sin resolver en todo el código indexado cuyo método se llama igual que el buscado: posibles llamadores que no se ven. */
+function sinResolverConNombre(ix: IndiceCodigo, claves: string[]): string[] {
+  const nombres = new Set(claves.map((k) => partes(k).simbolo.split(".").pop()!));
+  const out: string[] = [];
+  for (const [archivo, e] of ix.estructura) {
+    if (ES_TEST.test(archivo)) continue;
+    for (const s of e.sinResolver ?? []) {
+      const m = s.llamada.split(".").pop()!;
+      if (nombres.has(m)) out.push(`posible llamador no resuelto: ${s.desde} @ ${archivo}#L${s.linea} llama ${s.llamada} (tipo sin resolver)`);
+    }
+  }
+  out.sort(cmp);
+  return out.length > 8 ? [...out.slice(0, 8), `y ${out.length - 8} posibles llamadores no resueltos más`] : out;
+}
 
 // ------------------------------------------------------------------ funcionalidad
 
@@ -299,6 +330,7 @@ export function recorrido(ctx: Contexto, p: RecorridoParams) {
     ...(recorridos.some((r) => !r.atiende) ? ["no se encontró el método que atiende algún endpoint (¿otro lenguaje o framework sin soporte?)"] : []),
     ...(recorridos.some((r) => r.truncado) ? ["recorrido cortado por profundidad (6) o cantidad de pasos (40)"] : []),
     ...((eps.length || 0) > 3 ? [`${eps.length} endpoints coinciden; se muestran 3`] : []),
+    ...sinResolverEnPasos(ix, recorridos.flatMap((r) => r.pasos)),
     ...avisosIndice(ix),
   ];
   const res = { recorridos, avisos, indice: versiones(ix) };
@@ -324,13 +356,13 @@ export function quienLlama(ctx: Contexto, p: QuienLlamaParams) {
     throw new ConsultaError("nodo_inexistente", `no existe el símbolo: ${p.simbolo}${s.length ? ` (¿${s.join(", ")}?)` : ""}`);
   }
   const vistos = new Set(inicio);
-  const llamadas: Array<{ nivel: number; quien: string; llama_a: string }> = [];
+  const llamadas: Array<{ nivel: number; quien: string; llama_a: string; via?: string }> = [];
   let frente = inicio;
   for (let nivel = 1; nivel <= prof && frente.length; nivel++) {
     const siguiente: string[] = [];
     for (const k of frente) {
       for (const l of [...(ix.llamadores.get(k) ?? [])].sort((a, b) => cmp(a.clave, b.clave))) {
-        llamadas.push({ nivel, quien: cita(ix, l.clave, l.linea), llama_a: partes(k).simbolo });
+        llamadas.push({ nivel, quien: cita(ix, l.clave, l.linea), llama_a: partes(k).simbolo, ...(l.via ? { via: `evento o cola ${l.via}` } : {}) });
         if (!vistos.has(l.clave)) {
           vistos.add(l.clave);
           siguiente.push(l.clave);
@@ -352,7 +384,7 @@ export function quienLlama(ctx: Contexto, p: QuienLlamaParams) {
     llamadas,
     avisos: [
       ...(frente.length ? [`hay más llamadores por encima de la profundidad ${prof}`] : []),
-      "solo llamadas resueltas estáticamente en TypeScript: inyección por token, reflexión o eventos no aparecen",
+      ...sinResolverConNombre(ix, inicio),
       ...avisosIndice(ix),
     ],
     indice: versiones(ix),
