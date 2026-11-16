@@ -13,12 +13,26 @@ export interface Simbolo {
   linea: number;
   nombre: string;
   tipo: string;
+  /** Última línea del símbolo, si el parser la conoce (para atribuir una línea al método que la contiene). */
+  fin?: number;
+}
+
+/** Un método o función que llama a otro símbolo del repo (`Clase.metodo` o `funcion`). */
+export interface Invocacion {
+  desde: string;
+  archivo: string;
+  simbolo: string;
+  linea: number;
 }
 
 export interface ArchivoCrudo {
   lenguaje: string;
   ruta: string;
   simbolos: Simbolo[];
+  /** Archivos del mismo repo que importa, ordenados. */
+  importa?: string[];
+  /** Llamadas de sus métodos y funciones a símbolos de otros archivos o clases del repo. */
+  invoca?: Invocacion[];
 }
 
 export interface EndpointCrudo {

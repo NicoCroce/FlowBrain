@@ -103,6 +103,16 @@ export const MAPA_JS =
       '<p class="vacio">Cada flecha va de la funcionalidad que usa a la usada; su grosor es la cantidad de endpoints. El tamaño de la caja crece con cuántas la usan.</p>' +
       listaH("Las más usadas", top.map(function (f) { return enlaceFoco(f.id, "la usan " + f.usadaPor.length); }));
   }
+  function construccion(f) {
+    if (!f.capas.length && !f.recorridos.length) return "";
+    var cuenta = f.capas.map(function (c) { return '<span class="capa capa-' + esc(c.capa) + '">' + esc(P.capaEtiqueta(c.capa)) + " " + c.archivos.length + "</span>"; }).join(" ");
+    var eps = f.recorridos.filter(function (r) { return r.pasos.length; }).slice(0, 6).map(function (r) {
+      var cadena = r.pasos.filter(function (p) { return p.nivel <= 2; }).map(function (p) { return p.simbolo; });
+      return "<li><code>" + esc(nombre(r.endpoint)) + "</code><br><small>" + esc(cadena.slice(0, 4).join(" → ")) + (cadena.length > 4 ? " → …" : "") + "</small></li>";
+    });
+    return "<h2>Cómo está construida</h2><p>" + cuenta + "</p>" + (eps.length ? '<ul class="lista">' + eps.join("") + "</ul>" : "") +
+      '<p><small><a href="#/f/' + encodeURIComponent(f.id) + '">Ver recorridos, dominio y archivos en la ficha →</a></small></p>';
+  }
   function panelNodo(id) {
     var t = tipo(id), f = porFicha[id], n = porId[id] || {}, html = "<h1>" + esc(nombre(id)) + "</h1><p><small>" + esc(TIPO[t] || t) + "</small></p>";
     if (f) {
@@ -111,7 +121,8 @@ export const MAPA_JS =
         listaH("Usa", f.usaFuncionalidades.map(function (u) { var d = (salen[id] || []).filter(function (x) { return x[1] === u && x[2] === "usa"; })[0]; return enlaceFoco(u, d ? plural(d[3], "endpoint", "endpoints") : ""); })) +
         listaH("La usan", f.usadaPor.map(function (u) { return enlaceFoco(u); })) +
         listaH("Datos", P.datosDe(f).map(function (d) { return enlaceFoco(d.tabla, [d.lee ? "lee" : "", d.escribe ? "escribe" : ""].filter(Boolean).join(" y ") + (d.via ? " · a través de " + esc(nombre(d.via)) : "")); })) +
-        listaH("Servicios externos", f.usa.filter(function (u) { return tipo(u.hasta) === "ext"; }).map(function (u) { return enlaceFoco(u.hasta); }));
+        listaH("Servicios externos", f.usa.filter(function (u) { return tipo(u.hasta) === "ext"; }).map(function (u) { return enlaceFoco(u.hasta); })) +
+        construccion(f);
     } else {
       var de = function (v) { return (entran[id] || []).filter(function (d) { return d[2] === v && porFicha[d[0]]; }).map(function (d) { return enlaceFoco(d[0]); }); };
       html += (n.r && !P.pendiente(n.r) ? "<p>" + esc(n.r) + "</p>" : "") + (t === "tabla" ? listaH("La escriben", de("escribe_en")) + listaH("La leen", de("lee_de")) : listaH("La usan", de("llama_a")));

@@ -49,6 +49,82 @@ export interface Ficha {
   /** Funcionalidades dueñas de los endpoints que esta llama, y las que llaman a los que esta expone. */
   usaFuncionalidades: string[];
   usadaPor: string[];
+  /** Cómo está construida: archivos por capa, recorrido de cada endpoint y elementos de dominio que usa. */
+  capas: CapaFicha[];
+  recorridos: Recorrido[];
+  dominio: ElementoDominio[];
+}
+
+/** Capa de un archivo, por convención de nombres (sufijo del archivo y, si no, la carpeta más profunda que coincida). */
+export type Capa = "entrada" | "logica" | "dominio" | "datos" | "interfaz" | "otros";
+export const CAPAS: readonly Capa[] = ["entrada", "logica", "dominio", "datos", "interfaz", "otros"];
+
+const SUFIJOS: Array<[RegExp, Capa]> = [
+  [/[.-](controller|resolver|routes?|router|gateway)\.[^.]+$|Controller\.php$|(^|\/)route\.[cm]?[jt]sx?$/i, "entrada"],
+  [/[.-](service|use-?case|interactor|command|handler|saga|job|listener|action)\.[^.]+$|(Service|Action|Job|Listener)\.php$/i, "logica"],
+  [/[.-](repository|repo|dao|sql|migration|client|adapter|api)\.[^.]+$|Repository\.php$/i, "datos"],
+  [/[.-](entity|model|vo|value-object|aggregate|enum|types?)\.[^.]+$|(^|\/)(types?|models?|entities)\.[^./]+$/i, "dominio"],
+  [/\.(tsx|jsx|vue|svelte|blade\.php|twig)$/i, "interfaz"],
+];
+const CARPETAS: Array<[RegExp, Capa]> = [
+  [/^(controllers?|routes?|resolvers?|endpoints?)$/i, "entrada"],
+  [/^(services?|application|use-?cases?|usecases|actions|commands|queries|hooks|store|stores|slices|state|jobs|listeners)$/i, "logica"],
+  [/^(domain|domains|entities|entity|models?|value-?objects?|types|enums)$/i, "dominio"],
+  [/^(repositor(y|ies)|persistence|infrastructure|infra|db|database|migrations|dao|api|clients?|adapters|integrations|external)$/i, "datos"],
+  [/^(components?|pages?|views?|screens?|ui|layouts?|templates|resources)$/i, "interfaz"],
+];
+
+export function capaDe(ruta: string): Capa {
+  for (const [re, c] of SUFIJOS) if (re.test(ruta)) return c;
+  const carpetas = ruta.split("/").slice(0, -1).reverse();
+  for (const d of carpetas) for (const [re, c] of CARPETAS) if (re.test(d)) return c;
+  return "otros";
+}
+
+/** Lo que guarda `_build/archivos/*.json` de cada archivo, por `repo:ruta`. */
+export interface EstructuraArchivo {
+  simbolos: Array<{ nombre: string; tipo: string; linea: number; fin?: number | undefined }>;
+  importa: string[];
+  invoca: Array<{ desde: string; archivo: string; simbolo: string; linea: number }>;
+}
+
+/** Lo que toca un paso: una tabla (`lee_de`/`escribe_en`) o un servicio o externo (`llama_a`). */
+export interface Toque {
+  verbo: string;
+  hasta: string;
+  endpoint: string | null;
+}
+
+export interface Paso {
+  simbolo: string;
+  evidencia: string;
+  capa: Capa;
+  /** Profundidad en el recorrido (0 = el método que atiende el endpoint) y quién lo llama. */
+  nivel: number;
+  desde: string | null;
+  toca: Toque[];
+}
+
+export interface Recorrido {
+  endpoint: string;
+  /** Pasos en orden de llamada (recorrido en profundidad). Vacío si no se encontró el método que lo atiende. */
+  pasos: Paso[];
+}
+
+export interface ElementoDominio {
+  archivo: string;
+  /** Clases, interfaces, tipos y enums del archivo; las funciones solo se cuentan. */
+  elementos: string[];
+  funciones: number;
+  /** Funcionalidad dueña del archivo, si es otra. */
+  de: string | null;
+  /** Otras funcionalidades que también lo usan. */
+  usadoPor: string[];
+}
+
+export interface CapaFicha {
+  capa: Capa;
+  archivos: Array<{ archivo: string; elementos: string[] }>;
 }
 
 export interface PaginaFeat {
@@ -78,7 +154,48 @@ export function aristasDeExtracciones(contenidos: string[]): AristaExtraccion[] 
   return out;
 }
 
-export function fichasDeFuncionalidades(graph: Graph, feats: PaginaFeat[], aristas: AristaExtraccion[]): Ficha[] {
+const MAX_PASOS = 40;
+const TIPOS_DOMINIO = new Set(["clase", "interfaz", "tipo", "enum"]);
+const ES_TEST = /[._-](test|spec)\.[^./]+$|(^|\/)(__tests__|__mocks__|tests?|e2e|cypress|fixtures)\//;
+
+/**
+ * Deja los pasos que importan: métodos de clases y lo que toca datos o servicios. Las funciones sueltas que no tocan
+ * nada (formatear, validar, escapar) se omiten y sus hijos cuelgan del paso visible más cercano.
+ */
+export function podar(pasos: Paso[]): Paso[] {
+  const visible = (p: Paso) => p.nivel === 0 || p.simbolo.includes(".") || p.toca.length > 0;
+  const out: Paso[] = [];
+  const pila: Array<{ nivel: number; visible: Paso | null }> = [];
+  for (const p of pasos) {
+    while (pila.length && pila[pila.length - 1]!.nivel >= p.nivel) pila.pop();
+    const padre = [...pila].reverse().find((x) => x.visible)?.visible ?? null;
+    if (visible(p)) {
+      const q = { ...p, nivel: padre ? padre.nivel + 1 : 0, desde: padre ? padre.simbolo : null };
+      out.push(q);
+      pila.push({ nivel: p.nivel, visible: q });
+    } else pila.push({ nivel: p.nivel, visible: null });
+  }
+  return out;
+}
+const MAX_NIVEL = 6;
+const EV = /^([^:]+:[^#]+)(?:#L(\d+))?/;
+const elementos = (e: EstructuraArchivo | undefined) => (e?.simbolos ?? []).filter((s) => s.tipo !== "metodo").map((s) => s.nombre);
+
+/** Método o función que atiende la línea de un endpoint: el que la contiene, o el siguiente método si la línea es su decorador. */
+function simboloDeLinea(e: EstructuraArchivo, linea: number): EstructuraArchivo["simbolos"][number] | null {
+  const fn = e.simbolos.filter((s) => s.tipo === "metodo" || s.tipo === "funcion");
+  const dentro = fn.filter((s) => s.linea <= linea && linea <= (s.fin ?? s.linea));
+  if (dentro.length) return dentro.reduce((a, b) => (b.linea > a.linea ? b : a));
+  const despues = fn.filter((s) => s.tipo === "metodo" && s.linea > linea && s.linea - linea <= 10);
+  return despues.length ? despues.reduce((a, b) => (b.linea < a.linea ? b : a)) : null;
+}
+
+export function fichasDeFuncionalidades(
+  graph: Graph,
+  feats: PaginaFeat[],
+  aristas: AristaExtraccion[],
+  estructura: Map<string, EstructuraArchivo> = new Map(),
+): Ficha[] {
   const nodo = new Map(graph.nodes.map((n) => [n.id, n]));
   const enCodigo = (ev: string | null | undefined, codigo: string[]) => !!ev && codigo.some((c) => dentroDe(ev, c));
   const dueñas = (ev: string | null | undefined, salvo: string) => (ev ? feats.filter((f) => f.id !== salvo && enCodigo(ev, f.codigo)).map((f) => f.id) : []);
@@ -86,6 +203,43 @@ export function fichasDeFuncionalidades(graph: Graph, feats: PaginaFeat[], arist
     const ev = nodo.get(id)?.atributos["evidencia"];
     return typeof ev === "string" ? ev : null;
   };
+
+  // Accesos a tablas y llamadas por archivo, para atribuirlos al método que contiene su línea.
+  const toques = new Map<string, Array<{ linea: number; toque: Toque }>>();
+  for (const a of aristas) {
+    if (a.verbo !== "lee_de" && a.verbo !== "escribe_en" && a.verbo !== "llama_a") continue;
+    const m = EV.exec(a.evidencia);
+    if (!m?.[2]) continue;
+    toques.set(m[1]!, [...(toques.get(m[1]!) ?? []), { linea: Number(m[2]), toque: { verbo: a.verbo, hasta: a.hasta, endpoint: a.endpoint } }]);
+  }
+  const recorrido = (ep: string): Recorrido => {
+    const pasos: Paso[] = [];
+    const m = EV.exec(evidenciaEndpoint(ep) ?? "");
+    const e = m?.[2] ? estructura.get(m[1]!) : undefined;
+    const h = e ? simboloDeLinea(e, Number(m![2])) : null;
+    if (!m || !h) return { endpoint: ep, pasos };
+    const vistos = new Set<string>();
+    const visitar = (archivo: string, simbolo: string, nivel: number, desde: string | null) => {
+      const k = `${archivo}#${simbolo}`;
+      if (vistos.has(k) || pasos.length >= MAX_PASOS || nivel > MAX_NIVEL) return;
+      vistos.add(k);
+      const est = estructura.get(archivo);
+      const s = est?.simbolos.find((x) => x.nombre === simbolo);
+      const desdeL = s?.linea ?? 1, hastaL = s?.fin ?? desdeL;
+      const toca: Toque[] = [];
+      for (const t of toques.get(archivo) ?? []) {
+        if (t.linea < desdeL || t.linea > hastaL) continue;
+        if (!toca.some((x) => x.verbo === t.toque.verbo && x.hasta === t.toque.hasta && x.endpoint === t.toque.endpoint)) toca.push(t.toque);
+      }
+      toca.sort((a, b) => cmpTuple([a.verbo, a.hasta, a.endpoint ?? ""], [b.verbo, b.hasta, b.endpoint ?? ""]));
+      pasos.push({ simbolo, evidencia: `${archivo}#L${desdeL}`, capa: capaDe(archivo.slice(archivo.indexOf(":") + 1)), nivel, desde, toca });
+      const repo = archivo.slice(0, archivo.indexOf(":"));
+      for (const i of est?.invoca ?? []) if (i.desde === simbolo) visitar(`${repo}:${i.archivo}`, i.simbolo, nivel + 1, simbolo);
+    };
+    visitar(m[1]!, h.nombre, 0, null);
+    return { endpoint: ep, pasos: podar(pasos) };
+  };
+  const dominiosDe = new Map<string, Set<string>>();
 
   const fichas = feats.map((f): Ficha => {
     const usa = new Map<string, Uso>();
@@ -110,13 +264,35 @@ export function fichasDeFuncionalidades(graph: Graph, feats: PaginaFeat[], arist
         datos.set(a.hasta, d);
       }
     }
+    const propios = [...estructura.keys()].filter((k) => enCodigo(k, f.codigo) && !ES_TEST.test(k)).sort(cmp);
+    const porCapa = new Map<Capa, CapaFicha["archivos"]>();
+    for (const k of propios) {
+      const c = capaDe(k.slice(k.indexOf(":") + 1));
+      porCapa.set(c, [...(porCapa.get(c) ?? []), { archivo: k, elementos: elementos(estructura.get(k)) }]);
+    }
+    const expone = graph.nodes.filter((n) => n.tipo === "endpoint" && enCodigo(evidenciaEndpoint(n.id), f.codigo)).map((n) => n.id);
+    const recorridos = expone.map((ep) => recorrido(ep));
+    const dominio = new Set<string>();
+    const agregarDominio = (k: string) => {
+      const e = estructura.get(k);
+      if (!e) return;
+      if (capaDe(k.slice(k.indexOf(":") + 1)) === "dominio") dominio.add(k);
+      const repo = k.slice(0, k.indexOf(":"));
+      for (const i of e.importa) if (capaDe(i) === "dominio" && !ES_TEST.test(i)) dominio.add(`${repo}:${i}`);
+    };
+    propios.forEach(agregarDominio);
+    for (const r of recorridos) for (const p of r.pasos) agregarDominio(EV.exec(p.evidencia)![1]!);
+    dominiosDe.set(f.id, dominio);
     return {
+      capas: CAPAS.filter((c) => porCapa.has(c)).map((c) => ({ capa: c, archivos: porCapa.get(c)! })),
+      recorridos,
+      dominio: [],
       id: f.id,
       codigo: [...f.codigo].sort(cmp),
       cuerpo: sinBacklinks(f.cuerpo),
       archivos: graph.nodes.filter((n) => n.tipo === "archivo" && enCodigo(n.id, f.codigo)).length,
       implementan: [...new Set(graph.edges.filter((e) => e.verbo === "implementa" && e.hasta === f.id).map((e) => e.desde))].sort(cmp),
-      expone: graph.nodes.filter((n) => n.tipo === "endpoint" && enCodigo(evidenciaEndpoint(n.id), f.codigo)).map((n) => n.id),
+      expone,
       usa: [...usa.values()].sort((a, b) => cmpTuple([a.hasta, a.endpoint ?? ""], [b.hasta, b.endpoint ?? ""])),
       datos: [...datos.values()].sort((a, b) => cmp(a.tabla, b.tabla)),
       usaFuncionalidades: [...usaFeats].sort(cmp),
@@ -126,5 +302,18 @@ export function fichasDeFuncionalidades(graph: Graph, feats: PaginaFeat[], arist
   const porId = new Map(fichas.map((f) => [f.id, f]));
   for (const f of fichas) for (const u of f.usaFuncionalidades) porId.get(u)?.usadaPor.push(f.id);
   for (const f of fichas) f.usadaPor.sort(cmp);
+  const dueña = (k: string) => feats.find((f) => enCodigo(k, f.codigo))?.id ?? null;
+  for (const f of fichas) {
+    f.dominio = [...(dominiosDe.get(f.id) ?? [])].sort(cmp).map((k) => {
+      const de = dueña(k);
+      return {
+        archivo: k,
+        elementos: (estructura.get(k)?.simbolos ?? []).filter((s) => TIPOS_DOMINIO.has(s.tipo)).map((s) => s.nombre),
+        funciones: (estructura.get(k)?.simbolos ?? []).filter((s) => s.tipo === "funcion").length,
+        de: de === f.id ? null : de,
+        usadoPor: fichas.filter((g) => g.id !== f.id && dominiosDe.get(g.id)?.has(k)).map((g) => g.id),
+      };
+    });
+  }
   return fichas.sort((a, b) => cmp(a.id, b.id));
 }

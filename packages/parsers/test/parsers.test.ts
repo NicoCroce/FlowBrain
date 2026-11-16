@@ -326,3 +326,65 @@ describe("ts-parser: auxiliares de ruta y Kysely", () => {
     expect(x.tablas.map((t) => `${t.verbo} ${t.modelo}`).sort()).toEqual(["escribe_en payment", "escribe_en user_token", "lee_de player", "lee_de team_has_players"]);
   });
 });
+
+describe("ts-parser: estructura interna (símbolos, imports e invocaciones)", () => {
+  let dir: string;
+  beforeAll(async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    dir = await mkdtemp(join(tmpdir(), "brain-capas-"));
+    const w = async (p: string, t: string[]) => {
+      await mkdir(dirname(join(dir, p)), { recursive: true });
+      await writeFile(join(dir, p), t.join("\n") + "\n");
+    };
+    await w("package.json", [JSON.stringify({ name: "x", dependencies: { "@nestjs/common": "10" } })]);
+    await w("src/pagos/domain/pago.ts", ["export interface Pago { id: string }", "export type Estado = 'ok' | 'error';", "export enum Medio { Tarjeta }"]);
+    await w("src/pagos/domain/pago.port.ts", ['import type { Pago } from "./pago";', "export abstract class PagoPort {", "  abstract guardar(p: Pago): Promise<void>;", "}"]);
+    await w("src/pagos/infrastructure/pago.repository.ts", [
+      'import { PagoPort } from "../domain/pago.port";',
+      'import type { Pago } from "../domain/pago";',
+      "export class PagoRepository extends PagoPort {",
+      "  async guardar(p: Pago) {}",
+      "}",
+    ]);
+    await w("src/pagos/application/pago.service.ts", [
+      'import { PagoPort } from "../domain/pago.port";',
+      "export class PagoService {",
+      "  constructor(private readonly repo: PagoPort) {}",
+      "  crear() {",
+      "    return this.repo.guardar({ id: '1' });",
+      "  }",
+      "}",
+    ]);
+    await w("src/pagos/http/pago.controller.ts", [
+      'import { Controller, Post } from "@nestjs/common";',
+      'import { PagoService } from "../application/pago.service";',
+      '@Controller("pagos")',
+      "export class PagoController {",
+      "  constructor(private readonly svc: PagoService) {}",
+      "  @Post()",
+      "  crear() {",
+      "    return this.svc.crear();",
+      "  }",
+      "}",
+    ]);
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("guarda métodos (línea del nombre), interfaces, tipos y enums con su rango", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const de = (r: string) => x.archivos.find((a) => a.ruta === r)!;
+    expect(de("src/pagos/domain/pago.ts").simbolos.map((s) => `${s.tipo} ${s.nombre} ${s.linea}-${s.fin}`)).toEqual(["interfaz Pago 1-1", "tipo Estado 2-2", "enum Medio 3-3"]);
+    expect(de("src/pagos/http/pago.controller.ts").simbolos.map((s) => `${s.tipo} ${s.nombre} ${s.linea}`)).toEqual(["clase PagoController 3", "metodo PagoController.crear 7"]);
+    expect(x.endpoints[0]).toMatchObject({ archivo: "src/pagos/http/pago.controller.ts", linea: 6 });
+  });
+
+  it("registra imports del repo y llamadas entre métodos; un método abstracto va a su implementación", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const de = (r: string) => x.archivos.find((a) => a.ruta === r)!;
+    expect(de("src/pagos/http/pago.controller.ts").importa).toEqual(["src/pagos/application/pago.service.ts"]);
+    expect(de("src/pagos/http/pago.controller.ts").invoca).toEqual([{ desde: "PagoController.crear", archivo: "src/pagos/application/pago.service.ts", simbolo: "PagoService.crear", linea: 8 }]);
+    expect(de("src/pagos/application/pago.service.ts").invoca).toEqual([
+      { desde: "PagoService.crear", archivo: "src/pagos/infrastructure/pago.repository.ts", simbolo: "PagoRepository.guardar", linea: 5 },
+    ]);
+  });
+});

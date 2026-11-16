@@ -151,13 +151,25 @@ Los destinos sin resolver nunca llegan a una página compilada. Van como prosa e
 ```json
 {
   "archivos": [
-    { "lenguaje": "typescript", "ruta": "src/main.ts", "simbolos": [ { "linea": 3, "nombre": "main", "tipo": "funcion" } ] }
+    {
+      "importa": ["src/pagos/pago.service.ts"],
+      "invoca": [{ "archivo": "src/pagos/pago.service.ts", "desde": "PagoController.crear", "linea": 8, "simbolo": "PagoService.crear" }],
+      "lenguaje": "typescript",
+      "ruta": "src/pagos/pago.controller.ts",
+      "simbolos": [
+        { "fin": 10, "linea": 3, "nombre": "PagoController", "tipo": "clase" },
+        { "fin": 9, "linea": 7, "nombre": "PagoController.crear", "tipo": "metodo" }
+      ]
+    }
   ],
   "repo": "repo-x"
 }
 ```
 
-Los símbolos se quedan en este JSON y no pasan a `graph.json`. `brain verify` los usa para comprobar que la línea citada por una evidencia todavía nombre al símbolo.
+- `simbolos`: funciones, clases, métodos (`Clase.metodo`, en la línea del nombre), interfaces, tipos y enums; `fin` es la última línea, si el parser la conoce.
+- `importa` (opcional): archivos del mismo repo que importa. `invoca` (opcional): llamadas de cada método o función a símbolos de otros archivos o clases del repo; una llamada a una interfaz o método abstracto se atribuye a las clases que lo implementan. Hoy los genera el ts-parser.
+
+Los símbolos se quedan en este JSON y no pasan a `graph.json`. `brain verify` los usa para comprobar que la línea citada por una evidencia todavía nombre al símbolo (en un método, su nombre sin la clase); `compile`, para la sección "cómo está construida" de cada funcionalidad.
 
 ### `_build/verificacion.json` (escrito por `brain verify`)
 
@@ -199,6 +211,9 @@ Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build
 - `expone`: endpoints cuya evidencia cae dentro de `codigo`. `usa`: llamadas (`llama_a`) hechas desde `codigo`, agrupadas por destino y endpoint. `datos`: accesos a tablas desde `codigo`.
 - `usaFuncionalidades`: las `feat` dueñas (por `codigo`) de los endpoints que esta llama. `usadaPor` es la inversa.
 - `cuerpo`: el Markdown de la página sin la sección de backlinks.
+- `capas`: archivos de `codigo` (sin tests) agrupados por capa (`entrada`, `logica`, `dominio`, `datos`, `interfaz`, `otros`), detectada por convención de nombres: sufijo del archivo (`*.controller.ts`, `*.service.ts`, `*.repository.ts`, `*Controller.php`, `.tsx`…) y, si no, la carpeta más profunda que coincida (`application/`, `domain/`, `infrastructure/`, `Models/`, `components/`…).
+- `recorridos`: por cada endpoint de `expone`, los pasos desde el método que lo atiende siguiendo `invoca` (hasta 6 niveles y 40 pasos), cada uno con su `capa`, `evidencia`, `nivel`, quién lo llama (`desde`) y lo que `toca` (`lee_de`/`escribe_en` una tabla o `llama_a` un servicio, si la línea de la extracción cae dentro del método). Se omiten funciones sueltas que no tocan nada.
+- `dominio`: archivos de capa `dominio` de `codigo` o importados por ella o por los pasos de los recorridos, con sus clases, interfaces, tipos y enums (`elementos`), cuántas funciones tienen, la `feat` dueña si es otra (`de`) y las demás que también lo usan (`usadoPor`).
 
 ### `_drafts/` (fuera de la compilación)
 

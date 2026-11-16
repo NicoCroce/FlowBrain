@@ -136,6 +136,15 @@ a.chip { color: var(--acento); }
 .lista { list-style: none; margin: 0; padding: 0; }
 .lista li { padding: 5px 0; border-bottom: 1px solid var(--borde); }
 .lista small { color: var(--suave); }
+.capa { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; background: var(--suave); }
+.capa-entrada { background: var(--svc); } .capa-logica { background: var(--lib); } .capa-dominio { background: var(--feat); color: #10260f; }
+.capa-datos { background: var(--tabla); color: #2b1a05; } .capa-interfaz { background: var(--queue); } .capa-otros { background: var(--archivo); }
+.recorrido, .capa-bloque { border: 1px solid var(--borde); border-radius: 8px; padding: 8px 12px; margin: 0 0 8px; background: var(--panel); }
+.recorrido summary, .capa-bloque summary { cursor: pointer; }
+.pasos { list-style: none; margin: 10px 0 2px; padding: 0; }
+.pasos li { padding: 4px 0; }
+.pasos .flecha { color: var(--suave); }
+.toca { margin: 4px 0 0 0; }
 .aviso { padding: 10px 12px; border: 1px dashed var(--borde); border-radius: 8px; color: var(--suave); margin: 0 0 16px; }
 aside { background: var(--panel); border-right: 1px solid var(--borde); overflow: auto; padding: 14px; }
 #detalle, .derecha { border-right: 0; border-left: 1px solid var(--borde); }

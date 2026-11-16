@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { compile, CompileError, dentroDe, dependenciasDelGrafo, impacto, leerEntradas, raizDeServicio, renderViewer, type Entradas } from "../src/index.js";
+import { capaDe, compile, podar, CompileError, dentroDe, dependenciasDelGrafo, impacto, leerEntradas, raizDeServicio, renderViewer, type Entradas } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -113,5 +113,50 @@ describe("funcionalidades", () => {
     expect(html).toContain('href="#/impacto"');
     expect(html).toContain('href="#/grafo"');
     expect(html).toContain("function impacto(deps, origen)");
+  });
+
+  it("capaDe clasifica por sufijo y, si no, por la carpeta más profunda", () => {
+    expect(capaDe("modules/billing/infrastructure/http/payment.controller.ts")).toBe("entrada");
+    expect(capaDe("modules/billing/payment/application/payment.service.ts")).toBe("logica");
+    expect(capaDe("modules/billing/payment/domain/payment.ts")).toBe("dominio");
+    expect(capaDe("modules/billing/payment/infrastructure/persistence/payment.repository.ts")).toBe("datos");
+    expect(capaDe("app/Http/Controllers/EnvioController.php")).toBe("entrada");
+    expect(capaDe("app/Models/Envio.php")).toBe("dominio");
+    expect(capaDe("src/features/payments/ui/Planes.tsx")).toBe("interfaz");
+    expect(capaDe("src/features/payments/hooks/usePlanes.ts")).toBe("logica");
+    expect(capaDe("shared/infrastructure/external/http/outbound-http.ts")).toBe("datos");
+    expect(capaDe("src/main.ts")).toBe("otros");
+  });
+
+  it("la ficha muestra cómo está construida: capas, recorrido de cada endpoint con lo que toca, y dominio", () => {
+    const e = conFuncionalidades("repo-tienda:apps/bff/src");
+    const extra = { aristas: [{ dato: null, desde: "svc-bff", endpoint: "svc-payments:POST:/payments", evidencia: "repo-tienda:apps/bff/src/clients/payments.ts#L11", hasta: "svc-payments", origen: "parser", verbo: "llama_a" }], pendientes: [], repo: "repo-tienda", servicios: [] };
+    const { funcionalidades } = compile({ ...e, extracciones: [...e.extracciones!, { ruta: "_build/extraccion/zz.json", contenido: JSON.stringify(extra) }] });
+    const f = funcionalidades.find((x) => x.id === "feat-checkout")!;
+    expect(f.capas.map((c) => `${c.capa}: ${c.archivos.map((a) => a.archivo.split("/").pop()).join(", ")}`)).toEqual(["entrada: checkout.ts", "datos: payments.ts", "otros: main.ts"]);
+    expect(f.capas[0]!.archivos[0]!.elementos).toEqual(["CheckoutRequest", "CheckoutResponse", "postCheckout"]);
+    expect(f.recorridos).toEqual([
+      {
+        endpoint: "svc-bff:POST:/checkout",
+        pasos: [
+          { simbolo: "postCheckout", evidencia: "repo-tienda:apps/bff/src/routes/checkout.ts#L14", capa: "entrada", nivel: 0, desde: null, toca: [] },
+          {
+            simbolo: "crearPago",
+            evidencia: "repo-tienda:apps/bff/src/clients/payments.ts#L10",
+            capa: "datos",
+            nivel: 1,
+            desde: "postCheckout",
+            toca: [{ verbo: "llama_a", hasta: "svc-payments", endpoint: "svc-payments:POST:/payments" }],
+          },
+        ],
+      },
+    ]);
+    expect(f.dominio).toEqual([]);
+  });
+
+  it("el recorrido omite funciones sueltas que no tocan nada y cuelga sus hijos del paso visible más cercano", () => {
+    const p = (simbolo: string, nivel: number, toca: number = 0) => ({ simbolo, evidencia: "repo-a:x.ts#L1", capa: "logica" as const, nivel, desde: null, toca: Array.from({ length: toca }, () => ({ verbo: "lee_de", hasta: "tabla-x", endpoint: null })) });
+    const r = podar([p("Ctrl.get", 0), p("ayuda", 1), p("Svc.leer", 2), p("Repo.find", 3, 1), p("formatear", 1), p("leerCrudo", 1, 1)]);
+    expect(r.map((x) => `${x.nivel} ${x.simbolo} <${x.desde}`)).toEqual(["0 Ctrl.get <null", "1 Svc.leer <Ctrl.get", "2 Repo.find <Svc.leer", "1 leerCrudo <Ctrl.get"]);
   });
 });

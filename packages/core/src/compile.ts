@@ -27,7 +27,7 @@ import {
   type Origen,
   type Verbo,
 } from "./schema.js";
-import { aristasDeExtracciones, fichasDeFuncionalidades, RUTA_FUNCIONALIDADES, type Ficha } from "./funcionalidades.js";
+import { aristasDeExtracciones, fichasDeFuncionalidades, RUTA_FUNCIONALIDADES, type EstructuraArchivo, type Ficha } from "./funcionalidades.js";
 
 /** Un archivo de entrada. `ruta` es relativa a la raíz del brain, con `/`. */
 export interface Fuente {
@@ -222,6 +222,8 @@ export function compile(entradas: Entradas): Salidas {
   }
 
   // ---------- 3. Árboles de archivos ----------
+  /** Símbolos, imports e invocaciones por `repo:ruta`: solo alimentan la vista de funcionalidades. */
+  const estructura = new Map<string, EstructuraArchivo>();
   for (const f of archivosIn) {
     const data = parseJson(f, errores);
     if (data === undefined) continue;
@@ -244,6 +246,7 @@ export function compile(entradas: Entradas): Salidas {
         return;
       }
       const id = `${a.repo}:${arc.ruta}`;
+      estructura.set(id, { simbolos: arc.simbolos, importa: arc.importa ?? [], invoca: arc.invoca ?? [] });
       agregarNodo(generado(id, "archivo", arc.ruta, { lenguaje: arc.lenguaje, repo: a.repo, ruta: arc.ruta }), f.ruta, null);
       aristas.push(arista(a.repo, "contiene", id, "parser"));
     });
@@ -351,6 +354,7 @@ export function compile(entradas: Entradas): Salidas {
     graph,
     paginas.filter((p) => p.fm.tipo === "feat").map((p) => ({ id: p.fm.id, codigo: p.fm.codigo ?? [], cuerpo: p.cuerpo })),
     aristasDeExtracciones([...(entradas.extracciones ?? [])].sort(porRuta).map((f) => f.contenido)),
+    estructura,
   );
   if (funcionalidades.length > 0) generados[RUTA_FUNCIONALIDADES] = stringifyCanonical({ funcionalidades, version: 1 });
   const salidaPaginas: Record<string, string> = {};

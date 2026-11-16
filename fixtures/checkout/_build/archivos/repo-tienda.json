@@ -5,6 +5,13 @@
       "ruta": "apps/bff/src/clients/payments.ts",
       "simbolos": [
         {
+          "fin": 8,
+          "linea": 5,
+          "nombre": "PagoCreado",
+          "tipo": "interfaz"
+        },
+        {
+          "fin": 13,
           "linea": 10,
           "nombre": "crearPago",
           "tipo": "funcion"
@@ -16,6 +23,7 @@
       "ruta": "apps/bff/src/main.ts",
       "simbolos": [
         {
+          "fin": 7,
           "linea": 1,
           "nombre": "main",
           "tipo": "funcion"
@@ -23,10 +31,34 @@
       ]
     },
     {
+      "importa": [
+        "apps/bff/src/clients/payments.ts"
+      ],
+      "invoca": [
+        {
+          "archivo": "apps/bff/src/clients/payments.ts",
+          "desde": "postCheckout",
+          "linea": 15,
+          "simbolo": "crearPago"
+        }
+      ],
       "lenguaje": "typescript",
       "ruta": "apps/bff/src/routes/checkout.ts",
       "simbolos": [
         {
+          "fin": 7,
+          "linea": 4,
+          "nombre": "CheckoutRequest",
+          "tipo": "interfaz"
+        },
+        {
+          "fin": 12,
+          "linea": 9,
+          "nombre": "CheckoutResponse",
+          "tipo": "interfaz"
+        },
+        {
+          "fin": 17,
           "linea": 14,
           "nombre": "postCheckout",
           "tipo": "funcion"
@@ -49,6 +81,13 @@
       "ruta": "apps/payments/src/clients/pasarela.ts",
       "simbolos": [
         {
+          "fin": 5,
+          "linea": 1,
+          "nombre": "CargoPasarela",
+          "tipo": "interfaz"
+        },
+        {
+          "fin": 10,
           "linea": 7,
           "nombre": "cobrar",
           "tipo": "funcion"
@@ -60,6 +99,7 @@
       "ruta": "apps/payments/src/main.ts",
       "simbolos": [
         {
+          "fin": 8,
           "linea": 1,
           "nombre": "main",
           "tipo": "funcion"
@@ -67,13 +107,37 @@
       ]
     },
     {
+      "importa": [
+        "apps/payments/src/clients/pasarela.ts"
+      ],
+      "invoca": [
+        {
+          "archivo": "apps/payments/src/clients/pasarela.ts",
+          "desde": "postPayment",
+          "linea": 14,
+          "simbolo": "cobrar"
+        }
+      ],
       "lenguaje": "typescript",
       "ruta": "apps/payments/src/routes/payments.ts",
       "simbolos": [
         {
+          "fin": 23,
           "linea": 12,
           "nombre": "postPayment",
           "tipo": "funcion"
+        },
+        {
+          "fin": 33,
+          "linea": 28,
+          "nombre": "CrearPagoRequest",
+          "tipo": "interfaz"
+        },
+        {
+          "fin": 41,
+          "linea": 35,
+          "nombre": "Pago",
+          "tipo": "interfaz"
         }
       ]
     },
@@ -82,9 +146,16 @@
       "ruta": "apps/payments/src/routes/webhooks.ts",
       "simbolos": [
         {
+          "fin": 10,
           "linea": 7,
           "nombre": "postWebhookPasarela",
           "tipo": "funcion"
+        },
+        {
+          "fin": 19,
+          "linea": 15,
+          "nombre": "EventoPasarela",
+          "tipo": "interfaz"
         }
       ]
     },
@@ -93,6 +164,13 @@
       "ruta": "apps/web/src/api/checkout.ts",
       "simbolos": [
         {
+          "fin": 4,
+          "linea": 1,
+          "nombre": "CheckoutRequest",
+          "tipo": "interfaz"
+        },
+        {
+          "fin": 11,
           "linea": 8,
           "nombre": "confirmarCheckout",
           "tipo": "funcion"
@@ -104,6 +182,7 @@
       "ruta": "apps/web/src/main.tsx",
       "simbolos": [
         {
+          "fin": 3,
           "linea": 1,
           "nombre": "main",
           "tipo": "funcion"

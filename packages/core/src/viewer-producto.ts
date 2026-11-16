@@ -107,6 +107,71 @@ export const PRODUCTO_JS = String.raw`
     input.addEventListener("input", function () { filtro = input.value; document.getElementById("tarjetas").innerHTML = tarjetas(); });
   }
 
+  // ---------- Cómo está construida ----------
+  var CAPA = { entrada: "Entrada", logica: "Lógica", dominio: "Dominio", datos: "Datos e integraciones", interfaz: "Interfaz", otros: "Otros" };
+  var VERBO_TOQUE = { lee_de: "lee", escribe_en: "escribe en", llama_a: "llama a" };
+  var capa = function (c) { return '<span class="capa capa-' + esc(c) + '">' + esc(CAPA[c] || c) + "</span>"; };
+  function corta(f, archivo) {
+    for (var i = 0; i < f.codigo.length; i++) if (archivo.indexOf(f.codigo[i] + "/") === 0) return archivo.slice(f.codigo[i].length + 1);
+    return archivo.slice(archivo.indexOf(":") + 1);
+  }
+  function toque(t) {
+    var destino = t.endpoint ? nombre(t.endpoint) + " (" + nombre(t.hasta) + ")" : nombre(t.hasta);
+    return '<span class="chip">' + esc(VERBO_TOQUE[t.verbo] || t.verbo) + " " + esc(destino) + "</span>";
+  }
+  function resumenRecorrido(r) {
+    var tablas = {}, otros = {};
+    r.pasos.forEach(function (p) { p.toca.forEach(function (t) { if (t.verbo === "llama_a") otros[nombre(t.hasta)] = true; else tablas[nombre(t.hasta)] = true; }); });
+    var partes = [];
+    if (r.pasos.length) partes.push(esc(r.pasos[0].simbolo) + " · " + plural(r.pasos.length, "paso", "pasos"));
+    if (Object.keys(tablas).length) partes.push("tablas: " + esc(Object.keys(tablas).sort().join(", ")));
+    if (Object.keys(otros).length) partes.push("llama a: " + esc(Object.keys(otros).sort().join(", ")));
+    return partes.join(" · ");
+  }
+  function recorridos(f) {
+    if (!f.recorridos.length) return "";
+    var abiertos = f.recorridos.length <= 2;
+    return f.recorridos.map(function (r) {
+      var cuerpo = r.pasos.length
+        ? '<ol class="pasos">' + r.pasos.map(function (p) {
+            return '<li style="margin-left:' + p.nivel * 18 + 'px">' + (p.nivel ? '<span class="flecha">↳</span> ' : "") + capa(p.capa) + " <strong>" + esc(p.simbolo) + "</strong>" +
+              ' <small><code>' + esc(corta(f, p.evidencia)) + "</code></small>" +
+              (p.toca.length ? '<div class="chips toca">' + p.toca.map(toque).join("") + "</div>" : "") + "</li>";
+          }).join("") + "</ol>"
+        : '<p class="vacio">No se encontró el método que atiende este endpoint.</p>';
+      return "<details" + (abiertos ? " open" : "") + ' class="recorrido"><summary><code>' + esc(nombre(r.endpoint)) + "</code><br><small>" + resumenRecorrido(r) + "</small></summary>" + cuerpo + "</details>";
+    }).join("");
+  }
+  function capas(f) {
+    return f.capas.map(function (c) {
+      var items = c.archivos.map(function (a) {
+        return "<li><code>" + esc(corta(f, a.archivo)) + "</code>" + (a.elementos.length ? "<br><small>" + esc(a.elementos.join(", ")) + "</small>" : "") + "</li>";
+      }).join("");
+      return '<details class="capa-bloque"' + (c.archivos.length <= 6 ? " open" : "") + "><summary>" + capa(c.capa) + " " + plural(c.archivos.length, "archivo", "archivos") + '</summary><ul class="lista">' + items + "</ul></details>";
+    }).join("");
+  }
+  function dominio(f) {
+    // Primero lo compartido con otras funcionalidades, después lo que define tipos, al final los archivos solo de funciones.
+    var peso = function (d) { return d.de || d.usadoPor.length ? 0 : d.elementos.length ? 1 : 2; };
+    var orden = f.dominio.slice().sort(function (a, b) { return peso(a) - peso(b) || (a.archivo < b.archivo ? -1 : 1); });
+    return orden.map(function (d) {
+      var otras = d.usadoPor.length ? "<br><small>También la usan: " + d.usadoPor.map(chipFeat).join(" ") + "</small>" : "";
+      var titulo = d.elementos.length ? esc(d.elementos.join(", ")) : '<span class="vacio">' + esc(plural(d.funciones, "función", "funciones")) + "</span>";
+      return "<li><strong>" + titulo + "</strong>" + (d.elementos.length && d.funciones ? " <small>· + " + plural(d.funciones, "función", "funciones") + "</small>" : "") +
+        "<br><small><code>" + esc(d.archivo.slice(d.archivo.indexOf(":") + 1)) + "</code>" + (d.de ? " · de " + chipFeat(d.de) : "") + "</small>" + otras + "</li>";
+    });
+  }
+  function construida(f) {
+    var dom = dominio(f);
+    if (!f.recorridos.length && !f.capas.length) return "";
+    return "<section><h2>Cómo está construida</h2>" +
+      (f.recorridos.length ? "<h3>Recorrido de cada endpoint (" + f.recorridos.length + ")</h3><p><small>Desde el método que atiende el pedido, qué llama y qué datos toca en cada paso.</small></p>" + recorridos(f) : "") +
+      (dom.length ? "<h3>Elementos de dominio (" + dom.length + ")</h3><p><small>Entidades, tipos y valores que usa, propios o de otras funcionalidades.</small></p>" + lista(dom.slice(0, 12)) +
+        (dom.length > 12 ? '<details class="capa-bloque"><summary>Ver ' + (dom.length - 12) + " más</summary>" + lista(dom.slice(12)) + "</details>" : "") : "") +
+      (f.capas.length ? "<h3>Archivos por capa</h3>" + capas(f) : "") +
+      "</section>";
+  }
+
   // ---------- Ficha ----------
   function seccion(titulo, cuerpo) { return cuerpo ? "<section><h2>" + titulo + "</h2>" + cuerpo + "</section>" : ""; }
   function lista(items) { return items.length ? '<ul class="lista">' + items.join("") + "</ul>" : ""; }
@@ -146,6 +211,7 @@ export const PRODUCTO_JS = String.raw`
       (cuerpo || '<p class="aviso">La página no tiene texto. Escribí qué es y cómo se usa en <code>' + esc(n.p || "") + "</code>.</p>") +
       seccion("Qué consume (" + consume.length + ")", lista(consume)) +
       seccion("Qué expone (" + expone.length + ")", lista(expone)) +
+      construida(f) +
       "</div><div>" +
       seccion("Se relaciona con", relacion) +
       seccion("Datos (" + datos.length + ")", lista(datos)) +
@@ -163,6 +229,7 @@ export const PRODUCTO_JS = String.raw`
   window.brainProducto = {
     mostrar: function (h) { var m = /^\/f\/(.+)$/.exec(h); if (m) raiz.innerHTML = ficha(m[1]); else pintarCatalogo(); },
     datosDe: datosDe,
+    capaEtiqueta: function (c) { return CAPA[c] || c; },
     pendiente: pendiente
   };
 })();

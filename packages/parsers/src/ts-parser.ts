@@ -23,7 +23,9 @@ import {
  * - endpoints de Express, Fastify, NestJS y rutas `app/**\/route.ts` de Next;
  * - llamadas salientes con `fetch` y `axios` (incluidas instancias `axios.create({ baseURL })`);
  * - modelos de Prisma (schema.prisma) y TypeORM (`@Entity`), y accesos `x.<modelo>.<op>()` de Prisma;
- * - símbolos de primer nivel (funciones y clases).
+ * - símbolos: funciones, clases y sus métodos, interfaces, tipos y enums, con su rango de líneas;
+ * - qué archivos del repo importa cada archivo y a qué métodos o funciones de otros archivos llama cada método
+ *   (las llamadas a una interfaz o a un método abstracto se atribuyen a las clases que lo implementan).
  * La resolución de módulos solo sigue imports relativos dentro del repo: el resultado no depende de node_modules.
  */
 
@@ -286,27 +288,120 @@ function extraer(repo: RepoFuente): Extraccion {
     .filter((sf) => sf.fileName.startsWith(repo.raiz + "/") && !sf.isDeclarationFile)
     .sort((a, b) => cmp(a.fileName, b.fileName));
 
+  // ---------- Estructura interna: símbolos con rango, imports e invocaciones ----------
+  const delRepo = (sf: ts.SourceFile | undefined): sf is ts.SourceFile =>
+    !!sf && sf.fileName.startsWith(repo.raiz + "/") && !sf.isDeclarationFile && !sf.fileName.includes("/node_modules/");
+  const finDe = (n: ts.Node) => n.getSourceFile().getLineAndCharacterOfPosition(n.getEnd()).line + 1;
+  const nombreMiembro = (m: ts.ClassElement | ts.TypeElement): string | null =>
+    m.name && (ts.isIdentifier(m.name) || ts.isPrivateIdentifier(m.name) || ts.isStringLiteral(m.name)) ? m.name.text : null;
+  const esFuncionMiembro = (m: ts.ClassElement) =>
+    ts.isMethodDeclaration(m) || (ts.isPropertyDeclaration(m) && !!m.initializer && (ts.isArrowFunction(m.initializer) || ts.isFunctionExpression(m.initializer)));
+  const contenedor = (d: ts.Node): (ts.ClassLikeDeclaration | ts.InterfaceDeclaration) | null =>
+    d.parent && (ts.isClassLike(d.parent) || ts.isInterfaceDeclaration(d.parent)) ? d.parent : null;
+  const real = (sym: ts.Symbol | undefined) => (sym && sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym);
+  // Implementaciones: interfaz o clase abstracta → clases que la implementan o extienden.
+  const implementan = new Map<ts.Node, ts.ClassLikeDeclaration[]>();
+  for (const sf of fuentes) {
+    const ver = (n: ts.Node): void => {
+      if (ts.isClassLike(n)) {
+        for (const h of n.heritageClauses ?? []) {
+          for (const t of h.types) {
+            const d = real(checker.getSymbolAtLocation(t.expression))?.declarations?.[0];
+            if (d && (ts.isInterfaceDeclaration(d) || ts.isClassLike(d)) && delRepo(d.getSourceFile())) implementan.set(d, [...(implementan.get(d) ?? []), n]);
+          }
+        }
+      }
+      ts.forEachChild(n, ver);
+    };
+    ver(sf);
+  }
+  /** Símbolo destino de una declaración: `Clase.metodo` o `funcion`, con su archivo. Varios si es una interfaz. */
+  const destinos = (d: ts.Declaration): Array<{ archivo: string; simbolo: string }> => {
+    const sf = d.getSourceFile();
+    if (!delRepo(sf)) return [];
+    if (ts.isFunctionDeclaration(d) && d.name) return [{ archivo: rel(sf), simbolo: d.name.text }];
+    if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) {
+      return [{ archivo: rel(sf), simbolo: d.name.text }];
+    }
+    if (ts.isClassDeclaration(d) && d.name) return [{ archivo: rel(sf), simbolo: d.name.text }];
+    if (ts.isMethodDeclaration(d) || ts.isMethodSignature(d) || ts.isPropertyDeclaration(d) || ts.isPropertySignature(d)) {
+      const c = contenedor(d), m = nombreMiembro(d);
+      if (!c?.name || !m) return [];
+      const abstracto = ts.isMethodSignature(d) || ts.isPropertySignature(d) || !!ts.getModifiers(d as ts.HasModifiers)?.some((x) => x.kind === ts.SyntaxKind.AbstractKeyword);
+      const impls = abstracto ? (implementan.get(c) ?? []).filter((k) => k.name && k.members.some((x) => nombreMiembro(x) === m)) : [];
+      if (impls.length) return impls.map((k) => ({ archivo: rel(k.getSourceFile()), simbolo: k.name!.text + "." + m }));
+      return [{ archivo: rel(sf), simbolo: c.name.text + "." + m }];
+    }
+    return [];
+  };
+  const invocacionesDe = (cuerpo: ts.Node, desde: string, archivo: string, out: Map<string, { desde: string; archivo: string; simbolo: string; linea: number }>) => {
+    const ver = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
+        const e = n.expression;
+        const nombre = ts.isPropertyAccessExpression(e) ? e.name : ts.isIdentifier(e) ? e : null;
+        const d = nombre ? real(checker.getSymbolAtLocation(nombre))?.declarations?.[0] : undefined;
+        if (d) {
+          for (const t of destinos(d)) {
+            if (t.archivo === archivo && t.simbolo === desde) continue;
+            const k = `${desde}\u0000${t.archivo}\u0000${t.simbolo}`, l = linea(n);
+            const prev = out.get(k);
+            if (!prev || l < prev.linea) out.set(k, { desde, archivo: t.archivo, simbolo: t.simbolo, linea: l });
+          }
+        }
+      }
+      ts.forEachChild(n, ver);
+    };
+    ver(cuerpo);
+  };
+
   for (const sf of fuentes) {
     const archivo = rel(sf);
     const paquete = paqueteDe(repo, archivo);
     const simbolos: Simbolo[] = [];
     const formas = (out.formas[paquete] ??= {});
 
-    // Símbolos de primer nivel y formas de tipos.
+    // Símbolos, formas de tipos, imports e invocaciones.
+    const invoca = new Map<string, { desde: string; archivo: string; simbolo: string; linea: number }>();
+    const importa = new Set<string>();
     for (const st of sf.statements) {
-      if (ts.isFunctionDeclaration(st) && st.name) simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "funcion" });
-      else if (ts.isClassDeclaration(st) && st.name) simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "clase" });
+      if (ts.isFunctionDeclaration(st) && st.name) {
+        simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "funcion", fin: finDe(st) });
+        if (st.body) invocacionesDe(st.body, st.name.text, archivo, invoca);
+      } else if (ts.isClassDeclaration(st) && st.name) {
+        simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "clase", fin: finDe(st) });
+        for (const m of st.members) {
+          const nm = nombreMiembro(m);
+          if (!nm || !esFuncionMiembro(m)) continue;
+          const sim = st.name.text + "." + nm;
+          // La línea del nombre, no la del primer decorador: es la que contiene el nombre del método.
+          simbolos.push({ linea: linea(m.name!), nombre: sim, tipo: "metodo", fin: finDe(m) });
+          // Solo el cuerpo: los decoradores del método (`@UseGuards(...)`) no son llamadas del método.
+          const cuerpo = ts.isMethodDeclaration(m) ? m.body : (m as ts.PropertyDeclaration).initializer;
+          if (cuerpo) invocacionesDe(cuerpo, sim, archivo, invoca);
+        }
+      } else if (ts.isInterfaceDeclaration(st)) simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "interfaz", fin: finDe(st) });
+      else if (ts.isTypeAliasDeclaration(st)) simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "tipo", fin: finDe(st) });
+      else if (ts.isEnumDeclaration(st)) simbolos.push({ linea: linea(st), nombre: st.name.text, tipo: "enum", fin: finDe(st) });
       else if (ts.isVariableStatement(st)) {
         for (const d of st.declarationList.declarations) {
           if (ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) {
-            simbolos.push({ linea: linea(st), nombre: d.name.text, tipo: "funcion" });
+            simbolos.push({ linea: linea(st), nombre: d.name.text, tipo: "funcion", fin: finDe(st) });
+            invocacionesDe(d.initializer, d.name.text, archivo, invoca);
           }
         }
+      }
+      if ((ts.isImportDeclaration(st) || ts.isExportDeclaration(st)) && st.moduleSpecifier) {
+        const d = checker.getSymbolAtLocation(st.moduleSpecifier)?.declarations?.[0];
+        if (d && ts.isSourceFile(d) && delRepo(d) && d !== sf) importa.add(rel(d));
       }
       const forma = formaDe(st);
       if (forma && !(forma.nombre in formas)) formas[forma.nombre] = forma.forma;
     }
-    out.archivos.push({ lenguaje: lenguajeDe(archivo), ruta: archivo, simbolos });
+    simbolos.sort((a, b) => a.linea - b.linea || cmp(a.nombre, b.nombre));
+    const arc: ArchivoCrudo = { lenguaje: lenguajeDe(archivo), ruta: archivo, simbolos };
+    if (importa.size) arc.importa = [...importa].sort(cmp);
+    if (invoca.size) arc.invoca = [...invoca.values()].sort((a, b) => cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo));
+    out.archivos.push(arc);
 
     // Next.js app router: app/**/route.ts con exports GET/POST/…
     const next = /(?:^|\/)app\/((?:[^/]+\/)*)route\.[cm]?[jt]sx?$/.exec(archivo.slice(paquete ? paquete.length + 1 : 0));

@@ -79,7 +79,8 @@ export async function verificarAristas(
       continue;
     }
     const esperados = simbolos.get(`${repo}:${ruta}`)?.get(desde);
-    if (esperados && !esperados.some((s) => (contenido[desde - 1] ?? "").includes(s))) {
+    // Los métodos se guardan como `Clase.metodo`; en la línea aparece solo el nombre del método.
+    if (esperados && !esperados.some((s) => (contenido[desde - 1] ?? "").includes(s.slice(s.lastIndexOf(".") + 1)))) {
       dudosa(`la línea ${desde} ya no contiene \`${esperados.join("`, `")}\``);
     }
   }
