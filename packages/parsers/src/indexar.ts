@@ -1,5 +1,5 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { cmp, cmpTuple, ConsultaError, FrontmatterSchema, parsePagina, stringifyCanonical, type Contrato } from "@brain/core";
 import { leerRepo } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
@@ -46,10 +46,13 @@ export interface ResultadoIndex {
   /** El repo no tiene página en el brain (solo con `permitirRepoNuevo`). */
   repoNuevo: boolean;
   servicios: Array<{ nuevo: boolean; paquete: string; svc: string }>;
+  /** Una arista por (desde, verbo, hasta, endpoint): lo que proponen los borradores. */
   aristas: AristaExtraida[];
+  /** Todas las aristas resueltas, una por evidencia: la vista por método y por funcionalidad necesita cada acceso. */
+  accesos: AristaExtraida[];
   pendientes: Pendiente[];
   contratos: Contrato[];
-  archivos: { archivos: Array<{ lenguaje: string; ruta: string; simbolos: Array<{ linea: number; nombre: string; tipo: string }> }>; repo: string };
+  archivos: { archivos: Extraccion["archivos"]; repo: string; commit?: string };
 }
 
 export const normalizar = (s: string) =>
@@ -193,6 +196,7 @@ export async function indexar(
   opciones: { repo?: string; permitirRepoNuevo?: boolean } = {},
 ): Promise<ResultadoIndex> {
   const repo = leerRepo(rutaRepo);
+  const commit = await commitDe(repo.raiz);
   const nodos = await leerNodosPaginas(raizBrain);
   const porId = new Map(nodos.map((n) => [n.id, n]));
 
@@ -340,6 +344,9 @@ export async function indexar(
     const k = [a.desde, a.verbo, a.hasta, a.endpoint ?? ""].join("\u0000");
     if (!unicas.has(k)) unicas.set(k, a);
   }
+  const todas = new Map<string, AristaExtraida>();
+  for (const a of aristas) todas.set([a.evidencia, a.verbo, a.hasta, a.endpoint ?? "", a.desde].join("\u0000"), a);
+  const accesos = [...todas.values()].sort((a, b) => cmpTuple([a.evidencia, a.verbo, a.hasta, a.endpoint ?? "", a.desde], [b.evidencia, b.verbo, b.hasta, b.endpoint ?? "", b.desde]));
   const aristasFinales = [...unicas.values()].sort((a, b) => cmpTuple([a.desde, a.verbo, a.hasta, a.endpoint ?? ""], [b.desde, b.verbo, b.hasta, b.endpoint ?? ""]));
   pendientes.sort((a, b) => cmpTuple([a.desde, a.evidencia, a.referencia], [b.desde, b.evidencia, b.referencia]));
 
@@ -358,10 +365,38 @@ export async function indexar(
     repoNuevo,
     servicios,
     aristas: aristasFinales,
+    accesos,
     pendientes,
     contratos: contratos.sort((a, b) => cmp(a.svc, b.svc)),
-    archivos: { archivos: x.archivos, repo: repoId },
+    archivos: { archivos: x.archivos, repo: repoId, ...(commit ? { commit } : {}) },
   };
+}
+
+/**
+ * Commit de HEAD leyendo `.git` (sin ejecutar git): así las consultas pueden decir de qué versión del código salió el
+ * índice. `null` si no es un repo git o no se puede resolver.
+ */
+export async function commitDe(raiz: string): Promise<string | null> {
+  const leer = (p: string) => readFile(p, "utf8").then((t) => t.trim(), () => null);
+  let git = join(raiz, ".git");
+  const archivoGit = await leer(git);
+  if (archivoGit?.startsWith("gitdir:")) git = resolve(raiz, archivoGit.slice(7).trim());
+  const head = await leer(join(git, "HEAD"));
+  if (!head) return null;
+  if (/^[0-9a-f]{40}$/.test(head)) return head;
+  const ref = /^ref: (.+)$/.exec(head)?.[1];
+  if (!ref) return null;
+  // En un worktree, las refs viven en el directorio común.
+  const comun = await leer(join(git, "commondir"));
+  const bases = [git, ...(comun ? [resolve(git, comun)] : [])];
+  for (const b of bases) {
+    const suelta = await leer(join(b, ref));
+    if (suelta && /^[0-9a-f]{40}$/.test(suelta)) return suelta;
+    const packed = await leer(join(b, "packed-refs"));
+    const m = packed?.split("\n").find((l) => l.endsWith(" " + ref));
+    if (m) return m.slice(0, 40);
+  }
+  return null;
 }
 
 export const rutasIndex = (repo: string) => ({
@@ -375,7 +410,7 @@ export async function escribirIndex(raizBrain: string, r: ResultadoIndex): Promi
   const rutas = rutasIndex(r.repo);
   const salidas: Record<string, string> = {
     [rutas.archivos]: stringifyCanonical(r.archivos),
-    [rutas.extraccion]: stringifyCanonical({ aristas: r.aristas, pendientes: r.pendientes, repo: r.repo, servicios: r.servicios }),
+    [rutas.extraccion]: stringifyCanonical({ accesos: r.accesos, aristas: r.aristas, pendientes: r.pendientes, repo: r.repo, servicios: r.servicios }),
   };
   for (const c of r.contratos) salidas[rutas.contrato(c.svc)] = stringifyCanonical(c);
   const escritos: string[] = [];

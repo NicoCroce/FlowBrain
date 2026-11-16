@@ -104,14 +104,14 @@ export const MAPA_JS =
       listaH("Las más usadas", top.map(function (f) { return enlaceFoco(f.id, "la usan " + f.usadaPor.length); }));
   }
   function construccion(f) {
-    if (!f.capas.length && !f.recorridos.length) return "";
-    var cuenta = f.capas.map(function (c) { return '<span class="capa capa-' + esc(c.capa) + '">' + esc(P.capaEtiqueta(c.capa)) + " " + c.archivos.length + "</span>"; }).join(" ");
+
     var eps = f.recorridos.filter(function (r) { return r.pasos.length; }).slice(0, 6).map(function (r) {
       var cadena = r.pasos.filter(function (p) { return p.nivel <= 2; }).map(function (p) { return p.simbolo; });
       return "<li><code>" + esc(nombre(r.endpoint)) + "</code><br><small>" + esc(cadena.slice(0, 4).join(" → ")) + (cadena.length > 4 ? " → …" : "") + "</small></li>";
     });
-    return "<h2>Cómo está construida</h2><p>" + cuenta + "</p>" + (eps.length ? '<ul class="lista">' + eps.join("") + "</ul>" : "") +
-      '<p><small><a href="#/f/' + encodeURIComponent(f.id) + '">Ver recorridos, dominio y archivos en la ficha →</a></small></p>';
+    if (!eps.length) return "";
+    return "<h2>Qué ejecuta cada endpoint</h2>" + (eps.length ? '<ul class="lista">' + eps.join("") + "</ul>" : "") +
+      '<p><small><a href="#/f/' + encodeURIComponent(f.id) + '">Ver los recorridos completos en la ficha →</a></small></p>';
   }
   function panelNodo(id) {
     var t = tipo(id), f = porFicha[id], n = porId[id] || {}, html = "<h1>" + esc(nombre(id)) + "</h1><p><small>" + esc(TIPO[t] || t) + "</small></p>";

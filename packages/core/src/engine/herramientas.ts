@@ -67,7 +67,7 @@ export interface BuscarParams extends Comunes {
   limite?: number;
 }
 
-const normalizar = (s: string) =>
+export const normalizar = (s: string) =>
   s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -246,7 +246,7 @@ export interface Salto extends AristaRef {
 }
 
 /** Coincide una ruta concreta contra un patrón con `{param}`. */
-function rutaCoincide(patron: string, ruta: string): boolean {
+export function rutaCoincide(patron: string, ruta: string): boolean {
   const a = patron.split("/");
   const b = ruta.split("/");
   return a.length === b.length && a.every((s, i) => (s.startsWith("{") && s.endsWith("}")) || s === b[i]);

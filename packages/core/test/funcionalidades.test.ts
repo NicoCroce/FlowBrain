@@ -128,13 +128,11 @@ describe("funcionalidades", () => {
     expect(capaDe("src/main.ts")).toBe("otros");
   });
 
-  it("la ficha muestra cómo está construida: capas, recorrido de cada endpoint con lo que toca, y dominio", () => {
+  it("la ficha muestra cómo está construida: recorrido de cada endpoint con lo que toca, y dominio", () => {
     const e = conFuncionalidades("repo-tienda:apps/bff/src");
     const extra = { aristas: [{ dato: null, desde: "svc-bff", endpoint: "svc-payments:POST:/payments", evidencia: "repo-tienda:apps/bff/src/clients/payments.ts#L11", hasta: "svc-payments", origen: "parser", verbo: "llama_a" }], pendientes: [], repo: "repo-tienda", servicios: [] };
     const { funcionalidades } = compile({ ...e, extracciones: [...e.extracciones!, { ruta: "_build/extraccion/zz.json", contenido: JSON.stringify(extra) }] });
     const f = funcionalidades.find((x) => x.id === "feat-checkout")!;
-    expect(f.capas.map((c) => `${c.capa}: ${c.archivos.map((a) => a.archivo.split("/").pop()).join(", ")}`)).toEqual(["entrada: checkout.ts", "datos: payments.ts", "otros: main.ts"]);
-    expect(f.capas[0]!.archivos[0]!.elementos).toEqual(["CheckoutRequest", "CheckoutResponse", "postCheckout"]);
     expect(f.recorridos).toEqual([
       {
         endpoint: "svc-bff:POST:/checkout",

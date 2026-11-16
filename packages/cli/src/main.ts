@@ -9,6 +9,10 @@ import {
   compileDir,
   ConsultaError,
   contratoDe,
+  funcionalidad,
+  impactoDe,
+  quienLlama,
+  recorrido,
   formatError,
   recorrerGrafo,
   stringifyCanonical,
@@ -41,6 +45,10 @@ Comandos:
   recorrer <nodo> [--verbos a,b] [--direccion out|in|both] [--profundidad n]
   contrato <nodo> [--endpoint "MÉTODO /ruta"]
   trazar --desde <nodo|URL|ruta|archivo> [--hasta <nodo>]
+  funcionalidad <id|nombre>                 ficha compacta: endpoints, consumo, datos, relaciones, dominio compartido
+  recorrido <"MÉTODO /ruta"|Clase.metodo>   pasos controller → servicio → repositorio, con lo que toca cada uno
+  quien-llama <Clase.metodo|Clase> [--profundidad n]
+  impacto <pieza>                           qué se ve afectado si cambia una tabla, endpoint, servicio, feat o símbolo
   context --prompt <texto> [--repo <dir>]   contexto para inyectar en un prompt (budget por defecto 1500)
   hook claude-code                          hooks UserPromptSubmit y SessionEnd: lee el JSON de Claude Code por stdin
   serve                                     servidor MCP por stdio
@@ -252,6 +260,22 @@ export async function ejecutar(
         resultado = trazar(ctx, { desde, ...opt("hasta", o.hasta), ...comunes });
         break;
       }
+      case "funcionalidad":
+        if (!arg) throw new ConsultaError("parametro_invalido", "falta <id>");
+        resultado = funcionalidad(ctx, { id: arg, ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
+      case "recorrido":
+        if (!arg) throw new ConsultaError("parametro_invalido", "falta <endpoint o símbolo>");
+        resultado = recorrido(ctx, { desde: arg, ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
+      case "quien-llama":
+        if (!arg) throw new ConsultaError("parametro_invalido", "falta <símbolo>");
+        resultado = quienLlama(ctx, { simbolo: arg, ...opt("profundidad", entero(o.profundidad, "--profundidad")), ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
+      case "impacto":
+        if (!arg) throw new ConsultaError("parametro_invalido", "falta <pieza>");
+        resultado = impactoDe(ctx, { pieza: arg, ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
       case "context": {
         if (!o.prompt) throw new ConsultaError("parametro_invalido", "falta --prompt");
         const repoDir = o.repo !== undefined ? await nombreRepo(resolve(cwd, o.repo)) : null;

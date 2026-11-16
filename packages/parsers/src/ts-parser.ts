@@ -33,6 +33,36 @@ const EXT_TS = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 const METODOS_HTTP = ["get", "post", "put", "patch", "delete", "head", "options"] as const;
 const OPS_PRISMA_ESCRITURA = new Set(["create", "createMany", "update", "updateMany", "upsert", "delete", "deleteMany"]);
 /** Kysely: método del query builder → verbo sobre la tabla del primer argumento. */
+/**
+ * Tablas nombradas en un SQL escrito a mano: INSERT/REPLACE INTO, UPDATE y DELETE FROM escriben; FROM y JOIN leen.
+ * Ignora los CTE (`WITH x AS`) y el `FROM` de funciones (`EXTRACT(YEAR FROM fecha)`, `TRIM(x FROM y)`).
+ */
+export function tablasDeSql(sql: string): Array<{ tabla: string; verbo: "lee_de" | "escribe_en"; saltos: number }> {
+  const out: Array<{ tabla: string; verbo: "lee_de" | "escribe_en"; saltos: number }> = [];
+  // Nombre con comillas opcionales (`x`, "x", [x]) y esquema opcional: se queda con la tabla.
+  const nombre = "[`\"\\[]?(?:\\w+[`\"\\]]?\\.[`\"\\[]?)?(\\w+)[`\"\\]]?";
+  const ctes = new Set([...sql.matchAll(/(?:\bwith(?:\s+recursive)?|,)\s+(\w+)\s+as\s*\(/gi)].map((m) => m[1]!.toLowerCase()));
+  const saltos = (i: number) => (sql.slice(0, i).match(/\n/g) ?? []).length;
+  const ocupado = new Set<number>();
+  const agregar = (m: RegExpMatchArray, verbo: "lee_de" | "escribe_en") => {
+    const tabla = m[1]!;
+    if (ctes.has(tabla.toLowerCase()) || /^(select|set|values|dual|lateral|unnest|json_table)$/i.test(tabla)) return;
+    out.push({ tabla, verbo, saltos: saltos(m.index!) });
+  };
+  for (const m of sql.matchAll(new RegExp("\\b(?:insert\\s+(?:ignore\\s+)?into|replace\\s+into|update(?:\\s+ignore)?|delete\\s+from)\\s+" + nombre, "gi"))) {
+    ocupado.add(m.index! + m[0].length);
+    agregar(m, "escribe_en");
+  }
+  for (const m of sql.matchAll(new RegExp("\\b(?:from|join)\\s+" + nombre, "gi"))) {
+    if (ocupado.has(m.index! + m[0].length)) continue;
+    const antes = sql.slice(0, m.index!);
+    const abre = antes.lastIndexOf("(");
+    if (abre >= 0 && !antes.slice(abre).includes(")") && /\b(extract|trim|substring|position|overlay)\s*$/i.test(antes.slice(0, abre))) continue;
+    agregar(m, "lee_de");
+  }
+  return out;
+}
+
 const OPS_KYSELY: Record<string, "lee_de" | "escribe_en"> = {
   selectFrom: "lee_de",
   innerJoin: "lee_de",
@@ -424,6 +454,7 @@ function extraer(repo: RepoFuente): Extraccion {
 
     const visitar = (n: ts.Node): void => {
       if (ts.isClassDeclaration(n)) nest(n);
+      if (usaKysely && ts.isTaggedTemplateExpression(n)) sqlCrudo(n);
       if (ts.isCallExpression(n)) {
         ruta(n) || saliente(n) || prisma(n) || (usaKysely && kysely(n));
       }
@@ -574,6 +605,15 @@ function extraer(repo: RepoFuente): Extraccion {
         alguna = true;
       }
       return alguna;
+    };
+
+    // Kysely: sql`UPDATE user SET …` → tablas por el texto del SQL (las sustituciones `${…}` no aportan nombres).
+    const sqlCrudo = (t: ts.TaggedTemplateExpression) => {
+      if (!ts.isIdentifier(t.tag) || t.tag.text !== "sql" || moduloDe(t.tag) !== "kysely") return;
+      const tpl = t.template;
+      const texto = ts.isNoSubstitutionTemplateLiteral(tpl) ? tpl.text : [tpl.head.text, ...tpl.templateSpans.map((x) => x.literal.text)].join(" ? ");
+      const base = linea(tpl);
+      for (const a of tablasDeSql(texto)) out.tablas.push({ paquete, archivo, linea: base + a.saltos, modelo: a.tabla, verbo: a.verbo });
     };
 
     // TypeORM: @Entity("tabla") class X

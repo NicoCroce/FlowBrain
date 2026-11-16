@@ -388,3 +388,15 @@ describe("ts-parser: estructura interna (símbolos, imports e invocaciones)", ()
     ]);
   });
 });
+
+describe("tablasDeSql (Kysely sql`…`)", () => {
+  it("escrituras, lecturas, comillas y esquema; ignora CTE y FROM de funciones", async () => {
+    const { tablasDeSql } = await import("../src/ts-parser.js");
+    const r = (s: string) => tablasDeSql(s).map((x) => `${x.verbo} ${x.tabla} +${x.saltos}`);
+    expect(r("\n  UPDATE `user` SET api_token = NULL\n  WHERE id = ?")).toEqual(["escribe_en user +1"]);
+    expect(r("SELECT the_value FROM mockup m JOIN app.club c ON c.id = m.club_id")).toEqual(["lee_de mockup +0", "lee_de club +0"]);
+    expect(r("DELETE FROM payment WHERE id = ?")).toEqual(["escribe_en payment +0"]);
+    expect(r("INSERT INTO invoice (a) SELECT a FROM payment")).toEqual(["escribe_en invoice +0", "lee_de payment +0"]);
+    expect(r("WITH ult AS (SELECT * FROM pago) SELECT EXTRACT(YEAR FROM fecha) FROM ult")).toEqual(["lee_de pago +0"]);
+  });
+});

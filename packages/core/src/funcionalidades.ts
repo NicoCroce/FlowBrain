@@ -49,8 +49,7 @@ export interface Ficha {
   /** Funcionalidades dueñas de los endpoints que esta llama, y las que llaman a los que esta expone. */
   usaFuncionalidades: string[];
   usadaPor: string[];
-  /** Cómo está construida: archivos por capa, recorrido de cada endpoint y elementos de dominio que usa. */
-  capas: CapaFicha[];
+  /** Cómo está construida: recorrido de cada endpoint y elementos de dominio que usa. */
   recorridos: Recorrido[];
   dominio: ElementoDominio[];
 }
@@ -93,6 +92,24 @@ export interface Toque {
   verbo: string;
   hasta: string;
   endpoint: string | null;
+  /** La tabla existe en el código pero no tiene página en el brain: `hasta` es su nombre físico. */
+  sinPagina?: true;
+}
+
+/** Accesos a tablas que el índice no pudo resolver porque la tabla no tiene página (`pendientes` de la extracción). */
+export function tablasSinPagina(contenidos: string[]): Array<{ verbo: string; tabla: string; evidencia: string }> {
+  const out: Array<{ verbo: string; tabla: string; evidencia: string }> = [];
+  for (const c of contenidos) {
+    try {
+      const j = JSON.parse(c) as { pendientes?: Array<{ verbo: string; referencia: string; objetivo?: string; evidencia: string; candidatos?: unknown[] }> };
+      for (const p of j.pendientes ?? []) {
+        if ((p.verbo === "lee_de" || p.verbo === "escribe_en") && !p.candidatos?.length) out.push({ verbo: p.verbo, tabla: p.objetivo ?? p.referencia, evidencia: p.evidencia });
+      }
+    } catch {
+      /* ignorado */
+    }
+  }
+  return out;
 }
 
 export interface Paso {
@@ -103,12 +120,16 @@ export interface Paso {
   nivel: number;
   desde: string | null;
   toca: Toque[];
+  /** Hueco conocido: p. ej. un repositorio sin acceso a tabla detectado. Ausente si no hay nada que advertir. */
+  aviso?: string;
 }
 
 export interface Recorrido {
   endpoint: string;
   /** Pasos en orden de llamada (recorrido en profundidad). Vacío si no se encontró el método que lo atiende. */
   pasos: Paso[];
+  /** Presente si el recorrido se cortó por profundidad o cantidad de pasos. */
+  truncado?: true;
 }
 
 export interface ElementoDominio {
@@ -120,11 +141,6 @@ export interface ElementoDominio {
   de: string | null;
   /** Otras funcionalidades que también lo usan. */
   usadoPor: string[];
-}
-
-export interface CapaFicha {
-  capa: Capa;
-  archivos: Array<{ archivo: string; elementos: string[] }>;
 }
 
 export interface PaginaFeat {
@@ -145,8 +161,9 @@ export function aristasDeExtracciones(contenidos: string[]): AristaExtraccion[] 
   const out: AristaExtraccion[] = [];
   for (const c of contenidos) {
     try {
-      const j = JSON.parse(c) as { aristas?: AristaExtraccion[] };
-      for (const a of j.aristas ?? []) if (a && typeof a.evidencia === "string") out.push(a);
+      // `accesos` trae cada acceso con su evidencia; `aristas` (índices viejos) solo uno por par.
+      const j = JSON.parse(c) as { aristas?: AristaExtraccion[]; accesos?: AristaExtraccion[] };
+      for (const a of j.accesos ?? j.aristas ?? []) if (a && typeof a.evidencia === "string") out.push(a);
     } catch {
       /* ignorado */
     }
@@ -182,7 +199,7 @@ const EV = /^([^:]+:[^#]+)(?:#L(\d+))?/;
 const elementos = (e: EstructuraArchivo | undefined) => (e?.simbolos ?? []).filter((s) => s.tipo !== "metodo").map((s) => s.nombre);
 
 /** Método o función que atiende la línea de un endpoint: el que la contiene, o el siguiente método si la línea es su decorador. */
-function simboloDeLinea(e: EstructuraArchivo, linea: number): EstructuraArchivo["simbolos"][number] | null {
+export function simboloDeLinea(e: EstructuraArchivo, linea: number): EstructuraArchivo["simbolos"][number] | null {
   const fn = e.simbolos.filter((s) => s.tipo === "metodo" || s.tipo === "funcion");
   const dentro = fn.filter((s) => s.linea <= linea && linea <= (s.fin ?? s.linea));
   if (dentro.length) return dentro.reduce((a, b) => (b.linea > a.linea ? b : a));
@@ -190,21 +207,33 @@ function simboloDeLinea(e: EstructuraArchivo, linea: number): EstructuraArchivo[
   return despues.length ? despues.reduce((a, b) => (b.linea < a.linea ? b : a)) : null;
 }
 
-export function fichasDeFuncionalidades(
-  graph: Graph,
-  feats: PaginaFeat[],
-  aristas: AristaExtraccion[],
-  estructura: Map<string, EstructuraArchivo> = new Map(),
-): Ficha[] {
-  const nodo = new Map(graph.nodes.map((n) => [n.id, n]));
-  const enCodigo = (ev: string | null | undefined, codigo: string[]) => !!ev && codigo.some((c) => dentroDe(ev, c));
-  const dueñas = (ev: string | null | undefined, salvo: string) => (ev ? feats.filter((f) => f.id !== salvo && enCodigo(ev, f.codigo)).map((f) => f.id) : []);
-  const evidenciaEndpoint = (id: string) => {
-    const ev = nodo.get(id)?.atributos["evidencia"];
-    return typeof ev === "string" ? ev : null;
-  };
+const PARECE_REPOSITORIO = /repositor|[/.-]dao[/.]|[.-]sql\.|Repository\.php$/i;
+export const AVISO_SIN_TABLA = "no se detectó a qué tabla accede (posible SQL armado a mano o tabla dinámica)";
 
-  // Accesos a tablas y llamadas por archivo, para atribuirlos al método que contiene su línea.
+/** Marca los pasos de repositorio que no tocan ninguna tabla, ni ellos ni lo que llaman: el silencio no es "no toca nada". */
+function marcarHuecos(pasos: Paso[]): Paso[] {
+  return pasos.map((p, i) => {
+    if (p.toca.length || !PARECE_REPOSITORIO.test(p.evidencia)) return p;
+    for (let j = i + 1; j < pasos.length && pasos[j]!.nivel > p.nivel; j++) if (pasos[j]!.toca.length) return p;
+    return { ...p, aviso: AVISO_SIN_TABLA };
+  });
+}
+
+export interface Recorredor {
+  /** Método o función que atiende un endpoint (por la evidencia del endpoint). */
+  atiende(endpoint: string): { archivo: string; simbolo: string } | null;
+  desdeEndpoint(endpoint: string): Recorrido;
+  desdeSimbolo(archivo: string, simbolo: string): { pasos: Paso[]; truncado: boolean };
+}
+
+/** Recorridos sobre las invocaciones de `_build/archivos`, con los accesos y llamadas de la extracción atribuidos a cada método. */
+export function crearRecorredor(
+  graph: Graph,
+  estructura: Map<string, EstructuraArchivo>,
+  aristas: AristaExtraccion[],
+  sinPagina: Array<{ verbo: string; tabla: string; evidencia: string }> = [],
+): Recorredor {
+  const nodo = new Map(graph.nodes.map((n) => [n.id, n]));
   const toques = new Map<string, Array<{ linea: number; toque: Toque }>>();
   for (const a of aristas) {
     if (a.verbo !== "lee_de" && a.verbo !== "escribe_en" && a.verbo !== "llama_a") continue;
@@ -212,16 +241,29 @@ export function fichasDeFuncionalidades(
     if (!m?.[2]) continue;
     toques.set(m[1]!, [...(toques.get(m[1]!) ?? []), { linea: Number(m[2]), toque: { verbo: a.verbo, hasta: a.hasta, endpoint: a.endpoint } }]);
   }
-  const recorrido = (ep: string): Recorrido => {
-    const pasos: Paso[] = [];
-    const m = EV.exec(evidenciaEndpoint(ep) ?? "");
+  for (const p of sinPagina) {
+    const m = EV.exec(p.evidencia);
+    if (!m?.[2]) continue;
+    toques.set(m[1]!, [...(toques.get(m[1]!) ?? []), { linea: Number(m[2]), toque: { verbo: p.verbo, hasta: p.tabla, endpoint: null, sinPagina: true } }]);
+  }
+  const atiende = (ep: string) => {
+    const ev = nodo.get(ep)?.atributos["evidencia"];
+    const m = typeof ev === "string" ? EV.exec(ev) : null;
     const e = m?.[2] ? estructura.get(m[1]!) : undefined;
     const h = e ? simboloDeLinea(e, Number(m![2])) : null;
-    if (!m || !h) return { endpoint: ep, pasos };
+    return h ? { archivo: m![1]!, simbolo: h.nombre } : null;
+  };
+  const desdeSimbolo = (inicio: string, simboloInicio: string) => {
+    const pasos: Paso[] = [];
+    let truncado = false;
     const vistos = new Set<string>();
     const visitar = (archivo: string, simbolo: string, nivel: number, desde: string | null) => {
       const k = `${archivo}#${simbolo}`;
-      if (vistos.has(k) || pasos.length >= MAX_PASOS || nivel > MAX_NIVEL) return;
+      if (vistos.has(k)) return;
+      if (pasos.length >= MAX_PASOS || nivel > MAX_NIVEL) {
+        truncado = true;
+        return;
+      }
       vistos.add(k);
       const est = estructura.get(archivo);
       const s = est?.simbolos.find((x) => x.nombre === simbolo);
@@ -236,9 +278,38 @@ export function fichasDeFuncionalidades(
       const repo = archivo.slice(0, archivo.indexOf(":"));
       for (const i of est?.invoca ?? []) if (i.desde === simbolo) visitar(`${repo}:${i.archivo}`, i.simbolo, nivel + 1, simbolo);
     };
-    visitar(m[1]!, h.nombre, 0, null);
-    return { endpoint: ep, pasos: podar(pasos) };
+    visitar(inicio, simboloInicio, 0, null);
+    return { pasos: marcarHuecos(podar(pasos)), truncado };
   };
+  return {
+    atiende,
+    desdeSimbolo,
+    desdeEndpoint: (ep) => {
+      const h = atiende(ep);
+      if (!h) return { endpoint: ep, pasos: [] };
+      const r = desdeSimbolo(h.archivo, h.simbolo);
+      return r.truncado ? { endpoint: ep, pasos: r.pasos, truncado: true } : { endpoint: ep, pasos: r.pasos };
+    },
+  };
+}
+
+export function fichasDeFuncionalidades(
+  graph: Graph,
+  feats: PaginaFeat[],
+  aristas: AristaExtraccion[],
+  estructura: Map<string, EstructuraArchivo> = new Map(),
+  sinPagina: Array<{ verbo: string; tabla: string; evidencia: string }> = [],
+): Ficha[] {
+  const nodo = new Map(graph.nodes.map((n) => [n.id, n]));
+  const enCodigo = (ev: string | null | undefined, codigo: string[]) => !!ev && codigo.some((c) => dentroDe(ev, c));
+  const dueñas = (ev: string | null | undefined, salvo: string) => (ev ? feats.filter((f) => f.id !== salvo && enCodigo(ev, f.codigo)).map((f) => f.id) : []);
+  const evidenciaEndpoint = (id: string) => {
+    const ev = nodo.get(id)?.atributos["evidencia"];
+    return typeof ev === "string" ? ev : null;
+  };
+
+  const rec = crearRecorredor(graph, estructura, aristas, sinPagina);
+  const recorrido = rec.desdeEndpoint;
   const dominiosDe = new Map<string, Set<string>>();
 
   const fichas = feats.map((f): Ficha => {
@@ -265,11 +336,6 @@ export function fichasDeFuncionalidades(
       }
     }
     const propios = [...estructura.keys()].filter((k) => enCodigo(k, f.codigo) && !ES_TEST.test(k)).sort(cmp);
-    const porCapa = new Map<Capa, CapaFicha["archivos"]>();
-    for (const k of propios) {
-      const c = capaDe(k.slice(k.indexOf(":") + 1));
-      porCapa.set(c, [...(porCapa.get(c) ?? []), { archivo: k, elementos: elementos(estructura.get(k)) }]);
-    }
     const expone = graph.nodes.filter((n) => n.tipo === "endpoint" && enCodigo(evidenciaEndpoint(n.id), f.codigo)).map((n) => n.id);
     const recorridos = expone.map((ep) => recorrido(ep));
     const dominio = new Set<string>();
@@ -284,7 +350,6 @@ export function fichasDeFuncionalidades(
     for (const r of recorridos) for (const p of r.pasos) agregarDominio(EV.exec(p.evidencia)![1]!);
     dominiosDe.set(f.id, dominio);
     return {
-      capas: CAPAS.filter((c) => porCapa.has(c)).map((c) => ({ capa: c, archivos: porCapa.get(c)! })),
       recorridos,
       dominio: [],
       id: f.id,

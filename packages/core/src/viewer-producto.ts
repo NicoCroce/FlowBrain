@@ -116,7 +116,7 @@ export const PRODUCTO_JS = String.raw`
     return archivo.slice(archivo.indexOf(":") + 1);
   }
   function toque(t) {
-    var destino = t.endpoint ? nombre(t.endpoint) + " (" + nombre(t.hasta) + ")" : nombre(t.hasta);
+    var destino = t.endpoint ? nombre(t.endpoint) + " (" + nombre(t.hasta) + ")" : nombre(t.hasta) + (t.sinPagina ? " · sin página" : "");
     return '<span class="chip">' + esc(VERBO_TOQUE[t.verbo] || t.verbo) + " " + esc(destino) + "</span>";
   }
   function resumenRecorrido(r) {
@@ -142,14 +142,6 @@ export const PRODUCTO_JS = String.raw`
       return "<details" + (abiertos ? " open" : "") + ' class="recorrido"><summary><code>' + esc(nombre(r.endpoint)) + "</code><br><small>" + resumenRecorrido(r) + "</small></summary>" + cuerpo + "</details>";
     }).join("");
   }
-  function capas(f) {
-    return f.capas.map(function (c) {
-      var items = c.archivos.map(function (a) {
-        return "<li><code>" + esc(corta(f, a.archivo)) + "</code>" + (a.elementos.length ? "<br><small>" + esc(a.elementos.join(", ")) + "</small>" : "") + "</li>";
-      }).join("");
-      return '<details class="capa-bloque"' + (c.archivos.length <= 6 ? " open" : "") + "><summary>" + capa(c.capa) + " " + plural(c.archivos.length, "archivo", "archivos") + '</summary><ul class="lista">' + items + "</ul></details>";
-    }).join("");
-  }
   function dominio(f) {
     // Primero lo compartido con otras funcionalidades, después lo que define tipos, al final los archivos solo de funciones.
     var peso = function (d) { return d.de || d.usadoPor.length ? 0 : d.elementos.length ? 1 : 2; };
@@ -157,18 +149,17 @@ export const PRODUCTO_JS = String.raw`
     return orden.map(function (d) {
       var otras = d.usadoPor.length ? "<br><small>También la usan: " + d.usadoPor.map(chipFeat).join(" ") + "</small>" : "";
       var titulo = d.elementos.length ? esc(d.elementos.join(", ")) : '<span class="vacio">' + esc(plural(d.funciones, "función", "funciones")) + "</span>";
-      return "<li><strong>" + titulo + "</strong>" + (d.elementos.length && d.funciones ? " <small>· + " + plural(d.funciones, "función", "funciones") + "</small>" : "") +
+      return "<li><strong>" + titulo + "</strong>" +
         "<br><small><code>" + esc(d.archivo.slice(d.archivo.indexOf(":") + 1)) + "</code>" + (d.de ? " · de " + chipFeat(d.de) : "") + "</small>" + otras + "</li>";
     });
   }
   function construida(f) {
-    var dom = dominio(f);
-    if (!f.recorridos.length && !f.capas.length) return "";
+    // Para personas: los recorridos y el dominio compartido. Las capas y el detalle de archivos van por la CLI y el MCP.
+    var compartido = dominio({ dominio: f.dominio.filter(function (d) { return d.de || d.usadoPor.length; }), codigo: f.codigo });
+    if (!f.recorridos.length && !compartido.length) return "";
     return "<section><h2>Cómo está construida</h2>" +
-      (f.recorridos.length ? "<h3>Recorrido de cada endpoint (" + f.recorridos.length + ")</h3><p><small>Desde el método que atiende el pedido, qué llama y qué datos toca en cada paso.</small></p>" + recorridos(f) : "") +
-      (dom.length ? "<h3>Elementos de dominio (" + dom.length + ")</h3><p><small>Entidades, tipos y valores que usa, propios o de otras funcionalidades.</small></p>" + lista(dom.slice(0, 12)) +
-        (dom.length > 12 ? '<details class="capa-bloque"><summary>Ver ' + (dom.length - 12) + " más</summary>" + lista(dom.slice(12)) + "</details>" : "") : "") +
-      (f.capas.length ? "<h3>Archivos por capa</h3>" + capas(f) : "") +
+      (f.recorridos.length ? "<h3>Qué ejecuta cada endpoint (" + f.recorridos.length + ")</h3><p><small>Desde el método que atiende el pedido: qué llama y qué datos toca en cada paso.</small></p>" + recorridos(f) : "") +
+      (compartido.length ? "<h3>Dominio compartido con otras funcionalidades (" + compartido.length + ")</h3><p><small>Tipos que esta funcionalidad usa y que también usan otras: un cambio acá las afecta.</small></p>" + lista(compartido) : "") +
       "</section>";
   }
 
@@ -229,7 +220,6 @@ export const PRODUCTO_JS = String.raw`
   window.brainProducto = {
     mostrar: function (h) { var m = /^\/f\/(.+)$/.exec(h); if (m) raiz.innerHTML = ficha(m[1]); else pintarCatalogo(); },
     datosDe: datosDe,
-    capaEtiqueta: function (c) { return CAPA[c] || c; },
     pendiente: pendiente
   };
 })();

@@ -27,7 +27,7 @@ import {
   type Origen,
   type Verbo,
 } from "./schema.js";
-import { aristasDeExtracciones, fichasDeFuncionalidades, RUTA_FUNCIONALIDADES, type EstructuraArchivo, type Ficha } from "./funcionalidades.js";
+import { aristasDeExtracciones, fichasDeFuncionalidades, tablasSinPagina, RUTA_FUNCIONALIDADES, type EstructuraArchivo, type Ficha } from "./funcionalidades.js";
 
 /** Un archivo de entrada. `ruta` es relativa a la raíz del brain, con `/`. */
 export interface Fuente {
@@ -355,6 +355,7 @@ export function compile(entradas: Entradas): Salidas {
     paginas.filter((p) => p.fm.tipo === "feat").map((p) => ({ id: p.fm.id, codigo: p.fm.codigo ?? [], cuerpo: p.cuerpo })),
     aristasDeExtracciones([...(entradas.extracciones ?? [])].sort(porRuta).map((f) => f.contenido)),
     estructura,
+    tablasSinPagina([...(entradas.extracciones ?? [])].sort(porRuta).map((f) => f.contenido)),
   );
   if (funcionalidades.length > 0) generados[RUTA_FUNCIONALIDADES] = stringifyCanonical({ funcionalidades, version: 1 });
   const salidaPaginas: Record<string, string> = {};

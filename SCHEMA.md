@@ -166,6 +166,7 @@ Los destinos sin resolver nunca llegan a una página compilada. Van como prosa e
 }
 ```
 
+- `commit` (opcional): commit de HEAD del clon al indexar, leído de `.git` sin ejecutar git.
 - `simbolos`: funciones, clases, métodos (`Clase.metodo`, en la línea del nombre), interfaces, tipos y enums; `fin` es la última línea, si el parser la conoce.
 - `importa` (opcional): archivos del mismo repo que importa. `invoca` (opcional): llamadas de cada método o función a símbolos de otros archivos o clases del repo; una llamada a una interfaz o método abstracto se atribuye a las clases que lo implementan. Hoy los genera el ts-parser.
 
@@ -186,7 +187,7 @@ Los símbolos se quedan en este JSON y no pasan a `graph.json`. `brain verify` l
 
 ### `_build/funcionalidades.json` (escrito por `brain compile`)
 
-Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build/extraccion/*.json` (que conserva cada llamada y cada acceso con su evidencia). Se escribe solo si hay alguna `feat`.
+Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build/extraccion/*.json`: su campo `accesos` conserva cada llamada y cada acceso con su evidencia (`aristas` deja uno por par, para los borradores), y `pendientes` los accesos a tablas sin página. Se escribe solo si hay alguna `feat`.
 
 ```json
 {
@@ -211,8 +212,7 @@ Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build
 - `expone`: endpoints cuya evidencia cae dentro de `codigo`. `usa`: llamadas (`llama_a`) hechas desde `codigo`, agrupadas por destino y endpoint. `datos`: accesos a tablas desde `codigo`.
 - `usaFuncionalidades`: las `feat` dueñas (por `codigo`) de los endpoints que esta llama. `usadaPor` es la inversa.
 - `cuerpo`: el Markdown de la página sin la sección de backlinks.
-- `capas`: archivos de `codigo` (sin tests) agrupados por capa (`entrada`, `logica`, `dominio`, `datos`, `interfaz`, `otros`), detectada por convención de nombres: sufijo del archivo (`*.controller.ts`, `*.service.ts`, `*.repository.ts`, `*Controller.php`, `.tsx`…) y, si no, la carpeta más profunda que coincida (`application/`, `domain/`, `infrastructure/`, `Models/`, `components/`…).
-- `recorridos`: por cada endpoint de `expone`, los pasos desde el método que lo atiende siguiendo `invoca` (hasta 6 niveles y 40 pasos), cada uno con su `capa`, `evidencia`, `nivel`, quién lo llama (`desde`) y lo que `toca` (`lee_de`/`escribe_en` una tabla o `llama_a` un servicio, si la línea de la extracción cae dentro del método). Se omiten funciones sueltas que no tocan nada.
+- `recorridos`: por cada endpoint de `expone`, los pasos desde el método que lo atiende siguiendo `invoca` (hasta 6 niveles y 40 pasos), cada uno con su `capa`, `evidencia`, `nivel`, quién lo llama (`desde`) y lo que `toca` (`lee_de`/`escribe_en` una tabla o `llama_a` un servicio, si la línea de la extracción cae dentro del método; `sinPagina: true` si la tabla no tiene página). Se omiten funciones sueltas que no tocan nada. Un paso de repositorio (`*Repository*`, `*.dao.*`, `*.sql.*`) que no toca ninguna tabla, ni él ni lo que llama, lleva `aviso`; un recorrido cortado lleva `truncado: true`.
 - `dominio`: archivos de capa `dominio` de `codigo` o importados por ella o por los pasos de los recorridos, con sus clases, interfaces, tipos y enums (`elementos`), cuántas funciones tienen, la `feat` dueña si es otra (`de`) y las demás que también lo usan (`usadoPor`).
 
 ### `_drafts/` (fuera de la compilación)
@@ -276,3 +276,10 @@ Todas las herramientas ordenan sus resultados por confianza descendente y despu�
   4. Cada arista se incluye una sola vez y cada nodo se expande una sola vez. La profundidad máxima es 5.
   5. Cada salto informa `desde`, `hasta`, `verbo`, `endpoint`, `dato` (`request → response` si hay endpoint, o el `dato` de la arista), `evidencia`, `confianza` y `nivel`.
   6. Con `hasta`, se devuelven solo los saltos de los caminos más cortos.
+
+Consultas de código y producto (necesitan `brain index` + `brain compile`; sin índice, error `parametro_invalido`). Todas devuelven `avisos` (huecos conocidos: falta de dato, no "no pasa nada") e `indice` (repo → commit de HEAD al indexar, 12 caracteres). Con presupuesto excedido recortan listas desde el final y agregan `truncado: true` y `omitidos: n`.
+
+- **`funcionalidad`:** por id, sufijo (`billing` → `feat-billing`) o nombre. Endpoints que expone con el método que atiende cada uno, lo que consume (y de qué funcionalidad), tablas con su evidencia, relaciones y el dominio compartido con otras.
+- **`recorrido`:** desde un endpoint (id, `MÉTODO /ruta` o `/ruta`; hasta 3 si coinciden varios) o un símbolo (`Clase.metodo`, `funcion`, `ruta#Simbolo`). Pasos `{n, simbolo, ev, toca?, aviso?}` en orden de llamada; `toca` es `verbo destino`, con `(tabla sin página en el brain)` si la tabla existe en el código pero no tiene página.
+- **`quien_llama`:** BFS inverso sobre `invoca` (profundidad 1–6, por defecto 3); una clase incluye sus métodos. Devuelve las llamadas con la línea de cada una, los endpoints alcanzados (por el método que los atiende), las funcionalidades dueñas del código alcanzado y las que consumen esos endpoints.
+- **`impacto`:** recorrido inverso del modelo de dependencias (ver el visor) desde una tabla, endpoint, servicio, externo o funcionalidad, con el porqué de cada afectado; para una tabla, además, `tocadaPor` (métodos que la leen o escriben). Con un símbolo de código responde como `quien_llama`.
