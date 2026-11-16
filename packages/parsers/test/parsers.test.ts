@@ -306,7 +306,10 @@ describe("ts-parser: auxiliares de ruta y Kysely", () => {
     await w(
       "src/repo.ts",
       [
+        'import { sql } from "kysely";',
         "declare const db: any;",
+        "const DESDE = sql`FROM wellness_test w JOIN category c ON c.id = w.category_id`;",
+        "export const contar = () => sql`SELECT COUNT(*) ${DESDE}`.execute(db);",
         'export const leer = () => db.selectFrom("team_has_players as thp").innerJoin("player as p", "p.id", "thp.player_id").selectAll().execute();',
         'export const escribir = () => db.insertInto("user_token").values({}).execute();',
         'export const borrar = () => db.deleteFrom("payment").execute();',
@@ -323,7 +326,18 @@ describe("ts-parser: auxiliares de ruta y Kysely", () => {
 
   it("extrae accesos a tablas de Kysely", async () => {
     const x = await tsParser.extract(leerRepo(dir));
-    expect(x.tablas.map((t) => `${t.verbo} ${t.modelo}`).sort()).toEqual(["escribe_en payment", "escribe_en user_token", "lee_de player", "lee_de team_has_players"]);
+    expect(x.tablas.map((t) => `${t.verbo} ${t.modelo}`).sort()).toEqual([
+      "escribe_en payment",
+      "escribe_en user_token",
+      "lee_de category",
+      "lee_de category",
+      "lee_de player",
+      "lee_de team_has_players",
+      "lee_de wellness_test",
+      "lee_de wellness_test",
+    ]);
+    // El fragmento cuenta donde se declara y, además, en la línea donde se interpola.
+    expect(x.tablas.filter((t) => t.modelo === "wellness_test").map((t) => t.linea)).toEqual([3, 4]);
   });
 });
 

@@ -180,7 +180,6 @@ export function aristasDeExtracciones(contenidos: string[]): AristaExtraccion[] 
   return out;
 }
 
-const MAX_PASOS = 40;
 const TIPOS_DOMINIO = new Set(["clase", "interfaz", "tipo", "enum"]);
 export const ES_TEST = /[._-](test|spec)\.[^./]+$|(^|\/)(__tests__|__mocks__|tests?|e2e|cypress|fixtures)\//;
 
@@ -203,7 +202,15 @@ export function podar(pasos: Paso[]): Paso[] {
   }
   return out;
 }
-const MAX_NIVEL = 6;
+/** Límites del recorrido: pasos visibles (los que quedan después de `podar`) y profundidad. */
+export interface LimitesRecorrido {
+  pasos: number;
+  nivel: number;
+}
+/** Para la ficha del visor: lo que una persona lee. */
+export const LIMITES_FICHA: LimitesRecorrido = { pasos: 40, nivel: 6 };
+/** Para las consultas de un agente: completo; el presupuesto de tokens recorta después. */
+export const LIMITES_AGENTE: LimitesRecorrido = { pasos: 200, nivel: 12 };
 const EV = /^([^:]+:[^#]+)(?:#L(\d+))?/;
 const elementos = (e: EstructuraArchivo | undefined) => (e?.simbolos ?? []).filter((s) => s.tipo !== "metodo").map((s) => s.nombre);
 
@@ -244,6 +251,7 @@ export function crearRecorredor(
   estructura: Map<string, EstructuraArchivo>,
   aristas: AristaExtraccion[],
   sinPagina: Array<{ verbo: string; tabla: string; evidencia: string }> = [],
+  limites: LimitesRecorrido = LIMITES_FICHA,
 ): Recorredor {
   const nodo = new Map(graph.nodes.map((n) => [n.id, n]));
   const toques = new Map<string, Array<{ linea: number; toque: Toque }>>();
@@ -270,9 +278,11 @@ export function crearRecorredor(
     let truncado = false;
     // Lo que tocó cada método visitado, sumando lo que llama; `null` mientras se está recorriendo (recursión).
     const resumen = new Map<string, Toque[] | null>();
+    let visibles = 0;
     const visitar = (archivo: string, simbolo: string, nivel: number, desde: string | null, via?: string) => {
       const k = `${archivo}#${simbolo}`;
-      if (pasos.length >= MAX_PASOS || nivel > MAX_NIVEL) {
+      // Solo cuentan los pasos que se ven; las funciones sueltas que no tocan nada se podan después.
+      if (visibles >= limites.pasos || pasos.length >= limites.pasos * 5 || nivel > limites.nivel) {
         truncado = true;
         return;
       }
@@ -283,6 +293,7 @@ export function crearRecorredor(
       if (resumen.has(k)) {
         const r = resumen.get(k);
         pasos.push({ ...base, toca: r ? [...r] : [], repite: r ? "antes" : "ciclo" });
+        if (simbolo.includes(".") || r?.length) visibles++;
         return;
       }
       resumen.set(k, null);
@@ -294,8 +305,16 @@ export function crearRecorredor(
       toca.sort(ordenToque);
       const desdeI = pasos.length;
       pasos.push({ ...base, toca });
+      if (nivel === 0 || simbolo.includes(".") || toca.length) visibles++;
       const repo = archivo.slice(0, archivo.indexOf(":"));
-      for (const i of est?.invoca ?? []) if (i.desde === simbolo) visitar(`${repo}:${i.archivo}`, i.simbolo, nivel + 1, simbolo, i.via);
+      const hijos = new Set<string>();
+      for (const i of est?.invoca ?? []) {
+        if (i.desde !== simbolo) continue;
+        const h = `${i.archivo}#${i.simbolo}\u0000${i.via ?? ""}`;
+        if (hijos.has(h)) continue;
+        hijos.add(h);
+        visitar(`${repo}:${i.archivo}`, i.simbolo, nivel + 1, simbolo, i.via);
+      }
       const total: Toque[] = [];
       for (const p of pasos.slice(desdeI)) for (const t of p.toca) if (!total.some((x) => mismoToque(x, t))) total.push(t);
       resumen.set(k, total.sort(ordenToque));

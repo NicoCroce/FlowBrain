@@ -451,9 +451,9 @@ function extraer(repo: RepoFuente): Extraccion {
         if (d) {
           for (const t of destinos(d)) {
             if (t.archivo === archivo && t.simbolo === desde) continue;
-            const k = `${desde}\u0000${t.archivo}\u0000${t.simbolo}`, l = linea(n);
-            const prev = out.get(k);
-            if (!prev || l < prev.linea) out.set(k, { desde, archivo: t.archivo, simbolo: t.simbolo, linea: l });
+            // Cada llamada con su línea: `quien_llama` las cita todas; el recorrido sigue un paso por destino.
+            const l = linea(n), k = `${desde}\u0000${t.archivo}\u0000${t.simbolo}\u0000${l}`;
+            if (!out.has(k)) out.set(k, { desde, archivo: t.archivo, simbolo: t.simbolo, linea: l });
           }
         }
       }
@@ -774,6 +774,21 @@ function extraer(repo: RepoFuente): Extraccion {
       const texto = ts.isNoSubstitutionTemplateLiteral(tpl) ? tpl.text : [tpl.head.text, ...tpl.templateSpans.map((x) => x.literal.text)].join(" ? ");
       const base = linea(tpl);
       for (const a of tablasDeSql(texto)) out.tablas.push({ paquete, archivo, linea: base + a.saltos, modelo: a.tabla, verbo: a.verbo });
+      // Fragmentos compartidos: `${WELLNESS_FROM}` → la constante es otro sql`…`; sus tablas van a la línea donde se usa.
+      const fragmentos = (tp: ts.TemplateLiteral, l: number | null, prof: number) => {
+        if (ts.isNoSubstitutionTemplateLiteral(tp) || prof > 3) return;
+        for (const sp of tp.templateSpans) {
+          const d = declDe(sp.expression);
+          const ini = d && (ts.isVariableDeclaration(d) || ts.isPropertyAssignment(d)) ? d.initializer : undefined;
+          if (!ini || !ts.isTaggedTemplateExpression(ini) || !ts.isIdentifier(ini.tag) || ini.tag.text !== "sql") continue;
+          const t2 = ini.template;
+          const txt = ts.isNoSubstitutionTemplateLiteral(t2) ? t2.text : [t2.head.text, ...t2.templateSpans.map((x) => x.literal.text)].join(" ? ");
+          const donde = l ?? linea(sp.expression);
+          for (const a of tablasDeSql(txt)) out.tablas.push({ paquete, archivo, linea: donde, modelo: a.tabla, verbo: a.verbo });
+          fragmentos(t2, donde, prof + 1);
+        }
+      };
+      fragmentos(tpl, null, 0);
     };
 
     // TypeORM: @Entity("tabla") class X
@@ -794,7 +809,7 @@ function extraer(repo: RepoFuente): Extraccion {
       if (!inv.some((i) => i.via && i.desde === p.desde && i.archivo === t.archivo && i.simbolo === t.simbolo)) inv.push({ desde: p.desde, archivo: t.archivo, simbolo: t.simbolo, linea: p.linea, via: p.texto });
     }
   }
-  for (const arc of porRuta.values()) arc.invoca?.sort((a, b) => cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo) || cmp(a.via ?? "", b.via ?? ""));
+  for (const arc of porRuta.values()) arc.invoca?.sort((a, b) => cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo) || a.linea - b.linea || cmp(a.via ?? "", b.via ?? ""));
 
   ordenar(out);
   return out;

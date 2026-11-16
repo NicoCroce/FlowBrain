@@ -5,6 +5,7 @@ import {
   aristasDeExtracciones,
   crearRecorredor,
   ES_TEST,
+  LIMITES_AGENTE,
   simboloDeLinea,
   tablasSinPagina,
   type EstructuraArchivo,
@@ -69,7 +70,7 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
   }
   const aristas = aristasDeExtracciones(extracciones);
   const sinPagina = tablasSinPagina(extracciones);
-  const recorredor = crearRecorredor(graph, estructura, aristas, sinPagina);
+  const recorredor = crearRecorredor(graph, estructura, aristas, sinPagina, LIMITES_AGENTE);
   const llamadores = new Map<string, Array<{ clave: string; linea: number; via?: string | undefined }>>();
   const porNombre = new Map<string, string[]>();
   for (const [archivo, e] of [...estructura.entries()].sort((a, b) => cmp(a[0], b[0]))) {
@@ -328,7 +329,7 @@ export function recorrido(ctx: Contexto, p: RecorridoParams) {
   }
   const avisos = [
     ...(recorridos.some((r) => !r.atiende) ? ["no se encontró el método que atiende algún endpoint (¿otro lenguaje o framework sin soporte?)"] : []),
-    ...(recorridos.some((r) => r.truncado) ? ["recorrido cortado por profundidad (6) o cantidad de pasos (40)"] : []),
+    ...(recorridos.some((r) => r.truncado) ? [`recorrido cortado por profundidad (${LIMITES_AGENTE.nivel}) o cantidad de pasos (${LIMITES_AGENTE.pasos})`] : []),
     ...((eps.length || 0) > 3 ? [`${eps.length} endpoints coinciden; se muestran 3`] : []),
     ...sinResolverEnPasos(ix, recorridos.flatMap((r) => r.pasos)),
     ...avisosIndice(ix),

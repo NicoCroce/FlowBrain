@@ -186,9 +186,11 @@ describe("funcionalidades", () => {
   it("un método repetido en el recorrido hereda lo que tocó la primera vez y no se marca como hueco", () => {
     const graph = { nodes: [], edges: [] } as unknown as Parameters<typeof crearRecorredor>[0];
     const est = new Map([
-      ["r:svc.ts", { simbolos: [{ nombre: "Svc.a", tipo: "metodo", linea: 1, fin: 5 }, { nombre: "Svc.rec", tipo: "metodo", linea: 6, fin: 8 }], importa: [], invoca: [
+      ["r:svc.ts", { simbolos: [{ nombre: "Svc.a", tipo: "metodo", linea: 1, fin: 5 }, { nombre: "Svc.rec", tipo: "metodo", linea: 6, fin: 8 }, { nombre: "Svc.otro", tipo: "metodo", linea: 9, fin: 10 }], importa: [], invoca: [
         { desde: "Svc.a", archivo: "pago.repository.ts", simbolo: "Repo.find", linea: 2 },
         { desde: "Svc.a", archivo: "pago.repository.ts", simbolo: "Repo.find", linea: 3 },
+        { desde: "Svc.a", archivo: "svc.ts", simbolo: "Svc.otro", linea: 3 },
+        { desde: "Svc.otro", archivo: "pago.repository.ts", simbolo: "Repo.find", linea: 9 },
         { desde: "Svc.a", archivo: "pago.repository.ts", simbolo: "Repo.vacio", linea: 4 },
         { desde: "Svc.a", archivo: "svc.ts", simbolo: "Svc.rec", linea: 4 },
         { desde: "Svc.rec", archivo: "svc.ts", simbolo: "Svc.rec", linea: 7 },
@@ -201,7 +203,8 @@ describe("funcionalidades", () => {
       [0, "Svc.a", "", "", ""],
       [1, "Repo.find", "tabla-x", "", ""],
       [2, "Repo.find", "", "ciclo", ""],
-      [1, "Repo.find", "tabla-x", "antes", ""],
+      [1, "Svc.otro", "", "", ""],
+      [2, "Repo.find", "tabla-x", "antes", ""],
       [1, "Repo.vacio", "", "", AVISO_SIN_TABLA],
       [1, "Svc.rec", "", "", ""],
       [2, "Svc.rec", "", "ciclo", ""],
