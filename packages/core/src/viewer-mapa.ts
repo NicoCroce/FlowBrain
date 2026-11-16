@@ -29,7 +29,15 @@ export const MAPA_JS =
 
   // ---------- Dependencias entre funcionalidades ----------
   var cyd = null, panel = document.getElementById("detalle-deps");
-  var ver = { tablas: document.getElementById("ver-tablas"), ext: document.getElementById("ver-ext"), sueltas: document.getElementById("ver-sueltas") };
+  var ver = { tablas: false, ext: false, sueltas: false };
+  var botonVer = { tablas: document.getElementById("ver-tablas"), ext: document.getElementById("ver-ext"), sueltas: document.getElementById("ver-sueltas") };
+  function pintarBotones() { Object.keys(ver).forEach(function (k) { botonVer[k].classList.toggle("on", ver[k]); botonVer[k].setAttribute("aria-pressed", ver[k]); }); }
+  // Esfera: el mismo degradé que los puntos del mapa 3D.
+  function mezcla(a, b, t) {
+    var p = function (h, i) { return parseInt(h.slice(i, i + 2), 16); };
+    return "rgb(" + Math.round(p(a, 1) + (p(b, 1) - p(a, 1)) * t) + "," + Math.round(p(a, 3) + (p(b, 3) - p(a, 3)) * t) + "," + Math.round(p(a, 5) + (p(b, 5) - p(a, 5)) * t) + ")";
+  }
+  var esfera = function (n) { var c = color(n.data("tipo")); return [mezcla(c, "#FFFFFF", 0.45), c, mezcla(c, "#05070B", 0.5)].join(" "); };
   function armarDeps() {
     var nodos = {}, aristas = [], datos = {};
     fichas.forEach(function (f) { nodos[f.id] = { id: f.id, label: nombre(f.id), tipo: "feat", peso: f.usadaPor.length }; });
@@ -48,87 +56,100 @@ export const MAPA_JS =
       }
     });
     Object.keys(datos).sort().forEach(function (k) { var x = datos[k]; x.label = x.lee && x.escribe ? "lee y escribe" : x.escribe ? "escribe" : "lee"; aristas.push(x); });
+    var etiqueta = { label: "data(label)", "font-size": 10, color: "#D5DAE4", "text-rotation": "autorotate", "text-background-color": color("fondo"), "text-background-opacity": 0.85, "text-background-padding": 2, "text-background-shape": "roundrectangle", opacity: 1 };
     cyd = cytoscape({
       container: document.getElementById("cy-deps"),
       elements: Object.keys(nodos).sort().map(function (id) { return { group: "nodes", data: nodos[id] }; }).concat(aristas.map(function (a) { return { group: "edges", data: a }; })),
       wheelSensitivity: 0.3,
       style: [
-        { selector: "node", style: { "background-color": function (n) { return color(n.data("tipo")); }, label: "data(label)", color: color("texto"), "font-size": 11, "text-valign": "bottom", "text-margin-y": 4, width: 16, height: 16 } },
-        { selector: "node[tipo = 'feat']", style: { shape: "round-rectangle", width: function (n) { return 22 + Math.min(n.data("peso"), 8) * 5; }, height: function (n) { return 22 + Math.min(n.data("peso"), 8) * 5; }, "font-size": 12, "font-weight": 600 } },
-        { selector: "node[tipo = 'tabla']", style: { shape: "barrel" } },
-        { selector: "node[tipo = 'ext']", style: { shape: "hexagon" } },
-        { selector: "edge", style: { width: 1.2, "line-color": color("linea"), "target-arrow-color": color("linea"), "target-arrow-shape": "triangle", "curve-style": "bezier", "arrow-scale": 0.9 } },
-        { selector: "edge[clase = 'usa']", style: { width: function (e) { return 1.5 + Math.min(e.data("veces"), 6) * 0.5; }, "line-color": color("suave"), "target-arrow-color": color("suave") } },
-        { selector: "edge[clase = 'dato'], edge[clase = 'ext']", style: { "line-style": "dashed", opacity: 0.7 } },
-        { selector: ".atenuado", style: { opacity: 0.1 } },
-        { selector: "node.foco", style: { "border-width": 3, "border-color": color("acento") } },
-        { selector: "edge.sale", style: { "line-color": color("acento"), "target-arrow-color": color("acento"), label: "data(label)", "font-size": 10, color: color("suave"), "text-rotation": "autorotate", opacity: 1 } },
-        { selector: "edge.entra", style: { "line-color": color("feat"), "target-arrow-color": color("feat"), label: "data(label)", "font-size": 10, color: color("suave"), "text-rotation": "autorotate", opacity: 1 } }
+        { selector: "node", style: { shape: "ellipse", "background-fill": "radial-gradient", "background-gradient-stop-colors": esfera, "background-gradient-stop-positions": "0 45 100",
+          label: "data(label)", color: "#D5DAE4", "font-family": color("sans"), "font-size": 11, "font-weight": 500, "text-valign": "bottom", "text-margin-y": 5,
+          "text-outline-color": color("fondo"), "text-outline-width": 2, "min-zoomed-font-size": 6, width: 12, height: 12, "border-width": 0 } },
+        { selector: "node[tipo = 'feat']", style: { width: function (n) { return 14 + Math.min(n.data("peso"), 10) * 3.4; }, height: function (n) { return 14 + Math.min(n.data("peso"), 10) * 3.4; }, "font-size": 12, "font-weight": 600, color: "#E6E8EE" } },
+        { selector: "edge", style: { width: 1, "line-color": "rgba(150,162,190,0.28)", "target-arrow-color": "rgba(150,162,190,0.45)", "target-arrow-shape": "triangle", "curve-style": "bezier", "arrow-scale": 0.7 } },
+        { selector: "edge[clase = 'usa']", style: { width: function (e) { return 1.2 + Math.min(e.data("veces"), 6) * 0.45; }, "line-color": "rgba(150,162,190,0.45)", "target-arrow-color": "rgba(150,162,190,0.6)" } },
+        { selector: "edge[clase = 'dato'], edge[clase = 'ext']", style: { "line-style": "dashed", "line-dash-pattern": [4, 4] } },
+        { selector: ".atenuado", style: { opacity: 0.12 } },
+        { selector: "node.foco", style: { "border-width": 2, "border-color": "#FFFFFF", "border-opacity": 0.9 } },
+        { selector: "edge.sale", style: Object.assign({ "line-color": color("acento"), "target-arrow-color": color("acento") }, etiqueta) },
+        { selector: "edge.entra", style: Object.assign({ "line-color": color("feat"), "target-arrow-color": color("feat") }, etiqueta) }
       ]
     });
     cyd.on("tap", "node", function (ev) { location.hash = "#/mapa/" + encodeURIComponent(ev.target.id()); });
     cyd.on("tap", function (ev) { if (ev.target === cyd) location.hash = "#/mapa"; });
-    Object.keys(ver).forEach(function (k) { ver[k].addEventListener("change", function () { visibilidad(); disponer(); }); });
-    document.getElementById("ajustar-deps").addEventListener("click", function () { cyd.fit(cyd.elements(":visible"), 30); });
+    cyd.on("mouseover", "node", function () { document.getElementById("cy-deps").style.cursor = "pointer"; });
+    cyd.on("mouseout", "node", function () { document.getElementById("cy-deps").style.cursor = ""; });
+    Object.keys(botonVer).forEach(function (k) { botonVer[k].addEventListener("click", function () { ver[k] = !ver[k]; pintarBotones(); visibilidad(); disponer(); }); });
+    document.getElementById("ajustar-deps").addEventListener("click", function () { cyd.fit(cyd.elements(":visible"), 40); });
+    pintarBotones();
     visibilidad();
     disponer();
   }
   function visibilidad() {
     cyd.batch(function () {
-      cyd.nodes("[tipo = 'tabla']").style("display", ver.tablas.checked ? "element" : "none");
-      cyd.nodes("[tipo = 'ext']").style("display", ver.ext.checked ? "element" : "none");
+      cyd.nodes("[tipo = 'tabla']").style("display", ver.tablas ? "element" : "none");
+      cyd.nodes("[tipo = 'ext']").style("display", ver.ext ? "element" : "none");
       cyd.nodes("[tipo = 'feat']").forEach(function (n) {
         var conVisibles = n.connectedEdges().some(function (e) { var o = e.source().id() === n.id() ? e.target() : e.source(); return o.data("tipo") === "feat" || o.style("display") !== "none"; });
-        n.style("display", ver.sueltas.checked || conVisibles ? "element" : "none");
+        n.style("display", ver.sueltas || conVisibles ? "element" : "none");
       });
     });
     var sueltas = cyd.nodes("[tipo = 'feat']").filter(function (n) { return n.style("display") === "none"; }).length;
-    document.getElementById("cuenta-sueltas").textContent = sueltas ? "(" + sueltas + " ocultas)" : "";
+    document.getElementById("cuenta-sueltas").textContent = sueltas ? sueltas + " ocultas" : "";
   }
   function disponer() {
-    cyd.elements(":visible").layout({ name: "cose", animate: false, randomize: false, nodeDimensionsIncludeLabels: true, idealEdgeLength: function () { return 110; }, nodeRepulsion: function () { return 12000; }, padding: 30, stop: function () { cyd.fit(cyd.elements(":visible"), 30); } }).run();
+    cyd.elements(":visible").layout({ name: "cose", animate: false, randomize: false, nodeDimensionsIncludeLabels: true, idealEdgeLength: function () { return 120; }, nodeRepulsion: function () { return 14000; }, padding: 40, stop: function () { cyd.fit(cyd.elements(":visible"), 40); } }).run();
   }
+  var sw = function (id) { return '<span class="sw" style="background:' + color(tipo(id)) + '"></span>'; };
+  var fila = function (id, extra) { return '<a class="nb" href="#/mapa/' + encodeURIComponent(id) + '">' + sw(id) + '<span class="corta">' + esc(nombre(id)) + "</span>" + (extra ? '<span class="vb">' + extra + "</span>" : "") + "</a>"; };
+  var seccion = function (titulo, items) { return items.length ? '<div class="deps-seccion"><h3 class="lbl">' + titulo + " (" + items.length + ")</h3>" + items.join("") + "</div>" : ""; };
+  var stats = function (xs) { return '<div class="m3-stats">' + xs.map(function (x) { return "<div><b>" + x[0] + "</b><span>" + x[1] + "</span></div>"; }).join("") + "</div>"; };
   function resumenImpacto(id) {
     var niveles = impacto(deps, id), feats = [], directas = 0;
     niveles.forEach(function (nv, i) { nv.forEach(function (x) { if (porFicha[x.id]) { feats.push(x.id); if (i === 0) directas++; } }); });
-    if (!feats.length) return '<p class="vacio">Ninguna funcionalidad depende de esto.</p>';
-    return "<p>Si cambia, puede afectar a <strong>" + plural(feats.length, "funcionalidad", "funcionalidades") + "</strong>" + (directas < feats.length ? " (" + directas + " en forma directa)" : "") + ".</p>";
+    var texto = feats.length
+      ? "Si cambia, puede afectar a <strong>" + plural(feats.length, "funcionalidad", "funcionalidades") + "</strong>" + (directas < feats.length ? " (" + directas + " en forma directa)" : "") + "."
+      : "Ninguna funcionalidad depende de esto.";
+    return '<div class="deps-seccion"><h3 class="lbl">Impacto</h3><p class="deps-impacto">' + texto + ' <a href="#/impacto/' + encodeURIComponent(id) + '">Ver detalle →</a></p></div>';
   }
-  var enlaceFoco = function (id, extra) { return '<li><a href="#/mapa/' + encodeURIComponent(id) + '">' + punto(id) + " " + esc(nombre(id)) + "</a>" + (extra ? " <small>· " + extra + "</small>" : "") + "</li>"; };
-  var listaH = function (titulo, items) { return items.length ? "<h2>" + titulo + " (" + items.length + ")</h2><ul class=\"lista\">" + items.join("") + "</ul>" : ""; };
   function panelGeneral() {
     var usa = deps.filter(function (d) { return d[2] === "usa"; }).length;
+    var sueltas = fichas.filter(function (f) { return !f.usadaPor.length && !f.usaFuncionalidades.length; }).length;
     var top = fichas.filter(function (f) { return f.usadaPor.length; }).sort(function (a, b) { return b.usadaPor.length - a.usadaPor.length || (a.id < b.id ? -1 : 1); }).slice(0, 8);
-    panel.innerHTML = "<h1>Dependencias</h1><p>" + plural(fichas.length, "funcionalidad", "funcionalidades") + " · " + plural(usa, "relación de uso", "relaciones de uso") + " entre ellas.</p>" +
-      '<p class="vacio">Cada flecha va de la funcionalidad que usa a la usada; su grosor es la cantidad de endpoints. El tamaño de la caja crece con cuántas la usan.</p>' +
-      listaH("Las más usadas", top.map(function (f) { return enlaceFoco(f.id, "la usan " + f.usadaPor.length); }));
+    panel.innerHTML = '<div class="m3-cab"><span class="lbl">Dependencias</span><h2 class="m3-nombre">Entre funcionalidades</h2>' +
+      '<p class="m3-resumen">Cada flecha va de la funcionalidad que usa a la usada. El grosor es la cantidad de endpoints y el tamaño, cuántas la usan.</p></div>' +
+      stats([[fichas.length, "funcionalidades"], [usa, "relaciones de uso"], [sueltas, "sin relaciones"]]) +
+      (top.length ? '<div class="m3-caja"><span class="lbl">Las más usadas</span>' + top.map(function (f) { return fila(f.id, "la usan " + f.usadaPor.length); }).join("") + "</div>" : "");
   }
   function construccion(f) {
-
     var eps = f.recorridos.filter(function (r) { return r.pasos.length; }).slice(0, 6).map(function (r) {
       var cadena = r.pasos.filter(function (p) { return p.nivel <= 2; }).map(function (p) { return p.simbolo; });
-      return "<li><code>" + esc(nombre(r.endpoint)) + "</code><br><small>" + esc(cadena.slice(0, 4).join(" → ")) + (cadena.length > 4 ? " → …" : "") + "</small></li>";
+      return '<div class="deps-pasos"><code>' + esc(nombre(r.endpoint)) + "</code>" + esc(cadena.slice(0, 4).join(" → ")) + (cadena.length > 4 ? " → …" : "") + "</div>";
     });
     if (!eps.length) return "";
-    return "<h2>Qué ejecuta cada endpoint</h2>" + (eps.length ? '<ul class="lista">' + eps.join("") + "</ul>" : "") +
-      '<p><small><a href="#/f/' + encodeURIComponent(f.id) + '">Ver los recorridos completos en la ficha →</a></small></p>';
+    return '<div class="deps-seccion"><h3 class="lbl">Qué ejecuta cada endpoint</h3>' + eps.join("") +
+      '<a href="#/f/' + encodeURIComponent(f.id) + '" style="font-size: 13px; padding: 2px 4px">Ver los recorridos completos en la ficha →</a></div>';
   }
   function panelNodo(id) {
-    var t = tipo(id), f = porFicha[id], n = porId[id] || {}, html = "<h1>" + esc(nombre(id)) + "</h1><p><small>" + esc(TIPO[t] || t) + "</small></p>";
+    var t = tipo(id), f = porFicha[id], n = porId[id] || {};
+    var cab = '<div class="m3-cab"><div class="m3-tipo">' + sw(id) + '<span class="lbl">' + esc(TIPO[t] || t) + "</span></div>" +
+      '<h2 class="m3-nombre">' + esc(nombre(id)) + "</h2><code>" + esc(id) + "</code>" +
+      (P.pendiente(n.r) ? (f ? '<p class="m3-resumen pendiente">Sin descripción todavía</p>' : "") : '<p class="m3-resumen">' + esc(n.r) + "</p>") + "</div>";
+    var enlaces = '<div class="m3-enlaces">' + (f ? '<a href="#/f/' + encodeURIComponent(id) + '">Abrir la ficha</a>' : "") + '<a href="#/grafo/' + encodeURIComponent(id) + '">Ver en el mapa 3D</a></div>';
+    var html;
     if (f) {
-      html += (P.pendiente(n.r) ? '<p class="pendiente">Sin descripción todavía</p>' : "<p>" + esc(n.r) + "</p>") +
-        '<p><a href="#/f/' + encodeURIComponent(id) + '">Abrir la ficha →</a></p>' +
-        listaH("Usa", f.usaFuncionalidades.map(function (u) { var d = (salen[id] || []).filter(function (x) { return x[1] === u && x[2] === "usa"; })[0]; return enlaceFoco(u, d ? plural(d[3], "endpoint", "endpoints") : ""); })) +
-        listaH("La usan", f.usadaPor.map(function (u) { return enlaceFoco(u); })) +
-        listaH("Datos", P.datosDe(f).map(function (d) { return enlaceFoco(d.tabla, [d.lee ? "lee" : "", d.escribe ? "escribe" : ""].filter(Boolean).join(" y ") + (d.via ? " · a través de " + esc(nombre(d.via)) : "")); })) +
-        listaH("Servicios externos", f.usa.filter(function (u) { return tipo(u.hasta) === "ext"; }).map(function (u) { return enlaceFoco(u.hasta); })) +
+      var datos = P.datosDe(f), externos = f.usa.filter(function (u) { return tipo(u.hasta) === "ext"; });
+      html = cab + stats([[f.usadaPor.length, "la usan"], [f.usaFuncionalidades.length, "usa"], [datos.length, "tablas"]]) + enlaces +
+        seccion("Usa", f.usaFuncionalidades.map(function (u) { var d = (salen[id] || []).filter(function (x) { return x[1] === u && x[2] === "usa"; })[0]; return fila(u, d ? plural(d[3], "endpoint", "endpoints") : ""); })) +
+        seccion("La usan", f.usadaPor.map(function (u) { return fila(u); })) +
+        seccion("Datos", datos.map(function (d) { return fila(d.tabla, [d.lee ? "lee" : "", d.escribe ? "escribe" : ""].filter(Boolean).join(" y ") + (d.via ? " · vía " + esc(nombre(d.via)) : "")); })) +
+        seccion("Servicios externos", externos.map(function (u) { return fila(u.hasta); })) +
         construccion(f);
     } else {
-      var de = function (v) { return (entran[id] || []).filter(function (d) { return d[2] === v && porFicha[d[0]]; }).map(function (d) { return enlaceFoco(d[0]); }); };
-      html += (n.r && !P.pendiente(n.r) ? "<p>" + esc(n.r) + "</p>" : "") + (t === "tabla" ? listaH("La escriben", de("escribe_en")) + listaH("La leen", de("lee_de")) : listaH("La usan", de("llama_a")));
+      var de = function (v) { return (entran[id] || []).filter(function (d) { return d[2] === v && porFicha[d[0]]; }).map(function (d) { return fila(d[0]); }); };
+      html = cab + enlaces + (t === "tabla" ? seccion("La escriben", de("escribe_en")) + seccion("La leen", de("lee_de")) : seccion("La usan", de("llama_a")));
     }
-    panel.innerHTML = html + "<h2>Impacto</h2>" + resumenImpacto(id) + '<p><a href="#/impacto/' + encodeURIComponent(id) + '">Ver qué se ve afectado si cambia →</a></p>' +
-      '<p><small><a href="#/grafo/' + encodeURIComponent(id) + '">Ver en el mapa 3D</a></small></p>';
+    panel.innerHTML = html + resumenImpacto(id);
   }
   function mostrarDeps(id) {
     if (!fichas.length) {
@@ -140,16 +161,17 @@ export const MAPA_JS =
     cyd.elements().removeClass("atenuado foco sale entra");
     var n = id ? cyd.getElementById(id) : cyd.collection();
     if (n.empty()) return panelGeneral();
-    if (n.style("display") === "none") { if (tipo(id) === "tabla") ver.tablas.checked = true; else if (tipo(id) === "ext") ver.ext.checked = true; else ver.sueltas.checked = true; visibilidad(); disponer(); }
+    if (n.style("display") === "none") { if (tipo(id) === "tabla") ver.tablas = true; else if (tipo(id) === "ext") ver.ext = true; else ver.sueltas = true; pintarBotones(); visibilidad(); disponer(); }
     var vec = n.closedNeighborhood();
     cyd.elements().not(vec).addClass("atenuado");
     n.addClass("foco");
     n.outgoers("edge").addClass("sale");
     n.incomers("edge").addClass("entra");
     // Con pocos vecinos, encuadrar solo el vecindario acerca demasiado: se limita el zoom.
-    cyd.fit(vec, 60);
+    cyd.fit(vec, 80);
     if (cyd.zoom() > 1.2) cyd.zoom({ level: 1.2, position: n.position() });
     panelNodo(id);
+    panel.scrollTop = 0;
   }
   var buscarDeps = document.getElementById("buscar-deps");
   buscarDeps.addEventListener("keydown", function (ev) {

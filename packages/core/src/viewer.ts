@@ -141,16 +141,20 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .toca { margin: 4px 0 0 0; }
 
 /* Dependencias */
-#deps { display: grid; grid-template-columns: 1fr 360px; height: calc(100vh - 56px); }
-#deps main { position: relative; min-width: 0; }
-#cy-deps { width: 100%; height: 100%; }
-.barra-mapa { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 12px; background: rgba(14,17,24,.86); border: 1px solid #262C3A; border-radius: 12px; backdrop-filter: blur(6px); }
-.barra-mapa input[type=search] { width: 260px; }
-.barra-mapa label { font-size: 13px; color: var(--claro); }
-.barra-mapa small { color: var(--suave); }
-.derecha { background: var(--panel); border-left: 1px solid #1A1F2B; overflow: auto; padding: 18px 16px; }
-.derecha h1 { font-size: 20px; margin: 0 0 8px; }
-.derecha h2 { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--suave); margin: 18px 0 8px; }
+#deps { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: calc(100vh - 56px); min-height: 600px; }
+#deps main { position: relative; min-width: 0; background: var(--fondo); }
+#cy-deps { position: absolute; inset: 0; }
+.deps-busca { width: 280px; }
+.deps-busca input { height: 36px; background: rgba(14,17,24,.86); border-color: #262C3A; }
+.deps-busca svg { top: 10px; }
+#detalle-deps { gap: 18px; }
+.deps-seccion { display: flex; flex-direction: column; gap: 2px; }
+.deps-seccion .lbl { padding: 0 4px 6px; }
+.deps-impacto { margin: 0; padding: 12px 14px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); font-size: 13px; color: #C9CFDB; line-height: 1.5; }
+.deps-impacto strong { color: #FFFFFF; }
+.deps-pasos { margin: 2px 0 6px; padding: 8px 10px; border-radius: 8px; background: var(--tarjeta); font-size: 12px; color: var(--medio); }
+.deps-pasos code { display: block; color: var(--claro); margin-bottom: 2px; }
+a.nb { text-decoration: none; }
 
 /* Mapa 3D */
 #app { display: grid; grid-template-columns: 280px minmax(0, 1fr) 300px; height: calc(100vh - 56px); min-height: 640px; }
@@ -226,16 +230,24 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 <div id="impacto" class="pagina oculto"></div>
 <div id="deps" class="oculto">
   <main>
-    <div id="cy-deps"></div>
-    <div class="barra-mapa">
-      <input id="buscar-deps" type="search" placeholder="Ir a una funcionalidad (Enter)" autocomplete="off">
-      <label><input type="checkbox" id="ver-tablas"> Tablas</label>
-      <label><input type="checkbox" id="ver-ext"> Externos</label>
-      <label><input type="checkbox" id="ver-sueltas"> Sin relaciones <small id="cuenta-sueltas"></small></label>
-      <button class="boton" id="ajustar-deps">Ajustar</button>
+    <div id="cy-deps" role="img" aria-label="Mapa de dependencias entre funcionalidades"></div>
+    <div class="m3-barra">
+      <div>
+        <div class="m3-busca deps-busca">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A93A6" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+          <input id="buscar-deps" type="search" placeholder="Ir a una funcionalidad (Enter)" aria-label="Ir a una funcionalidad" autocomplete="off">
+        </div>
+        <button type="button" class="ov" id="ajustar-deps"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path></svg>Centrar</button>
+      </div>
+      <div>
+        <button type="button" class="ov" id="ver-tablas" aria-pressed="false"><span class="sw" style="background: var(--tabla)"></span>Tablas</button>
+        <button type="button" class="ov" id="ver-ext" aria-pressed="false"><span class="sw" style="background: var(--ext)"></span>Externos</button>
+        <button type="button" class="ov" id="ver-sueltas" aria-pressed="false">Sin relaciones <span id="cuenta-sueltas" class="vb"></span></button>
+      </div>
     </div>
+    <div class="m3-guia"><span><b>Flecha</b> usa a</span><span><b>Grosor</b> endpoints que usa</span><span><b>Tamaño</b> cuántas la usan</span><span><b>Clic</b> ver sus relaciones</span></div>
   </main>
-  <aside id="detalle-deps" class="derecha"></aside>
+  <aside id="detalle-deps" class="m3-panel m3-der"></aside>
 </div>
 <div id="app" class="oculto">
   <aside class="m3-panel m3-izq">
