@@ -162,7 +162,7 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     "recorrido",
     {
       description:
-        "Qué ejecuta el código desde un endpoint o un método: pasos en orden de llamada (controller → servicio → repositorio) con repo:ruta#Ln y lo que toca cada paso (lee_de/escribe_en tabla, llama_a servicio). Los pasos con `aviso` son huecos conocidos.",
+        "Qué ejecuta el código desde un endpoint, un método o un hook/función del front: pasos en orden de llamada (front → endpoint → controller → servicio → repositorio) con repo:ruta#Ln y lo que toca cada paso (lee_de/escribe_en tabla, llama_a endpoint). `via` marca saltos por HTTP, eventos o colas; `repite`, un método ya recorrido; `aviso`, un hueco conocido.",
       inputSchema: { desde: z.string().min(1).describe("endpoint (\"MÉTODO /ruta\", /ruta o id) o símbolo (Clase.metodo, funcion, ruta#Clase.metodo)"), ...presupuesto },
     },
     async (a) => {
@@ -175,7 +175,7 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     "quien_llama",
     {
       description:
-        "Quién llama a un método, función o clase, hacia arriba por niveles, con la línea de cada llamada; y qué endpoints y funcionalidades quedan alcanzados (y cuáles consumen esos endpoints). Usalo antes de cambiar una firma o un comportamiento.",
+        "Quién llama a un método, función o clase, hacia arriba por niveles, con la línea de cada llamada (también por eventos y colas, con `via`); qué endpoints y funcionalidades quedan alcanzados y quién llama a esos endpoints por HTTP desde otros repos (`porHttp`). Los `avisos` listan llamadas sin resolver con el mismo nombre. Usalo antes de cambiar una firma o un comportamiento.",
       inputSchema: {
         simbolo: z.string().min(1).describe("Clase.metodo, funcion, Clase o ruta#Simbolo"),
         profundidad: z.number().int().min(1).max(6).optional().describe("niveles hacia arriba (por defecto 3)"),

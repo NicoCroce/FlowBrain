@@ -43,6 +43,8 @@ export interface IndiceCodigo {
   porNombre: Map<string, string[]>;
   /** `repo:ruta#Simbolo` → endpoints que atiende. */
   atiende: Map<string, string[]>;
+  /** Endpoint → métodos que lo llaman por HTTP (de cualquier repo), con su evidencia. */
+  llamanEndpoint: Map<string, Array<{ clave: string; evidencia: string }>>;
   /** Tabla → métodos que la leen o escriben, con su evidencia. */
   tocanTabla: Map<string, Array<{ clave: string; verbo: string; evidencia: string }>>;
 }
@@ -87,8 +89,18 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
     const h = recorredor.atiende(n.id);
     if (h) atiende.set(clave(h.archivo, h.simbolo), [...(atiende.get(clave(h.archivo, h.simbolo)) ?? []), n.id]);
   }
+  const llamanEndpoint = new Map<string, Array<{ clave: string; evidencia: string }>>();
   const tocanTabla = new Map<string, Array<{ clave: string; verbo: string; evidencia: string }>>();
   for (const a of aristas) {
+    if (a.verbo === "llama_a" && a.endpoint) {
+      const m = /^([^#]+)#L(\d+)/.exec(a.evidencia);
+      const e = m ? estructura.get(m[1]!) : undefined;
+      const s = e ? simboloDeLinea(e, Number(m![2])) : null;
+      const k = s ? clave(m![1]!, s.nombre) : a.evidencia;
+      const lista = llamanEndpoint.get(a.endpoint) ?? [];
+      if (!lista.some((x) => x.clave === k)) lista.push({ clave: k, evidencia: a.evidencia });
+      llamanEndpoint.set(a.endpoint, lista);
+    }
     if (a.verbo !== "lee_de" && a.verbo !== "escribe_en") continue;
     const m = /^([^#]+)#L(\d+)/.exec(a.evidencia);
     const e = m ? estructura.get(m[1]!) : undefined;
@@ -98,7 +110,7 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
     if (!lista.some((x) => x.clave === k && x.verbo === a.verbo)) lista.push({ clave: k, verbo: a.verbo, evidencia: a.evidencia });
     tocanTabla.set(a.hasta, lista);
   }
-  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, porNombre, atiende, tocanTabla };
+  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, porNombre, atiende, llamanEndpoint, tocanTabla };
 }
 
 /** Lee el HEAD actual de cada clon indexado, para avisar si el índice quedó atrás. Barato: unas lecturas de `.git`. */
@@ -206,7 +218,7 @@ const paso = (ix: IndiceCodigo, p: Paso) => ({
   ev: p.evidencia,
   ...(p.toca.length ? { toca: p.toca.map(toque) } : {}),
   ...(p.aviso ? { aviso: p.aviso } : {}),
-  ...(p.via ? { via: `en diferido, por evento o cola ${p.via}` } : {}),
+  ...(p.via ? { via: p.via.startsWith("HTTP ") ? `por HTTP: ${p.via.slice(5)}` : `en diferido, por evento o cola ${p.via}` } : {}),
   ...(p.repite ? { repite: p.repite === "ciclo" ? "llamada recursiva: no se expande" : "ya recorrido antes: toca resume lo que tocó (él y lo que llama)" } : {}),
 });
 
@@ -382,6 +394,9 @@ export function quienLlama(ctx: Contexto, p: QuienLlamaParams) {
     endpoints,
     funcionalidades: [...feats].sort(cmp),
     consumenEsosEndpoints: consumidoras.filter((f) => !feats.has(f)).sort(cmp),
+    porHttp: endpoints.flatMap((ep) =>
+      (ix.llamanEndpoint.get(ep) ?? []).map((l) => ({ endpoint: ep, quien: l.clave.includes("#L") ? l.clave : cita(ix, l.clave, Number(/#L(\d+)$/.exec(l.evidencia)?.[1])) })),
+    ),
     llamadas,
     avisos: [
       ...(frente.length ? [`hay más llamadores por encima de la profundidad ${prof}`] : []),
@@ -390,7 +405,7 @@ export function quienLlama(ctx: Contexto, p: QuienLlamaParams) {
     ],
     indice: versiones(ix),
   };
-  return ajustarLista(res, ["llamadas", "consumenEsosEndpoints", "endpoints"], p.budget_tokens);
+  return ajustarLista(res, ["llamadas", "porHttp", "consumenEsosEndpoints", "endpoints"], p.budget_tokens);
 }
 
 // ------------------------------------------------------------------ impacto

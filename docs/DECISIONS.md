@@ -179,3 +179,9 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - `invoca` guarda cada llamada con su línea: `quien_llama` las cita todas, y el recorrido sigue un paso por destino.
    - Los fragmentos `sql` compartidos (`${WELLNESS_FROM}`) se siguen hasta su constante, y sus tablas cuentan en la línea donde se interpolan.
 107. **Borradores de tablas sin página con contexto.** `brain draft` ya proponía una página por cada tabla que el código usa y el brain no tiene. Ahora el borrador lista qué métodos la leen o escriben (`Clase.metodo @ repo:ruta#Ln`, por la estructura del índice), de qué funcionalidades son, y propone `vive_en` cuando todas las tablas con página que usan esos mismos servicios viven en una sola base. Revisarlas sigue siendo trabajo de una persona.
+108. **Recorridos desde el frontend.** Hacían falta tres piezas:
+   - Las funciones de un objeto literal de nivel superior (`const api = { remove: (id) => http.delete(…) }`) son símbolos `api.remove`.
+   - Una función pasada como valor (`mutationFn: api.remove`, `onClick={guardar}`, `.then(procesar)`) cuenta como llamada.
+   - En las consultas de un agente, un paso que llama por HTTP a un endpoint conocido sigue hasta el método del back que lo atiende (`via: "por HTTP: …"`). La ficha del visor no cruza, para no alargarse.
+   
+   A la inversa, `quien_llama` devuelve `porHttp`: los métodos de otros repos que llaman a los endpoints alcanzados. La evaluación del proyecto real queda en 29/29.

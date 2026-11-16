@@ -400,11 +400,36 @@ function extraer(repo: RepoFuente): Extraccion {
     ver(sf);
   }
 
+  /** `const api = { m: () => … }` en el nivel superior: el nombre del objeto (sus funciones son símbolos `api.m`). */
+  const nombreObjeto = (o: ts.ObjectLiteralExpression): string | null => {
+    let p: ts.Node = o.parent;
+    while (ts.isAsExpression(p) || ts.isSatisfiesExpression(p) || ts.isParenthesizedExpression(p)) p = p.parent;
+    return ts.isVariableDeclaration(p) && ts.isIdentifier(p.name) && ts.isVariableStatement(p.parent.parent) && ts.isSourceFile(p.parent.parent.parent) ? p.name.text : null;
+  };
+  const funcionLiteral = (e: ts.Expression | undefined): ts.ArrowFunction | ts.FunctionExpression | null =>
+    e && (ts.isArrowFunction(e) || ts.isFunctionExpression(e)) ? e : null;
+  /** Funciones de un objeto literal de nivel superior: `[nombre, nodo, cuerpo]`. */
+  const funcionesDeObjeto = (o: ts.ObjectLiteralExpression): Array<[string, ts.Node, ts.Node]> => {
+    const out: Array<[string, ts.Node, ts.Node]> = [];
+    for (const p of o.properties) {
+      if (!p.name || !(ts.isIdentifier(p.name) || ts.isStringLiteral(p.name))) continue;
+      const f = ts.isPropertyAssignment(p) ? funcionLiteral(p.initializer) : null;
+      if (f) out.push([p.name.text, p, f.body]);
+      else if (ts.isMethodDeclaration(p) && p.body) out.push([p.name.text, p, p.body]);
+    }
+    return out;
+  };
+
   /** Símbolo destino de una declaración: `Clase.metodo` o `funcion`, con su archivo. Varios si es una interfaz. */
   const destinos = (d: ts.Declaration): Array<{ archivo: string; simbolo: string }> => {
     const sf = d.getSourceFile();
     if (!delRepo(sf)) return [];
     if (ts.isFunctionDeclaration(d) && d.name) return [{ archivo: rel(sf), simbolo: d.name.text }];
+    if ((ts.isPropertyAssignment(d) || ts.isMethodDeclaration(d)) && ts.isObjectLiteralExpression(d.parent)) {
+      const o = nombreObjeto(d.parent);
+      const es = ts.isMethodDeclaration(d) || !!funcionLiteral(d.initializer);
+      return o && es && d.name && (ts.isIdentifier(d.name) || ts.isStringLiteral(d.name)) ? [{ archivo: rel(sf), simbolo: `${o}.${d.name.text}` }] : [];
+    }
     if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) {
       return [{ archivo: rel(sf), simbolo: d.name.text }];
     }
@@ -430,6 +455,24 @@ function extraer(repo: RepoFuente): Extraccion {
     const tipo = d && (ts.isParameter(d) || ts.isPropertyDeclaration(d) || ts.isVariableDeclaration(d) || ts.isPropertySignature(d)) ? d.type : undefined;
     return tipo?.kind === ts.SyntaxKind.AnyKeyword;
   };
+  /** La expresión es un valor que se entrega (argumento, propiedad de un objeto, atributo JSX o retorno), no algo que se llama ni un receptor. */
+  const comoValor = (n: ts.Expression): boolean => {
+    const p = n.parent;
+    if (ts.isPropertyAccessExpression(p) && p.name === n) return false;
+    if (ts.isIdentifier(n) && ts.isPropertyAccessExpression(p)) return false;
+    return (
+      ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.expression !== n && !!p.arguments?.includes(n)) ||
+      (ts.isPropertyAssignment(p) && p.initializer === n) ||
+      ts.isShorthandPropertyAssignment(p) ||
+      ts.isJsxExpression(p) ||
+      (ts.isArrowFunction(p) && p.body === n)
+    );
+  };
+  const esFuncion = (d: ts.Declaration): boolean =>
+    ts.isFunctionDeclaration(d) ||
+    ts.isMethodDeclaration(d) ||
+    (ts.isPropertyAssignment(d) && !!funcionLiteral(d.initializer)) ||
+    (ts.isVariableDeclaration(d) && !!funcionLiteral(d.initializer));
   const invocacionesDe = (
     cuerpo: ts.Node,
     desde: string,
@@ -437,6 +480,14 @@ function extraer(repo: RepoFuente): Extraccion {
     out: Map<string, { desde: string; archivo: string; simbolo: string; linea: number }>,
     sinResolver?: LlamadaSinResolver[],
   ) => {
+    const agregar = (d: ts.Declaration, n: ts.Node) => {
+      for (const t of destinos(d)) {
+        if (t.archivo === archivo && t.simbolo === desde) continue;
+        // Cada llamada con su línea: `quien_llama` las cita todas; el recorrido sigue un paso por destino.
+        const l = linea(n), k = `${desde}\u0000${t.archivo}\u0000${t.simbolo}\u0000${l}`;
+        if (!out.has(k)) out.set(k, { desde, archivo: t.archivo, simbolo: t.simbolo, linea: l });
+      }
+    };
     const ver = (n: ts.Node): void => {
       if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
         const e = n.expression;
@@ -448,14 +499,11 @@ function extraer(repo: RepoFuente): Extraccion {
           const huerfana = !!d && delRepo(d.getSourceFile()) && (ts.isMethodSignature(d) || ts.isPropertySignature(d)) && !!c && !(implementan.get(c)?.length);
           if ((!d && receptorAny(e)) || huerfana) sinResolver.push({ desde, linea: linea(n), llamada: e.getText().replace(/\s+/g, " ").slice(0, 80) });
         }
-        if (d) {
-          for (const t of destinos(d)) {
-            if (t.archivo === archivo && t.simbolo === desde) continue;
-            // Cada llamada con su línea: `quien_llama` las cita todas; el recorrido sigue un paso por destino.
-            const l = linea(n), k = `${desde}\u0000${t.archivo}\u0000${t.simbolo}\u0000${l}`;
-            if (!out.has(k)) out.set(k, { desde, archivo: t.archivo, simbolo: t.simbolo, linea: l });
-          }
-        }
+        if (d) agregar(d, n);
+      } else if ((ts.isPropertyAccessExpression(n) || ts.isIdentifier(n)) && comoValor(n)) {
+        // Una función pasada como valor (`mutationFn: api.remove`, `onClick={guardar}`, `.then(procesar)`) se va a llamar.
+        const d = real(checker.getSymbolAtLocation(ts.isPropertyAccessExpression(n) ? n.name : n))?.declarations?.[0];
+        if (d && esFuncion(d)) agregar(d, n);
       }
       ts.forEachChild(n, ver);
     };
@@ -574,6 +622,18 @@ function extraer(repo: RepoFuente): Extraccion {
           if (ts.isIdentifier(d.name) && d.initializer && (ts.isArrowFunction(d.initializer) || ts.isFunctionExpression(d.initializer))) {
             simbolos.push({ linea: linea(st), nombre: d.name.text, tipo: "funcion", fin: finDe(st) });
             invocacionesDe(d.initializer, d.name.text, archivo, invoca, sinResolver);
+          } else if (ts.isIdentifier(d.name) && d.initializer) {
+            // `const api = { remove: (id) => http.delete(…) }`: cada función del objeto es un símbolo `api.remove`.
+            let o: ts.Expression = d.initializer;
+            while (ts.isAsExpression(o) || ts.isSatisfiesExpression(o) || ts.isParenthesizedExpression(o)) o = o.expression;
+            if (!ts.isObjectLiteralExpression(o)) continue;
+            const fns = funcionesDeObjeto(o);
+            if (fns.length) simbolos.push({ linea: linea(st), nombre: d.name.text, tipo: "objeto", fin: finDe(st) });
+            for (const [m, nodo, cuerpo] of fns) {
+              const sim = `${d.name.text}.${m}`;
+              simbolos.push({ linea: linea((nodo as ts.PropertyAssignment).name), nombre: sim, tipo: "metodo", fin: finDe(nodo) });
+              invocacionesDe(cuerpo, sim, archivo, invoca, sinResolver);
+            }
           }
         }
       }

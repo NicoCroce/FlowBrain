@@ -48,6 +48,7 @@ describe("consultas de código", () => {
     expect(r.endpoints).toEqual(["svc-bff:POST:/checkout"]);
     expect(r.funcionalidades).toEqual(["feat-checkout"]);
     expect(r.consumenEsosEndpoints).toEqual(["feat-carrito"]);
+    expect(r.porHttp).toEqual([{ endpoint: "svc-bff:POST:/checkout", quien: "confirmarCheckout @ repo-tienda:apps/web/src/api/checkout.ts#L8" }]);
   });
 
   it("impacto de una tabla: funcionalidades por niveles con el porqué y qué métodos la tocan", () => {
@@ -101,5 +102,14 @@ describe("consultas de código", () => {
     expect(r).toMatchObject({ total: 4, aciertos: 3, porcentaje: 75, cobertura: 80, porHerramienta: { quien_llama: { total: 2, aciertos: 2 }, recorrido: { total: 2, aciertos: 1 } } });
     expect(r.falladas).toEqual([{ id: "c", pregunta: "c", herramienta: "recorrido", ok: false, faltan: ["tabla-inexistente"], sobran: [] }]);
     expect(() => leerPreguntas('[{"id":"x","herramienta":"otra","args":{}}]')).toThrow(/herramienta desconocida/);
+  });
+  it("recorrido desde el front cruza por HTTP al método del back que atiende el endpoint", () => {
+    const r = recorrido(ctx, { desde: "confirmarCheckout" }) as { pasos: Array<{ n: number; simbolo: string; toca?: string[]; via?: string }> };
+    expect(r.pasos.map((p) => `${p.n} ${p.simbolo}${p.via ? ` (${p.via})` : ""}`)).toEqual([
+      "0 confirmarCheckout",
+      "1 postCheckout (por HTTP: svc-bff:POST:/checkout)",
+      "2 crearPago",
+    ]);
+    expect(r.pasos[0]!.toca).toEqual(["llama_a svc-bff:POST:/checkout"]);
   });
 });

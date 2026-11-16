@@ -129,7 +129,7 @@ export interface Paso {
    * (él y lo que llama). `ciclo` si se llega a sí mismo mientras se recorre (recursión).
    */
   repite?: "antes" | "ciclo";
-  /** Se llega en diferido, por un evento o una cola con esta clave. */
+  /** Se llega en diferido, por un evento o una cola con esta clave; o por HTTP (`HTTP <endpoint>`) al cruzar de servicio. */
   via?: string;
 }
 
@@ -206,11 +206,13 @@ export function podar(pasos: Paso[]): Paso[] {
 export interface LimitesRecorrido {
   pasos: number;
   nivel: number;
+  /** Seguir una llamada HTTP a un endpoint conocido hasta el método que lo atiende (front → back, servicio → servicio). */
+  cruzarHttp?: boolean;
 }
 /** Para la ficha del visor: lo que una persona lee. */
 export const LIMITES_FICHA: LimitesRecorrido = { pasos: 40, nivel: 6 };
 /** Para las consultas de un agente: completo; el presupuesto de tokens recorta después. */
-export const LIMITES_AGENTE: LimitesRecorrido = { pasos: 200, nivel: 12 };
+export const LIMITES_AGENTE: LimitesRecorrido = { pasos: 200, nivel: 12, cruzarHttp: true };
 const EV = /^([^:]+:[^#]+)(?:#L(\d+))?/;
 const elementos = (e: EstructuraArchivo | undefined) => (e?.simbolos ?? []).filter((s) => s.tipo !== "metodo").map((s) => s.nombre);
 
@@ -314,6 +316,12 @@ export function crearRecorredor(
         if (hijos.has(h)) continue;
         hijos.add(h);
         visitar(`${repo}:${i.archivo}`, i.simbolo, nivel + 1, simbolo, i.via);
+      }
+      if (limites.cruzarHttp) {
+        for (const t of toca) {
+          const h = t.verbo === "llama_a" && t.endpoint ? atiende(t.endpoint) : null;
+          if (h) visitar(h.archivo, h.simbolo, nivel + 1, simbolo, `HTTP ${t.endpoint}`);
+        }
       }
       const total: Toque[] = [];
       for (const p of pasos.slice(desdeI)) for (const t of p.toca) if (!total.some((x) => mismoToque(x, t))) total.push(t);
