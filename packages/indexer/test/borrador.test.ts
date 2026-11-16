@@ -195,4 +195,14 @@ describe("brain draft: funcionalidades", () => {
     const otra = generarBorradores(r("repo-back", ["modules/wellness/c.ts"]), [], "back", [{ ruta: "_drafts/producto/feat-wellness.md", contenido: wellness }]);
     expect(otra.archivos["_drafts/producto/feat-wellness.md"]).toBeUndefined();
   });
+
+  it("no propone una carpeta cuyas subcarpetas ya reparten otras funcionalidades", async () => {
+    const { generarBorradores } = await import("../src/index.js");
+    const repo = { repo: "repo-back", repoNuevo: false, aristas: [], pendientes: [], servicios: [], archivos: { repo: "repo-back", archivos: ["modules/player/player.module.ts", "modules/player/list/a.ts", "modules/player/info/b.ts"].map((ruta) => ({ ruta, lenguaje: "ts", simbolos: [] })) } } as never;
+    const pagina = (id: string, codigo: string) => ({ ruta: `producto/${id}.md`, contenido: `---\nid: ${id}\ntipo: feat\nnombre: ${id}\nresumen: x\ncodigo:\n  - ${codigo}\n---\n# ${id}\n` });
+    const una = generarBorradores(repo, [pagina("feat-lista", "repo-back:modules/player/list")], "back");
+    expect(una.resumen.funcionalidades).toBe(1);
+    const ambas = generarBorradores(repo, [pagina("feat-lista", "repo-back:modules/player/list"), pagina("feat-ficha", "repo-back:modules/player/info")], "back");
+    expect(ambas.resumen.funcionalidades).toBe(0);
+  });
 });

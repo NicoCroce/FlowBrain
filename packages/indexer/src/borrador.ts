@@ -350,7 +350,15 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
   };
   cargar(paginas.filter((f) => f.ruta.startsWith("producto/")), false);
   cargar(borradoresProducto, true);
-  const cubierta = (c: string) => [...feats.values()].some((f) => f.codigo.some((x) => x === c || dentroDe(c, x)));
+  // Una carpeta repartida entre varias funcionalidades (cada subcarpeta en el `codigo` de alguna) también está
+  // cubierta: los archivos sueltos de su raíz (`player.module.ts`) solo cablean las partes.
+  const rutasRepo = r.archivos.archivos.map((a) => a.ruta);
+  const cubierta = (c: string): boolean => {
+    if ([...feats.values()].some((f) => f.codigo.some((x) => x === c || dentroDe(c, x)))) return true;
+    const carpeta = c.slice(c.indexOf(":") + 1);
+    const hijas = new Set(rutasRepo.filter((a) => a.startsWith(carpeta + "/") && a.slice(carpeta.length + 1).includes("/")).map((a) => a.slice(carpeta.length + 1).split("/")[0]!));
+    return hijas.size > 0 && [...hijas].every((h) => cubierta(`${c}/${h}`));
+  };
   for (const carpeta of carpetasDeFuncionalidad(r.archivos.archivos.map((a) => a.ruta))) {
     const codigo = `${r.repo}:${carpeta}`;
     if (cubierta(codigo)) continue;
