@@ -123,7 +123,7 @@ export const PRODUCTO_JS = String.raw`
     var tablas = {}, otros = {};
     r.pasos.forEach(function (p) { p.toca.forEach(function (t) { if (t.verbo === "llama_a") otros[nombre(t.hasta)] = true; else tablas[nombre(t.hasta)] = true; }); });
     var partes = [];
-    if (r.pasos.length) partes.push(esc(r.pasos[0].simbolo) + " · " + plural(r.pasos.length, "paso", "pasos"));
+    if (r.pasos.length) partes.push(esc(r.pasos[0].simbolo) + " · " + plural(r.pasos.length, "paso", "pasos") + (r.truncado ? " (recortado)" : ""));
     if (Object.keys(tablas).length) partes.push("tablas: " + esc(Object.keys(tablas).sort().join(", ")));
     if (Object.keys(otros).length) partes.push("llama a: " + esc(Object.keys(otros).sort().join(", ")));
     return partes.join(" · ");
@@ -141,6 +141,7 @@ export const PRODUCTO_JS = String.raw`
               (p.toca.length ? '<div class="chips toca">' + p.toca.map(toque).join("") + "</div>" : "") + "</li>";
           }).join("") + "</ol>"
         : '<p class="vacio">No se encontró el método que atiende este endpoint.</p>';
+      if (r.truncado) cuerpo += '<p class="vacio">Recorrido recortado para que se pueda leer. Completo: <code>brain recorrido "' + esc(nombre(r.endpoint)) + '"</code>.</p>';
       return "<details" + (abiertos ? " open" : "") + ' class="recorrido"><summary><code>' + esc(nombre(r.endpoint)) + "</code><br><small>" + resumenRecorrido(r) + "</small></summary>" + cuerpo + "</details>";
     }).join("");
   }

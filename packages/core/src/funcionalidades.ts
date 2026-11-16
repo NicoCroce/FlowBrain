@@ -210,7 +210,7 @@ export interface LimitesRecorrido {
   cruzarHttp?: boolean;
 }
 /** Para la ficha del visor: lo que una persona lee. */
-export const LIMITES_FICHA: LimitesRecorrido = { pasos: 40, nivel: 6 };
+export const LIMITES_FICHA: LimitesRecorrido = { pasos: 25, nivel: 6 };
 /** Para las consultas de un agente: completo; el presupuesto de tokens recorta después. */
 export const LIMITES_AGENTE: LimitesRecorrido = { pasos: 200, nivel: 12, cruzarHttp: true };
 const EV = /^([^:]+:[^#]+)(?:#L(\d+))?/;
