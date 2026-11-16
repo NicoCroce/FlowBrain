@@ -125,7 +125,7 @@ export function contextoParaPrompt(ctx: Contexto, p: ContextoPromptParams): Cont
 
   const cabecera = [
     "<brain-context>",
-    "Grafo de conocimiento del sistema (determinístico, con evidencia). Herramientas MCP: buscar_nodo, recorrer_grafo, contrato_de, trazar, recorrido, quien_llama, impacto, funcionalidad.",
+    "Grafo de conocimiento del sistema (determinístico, con evidencia). Herramientas MCP: buscar_nodo, recorrer_grafo, contrato_de, trazar, recorrido, pantalla, quien_llama, impacto, funcionalidad.",
   ];
   if (repo) cabecera.push(`Repo actual: ${repo.id} — ${repo.nombre}${repo.resumen ? `: ${repo.resumen}` : ""}`);
   const cierre = "</brain-context>";

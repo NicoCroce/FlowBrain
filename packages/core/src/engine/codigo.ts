@@ -14,9 +14,10 @@ import {
   type Recorredor,
 } from "../funcionalidades.js";
 import { dependenciasDelGrafo, impacto as recorrerImpacto, type Dependencia } from "../impacto.js";
-import { dentroDe, ENDPOINT_REF, normalizarRuta, type Graph } from "../schema.js";
+import { dentroDe, ENDPOINT_REF, normalizarRuta, type Graph, type GraphNode } from "../schema.js";
 import type { Contexto } from "./contexto.js";
 import { ConsultaError, normalizar, rutaCoincide } from "./herramientas.js";
+import { pantallaDeRuta } from "../pantallas.js";
 import { tokens } from "./proyeccion.js";
 
 /**
@@ -319,6 +320,11 @@ export interface RecorridoParams {
 
 export function recorrido(ctx: Contexto, p: RecorridoParams) {
   const ix = indice(ctx);
+  const pant = resolverPantalla(ctx, p.desde);
+  if (pant) {
+    const r = recorridoPantalla(ctx, ix, pant);
+    return ajustarLista({ inicio: pant.id, atiende: r.componente, pasos: r.pasos, ...(r.truncado ? { truncado: true as const } : {}), avisos: r.avisos, indice: versiones(ix) }, "pasos", p.budget_tokens);
+  }
   const eps = resolverEndpoints(ctx, p.desde);
   let recorridos: Array<{ inicio: string; atiende: string | null; pasos: ReturnType<typeof paso>[]; truncado?: true }>;
   if (eps.length) {
@@ -349,6 +355,112 @@ export function recorrido(ctx: Contexto, p: RecorridoParams) {
   const res = { recorridos, avisos, indice: versiones(ix) };
   if (recorridos.length === 1) return ajustarLista({ ...recorridos[0]!, avisos, indice: versiones(ix) }, "pasos", p.budget_tokens);
   return ajustarLista(res, "recorridos", p.budget_tokens);
+}
+
+// ------------------------------------------------------------------ pantalla
+
+type AtrPantalla = {
+  ruta: string;
+  componentes: string[];
+  evidencia: string;
+  envuelta: Array<{ componente: string; sale: Array<{ a: string | null; ruta: string; tipo: string; evidencia: string }> }>;
+  sale: Array<{ a: string | null; ruta: string; tipo: string; evidencia: string }>;
+  desdeEnvolturas?: Array<{ componente: string; tipo: string; evidencia: string }>;
+};
+
+/**
+ * Pantalla por id, por `pantalla /ruta`, por una ruta del front que coincide con una pantalla (y con ningún endpoint),
+ * o por el nombre de su componente. `null` si la referencia no parece una pantalla.
+ */
+function resolverPantalla(ctx: Contexto, ref: string): GraphNode | null {
+  const n = ctx.nodo.get(ref);
+  if (n) return n.tipo === "pantalla" ? n : null;
+  const pantallas = ctx.graph.nodes.filter((x) => x.tipo === "pantalla");
+  if (!pantallas.length) return null;
+  const explicita = /^pantalla\s+(\S+)$/i.exec(ref.trim());
+  const ruta = explicita ? normalizarRuta(explicita[1]!) : ref.startsWith("/") && !ENDPOINT_REF.test(ref) ? normalizarRuta(ref) : null;
+  if (ruta) {
+    if (!explicita && resolverEndpoints(ctx, ruta).length) return null;
+    const conRuta = pantallas.map((x) => ({ ruta: (x.atributos as AtrPantalla).ruta, n: x }));
+    const hit = pantallaDeRuta(ruta, conRuta);
+    if (hit) return hit.n;
+    if (explicita) throw new ConsultaError("nodo_inexistente", `no hay una pantalla con la ruta ${ruta}`);
+    return null;
+  }
+  const porComponente = pantallas.filter((x) => x.aliases.includes(ref));
+  return porComponente.length === 1 ? porComponente[0]! : null;
+}
+
+/** Recorrido de punta a punta desde el componente de una pantalla: cruza al back por HTTP. */
+function recorridoPantalla(ctx: Contexto, ix: IndiceCodigo, n: GraphNode) {
+  const a = n.atributos as AtrPantalla;
+  const componente = a.componentes[a.componentes.length - 1] ?? null;
+  const pasos: ReturnType<typeof paso>[] = [];
+  let truncado = false;
+  // Con varios componentes (la misma ruta declarada dos veces) se recorren todos.
+  for (const c of a.componentes) {
+    const { archivo, simbolo } = partes(c);
+    const r = ix.recorredor.desdeSimbolo(archivo, simbolo);
+    pasos.push(...r.pasos.map((x) => paso(ix, x)));
+    truncado ||= r.truncado;
+  }
+  const avisos = [
+    ...(a.componentes.length > 1 ? [`la ruta ${a.ruta} se declara ${a.componentes.length} veces: se recorren todos sus componentes`] : []),
+    ...(a.componentes.length === 0 ? ["no se encontró el componente de la pantalla"] : []),
+    ...(truncado ? [`recorrido cortado por profundidad (${LIMITES_AGENTE.nivel}) o cantidad de pasos (${LIMITES_AGENTE.pasos})`] : []),
+    ...sinResolverEnPasos(ix, pasos),
+  ];
+  return { componente: componente ? cita(ix, componente) : null, pasos, truncado, avisos };
+}
+
+export interface PantallaParams {
+  ruta: string;
+  budget_tokens?: number | null;
+}
+
+/** Una pantalla del front de punta a punta: de dónde se llega, a dónde lleva, qué la envuelve y qué llama del back. */
+export function pantalla(ctx: Contexto, p: PantallaParams) {
+  const ix = indice(ctx);
+  const n = resolverPantalla(ctx, p.ruta.startsWith("/") && !ctx.nodo.has(p.ruta) ? `pantalla ${p.ruta}` : p.ruta);
+  if (!n) {
+    const q = normalizar(p.ruta);
+    const parecidas = ctx.graph.nodes.filter((x) => x.tipo === "pantalla" && normalizar(`${x.nombre} ${x.aliases.join(" ")}`).includes(q)).map((x) => x.nombre);
+    throw new ConsultaError("nodo_inexistente", `no existe la pantalla: ${p.ruta}${parecidas.length ? ` (¿${parecidas.slice(0, 6).join(", ")}?)` : ""}`);
+  }
+  const a = n.atributos as AtrPantalla;
+  const r = recorridoPantalla(ctx, ix, n);
+  // Solo lo que llama el front mismo: se descarta lo que cuelga de un salto por HTTP (eso ya es el back).
+  let back: number | null = null;
+  const delFront = r.pasos.filter((x) => {
+    if (back !== null && x.n > back) return false;
+    back = x.via?.startsWith("por HTTP") ? x.n : null;
+    return back === null;
+  });
+  const llama = [...new Set(delFront.flatMap((x) => (x.toca ?? []).filter((t) => t.startsWith("llama_a ")).map((t) => t.slice(8))))];
+  const salida = (s: AtrPantalla["sale"][number]) => ({ a: s.a ? nombre(ctx, s.a) : `${s.ruta} (sin pantalla conocida)`, tipo: s.tipo, ev: s.evidencia });
+  const entran = ctx.graph.edges.filter((e) => e.verbo === "navega_a" && e.hasta === n.id);
+  const res = {
+    id: n.id,
+    ruta: a.ruta,
+    componente: r.componente,
+    funcionalidades: [...new Set(a.componentes.flatMap((c) => dueñas(ix, partes(c).archivo)))].sort(cmp),
+    declarada: a.evidencia,
+    envuelta: a.envuelta.map((e) => ({ componente: cita(ix, e.componente), lleva: e.sale.map(salida) })),
+    llegaDesde: [
+      ...entran.map((e) => ({ desde: nombre(ctx, e.desde), ev: e.evidencia })),
+      ...(a.desdeEnvolturas ?? []).map((d) => ({ desde: `${partes(d.componente).simbolo} (layout o guarda, ${d.tipo})`, ev: d.evidencia })),
+    ],
+    vaA: a.sale.map(salida),
+    llamaAlBack: llama,
+    recorrido: r.pasos,
+    avisos: [
+      ...(entran.length === 0 && !(a.desdeEnvolturas ?? []).length ? ["ninguna pantalla conocida lleva acá: se entra desde afuera (link, mail, callback) o con una ruta armada en tiempo de ejecución"] : []),
+      ...r.avisos,
+      ...avisosIndice(ix),
+    ],
+    indice: versiones(ix),
+  };
+  return ajustarLista(res, ["recorrido", "llegaDesde", "vaA"], p.budget_tokens);
 }
 
 // ------------------------------------------------------------------ quien_llama

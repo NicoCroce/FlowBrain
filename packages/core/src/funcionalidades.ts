@@ -52,6 +52,23 @@ export interface Ficha {
   /** Cómo está construida: recorrido de cada endpoint y elementos de dominio que usa. */
   recorridos: Recorrido[];
   dominio: ElementoDominio[];
+  /** Pantallas del front cuyo componente está en `codigo`, con su navegación y su recorrido hasta las llamadas al back. */
+  pantallas: PantallaFicha[];
+}
+
+export interface PantallaFicha {
+  id: string;
+  ruta: string;
+  /** Componente que la dibuja (`repo:archivo#Simbolo`), el de esta funcionalidad si hay varios. */
+  componente: string | null;
+  /** Layouts y guardas que la envuelven, de afuera hacia adentro. */
+  envuelta: Array<{ componente: string; sale: Array<{ a: string | null; ruta: string; tipo: string; evidencia: string }> }>;
+  /** Pantallas que llevan a esta (`desde` es un id de pantalla) o layouts/guardas (`desde` es su componente). */
+  llegaDesde: Array<{ desde: string; evidencia: string; tipo?: string }>;
+  vaA: Array<{ a: string | null; ruta: string; tipo: string; evidencia: string }>;
+  /** Endpoints que llama, en el orden del recorrido. */
+  endpoints: string[];
+  recorrido: { pasos: Paso[]; truncado?: true };
 }
 
 /** Capa de un archivo, por convención de nombres (sufijo del archivo y, si no, la carpeta más profunda que coincida). */
@@ -188,7 +205,20 @@ export const ES_TEST = /[._-](test|spec)\.[^./]+$|(^|\/)(__tests__|__mocks__|tes
  * nada (formatear, validar, escapar) se omiten y sus hijos cuelgan del paso visible más cercano.
  */
 export function podar(pasos: Paso[]): Paso[] {
-  const visible = (p: Paso) => p.nivel === 0 || p.simbolo.includes(".") || p.toca.length > 0;
+  // Las funciones en el camino hacia algo que toca datos o servicios también se ven: en el front son los
+  // componentes y hooks entre la pantalla y la llamada a la API.
+  const camino = new Set<Paso>();
+  pasos.forEach((p, i) => {
+    if (!p.toca.length || p.repite) return;
+    let nivel = p.nivel;
+    for (let j = i - 1; j >= 0 && nivel > 0; j--) {
+      if (pasos[j]!.nivel < nivel) {
+        camino.add(pasos[j]!);
+        nivel = pasos[j]!.nivel;
+      }
+    }
+  });
+  const visible = (p: Paso) => p.nivel === 0 || p.simbolo.includes(".") || p.toca.length > 0 || camino.has(p);
   const out: Paso[] = [];
   const pila: Array<{ nivel: number; visible: Paso | null }> = [];
   for (const p of pasos) {
@@ -358,6 +388,32 @@ export function fichasDeFuncionalidades(
   };
 
   const rec = crearRecorredor(graph, estructura, aristas, sinPagina);
+  const entrantes = new Map<string, Array<{ desde: string; evidencia: string }>>();
+  for (const e of graph.edges) if (e.verbo === "navega_a") entrantes.set(e.hasta, [...(entrantes.get(e.hasta) ?? []), { desde: e.desde, evidencia: e.evidencia ?? "" }]);
+  const pantallasDe = (codigo: string[]): PantallaFicha[] =>
+    graph.nodes
+      .filter((n) => n.tipo === "pantalla")
+      .flatMap((n): PantallaFicha[] => {
+        const a = n.atributos as { ruta: string; componentes: string[]; envuelta: PantallaFicha["envuelta"]; sale: PantallaFicha["vaA"]; desdeEnvolturas?: Array<{ componente: string; tipo: string; evidencia: string }> };
+        const propio = a.componentes.find((c) => enCodigo(c.slice(0, c.lastIndexOf("#")), codigo));
+        if (!propio) return [];
+        const i = propio.lastIndexOf("#");
+        const r = rec.desdeSimbolo(propio.slice(0, i), propio.slice(i + 1));
+        const endpoints = [...new Set(r.pasos.flatMap((p) => p.toca.flatMap((t) => (t.verbo === "llama_a" && t.endpoint ? [t.endpoint] : []))))];
+        return [
+          {
+            id: n.id,
+            ruta: a.ruta,
+            componente: propio,
+            envuelta: a.envuelta,
+            llegaDesde: [...(entrantes.get(n.id) ?? []), ...(a.desdeEnvolturas ?? []).map((d) => ({ desde: d.componente, evidencia: d.evidencia, tipo: d.tipo }))],
+            vaA: a.sale,
+            endpoints,
+            recorrido: { pasos: r.pasos, ...(r.truncado ? { truncado: true as const } : {}) },
+          },
+        ];
+      })
+      .sort((x, y) => cmp(x.ruta, y.ruta));
   const recorrido = rec.desdeEndpoint;
   const dominiosDe = new Map<string, Set<string>>();
 
@@ -411,6 +467,7 @@ export function fichasDeFuncionalidades(
       datos: [...datos.values()].sort((a, b) => cmp(a.tabla, b.tabla)),
       usaFuncionalidades: [...usaFeats].sort(cmp),
       usadaPor: [],
+      pantallas: pantallasDe(f.codigo),
     };
   });
   const porId = new Map(fichas.map((f) => [f.id, f]));

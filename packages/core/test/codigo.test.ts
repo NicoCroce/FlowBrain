@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, commitDe, compile, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, commitDe, compile, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -25,10 +25,19 @@ beforeAll(async () => {
     repo: "repo-tienda",
     servicios: [],
   });
-  const entradas = { ...base, paginas, extracciones: [{ ruta: "_build/extraccion/repo-tienda.json", contenido: extraccion }] };
+  // Una pantalla del front (`/checkout`, dibujada por `main`) que llama a `confirmarCheckout`.
+  const archivos = base.archivos.map((a) => {
+    const j = JSON.parse(a.contenido) as { archivos: Array<{ ruta: string; invoca?: unknown[] }>; pantallas?: unknown[] };
+    const main = j.archivos.find((x) => x.ruta === "apps/web/src/main.tsx");
+    if (!main) return a;
+    main.invoca = [{ desde: "main", archivo: "apps/web/src/api/checkout.ts", simbolo: "confirmarCheckout", linea: 2 }];
+    j.pantallas = [{ paquete: "apps/web", ruta: "/checkout", archivo: "apps/web/src/main.tsx", linea: 1, componente: { archivo: "apps/web/src/main.tsx", simbolo: "main" }, envuelta: [] }];
+    return { ...a, contenido: JSON.stringify(j) };
+  });
+  const entradas = { ...base, paginas, archivos, extracciones: [{ ruta: "_build/extraccion/repo-tienda.json", contenido: extraccion }] };
   const contratos = base.contratos.map((c) => JSON.parse(c.contenido) as Contrato);
   const salidas = compile(entradas);
-  ctx = contextoDeSalidas(salidas, contratos, { archivos: base.archivos.map((a) => a.contenido), extracciones: [extraccion] });
+  ctx = contextoDeSalidas(salidas, contratos, { archivos: archivos.map((a) => a.contenido), extracciones: [extraccion] });
   sinIndice = contextoDeSalidas(salidas, contratos);
 });
 
@@ -40,6 +49,21 @@ describe("consultas de código", () => {
       { n: 0, simbolo: "postCheckout", ev: "repo-tienda:apps/bff/src/routes/checkout.ts#L14", toca: ["escribe_en tabla-pagos"] },
       { n: 1, simbolo: "crearPago", ev: "repo-tienda:apps/bff/src/clients/payments.ts#L10", toca: ["llama_a svc-payments:POST:/payments"] },
     ]);
+  });
+
+  it("pantalla de punta a punta: componente, funcionalidad, llamadas al back y recorrido que cruza por HTTP", () => {
+    const r = pantalla(ctx, { ruta: "/checkout", budget_tokens: null });
+    expect(r).toMatchObject({ id: "svc-web:pantalla:/checkout", componente: "main @ repo-tienda:apps/web/src/main.tsx#L1", funcionalidades: ["feat-carrito"], llamaAlBack: ["svc-bff:POST:/checkout"] });
+    expect(r.recorrido.map((p) => `${p.n} ${p.simbolo}${p.via ? ` (${p.via})` : ""}`)).toEqual([
+      "0 main",
+      "1 confirmarCheckout",
+      "2 postCheckout (por HTTP: svc-bff:POST:/checkout)",
+      "3 crearPago",
+    ]);
+    expect(r.avisos[0]).toMatch(/ninguna pantalla conocida lleva acá/);
+    // `recorrido` acepta la pantalla, y una ruta del front que no es un endpoint.
+    expect(recorrido(ctx, { desde: "pantalla /checkout", budget_tokens: null })).toMatchObject({ inicio: "svc-web:pantalla:/checkout" });
+    expect(() => pantalla(ctx, { ruta: "/nada" })).toThrow(ConsultaError);
   });
 
   it("quien_llama sube por las invocaciones y dice qué endpoints y funcionalidades alcanza", () => {

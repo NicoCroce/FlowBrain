@@ -178,10 +178,13 @@ describe("funcionalidades", () => {
     expect(f.dominio).toEqual([]);
   });
 
-  it("el recorrido omite funciones sueltas que no tocan nada y cuelga sus hijos del paso visible más cercano", () => {
+  it("el recorrido omite funciones sueltas que no tocan nada ni llevan a algo que toca, y cuelga sus hijos del paso visible más cercano", () => {
     const p = (simbolo: string, nivel: number, toca: number = 0) => ({ simbolo, evidencia: "repo-a:x.ts#L1", capa: "logica" as const, nivel, desde: null, toca: Array.from({ length: toca }, () => ({ verbo: "lee_de", hasta: "tabla-x", endpoint: null })) });
-    const r = podar([p("Ctrl.get", 0), p("ayuda", 1), p("Svc.leer", 2), p("Repo.find", 3, 1), p("formatear", 1), p("leerCrudo", 1, 1)]);
-    expect(r.map((x) => `${x.nivel} ${x.simbolo} <${x.desde}`)).toEqual(["0 Ctrl.get <null", "1 Svc.leer <Ctrl.get", "2 Repo.find <Svc.leer", "1 leerCrudo <Ctrl.get"]);
+    const r = podar([p("Ctrl.get", 0), p("ayuda", 1), p("Svc.armar", 2), p("formatear", 3), p("formatear", 1), p("leerCrudo", 1, 1)]);
+    expect(r.map((x) => `${x.nivel} ${x.simbolo} <${x.desde}`)).toEqual(["0 Ctrl.get <null", "1 Svc.armar <Ctrl.get", "1 leerCrudo <Ctrl.get"]);
+    // En el camino hacia algo que toca (un hook entre la pantalla y la API), la función suelta se ve.
+    const front = podar([p("Pantalla", 0), p("useGuardar", 1), p("api.guardar", 2, 1), p("formatear", 1)]);
+    expect(front.map((x) => `${x.nivel} ${x.simbolo} <${x.desde}`)).toEqual(["0 Pantalla <null", "1 useGuardar <Pantalla", "2 api.guardar <useGuardar"]);
   });
   it("un método repetido en el recorrido hereda lo que tocó la primera vez y no se marca como hueco", () => {
     const graph = { nodes: [], edges: [] } as unknown as Parameters<typeof crearRecorredor>[0];

@@ -13,6 +13,7 @@ import {
   PROFUNDIDAD_MAX,
   quienLlama,
   recorrido,
+  pantalla,
   PROYECCIONES,
   recorrerGrafo,
   stringifyCanonical,
@@ -162,12 +163,25 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     "recorrido",
     {
       description:
-        "Qué ejecuta el código desde un endpoint, un método o un hook/función del front: pasos en orden de llamada (front → endpoint → controller → servicio → repositorio) con repo:ruta#Ln y lo que toca cada paso (lee_de/escribe_en tabla, llama_a endpoint). `via` marca saltos por HTTP, eventos o colas; `repite`, un método ya recorrido; `aviso`, un hueco conocido.",
-      inputSchema: { desde: z.string().min(1).describe("endpoint (\"MÉTODO /ruta\", /ruta o id) o símbolo (Clase.metodo, funcion, ruta#Clase.metodo)"), ...presupuesto },
+        "Qué ejecuta el código desde un endpoint, un método, un hook/función del front o una pantalla (`pantalla /ruta`): pasos en orden de llamada (front → endpoint → controller → servicio → repositorio) con repo:ruta#Ln y lo que toca cada paso (lee_de/escribe_en tabla, llama_a endpoint). `via` marca saltos por HTTP, eventos o colas; `repite`, un método ya recorrido; `aviso`, un hueco conocido.",
+      inputSchema: { desde: z.string().min(1).describe("endpoint (\"MÉTODO /ruta\", /ruta o id) o símbolo (Clase.metodo, funcion, ruta#Clase.metodo) o pantalla (\"pantalla /login\")"), ...presupuesto },
     },
     async (a) => {
       const ctx = await obtener();
       return responder(() => recorrido(ctx, limpio(a)));
+    },
+  );
+
+  server.registerTool(
+    "pantalla",
+    {
+      description:
+        "Una pantalla del front de punta a punta: su componente y funcionalidad, qué la envuelve (layouts, guardas y a dónde redirigen), desde qué pantallas o menús se llega, a cuáles lleva, qué endpoints del back llama y el recorrido completo (pantalla → componentes → hooks → API → endpoint → controller → servicio → tabla) con repo:ruta#Ln.",
+      inputSchema: { ruta: z.string().min(1).describe("ruta del front (/login, /players/{id}), id de la pantalla o nombre de su componente (LoginScreen)"), ...presupuesto },
+    },
+    async (a) => {
+      const ctx = await obtener();
+      return responder(() => pantalla(ctx, limpio(a)));
     },
   );
 

@@ -14,6 +14,7 @@ import {
   impactoDe,
   quienLlama,
   recorrido,
+  pantalla,
   formatError,
   recorrerGrafo,
   stringifyCanonical,
@@ -50,6 +51,7 @@ Comandos:
   trazar --desde <nodo|URL|ruta|archivo> [--hasta <nodo>]
   funcionalidad <id|nombre>                 ficha compacta: endpoints, consumo, datos, relaciones, dominio compartido
   recorrido <"MÉTODO /ruta"|Clase.metodo>   pasos controller → servicio → repositorio, con lo que toca cada uno
+  pantalla </ruta|Componente>               pantalla del front de punta a punta: de dónde se llega, a dónde lleva, qué llama del back
   quien-llama <Clase.metodo|Clase> [--profundidad n]
   impacto <pieza>                           qué se ve afectado si cambia una tabla, endpoint, servicio, feat o símbolo
   evaluar [archivo] [--minimo pct]          corre preguntas con respuesta conocida (por defecto evals/preguntas.json)
@@ -273,6 +275,10 @@ export async function ejecutar(
       case "recorrido":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <endpoint o símbolo>");
         resultado = recorrido(ctx, { desde: arg, ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
+      case "pantalla":
+        if (!arg) throw new ConsultaError("parametro_invalido", "falta </ruta>");
+        resultado = pantalla(ctx, { ruta: arg, ...opt("budget_tokens", comunes.budget_tokens) });
         break;
       case "quien-llama":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <símbolo>");
