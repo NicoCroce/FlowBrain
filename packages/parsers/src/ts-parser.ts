@@ -38,11 +38,16 @@ const OPS_PRISMA_ESCRITURA = new Set(["create", "createMany", "update", "updateM
  * Tablas nombradas en un SQL escrito a mano: INSERT/REPLACE INTO, UPDATE y DELETE FROM escriben; FROM y JOIN leen.
  * Ignora los CTE (`WITH x AS`) y el `FROM` de funciones (`EXTRACT(YEAR FROM fecha)`, `TRIM(x FROM y)`).
  */
+/** Nombres de CTE (`WITH x AS (…), y AS (…)`) en minúsculas. */
+export function ctesDeSql(sql: string): Set<string> {
+  return new Set([...sql.matchAll(/(?:\bwith(?:\s+recursive)?|,)\s+(\w+)\s+as\s*\(/gi)].map((m) => m[1]!.toLowerCase()));
+}
+
 export function tablasDeSql(sql: string): Array<{ tabla: string; verbo: "lee_de" | "escribe_en"; saltos: number }> {
   const out: Array<{ tabla: string; verbo: "lee_de" | "escribe_en"; saltos: number }> = [];
   // Nombre con comillas opcionales (`x`, "x", [x]) y esquema opcional: se queda con la tabla.
   const nombre = "[`\"\\[]?(?:\\w+[`\"\\]]?\\.[`\"\\[]?)?(\\w+)[`\"\\]]?";
-  const ctes = new Set([...sql.matchAll(/(?:\bwith(?:\s+recursive)?|,)\s+(\w+)\s+as\s*\(/gi)].map((m) => m[1]!.toLowerCase()));
+  const ctes = ctesDeSql(sql);
   const saltos = (i: number) => (sql.slice(0, i).match(/\n/g) ?? []).length;
   const ocupado = new Set<number>();
   const agregar = (m: RegExpMatchArray, verbo: "lee_de" | "escribe_en") => {
@@ -50,7 +55,7 @@ export function tablasDeSql(sql: string): Array<{ tabla: string; verbo: "lee_de"
     if (ctes.has(tabla.toLowerCase()) || /^(select|set|values|dual|lateral|unnest|json_table)$/i.test(tabla)) return;
     out.push({ tabla, verbo, saltos: saltos(m.index!) });
   };
-  for (const m of sql.matchAll(new RegExp("\\b(?:insert\\s+(?:ignore\\s+)?into|replace\\s+into|update(?:\\s+ignore)?|delete\\s+from)\\s+" + nombre, "gi"))) {
+  for (const m of sql.matchAll(new RegExp("\\b(?:insert\\s+(?:ignore\\s+)?into|replace\\s+into|(?<!\\bkey\\s+)update(?:\\s+ignore)?|delete\\s+from)\\s+" + nombre, "gi"))) {
     ocupado.add(m.index! + m[0].length);
     agregar(m, "escribe_en");
   }
@@ -143,6 +148,9 @@ function crearPrograma(repo: RepoFuente): ts.Program {
 
 function extraer(repo: RepoFuente): Extraccion {
   const out = extraccionVacia("ts-parser");
+  // Los CTE pueden declararse en un fragmento y usarse en otro (`${ctes(…)} … ${FROM}`): se filtran con los de todo el repo.
+  const ctesRepo = new Set<string>();
+  const deSql = new Set<object>();
   const programa = crearPrograma(repo);
   const checker = programa.getTypeChecker();
   const rel = (sf: ts.SourceFile) => sf.fileName.slice(repo.raiz.length + 1).split("\\").join("/");
@@ -871,7 +879,8 @@ function extraer(repo: RepoFuente): Extraccion {
       const tpl = t.template;
       const texto = ts.isNoSubstitutionTemplateLiteral(tpl) ? tpl.text : [tpl.head.text, ...tpl.templateSpans.map((x) => x.literal.text)].join(" ? ");
       const base = linea(tpl);
-      for (const a of tablasDeSql(texto)) out.tablas.push({ paquete, archivo, linea: base + a.saltos, modelo: a.tabla, verbo: a.verbo });
+      for (const c of ctesDeSql(texto)) ctesRepo.add(c);
+      for (const a of tablasDeSql(texto)) deSql.add(out.tablas[out.tablas.push({ paquete, archivo, linea: base + a.saltos, modelo: a.tabla, verbo: a.verbo }) - 1]!);
       // Fragmentos compartidos: `${WELLNESS_FROM}` → la constante es otro sql`…`; sus tablas van a la línea donde se usa.
       const fragmentos = (tp: ts.TemplateLiteral, l: number | null, prof: number) => {
         if (ts.isNoSubstitutionTemplateLiteral(tp) || prof > 3) return;
@@ -882,7 +891,8 @@ function extraer(repo: RepoFuente): Extraccion {
           const t2 = ini.template;
           const txt = ts.isNoSubstitutionTemplateLiteral(t2) ? t2.text : [t2.head.text, ...t2.templateSpans.map((x) => x.literal.text)].join(" ? ");
           const donde = l ?? linea(sp.expression);
-          for (const a of tablasDeSql(txt)) out.tablas.push({ paquete, archivo, linea: donde, modelo: a.tabla, verbo: a.verbo });
+          for (const c of ctesDeSql(txt)) ctesRepo.add(c);
+          for (const a of tablasDeSql(txt)) deSql.add(out.tablas[out.tablas.push({ paquete, archivo, linea: donde, modelo: a.tabla, verbo: a.verbo }) - 1]!);
           fragmentos(t2, donde, prof + 1);
         }
       };
@@ -909,6 +919,7 @@ function extraer(repo: RepoFuente): Extraccion {
   }
   for (const arc of porRuta.values()) arc.invoca?.sort((a, b) => cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo) || a.linea - b.linea || cmp(a.via ?? "", b.via ?? ""));
 
+  out.tablas = out.tablas.filter((t) => !deSql.has(t) || !ctesRepo.has(t.modelo.toLowerCase()));
   ordenar(out);
   return out;
 }

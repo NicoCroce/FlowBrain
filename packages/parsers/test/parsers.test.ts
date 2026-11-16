@@ -316,6 +316,18 @@ describe("ts-parser: auxiliares de ruta y Kysely", () => {
         "",
       ].join("\n"),
     );
+    // CTE declarado en un fragmento y usado en otro: `vp` no es una tabla.
+    await w(
+      "src/mvp.ts",
+      [
+        'import { sql } from "kysely";',
+        "declare const db: any;",
+        "const ctes = () => sql`WITH vp AS (SELECT * FROM votes)`;",
+        "const DESDE_VP = sql`FROM vp`;",
+        "export const q = () => sql`${ctes()} SELECT * ${DESDE_VP}`.execute(db);",
+        "",
+      ].join("\n"),
+    );
   });
   afterAll(() => rm(dir, { recursive: true, force: true }));
 
@@ -333,6 +345,7 @@ describe("ts-parser: auxiliares de ruta y Kysely", () => {
       "lee_de category",
       "lee_de player",
       "lee_de team_has_players",
+      "lee_de votes",
       "lee_de wellness_test",
       "lee_de wellness_test",
     ]);
@@ -486,5 +499,6 @@ describe("tablasDeSql (Kysely sql`…`)", () => {
     expect(r("DELETE FROM payment WHERE id = ?")).toEqual(["escribe_en payment +0"]);
     expect(r("INSERT INTO invoice (a) SELECT a FROM payment")).toEqual(["escribe_en invoice +0", "lee_de payment +0"]);
     expect(r("WITH ult AS (SELECT * FROM pago) SELECT EXTRACT(YEAR FROM fecha) FROM ult")).toEqual(["lee_de pago +0"]);
+    expect(r("INSERT INTO top (a, b) VALUES (?, ?) ON DUPLICATE KEY UPDATE b = VALUES(b)")).toEqual(["escribe_en top +0"]);
   });
 });

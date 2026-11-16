@@ -192,3 +192,5 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
 ## 2026-11-16 · Rutas con decoradores propios
 
 110. **Las rutas de Nest declaradas con decoradores propios cuentan como endpoints.** Un repo puede envolver `@Get/@Post/...` en su propio decorador (`export const LegacyPost = (p) => applyDecorators(Post(p), HttpCode(200))`, o una función que devuelve `Put("fijo")`). El parser sigue el identificador del decorador hasta su declaración en el repo, busca adentro la llamada al verbo de Nest y toma la ruta del literal o del argumento que el envoltorio le pasa en la misma posición. En el proyecto real el back pasa de 83 a 108 endpoints y las llamadas del front sin resolver bajan de 33 a 7.
+
+111. **CTE entre fragmentos y `ON DUPLICATE KEY UPDATE`.** Un CTE puede declararse en un fragmento SQL (`${mvpCtes(…)}`) y leerse en otro (`${MVP_FROM}`): los nombres de CTE se juntan de todo el repo y se descartan como tablas al final. `ON DUPLICATE KEY UPDATE col = …` ya no cuenta `col` como tabla escrita. En el proyecto real desaparecen cinco tablas falsas.
