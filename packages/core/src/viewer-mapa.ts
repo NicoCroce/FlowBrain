@@ -57,7 +57,7 @@ export const MAPA_JS =
         { selector: "node[tipo = 'feat']", style: { shape: "round-rectangle", width: function (n) { return 22 + Math.min(n.data("peso"), 8) * 5; }, height: function (n) { return 22 + Math.min(n.data("peso"), 8) * 5; }, "font-size": 12, "font-weight": 600 } },
         { selector: "node[tipo = 'tabla']", style: { shape: "barrel" } },
         { selector: "node[tipo = 'ext']", style: { shape: "hexagon" } },
-        { selector: "edge", style: { width: 1.2, "line-color": color("borde"), "target-arrow-color": color("borde"), "target-arrow-shape": "triangle", "curve-style": "bezier", "arrow-scale": 0.9 } },
+        { selector: "edge", style: { width: 1.2, "line-color": color("linea"), "target-arrow-color": color("linea"), "target-arrow-shape": "triangle", "curve-style": "bezier", "arrow-scale": 0.9 } },
         { selector: "edge[clase = 'usa']", style: { width: function (e) { return 1.5 + Math.min(e.data("veces"), 6) * 0.5; }, "line-color": color("suave"), "target-arrow-color": color("suave") } },
         { selector: "edge[clase = 'dato'], edge[clase = 'ext']", style: { "line-style": "dashed", opacity: 0.7 } },
         { selector: ".atenuado", style: { opacity: 0.1 } },
@@ -128,11 +128,11 @@ export const MAPA_JS =
       html += (n.r && !P.pendiente(n.r) ? "<p>" + esc(n.r) + "</p>" : "") + (t === "tabla" ? listaH("La escriben", de("escribe_en")) + listaH("La leen", de("lee_de")) : listaH("La usan", de("llama_a")));
     }
     panel.innerHTML = html + "<h2>Impacto</h2>" + resumenImpacto(id) + '<p><a href="#/impacto/' + encodeURIComponent(id) + '">Ver qué se ve afectado si cambia →</a></p>' +
-      '<p><small><a href="#/grafo/' + encodeURIComponent(id) + '">Ver en el grafo completo</a></small></p>';
+      '<p><small><a href="#/grafo/' + encodeURIComponent(id) + '">Ver en el mapa 3D</a></small></p>';
   }
   function mostrarDeps(id) {
     if (!fichas.length) {
-      panel.innerHTML = '<p class="aviso">Todavía no hay funcionalidades: el mapa de dependencias se arma con ellas. Mientras tanto, el grafo completo y el impacto funcionan sobre servicios, tablas y endpoints.</p>';
+      panel.innerHTML = '<p class="aviso">Todavía no hay funcionalidades: el mapa de dependencias se arma con ellas. Mientras tanto, el mapa 3D y el impacto funcionan sobre servicios, tablas y endpoints.</p>';
       return;
     }
     if (!cyd) armarDeps();
@@ -252,6 +252,7 @@ export const MAPA_JS =
     }
     document.querySelectorAll("#cabecera nav a").forEach(function (a) { a.classList.toggle("activa", a.getAttribute("data-vista") === vista); });
     Object.keys(vistas).forEach(function (k) { vistas[k].classList.toggle("oculto", k !== vista); });
+    document.getElementById("presets").classList.toggle("oculto", vista !== "grafo");
     if (vista === "grafo") { V.mostrarMapa(); if ((m = /^\/grafo\/(.+)$/.exec(h))) V.enfocar(m[1]); return; }
     if (vista === "deps") { m = /^\/mapa\/(.+)$/.exec(h); mostrarDeps(m ? m[1] : null); return; }
     if (vista === "impacto") { m = /^\/impacto\/(.+)$/.exec(h); mostrarImpacto(m ? m[1] : null); window.scrollTo(0, 0); return; }

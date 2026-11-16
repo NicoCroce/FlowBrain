@@ -12,6 +12,7 @@ export * from "./verificar.js";
 export * from "./viewer.js";
 export * from "./funcionalidades.js";
 export * from "./impacto.js";
+export * from "./mapa3d.js";
 export * from "./engine/codigo.js";
 export * from "./git.js";
 export * from "./engine/evaluar.js";

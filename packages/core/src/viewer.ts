@@ -1,51 +1,27 @@
 import type { Ficha } from "./funcionalidades.js";
 import { dependenciasDelGrafo } from "./impacto.js";
+import { mapa3dDelGrafo } from "./mapa3d.js";
+import { GRAFO3D_JS } from "./viewer-3d.js";
 import { MAPA_JS } from "./viewer-mapa.js";
 import { PRODUCTO_JS } from "./viewer-producto.js";
 import type { Graph } from "./schema.js";
 
 /**
- * Visor estático (`_build/viewer.html`): un único HTML con Cytoscape.js y el grafo embebidos, sin servidor ni red.
- * Filtros por tipo, estado y origen; búsqueda por id, nombre o alias; clic en un nodo → frontmatter resumido,
- * aristas con evidencia y enlace a la página. Determinístico: depende solo del grafo y de la versión de Cytoscape.
+ * Visor estático (`_build/viewer.html`): un único HTML con el grafo embebido, sin servidor ni red. Vistas:
+ * funcionalidades, mapa 3D del grafo entero (`viewer-3d.ts`), dependencias (Cytoscape.js) e impacto.
+ * Determinístico: depende solo del grafo, las funcionalidades y la versión de Cytoscape.
  */
 
-/** Tipos visibles al abrir el visor: los generados (endpoints, archivos) se prenden a mano. Los repos no tienen filtro: ver `reposDelGrafo`. */
-const TIPOS_INICIALES = ["svc", "lib", "db", "queue", "ext", "tabla", "feat", "team", "decision"];
+/** Tipos visibles al abrir el mapa 3D: los archivos son miles y se prenden a mano. */
+const TIPOS_INICIALES = ["feat", "endpoint", "tabla", "svc", "repo", "lib", "ext", "queue", "db", "team", "decision"];
 
 const seguroEnScript = (s: string) => s.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
-
-export interface RepoVisor {
-  /** Servicios que viven en el repo (`svc vive_en repo`), ordenados. */
-  svcs: string[];
-  archivos: number;
-  /**
-   * Con dos o más servicios el repo se dibuja como caja que los contiene. Con uno o ninguno no se dibuja: se ve
-   * desde el panel del servicio y se despliega a pedido, con sus archivos.
-   */
-  contenedor: boolean;
-}
-
-export function reposDelGrafo(graph: Graph): Record<string, RepoVisor> {
-  const tipo = new Map(graph.nodes.map((n) => [n.id, n.tipo]));
-  const out: Record<string, RepoVisor> = {};
-  for (const n of graph.nodes) if (n.tipo === "repo") out[n.id] = { svcs: [], archivos: 0, contenedor: false };
-  for (const e of graph.edges) {
-    if (e.verbo === "vive_en" && out[e.hasta] && tipo.get(e.desde) === "svc" && !out[e.hasta]!.svcs.includes(e.desde)) out[e.hasta]!.svcs.push(e.desde);
-    if (e.verbo === "contiene" && out[e.desde] && tipo.get(e.hasta) === "archivo") out[e.desde]!.archivos++;
-  }
-  for (const r of Object.values(out)) {
-    r.svcs.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-    r.contenedor = r.svcs.length >= 2;
-  }
-  return out;
-}
 
 export function renderViewer(graph: Graph, cytoscapeJs: string, funcionalidades: Ficha[] = []): string {
   const datos = {
     dependencias: dependenciasDelGrafo(graph, funcionalidades),
     funcionalidades,
-    repos: reposDelGrafo(graph),
+    mapa3d: mapa3dDelGrafo(graph, funcionalidades),
     edges: graph.edges.map((e) => ({
       c: e.confianza,
       d: e.dato,
@@ -79,108 +55,173 @@ export function renderViewer(graph: Graph, cytoscapeJs: string, funcionalidades:
 <title>Brain · visor</title>
 <style>
 :root {
-  --fondo: #f7f7f5; --panel: #ffffff; --texto: #1d1d1b; --suave: #6b6b66; --borde: #e2e2dc; --acento: #2f6fdb;
-  --svc: #2f6fdb; --repo: #6b6b66; --lib: #7a5cc7; --db: #b5651d; --tabla: #d08a3c; --queue: #1f9e89; --ext: #c2410c;
-  --feat: #16a34a; --team: #a16207; --decision: #9333ea; --contrato: #94a3b8; --endpoint: #60a5fa; --archivo: #a8a29e;
-  --dudoso: #dc2626;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fondo: #141413; --panel: #1e1e1c; --texto: #ecebe6; --suave: #a3a39b; --borde: #34342f; --acento: #7aa7f5;
-    --svc: #7aa7f5; --repo: #a3a39b; --lib: #b39ddb; --db: #e0a060; --tabla: #f0b878; --queue: #4fd1b8; --ext: #fb8c5a;
-    --feat: #4ade80; --team: #facc15; --decision: #c084fc; --contrato: #64748b; --endpoint: #93c5fd; --archivo: #78716c;
-    --dudoso: #f87171;
-  }
+  color-scheme: dark;
+  --sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; --display: "Space Grotesk", Inter, system-ui, -apple-system, sans-serif;
+  --fondo: #0A0C11; --panel: #0D1016; --tarjeta: #10141C; --hover: #171B25; --texto: #E6E8EE; --claro: #D5DAE4; --medio: #A3ABBD; --suave: #8A93A6;
+  --borde: #1F2433; --borde2: #2A3142; --linea: #3A4256; --acento: #9DB4FF; --primario: #4F6BFF;
+  --feat: #F5A524; --endpoint: #7DD3FC; --tabla: #4ADE80; --svc: #5B7CFF; --repo: #B794F6; --lib: #FDE68A; --ext: #F472B6; --queue: #FB7185;
+  --db: #14B8A6; --team: #FCA5A5; --decision: #C4B5FD; --contrato: #64748B; --archivo: #94A3B8; --dudoso: #F87171;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--fondo); color: var(--texto); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-#cabecera { display: flex; align-items: center; gap: 18px; height: 48px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--borde); position: sticky; top: 0; z-index: 2; }
-#cabecera strong { font-size: 15px; }
-#cabecera nav { display: flex; gap: 4px; }
-#cabecera nav a { padding: 6px 10px; border-radius: 6px; color: var(--suave); text-decoration: none; }
-#cabecera nav a.activa { background: var(--fondo); color: var(--texto); font-weight: 600; }
+html, body { margin: 0; min-height: 100%; background: var(--fondo); color: var(--texto); font: 14px/1.5 var(--sans); }
+a { color: var(--acento); } a:hover { color: #C7D4FF; }
+h1, h2, h3 { font-family: var(--display); letter-spacing: -0.01em; }
+code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--suave); overflow-wrap: anywhere; }
 .oculto { display: none !important; }
-#app { display: grid; grid-template-columns: 300px 1fr 340px; height: calc(100vh - 48px); }
-.pagina { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
-.pagina h1 { font-size: 22px; margin: 0 0 4px; }
-.pagina .volver { display: inline-block; margin-bottom: 12px; text-decoration: none; }
-#buscar-impacto { max-width: 560px; }
-#resultados-impacto { max-width: 560px; margin-bottom: 18px; }
-.columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 28px; margin-top: 12px; }
-.resumen-impacto { margin: 4px 0 12px; }
-.resumen-impacto .chip { font-size: 13px; color: var(--texto); }
-#deps { display: grid; grid-template-columns: 1fr 360px; height: calc(100vh - 48px); }
-#cy-deps { width: 100%; height: 100%; }
-.barra-mapa { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; }
-.barra-mapa input[type=search] { width: 240px; }
-.barra-mapa label { padding: 0; }
-.barra-mapa small { color: var(--suave); }
-.subtitulo { color: var(--suave); margin: 0 0 18px; }
-#filtro-feat, #buscar-impacto { max-width: 420px; margin-bottom: 18px; }
-.tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
-.tarjeta { display: block; padding: 14px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); color: var(--texto); text-decoration: none; }
-.tarjeta:hover { border-color: var(--acento); }
-.tarjeta h3 { margin: 0 0 6px; font-size: 15px; }
-.tarjeta p { margin: 0 0 10px; color: var(--suave); font-size: 13px; }
+::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-thumb { background: #262C3A; border-radius: 8px; }
+
+#cabecera { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; min-height: 56px; padding: 10px 20px; background: var(--fondo); border-bottom: 1px solid #1A1F2B; position: sticky; top: 0; z-index: 5; }
+.marca { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 600; font-size: 18px; }
+#cabecera nav { display: flex; gap: 4px; flex-wrap: wrap; }
+#cabecera nav a { padding: 8px 12px; border-radius: 8px; color: var(--medio); text-decoration: none; font-size: 13px; font-weight: 500; }
+#cabecera nav a:hover { color: var(--texto); }
+#cabecera nav a.activa { background: var(--hover); color: #FFFFFF; }
+#presets { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#presets .lbl { margin-right: 4px; }
+
+.lbl { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--suave); margin: 0; }
+.sw, .punto { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; box-shadow: inset 0 -2px 3px rgba(0,0,0,.35); }
+.punto { width: 10px; height: 10px; vertical-align: -1px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--fondo); border: 1px solid var(--borde); font-size: 12px; color: var(--suave); text-decoration: none; }
-a.chip { color: var(--acento); }
-.pendiente { color: var(--suave); font-style: italic; }
-.ficha { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; }
-.ficha .volver { display: inline-block; margin-bottom: 12px; text-decoration: none; }
-.ficha .texto h3 { font-size: 16px; margin: 22px 0 8px; }
-.ficha .texto h4 { font-size: 14px; margin: 16px 0 6px; }
-.ficha .texto blockquote { margin: 0; padding: 6px 12px; border-left: 3px solid var(--borde); color: var(--suave); }
-.ficha section { margin-bottom: 22px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--borde2); border-radius: 999px; background: #121620; color: #C9CFDB; font: 500 12px var(--sans); text-decoration: none; }
+a.chip { color: var(--acento); } a.chip:hover { border-color: #3B4560; }
+button.chip { min-height: 30px; padding: 0 11px; cursor: pointer; }
+button.chip:hover { border-color: #3B4560; color: #FFFFFF; }
+.chip.on { background: #1D2740; border-color: var(--primario); color: #FFFFFF; }
+.btn, .boton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 14px; border: 1px solid var(--borde2); border-radius: 10px; background: #151A25; color: var(--texto); font: 500 13px var(--sans); cursor: pointer; }
+.boton { min-height: 32px; padding: 0 12px; font-size: 12px; }
+.btn:hover, .boton:hover { background: #1B2130; border-color: #3B4560; }
+.btn.pri { background: var(--primario); border-color: var(--primario); color: #FFFFFF; } .btn.pri:hover { background: #3F5BEF; }
+.btn.on { border-color: var(--primario); color: #C7D4FF; }
+input[type=search], select { width: 100%; height: 38px; padding: 0 12px; border: 1px solid #262C3A; border-radius: 10px; background: #0E1118; color: var(--texto); font: 400 13px var(--sans); outline: none; }
+input[type=search]:focus, select:focus { border-color: var(--primario); }
+input[type=range] { width: 100%; accent-color: var(--primario); }
+label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.vacio, .pendiente { color: var(--suave); }
+.pendiente { font-style: italic; }
+.estado-dudoso { color: var(--dudoso); font-weight: 600; }
+.aviso { padding: 12px 14px; border: 1px dashed var(--borde2); border-radius: 12px; color: var(--medio); background: var(--tarjeta); margin: 0 0 16px; }
+
+/* Páginas: funcionalidades, ficha, impacto */
+.pagina { max-width: 1120px; margin: 0 auto; padding: 32px 20px 72px; }
+.pagina h1 { font-size: 28px; font-weight: 600; margin: 0 0 6px; }
+.pagina h2 { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--suave); margin: 0 0 10px; }
+.pagina h3 { font-size: 17px; font-weight: 600; margin: 24px 0 8px; }
+.pagina h4 { font-size: 14px; margin: 16px 0 6px; }
+.subtitulo { color: var(--medio); margin: 0 0 20px; }
+.volver { display: inline-block; margin-bottom: 14px; text-decoration: none; font-size: 13px; }
+#filtro-feat, #buscar-impacto { max-width: 460px; margin-bottom: 20px; }
+#resultados-impacto { max-width: 560px; margin-bottom: 18px; }
+.tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.tarjeta { display: block; padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); color: var(--texto); text-decoration: none; transition: border-color .15s; }
+.tarjeta:hover { border-color: var(--primario); color: var(--texto); }
+.tarjeta h3 { margin: 0 0 6px; font-size: 16px; }
+.tarjeta p { margin: 0 0 12px; color: var(--medio); font-size: 13px; }
+.columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 28px; margin-top: 16px; }
+.columnas section { padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
+.resumen-impacto { margin: 4px 0 14px; }
+.resumen-impacto .chip { font-size: 13px; color: var(--texto); }
+.ficha { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; }
+.ficha .texto { line-height: 1.6; }
+.ficha .texto blockquote { margin: 0; padding: 8px 14px; border-radius: 10px; background: var(--tarjeta); color: var(--medio); }
+.ficha section { margin-bottom: 18px; padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
 .ficha section h2 { margin-top: 0; }
 .lista { list-style: none; margin: 0; padding: 0; }
-.lista li { padding: 5px 0; border-bottom: 1px solid var(--borde); }
+.lista li { padding: 8px 0; border-bottom: 1px solid var(--borde); }
+.lista li:last-child { border-bottom: 0; }
 .lista small { color: var(--suave); }
-.capa { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #fff; background: var(--suave); }
-.capa-entrada { background: var(--svc); } .capa-logica { background: var(--lib); } .capa-dominio { background: var(--feat); color: #10260f; }
-.capa-datos { background: var(--tabla); color: #2b1a05; } .capa-interfaz { background: var(--queue); } .capa-otros { background: var(--archivo); }
-.recorrido, .capa-bloque { border: 1px solid var(--borde); border-radius: 8px; padding: 8px 12px; margin: 0 0 8px; background: var(--panel); }
-.recorrido summary, .capa-bloque summary { cursor: pointer; }
+.capa { display: inline-block; padding: 1px 7px; border-radius: 6px; font-size: 11px; font-weight: 600; color: #0A0C11; background: var(--archivo); }
+.capa-entrada { background: var(--svc); color: #FFFFFF; } .capa-logica { background: var(--repo); } .capa-dominio { background: var(--feat); }
+.capa-datos { background: var(--tabla); } .capa-interfaz { background: var(--endpoint); } .capa-otros { background: var(--archivo); }
+.recorrido { border: 1px solid var(--borde); border-radius: 12px; padding: 10px 14px; margin: 0 0 8px; background: var(--tarjeta); }
+.recorrido summary { cursor: pointer; }
 .pasos { list-style: none; margin: 10px 0 2px; padding: 0; }
 .pasos li { padding: 4px 0; }
 .pasos .flecha { color: var(--suave); }
 .toca { margin: 4px 0 0 0; }
-.aviso { padding: 10px 12px; border: 1px dashed var(--borde); border-radius: 8px; color: var(--suave); margin: 0 0 16px; }
-aside { background: var(--panel); border-right: 1px solid var(--borde); overflow: auto; padding: 14px; }
-#detalle, .derecha { border-right: 0; border-left: 1px solid var(--borde); }
-h1 { font-size: 16px; margin: 0 0 10px; }
-h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); margin: 16px 0 6px; }
-input[type=search], select { width: 100%; padding: 7px 9px; border: 1px solid var(--borde); border-radius: 6px; background: var(--fondo); color: var(--texto); font: inherit; }
-label { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
-.punto { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; }
-.cuenta { margin-left: auto; color: var(--suave); font-variant-numeric: tabular-nums; }
-#resultados { list-style: none; margin: 6px 0 0; padding: 0; }
-#resultados li { padding: 4px 6px; border-radius: 4px; cursor: pointer; }
-#resultados li:hover { background: var(--fondo); }
-#cy { width: 100%; height: 100%; }
-.campo { display: grid; grid-template-columns: 96px 1fr; gap: 4px 8px; margin: 4px 0; }
-.campo dt { color: var(--suave); }
-.campo dd { margin: 0; word-break: break-word; }
-code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
-a { color: var(--acento); }
-.arista { padding: 6px 0; border-bottom: 1px solid var(--borde); }
-.arista a { color: var(--acento); cursor: pointer; text-decoration: none; }
-.estado-dudoso { color: var(--dudoso); font-weight: 600; }
-.vacio { color: var(--suave); }
-#barra { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; }
-#barra button { padding: 5px 10px; border: 1px solid var(--borde); border-radius: 6px; background: var(--panel); color: var(--texto); font: inherit; cursor: pointer; }
-main { position: relative; }
-.boton { padding: 3px 8px; border: 1px solid var(--borde); border-radius: 6px; background: var(--fondo); color: var(--texto); font: inherit; font-size: 12px; cursor: pointer; }
+
+/* Dependencias */
+#deps { display: grid; grid-template-columns: 1fr 360px; height: calc(100vh - 56px); }
+#deps main { position: relative; min-width: 0; }
+#cy-deps { width: 100%; height: 100%; }
+.barra-mapa { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 12px; background: rgba(14,17,24,.86); border: 1px solid #262C3A; border-radius: 12px; backdrop-filter: blur(6px); }
+.barra-mapa input[type=search] { width: 260px; }
+.barra-mapa label { font-size: 13px; color: var(--claro); }
+.barra-mapa small { color: var(--suave); }
+.derecha { background: var(--panel); border-left: 1px solid #1A1F2B; overflow: auto; padding: 18px 16px; }
+.derecha h1 { font-size: 20px; margin: 0 0 8px; }
+.derecha h2 { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--suave); margin: 18px 0 8px; }
+
+/* Mapa 3D */
+#app { display: grid; grid-template-columns: 280px minmax(0, 1fr) 300px; height: calc(100vh - 56px); min-height: 640px; }
+.m3-panel { background: var(--panel); overflow-y: auto; padding: 18px 14px; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.m3-izq { border-right: 1px solid #1A1F2B; }
+.m3-der { border-left: 1px solid #1A1F2B; padding: 18px 16px; }
+.m3-panel section { display: flex; flex-direction: column; gap: 8px; }
+.m3-titulo { display: flex; align-items: baseline; justify-content: space-between; padding: 0 4px 2px; }
+.m3-titulo span { font-size: 12px; color: var(--suave); }
+.m3-ayuda { margin: 0; padding: 0 4px; font-size: 12px; line-height: 1.5; color: var(--suave); }
+.m3-busca { position: relative; }
+.m3-busca svg { position: absolute; left: 11px; top: 11px; }
+.m3-busca input { padding-left: 34px; }
+#m3-res { margin-top: 6px; padding: 4px; border: 1px solid #232838; border-radius: 10px; background: var(--tarjeta); }
+.tg { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 36px; padding: 6px 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--texto); font: 500 13px var(--sans); cursor: pointer; text-align: left; }
+.tg:hover { background: var(--hover); }
+.tg.off { color: #6B7489; } .tg.off .sw { opacity: .25; }
+.ct { margin-left: auto; font: 500 12px var(--sans); color: var(--suave); font-variant-numeric: tabular-nums; }
+#m3-tipos { display: flex; flex-direction: column; gap: 2px; }
+#m3-verbos { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg { display: flex; padding: 3px; background: #0E1118; border: 1px solid #232838; border-radius: 10px; gap: 2px; }
+.sb { flex: 1; min-height: 32px; border: 0; border-radius: 7px; background: transparent; color: var(--medio); font: 500 12px var(--sans); cursor: pointer; padding: 0 6px; }
+.sb:hover { color: var(--texto); } .sb.on { background: #232A3B; color: #FFFFFF; }
+.m3-escala { display: flex; justify-content: space-between; font-size: 12px; color: var(--medio); padding: 0 4px; }
+.m3-escala span { color: var(--texto); font-variant-numeric: tabular-nums; }
+.m3-centro { position: relative; min-width: 0; background: var(--fondo); }
+#m3-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.m3-barra { position: absolute; top: 14px; left: 14px; right: 14px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+.m3-barra > div { display: flex; gap: 8px; flex-wrap: wrap; pointer-events: auto; }
+.m3-barra > div:last-child { margin-left: auto; }
+.ov { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 12px; border: 1px solid #262C3A; border-radius: 10px; background: rgba(14,17,24,.86); color: var(--claro); font: 500 12px var(--sans); cursor: pointer; backdrop-filter: blur(6px); }
+.ov:hover { border-color: #3B4560; color: #FFFFFF; } .ov.on { border-color: var(--primario); color: #C7D4FF; }
+.m3-guia { position: absolute; left: 14px; bottom: 14px; display: flex; gap: 14px; flex-wrap: wrap; padding: 8px 12px; border: 1px solid var(--borde); border-radius: 10px; background: rgba(14,17,24,.82); font-size: 12px; color: var(--medio); pointer-events: none; }
+.m3-guia b { color: var(--texto); font-weight: 500; }
+.nb { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--claro); font: 400 13px var(--sans); cursor: pointer; text-align: left; }
+.nb:hover { background: var(--hover); color: #FFFFFF; }
+.corta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vb { margin-left: auto; font: 500 11px var(--sans); color: var(--suave); white-space: nowrap; }
+#m3-detalle { display: flex; flex-direction: column; gap: 18px; }
+.m3-vacio { display: flex; flex-direction: column; gap: 14px; padding: 6px 4px; }
+.m3-vacio p { margin: 0; font-size: 14px; line-height: 1.55; color: #C9CFDB; }
+.m3-caja { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
+.m3-cab { display: flex; flex-direction: column; gap: 8px; padding: 0 4px; }
+.m3-tipo { display: flex; align-items: center; gap: 8px; } .m3-tipo .lbl { color: var(--medio); }
+.m3-fijado { margin-left: auto; font-size: 11px; color: #C7D4FF; border: 1px solid #36457A; border-radius: 999px; padding: 2px 8px; }
+.m3-nombre { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.2; word-break: break-word; color: var(--texto); text-transform: none; letter-spacing: -0.01em; }
+.m3-resumen { margin: 0; font-size: 13px; color: var(--medio); }
+.m3-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.m3-stats div { padding: 10px; border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); }
+.m3-stats b { display: block; font: 600 22px var(--display); }
+.m3-stats span { font-size: 11px; color: var(--suave); }
+.m3-acciones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.m3-acciones .ancho { grid-column: 1 / -1; }
+.m3-enlaces { display: flex; flex-direction: column; gap: 6px; padding: 0 4px; font-size: 13px; }
+#m3-detalle h3.lbl { padding: 0 4px 6px; }
+
 @media (max-width: 900px) {
   .ficha { grid-template-columns: 1fr; }
-  #app, #deps { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; height: auto; }
+  #app, #deps { grid-template-columns: 1fr; grid-template-rows: auto 70vh auto; height: auto; }
   #deps { grid-template-rows: 70vh auto; }
-  aside, #detalle, .derecha { border: 0; border-bottom: 1px solid var(--borde); }
+  .m3-izq, .m3-der, .derecha { border: 0; border-bottom: 1px solid #1A1F2B; }
+  #presets { margin-left: 0; }
 }
 </style>
 </head>
 <body>
-<header id="cabecera"><strong>Brain</strong><nav><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/mapa" data-vista="deps">Dependencias</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/grafo" data-vista="grafo">Grafo completo</a></nav></header>
+<header id="cabecera">
+  <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>Brain</div>
+  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/mapa" data-vista="deps">Dependencias</a></nav>
+  <div id="presets" class="oculto"></div>
+</header>
 <div id="producto" class="pagina"></div>
 <div id="impacto" class="pagina oculto"></div>
 <div id="deps" class="oculto">
@@ -197,240 +238,57 @@ main { position: relative; }
   <aside id="detalle-deps" class="derecha"></aside>
 </div>
 <div id="app" class="oculto">
-  <aside>
-    <input id="buscar" type="search" placeholder="Buscar por id, nombre o alias" autocomplete="off">
-    <ul id="resultados"></ul>
-    <h2>Tipo</h2><div id="f-tipo"></div>
-    <h2>Estado</h2><div id="f-estado"></div>
-    <h2>Origen</h2><div id="f-origen"></div>
-    <h2>Diseño</h2>
-    <select id="layout"><option value="cose">Fuerzas (cose)</option><option value="concentric">Concéntrico</option><option value="breadthfirst">Por niveles</option></select>
+  <aside class="m3-panel m3-izq">
+    <div class="m3-busca">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A93A6" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
+      <input id="m3-buscar" type="search" placeholder="Buscar tabla, endpoint, funcionalidad…" aria-label="Buscar nodo" autocomplete="off">
+      <div id="m3-res" class="oculto"></div>
+    </div>
+    <section>
+      <div class="m3-titulo"><h2 class="lbl">Qué se ve</h2><span id="m3-vis"></span></div>
+      <div id="m3-tipos"></div>
+      <div id="m3-ocultos"></div>
+    </section>
+    <section>
+      <h2 class="lbl" style="padding: 0 4px 2px">Relaciones</h2>
+      <div id="m3-verbos"></div>
+    </section>
+    <section>
+      <h2 class="lbl" style="padding: 0 4px">Tamaño del punto según</h2>
+      <div id="m3-tam" class="seg" role="group" aria-label="Tamaño según"></div>
+      <label for="m3-escala" class="m3-escala">Escala <span id="m3-escala-txt">1.0×</span></label>
+      <input id="m3-escala" type="range" min="0.4" max="2.4" step="0.1" value="1">
+    </section>
+    <section>
+      <h2 class="lbl" style="padding: 0 4px">Agrupar por</h2>
+      <div id="m3-grupo" class="seg" role="group" aria-label="Agrupar por"></div>
+      <p class="m3-ayuda">Define qué nodos son “hijos” de cuál. Al arrastrar o separar un nodo, se lleva a todos sus hijos.</p>
+    </section>
+    <section>
+      <h2 class="lbl" style="padding: 0 4px">Etiquetas</h2>
+      <div id="m3-etq" class="seg" role="group" aria-label="Etiquetas"></div>
+    </section>
   </aside>
-  <main>
-    <div id="cy"></div>
-    <div id="barra"><button id="ajustar">Ajustar</button><button id="limpiar">Limpiar selección</button></div>
+  <main class="m3-centro">
+    <canvas id="m3-canvas" role="img" aria-label="Grafo 3D del brain: arrastrá para rotar, rueda para acercar, arrastrá un nodo para moverlo con sus hijos"></canvas>
+    <div class="m3-barra">
+      <div>
+        <button type="button" class="ov" data-acc="explode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v5M12 16v5M3 12h5M16 12h5M5.6 5.6l3 3M15.4 15.4l3 3M5.6 18.4l3-3M15.4 8.6l3-3"></path></svg>Separar grupos</button>
+        <button type="button" class="ov" data-acc="relayout"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"></path></svg>Reorganizar</button>
+        <button type="button" class="ov" data-acc="recenter"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path></svg>Centrar</button>
+      </div>
+      <div>
+        <button type="button" class="ov on" id="m3-drag" aria-pressed="true" data-acc="drag"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="3"></circle><circle cx="17" cy="15" r="2"></circle><circle cx="10" cy="18" r="1.6"></circle><path d="M9 9.5l6.5 4M8 10l1.6 6.2"></path></svg>Arrastrar con hijos</button>
+        <button type="button" class="ov on" id="m3-rot" aria-pressed="true" data-acc="rot"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="4"></ellipse><path d="M17 6.5l2.5 1.5-1.2 2.6"></path></svg>Girar</button>
+      </div>
+    </div>
+    <div class="m3-guia"><span><b>Arrastrar fondo</b> rota</span><span><b>Rueda</b> acerca</span><span><b>Arrastrar nodo</b> lo mueve con sus hijos</span><span><b>Shift</b> mueve solo el nodo</span><span><b>Doble clic</b> enfoca</span></div>
   </main>
-  <aside id="detalle"><p class="vacio">Hacé clic en un nodo o una arista para ver su detalle y su evidencia.</p></aside>
+  <aside class="m3-panel m3-der"><div id="m3-detalle"></div></aside>
 </div>
 <script>${seguroEnScript(cytoscapeJs)}</script>
 <script type="application/json" id="datos">${seguroEnScript(JSON.stringify(datos))}</script>
-<script>
-(function () {
-  "use strict";
-  var D = JSON.parse(document.getElementById("datos").textContent);
-  var porId = {};
-  D.nodes.forEach(function (n) { porId[n.id] = n; });
-  // Repos: caja si tienen varios servicios; si no, plegados (se despliegan desde el panel con sus archivos).
-  var repoDeSvc = {}, repoDeArchivo = {}, expandidos = {};
-  Object.keys(D.repos).forEach(function (r) { D.repos[r].svcs.forEach(function (s) { if (!repoDeSvc[s]) repoDeSvc[s] = r; }); });
-  D.edges.forEach(function (e) { if (e.v === "contiene" && D.repos[e.s] && porId[e.h] && porId[e.h].t === "archivo" && !repoDeArchivo[e.h]) repoDeArchivo[e.h] = e.s; });
-  var esCaja = function (id) { return !!(D.repos[id] && D.repos[id].contenedor); };
-  var css = getComputedStyle(document.documentElement);
-  var color = function (v) { return css.getPropertyValue("--" + v).trim() || "#888"; };
-  var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
-
-  var valores = function (k, xs) { var m = {}; xs.forEach(function (x) { m[x[k]] = (m[x[k]] || 0) + 1; }); return Object.keys(m).sort().map(function (v) { return [v, m[v]]; }); };
-  var activos = { t: {}, e: {}, o: {} };
-  function filtros(div, k, inicial) {
-    var cont = document.getElementById(div);
-    valores(k, D.nodes).forEach(function (par) {
-      var v = par[0];
-      if (k === "t" && v === "repo") { activos.t.repo = true; return; }
-      activos[k][v] = inicial ? inicial.indexOf(v) >= 0 : true;
-      var l = document.createElement("label");
-      l.innerHTML = '<input type="checkbox"' + (activos[k][v] ? " checked" : "") + '>' + (k === "t" ? '<span class="punto" style="background:' + color(v) + '"></span>' : "") + esc(v) + '<span class="cuenta">' + par[1] + "</span>";
-      l.firstChild.addEventListener("change", function (ev) { activos[k][v] = ev.target.checked; aplicar(true); });
-      cont.appendChild(l);
-    });
-  }
-  filtros("f-tipo", "t", D.tiposIniciales);
-  filtros("f-estado", "e");
-  filtros("f-origen", "o");
-
-  // Aristas paralelas (mismo origen, destino, verbo y estado) se dibujan como una sola, con su cantidad.
-  var grupos = [], claveGrupo = {};
-  D.edges.forEach(function (e, i) {
-    var k = e.s + "\u0000" + e.h + "\u0000" + e.v + "\u0000" + e.e;
-    if (claveGrupo[k] === undefined) { claveGrupo[k] = grupos.length; grupos.push([]); }
-    grupos[claveGrupo[k]].push(i);
-  });
-  var cy = cytoscape({
-    container: document.getElementById("cy"),
-    elements: D.nodes.map(function (n) {
-      var d = { id: n.id, label: n.n, tipo: n.t, estado: n.e };
-      if (n.t === "svc" && esCaja(repoDeSvc[n.id])) d.parent = repoDeSvc[n.id];
-      return { group: "nodes", data: d };
-    })
-      .concat(grupos.map(function (g, i) {
-        var e = D.edges[g[0]];
-        // La caja ya muestra qué servicios viven en el repo: esas aristas no se dibujan.
-        var implicita = e.v === "vive_en" && esCaja(e.h) && repoDeSvc[e.s] === e.h;
-        return { group: "edges", data: { id: "e" + i, source: e.s, target: e.h, label: e.v + (g.length > 1 ? " ×" + g.length : ""), estado: e.e, idx: g, implicita: implicita } };
-      })),
-    wheelSensitivity: 0.3,
-    style: [
-      { selector: "node", style: { "background-color": function (n) { return color(n.data("tipo")); }, label: "data(label)", color: color("texto"), "font-size": 10, "text-valign": "bottom", "text-margin-y": 4, width: 18, height: 18 } },
-      { selector: "node[tipo = 'svc'], node[tipo = 'repo']", style: { width: 26, height: 26, "font-size": 12 } },
-      { selector: ":parent", style: { shape: "round-rectangle", "background-color": color("repo"), "background-opacity": 0.08, "border-width": 1, "border-color": color("repo"), "border-style": "dashed", "text-valign": "top", "text-halign": "center", "text-margin-y": -4, padding: 18, "font-size": 12, color: color("suave") } },
-      { selector: "edge[?implicita]", style: { display: "none" } },
-      { selector: "node[tipo = 'db'], node[tipo = 'tabla']", style: { shape: "barrel" } },
-      { selector: "node[tipo = 'ext']", style: { shape: "hexagon" } },
-      { selector: "node[tipo = 'queue']", style: { shape: "round-rectangle" } },
-      { selector: "node[tipo = 'feat']", style: { shape: "star" } },
-      { selector: "node[estado = 'dudoso']", style: { "border-width": 2, "border-color": color("dudoso") } },
-      { selector: "edge", style: { width: 1.2, "line-color": color("borde"), "target-arrow-color": color("borde"), "target-arrow-shape": "triangle", "curve-style": "bezier", "arrow-scale": 0.8, "control-point-step-size": 12 } },
-      { selector: "edge[estado = 'dudoso']", style: { "line-style": "dashed", "line-color": color("dudoso"), "target-arrow-color": color("dudoso") } },
-      { selector: "edge[estado = 'deprecado']", style: { "line-style": "dotted", opacity: 0.5 } },
-      { selector: ".atenuado", style: { opacity: 0.12 } },
-      { selector: ".foco", style: { "border-width": 3, "border-color": color("acento") } },
-      { selector: "edge.vecina", style: { label: "data(label)", "font-size": 9, color: color("suave"), "line-color": color("acento"), "target-arrow-color": color("acento"), width: 2, "text-rotation": "autorotate" } }
-    ]
-  });
-
-  function aplicar(relayout) {
-    cy.batch(function () {
-      var pasa = function (x) { return activos.e[x.e] && activos.o[x.o]; };
-      cy.nodes().forEach(function (n) {
-        var x = porId[n.id()], ver;
-        if (x.t === "repo") ver = !esCaja(x.id) && !!expandidos[x.id];
-        else if (x.t === "archivo") ver = (activos.t.archivo && pasa(x)) || !!expandidos[repoDeArchivo[x.id]];
-        else ver = activos.t[x.t] && pasa(x);
-        n.style("display", ver ? "element" : "none");
-      });
-      // Una caja se ve si alguno de sus servicios se ve.
-      cy.nodes(":parent").forEach(function (p) { p.style("display", p.children().some(function (c) { return c.style("display") !== "none"; }) ? "element" : "none"); });
-    });
-    if (relayout) layout();
-  }
-  function layout() {
-    var visibles = cy.elements(":visible");
-    var nombre = document.getElementById("layout").value;
-    // El de fuerzas con cientos de nodos traba la página varios segundos: por encima de 400 se usa el concéntrico.
-    if (nombre === "cose" && visibles.nodes().length > 400) nombre = "concentric";
-    visibles.layout({ name: nombre, animate: false, randomize: false, nodeDimensionsIncludeLabels: true, concentric: function (n) { return n.degree(); }, levelWidth: function () { return 2; }, padding: 30, fit: true, stop: function () { cy.fit(cy.elements(":visible"), 30); } }).run();
-  }
-  var sel = document.getElementById("layout");
-  if (D.nodes.filter(function (n) { return D.tiposIniciales.indexOf(n.t) >= 0; }).length > 400) sel.value = "concentric";
-  sel.addEventListener("change", layout);
-  // El mapa se arma la primera vez que se muestra: oculto, Cytoscape no tiene tamaño para el layout.
-  var mapaListo = false;
-  function mostrarMapa() {
-    cy.resize();
-    if (!mapaListo) { mapaListo = true; aplicar(true); }
-  }
-
-  var detalle = document.getElementById("detalle");
-  function campo(k, v) { return v === null || v === undefined || (Array.isArray(v) && v.length === 0) ? "" : "<dt>" + k + "</dt><dd>" + v + "</dd>"; }
-  function enlaceNodo(id) { return '<a data-id="' + esc(id) + '">' + esc(porId[id] ? porId[id].n : id) + "</a> <code>" + esc(id) + "</code>"; }
-  function lineaArista(e, haciaAfuera) {
-    var otro = haciaAfuera ? e.h : e.s;
-    var ep = e.p ? " · <code>" + esc(porId[e.p] ? porId[e.p].n : e.p) + "</code>" : "";
-    var dato = e.d ? " · dato <code>" + esc(e.d) + "</code>" : "";
-    var estado = e.e !== "vigente" ? ' · <span class="estado-' + esc(e.e) + '">' + esc(e.e) + "</span>" : "";
-    return '<div class="arista">' + (haciaAfuera ? "→ " : "← ") + "<strong>" + esc(e.v) + "</strong> " + enlaceNodo(otro) + ep + dato + estado +
-      "<br><small>" + esc(e.o) + " · confianza " + e.c + (e.ev ? " · <code>" + esc(e.ev) + "</code>" : "") + "</small></div>";
-  }
-  var actual = null;
-  function seccionRepo(rid, propio) {
-    var r = D.repos[rid];
-    if (!r) return "";
-    var boton = r.archivos ? ' <button class="boton" data-expandir="' + esc(rid) + '">' + (expandidos[rid] ? "Ocultar archivos" : "Ver archivos") + "</button>" : "";
-    return (propio ? "<h2>Contenido</h2><p><small>" : "<h2>Repo</h2><p>" + enlaceNodo(rid) + "<br><small>") + r.archivos + " archivos · " + r.svcs.length + (r.svcs.length === 1 ? " servicio" : " servicios") + "</small>" + boton + "</p>";
-  }
-  function mostrarNodo(id) {
-    var n = porId[id];
-    if (!n) return;
-    actual = id;
-    // Los archivos de un repo se resumen con su cantidad y el botón para desplegarlos, no uno por uno.
-    var sal = D.edges.filter(function (e) { return e.s === id && !(n.t === "repo" && e.v === "contiene"); });
-    var ent = D.edges.filter(function (e) { return e.h === id; });
-    detalle.innerHTML = "<h1>" + esc(n.n) + "</h1><p><code>" + esc(n.id) + "</code></p>" +
-      (n.r ? "<p>" + esc(n.r) + "</p>" : "") +
-      '<dl class="campo">' + campo("tipo", esc(n.t)) + campo("estado", '<span class="estado-' + esc(n.e) + '">' + esc(n.e) + "</span>") + campo("origen", esc(n.o)) +
-      campo("aliases", n.a.map(esc).join(", ")) + campo("actualizado", n.act && esc(n.act)) + campo("verificado", n.ver && esc(n.ver)) +
-      campo("página", n.p && '<a href="../' + esc(n.p) + '">' + esc(n.p) + "</a>") + "</dl>" +
-      (n.t === "feat" ? '<p><a href="#/f/' + esc(n.id) + '">Abrir la ficha de la funcionalidad →</a></p>' : "") +
-      '<p><a href="#/impacto/' + encodeURIComponent(n.id) + '">¿Qué se ve afectado si cambia? →</a></p>' +
-      (n.t === "svc" && repoDeSvc[id] ? seccionRepo(repoDeSvc[id]) : "") +
-      (n.t === "repo" ? seccionRepo(id, true) + "<h2>Servicios</h2>" + (D.repos[id].svcs.map(function (s) { return "<p>" + enlaceNodo(s) + "</p>"; }).join("") || '<p class="vacio">Ninguno.</p>') : "") +
-      "<h2>Salientes (" + sal.length + ")</h2>" + (sal.map(function (e) { return lineaArista(e, true); }).join("") || '<p class="vacio">Ninguna.</p>') +
-      "<h2>Entrantes (" + ent.length + ")</h2>" + (ent.map(function (e) { return lineaArista(e, false); }).join("") || '<p class="vacio">Ninguna.</p>');
-  }
-  function enfocar(id) {
-    mostrarMapa();
-    var n = cy.getElementById(id);
-    if (n.empty()) return;
-    if (n.style("display") === "none") {
-      var x = porId[id];
-      var rid = x.t === "repo" && !esCaja(id) ? id : x.t === "archivo" ? repoDeArchivo[id] : null;
-      if (rid) desplegar(rid, true);
-      if (n.style("display") === "none") { activos.t[x.t] = activos.e[x.e] = activos.o[x.o] = true; sincronizarChecks(); aplicar(true); }
-    }
-    cy.elements().removeClass("atenuado foco vecina");
-    var vecindario = n.closedNeighborhood();
-    cy.elements().not(vecindario).addClass("atenuado");
-    n.addClass("foco");
-    vecindario.edges().addClass("vecina");
-    cy.animate({ center: { eles: n }, zoom: Math.max(cy.zoom(), 1) }, { duration: 200 });
-    mostrarNodo(id);
-  }
-  // Desplegar un repo no recalcula el grafo entero (con miles de archivos el layout de fuerzas traba la página):
-  // el repo y sus archivos se ubican en una grilla debajo de sus servicios, y el resto queda donde estaba.
-  function desplegar(rid, si) {
-    expandidos[rid] = si;
-    aplicar(false);
-    if (!si) return;
-    var repo = cy.getElementById(rid);
-    var nuevos = repo.union(cy.nodes().filter(function (n) { return repoDeArchivo[n.id()] === rid && n.visible(); }));
-    var ancla = cy.collection(D.repos[rid].svcs.map(function (s) { return cy.getElementById(s); })).filter(":visible");
-    var bb = (ancla.nonempty() ? ancla : cy.nodes(":visible").not(nuevos)).boundingBox();
-    var archivos = nuevos.not(repo).sort(function (a, b) { return a.id() < b.id() ? -1 : 1; });
-    var cols = Math.max(1, Math.ceil(Math.sqrt(archivos.length * 2))), paso = 34, x0 = bb.x1 + bb.w / 2 - ((cols - 1) * paso) / 2;
-    repo.position({ x: bb.x1 + bb.w / 2, y: bb.y2 + 70 });
-    cy.batch(function () { archivos.forEach(function (n, i) { n.position({ x: x0 + (i % cols) * paso, y: bb.y2 + 140 + Math.floor(i / cols) * paso }); }); });
-    // Encuadra servicios, repo y las primeras filas de archivos: con miles, ajustar a todo deja los nombres ilegibles.
-    cy.fit(ancla.union(repo).union(archivos.slice(0, cols * 6)), 30);
-  }
-  function sincronizarChecks() {
-    [["f-tipo", "t"], ["f-estado", "e"], ["f-origen", "o"]].forEach(function (p) {
-      document.querySelectorAll("#" + p[0] + " label").forEach(function (l) { l.firstChild.checked = !!activos[p[1]][l.textContent.replace(/\\d+$/, "")]; });
-    });
-  }
-  cy.on("tap", "node", function (ev) { enfocar(ev.target.id()); });
-  cy.on("tap", "edge", function (ev) {
-    var es = ev.target.data("idx").map(function (i) { return D.edges[i]; });
-    detalle.innerHTML = "<h1>" + esc(es[0].v) + (es.length > 1 ? " ×" + es.length : "") + "</h1>" + '<p><small>desde</small> ' + enlaceNodo(es[0].s) + "</p>" + es.map(function (e) { return lineaArista(e, true); }).join("");
-  });
-  cy.on("tap", function (ev) { if (ev.target === cy) cy.elements().removeClass("atenuado foco vecina"); });
-  detalle.addEventListener("click", function (ev) {
-    var t = ev.target, id = t.getAttribute && t.getAttribute("data-id"), rep = t.getAttribute && t.getAttribute("data-expandir");
-    if (id) enfocar(id);
-    if (rep) { desplegar(rep, !expandidos[rep]); if (actual) mostrarNodo(actual); }
-  });
-  document.getElementById("ajustar").addEventListener("click", function () { cy.fit(cy.elements(":visible"), 30); });
-  document.getElementById("limpiar").addEventListener("click", function () { cy.elements().removeClass("atenuado foco vecina"); detalle.innerHTML = '<p class="vacio">Hacé clic en un nodo o una arista para ver su detalle y su evidencia.</p>'; });
-
-  var buscar = document.getElementById("buscar");
-  var resultados = document.getElementById("resultados");
-  function coincidencias(q) {
-    q = q.trim().toLowerCase();
-    if (!q) return [];
-    var pesos = D.nodes.map(function (n) {
-      var claves = [n.id, n.n].concat(n.a).map(function (k) { return k.toLowerCase(); });
-      var p = claves.some(function (k) { return k === q; }) ? 0 : claves.some(function (k) { return k.indexOf(q) === 0; }) ? 1 : claves.some(function (k) { return k.indexOf(q) >= 0; }) ? 2 : 9;
-      return [p, n];
-    }).filter(function (x) { return x[0] < 9; });
-    pesos.sort(function (a, b) { return a[0] - b[0] || (a[1].id < b[1].id ? -1 : 1); });
-    return pesos.slice(0, 12).map(function (x) { return x[1]; });
-  }
-  buscar.addEventListener("input", function () {
-    resultados.innerHTML = coincidencias(buscar.value).map(function (n) { return '<li data-id="' + esc(n.id) + '"><span class="punto" style="background:' + color(n.t) + '"></span> ' + esc(n.n) + " <code>" + esc(n.id) + "</code></li>"; }).join("");
-  });
-  buscar.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { var c = coincidencias(buscar.value)[0]; if (c) enfocar(c.id); } });
-  resultados.addEventListener("click", function (ev) { var li = ev.target.closest("li"); if (li) enfocar(li.getAttribute("data-id")); });
-  window.brainVisor = { cy: cy, enfocar: enfocar, expandidos: expandidos, mostrarMapa: mostrarMapa, D: D, porId: porId, esc: esc, color: color };
-})();
-</script>
+<script>${seguroEnScript(GRAFO3D_JS)}</script>
 <script>${seguroEnScript(PRODUCTO_JS)}</script>
 <script>${seguroEnScript(MAPA_JS)}</script>
 </body>
