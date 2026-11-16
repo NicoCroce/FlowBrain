@@ -1,5 +1,5 @@
 import { isMap, isScalar, isSeq, parseDocument, Document, Scalar, YAMLSeq } from "yaml";
-import { cmp, FrontmatterSchema, MARCA_INICIO, normalizarRuta, parsePagina, type Fuente } from "@brain/core";
+import { cmp, dentroDe, FrontmatterSchema, MARCA_INICIO, normalizarRuta, parsePagina, type Fuente } from "@brain/core";
 import { slug, type AristaExtraida, type Pendiente, type ResultadoIndex } from "@brain/parsers";
 
 /**
@@ -11,6 +11,39 @@ import { slug, type AristaExtraida, type Pendiente, type ResultadoIndex } from "
 export const RESUMEN_PENDIENTE = "Borrador: completar resumen.";
 export const TITULO_PREGUNTAS = "## Preguntas abiertas";
 const AVISO = "> Borrador generado por `brain draft`. Revisalo, completalo y movelo a `tecnologia/`.";
+const AVISO_PRODUCTO = "> Borrador generado por `brain draft` a partir de la estructura del código. Revisalo, completalo y movelo a `producto/`.";
+export const QUE_ES_PENDIENTE = "_Completar: qué problema resuelve para quien la usa, quién la usa y cuál es el flujo principal._";
+
+/** Carpetas que agrupan funcionalidades por convención, en cualquier lenguaje o framework. */
+const RAICES_FUNCIONALIDAD = new Set(["features", "feature", "modules", "module", "domains", "domain"]);
+/** Hijas de esas carpetas que no son funcionalidades sino código compartido. */
+const NO_FUNCIONALIDAD = new Set(["shared", "common", "core", "utils", "util", "helpers", "lib", "libs", "types", "config", "constants", "test", "tests", "__tests__", "__mocks__"]);
+
+/**
+ * Carpetas de funcionalidad de un repo: cada hija de `features/`, `modules/` o `domains/` (hasta 4 niveles de
+ * profundidad) que contenga archivos. Se toma la raíz más externa: `modules/x/features/y` da `modules/x`. Lo que cuelga
+ * de una carpeta de código compartido (`shared/domain/x`, `core/modules/y`) no es una funcionalidad.
+ */
+export function carpetasDeFuncionalidad(rutas: string[]): string[] {
+  const out = new Set<string>();
+  for (const r of rutas) {
+    const segs = r.split("/");
+    for (let i = 0; i < Math.min(segs.length - 2, 4); i++) {
+      const hija = segs[i + 1]!;
+      if (NO_FUNCIONALIDAD.has(segs[i]!.toLowerCase())) break;
+      if (!RAICES_FUNCIONALIDAD.has(segs[i]!.toLowerCase())) continue;
+      if (!NO_FUNCIONALIDAD.has(hija.toLowerCase()) && !/^[._]/.test(hija)) out.add(segs.slice(0, i + 2).join("/"));
+      break;
+    }
+  }
+  return [...out].sort(cmp);
+}
+
+/** `videoAnalysis` → `Video analysis`; `premios-hi` → `Premios hi`. */
+export function nombreDeCarpeta(carpeta: string): string {
+  const t = carpeta.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[-_.]+/g, " ").trim().toLowerCase();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
 
 interface RelacionBorrador {
   verbo: string;
@@ -33,7 +66,7 @@ interface PaginaExistente {
 export interface Borradores {
   /** Ruta relativa a la raíz del brain (`_drafts/<repo>/…`) → contenido. */
   archivos: Record<string, string>;
-  resumen: { paginas: number; relaciones: number; preguntas: number; tablas: number; externos: number };
+  resumen: { paginas: number; relaciones: number; preguntas: number; tablas: number; externos: number; funcionalidades: number };
 }
 
 const claveRel = (verbo: string, destino: string, endpoint: string | null | undefined) => {
@@ -134,11 +167,11 @@ function preguntas(pendientes: Pendiente[]): string[] {
   });
 }
 
-export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaRepo: string): Borradores {
+export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaRepo: string, borradoresProducto: Fuente[] = []): Borradores {
   const existentes = leerPaginas(paginas);
   const base = `_drafts/${r.repo}`;
   const archivos: Record<string, string> = {};
-  const resumen = { paginas: 0, relaciones: 0, preguntas: 0, tablas: 0, externos: 0 };
+  const resumen = { paginas: 0, relaciones: 0, preguntas: 0, tablas: 0, externos: 0, funcionalidades: 0 };
 
   // ---------- 1. Propuestas: tablas y sistemas externos que el brain no tiene ----------
   const propuestas = new Map<string, { tipo: "tabla" | "ext"; nombre: string; aliases: Set<string>; evidencias: string[]; modelos: Set<string> }>();
@@ -255,7 +288,63 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
     resumen.preguntas += qs.length;
   }
 
-  archivos[`${base}/PROMPT.md`] = promptAgente(r.repo, Object.keys(archivos).filter((k) => k.endsWith(".md")).map((k) => k.slice(base.length + 1)).sort(cmp));
+  // ---------- 4. Funcionalidades: una por carpeta de features/modules/domains ----------
+  // Van a `_drafts/producto/` (una funcionalidad puede abarcar varios repos). Si ya existe una página o un borrador
+  // con el mismo id, se le suma la ruta a `codigo`: así `wellness` del front y `wellness` del back quedan juntas.
+  const feats = new Map<string, { ruta: string; frontmatter: string; cuerpo: string; codigo: string[]; borrador: boolean }>();
+  const cargar = (fuentes: Fuente[], borrador: boolean) => {
+    for (const f of fuentes) {
+      try {
+        const p = parsePagina(f.ruta, f.contenido);
+        const d = FrontmatterSchema.safeParse(p.data);
+        if (d.success && d.data.tipo === "feat") feats.set(d.data.id, { ruta: f.ruta, frontmatter: p.frontmatter, cuerpo: p.cuerpo, codigo: d.data.codigo ?? [], borrador });
+      } catch {
+        /* páginas rotas: las reporta compile */
+      }
+    }
+  };
+  cargar(paginas.filter((f) => f.ruta.startsWith("producto/")), false);
+  cargar(borradoresProducto, true);
+  const cubierta = (c: string) => [...feats.values()].some((f) => f.codigo.some((x) => x === c || dentroDe(c, x)));
+  for (const carpeta of carpetasDeFuncionalidad(r.archivos.archivos.map((a) => a.ruta))) {
+    const codigo = `${r.repo}:${carpeta}`;
+    if (cubierta(codigo)) continue;
+    const hoja = carpeta.split("/").pop()!;
+    const id = `feat-${slug(hoja.replace(/([a-z0-9])([A-Z])/g, "$1-$2"))}`;
+    if (id === "feat-") continue;
+    const previa = feats.get(id);
+    let frontmatter: string;
+    let cuerpo: string;
+    if (previa) {
+      const doc = parseDocument(previa.frontmatter, { version: "1.2", schema: "core" });
+      let seq = doc.get("codigo", true);
+      if (!isSeq(seq)) {
+        seq = new YAMLSeq();
+        doc.set("codigo", seq);
+      }
+      (seq as YAMLSeq).items.push(doc.createNode(codigo));
+      frontmatter = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+      cuerpo = previa.cuerpo;
+    } else {
+      const nombre = nombreDeCarpeta(hoja);
+      const doc = new Document({ id, tipo: "feat", nombre, resumen: RESUMEN_PENDIENTE, aliases: [hoja], codigo: [codigo] });
+      const al = doc.get("aliases", true);
+      if (isSeq(al)) al.flow = true;
+      frontmatter = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+      cuerpo = conPreguntas(`# ${nombre}\n\n${AVISO_PRODUCTO}\n\n## Qué es\n\n${QUE_ES_PENDIENTE}\n`, [
+        "- ¿Es el nombre que usa el negocio? Si no, cambiá `nombre` y dejá el nombre técnico en `aliases`.",
+        "- ¿Es la misma funcionalidad que otra con otro nombre (por ejemplo en otro repo)? Uní sus rutas de `codigo` en una sola página y borrá la otra.",
+        "- ¿Qué equipo es responsable? Agregá `pertenece_a: [team-…]`.",
+      ]);
+    }
+    const nueva = { ruta: `_drafts/producto/${id}.md`, frontmatter, cuerpo, codigo: [...(previa?.codigo ?? []), codigo], borrador: true };
+    feats.set(id, nueva);
+    archivos[nueva.ruta] = pagina(frontmatter, cuerpo);
+    if (!previa) resumen.funcionalidades++;
+  }
+  resumen.paginas += resumen.funcionalidades;
+
+  archivos[`${base}/PROMPT.md`] = promptAgente(r.repo, Object.keys(archivos).filter((k) => k.startsWith(`${base}/`) && k.endsWith(".md")).map((k) => k.slice(base.length + 1)).sort(cmp));
   return { archivos, resumen };
 }
 
@@ -272,7 +361,8 @@ export function promptAgente(repo: string, paginas: string[]): string {
     `2. Reemplazá cada \`resumen: ${RESUMEN_PENDIENTE}\` por una línea (máximo 140 caracteres) que diga qué hace el nodo, sacada de leer el código.`,
     "3. Para cada ítem de \"Preguntas abiertas\": abrí la evidencia citada. Si podés resolverlo con certeza, agregá la relación con `evidencia: \"<repo>:<ruta>#L<n>\"` y `origen: inferido`, y borrá el ítem. Si no, dejalo como está.",
     "4. No agregues relaciones sin evidencia, no cambies ids ni borres relaciones con `origen: parser`.",
-    "5. Al terminar, verificá que el borrador compile: copiá `tecnologia/` del borrador sobre una copia del brain, corré `brain index <repo>` y `brain compile`.",
+    `5. En \`_drafts/producto/\`, completá "Qué es" de cada funcionalidad leyendo las pantallas y textos de su \`codigo\`: qué le permite hacer a quien la usa, en lenguaje de producto, sin nombres de archivos ni de clases. Si no queda claro, dejá el texto pendiente.`,
+    "6. Al terminar, verificá que el borrador compile: copiá `tecnologia/` del borrador sobre una copia del brain, corré `brain index <repo>` y `brain compile`.",
     "",
     "Páginas:",
     "",

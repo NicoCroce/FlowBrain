@@ -44,7 +44,7 @@ describe("brain draft sobre un brain casi vacío", () => {
     ]);
     expect(await readdir(join(brain, "tecnologia"))).toEqual(["svc-notificaciones.md"]);
     expect(await readdir(brain)).toEqual(["_drafts", "tecnologia"]);
-    expect(r.resumen).toEqual({ paginas: 5, relaciones: 4, preguntas: 4, tablas: 2, externos: 1 });
+    expect(r.resumen).toEqual({ paginas: 5, relaciones: 4, preguntas: 4, tablas: 2, externos: 1, funcionalidades: 0 });
   });
 
   it("las relaciones del borrador son las aristas etiquetadas a mano, con evidencia", async () => {
@@ -76,7 +76,7 @@ describe("brain draft sobre un brain casi vacío", () => {
     expect(aristas).toEqual(["escribe_en tabla-envios", "lee_de tabla-tarifas", "llama_a ext-correo", "llama_a svc-notificaciones"]);
     // Una vez movido, un nuevo borrador no propone nada que ya esté.
     const otra = await draftDir(clon, brain);
-    expect(otra.resumen).toEqual({ paginas: 1, relaciones: 0, preguntas: 1, tablas: 0, externos: 0 });
+    expect(otra.resumen).toEqual({ paginas: 1, relaciones: 0, preguntas: 1, tablas: 0, externos: 0, funcionalidades: 0 });
   });
 
   it("es determinístico e idempotente", async () => {
@@ -148,5 +148,43 @@ describe("repo no identificado", () => {
     await writeFile(join(brain, "tecnologia/.keep"), "");
     await expect(indexar(clon, brain)).rejects.toThrow(/no se pudo identificar/);
     expect((await draftDir(clon, brain)).repo).toBe("repo-envios");
+  });
+});
+
+describe("brain draft: funcionalidades", () => {
+  it("toma las hijas de features/, modules/ y domains/, salvo código compartido", async () => {
+    const { carpetasDeFuncionalidad, nombreDeCarpeta } = await import("../src/index.js");
+    expect(
+      carpetasDeFuncionalidad([
+        "src/features/payments/api.ts",
+        "src/features/videoAnalysis/ui/Lista.tsx",
+        "src/features/shared/x.ts",
+        "src/features/_borrador/x.ts",
+        "modules/billing/afip/repo.ts",
+        "modules/billing/features/otra/x.ts",
+        "shared/domain/brand/x.ts",
+        "src/core/modules/positions/x.ts",
+        "src/features/suelto.ts",
+      ]),
+    ).toEqual(["modules/billing", "src/features/payments", "src/features/videoAnalysis"]);
+    expect(nombreDeCarpeta("videoAnalysis")).toBe("Video analysis");
+    expect(nombreDeCarpeta("premios-hi")).toBe("Premios hi");
+  });
+
+  it("propone una feat por carpeta y une la misma carpeta de otro repo en una sola", async () => {
+    const { generarBorradores } = await import("../src/index.js");
+    const r = (repo: string, rutas: string[]) =>
+      ({ repo, repoNuevo: false, aristas: [], pendientes: [], servicios: [], archivos: { repo, archivos: rutas.map((ruta) => ({ ruta, lenguaje: "ts", simbolos: [] })) } }) as never;
+    const front = generarBorradores(r("repo-front", ["src/features/wellness/a.ts", "src/features/pagos/b.ts"]), [], "front");
+    expect(Object.keys(front.archivos).filter((k) => k.includes("producto"))).toEqual(["_drafts/producto/feat-pagos.md", "_drafts/producto/feat-wellness.md"]);
+    expect(front.resumen.funcionalidades).toBe(2);
+    const previos = Object.entries(front.archivos).filter(([k]) => k.startsWith("_drafts/producto/")).map(([ruta, contenido]) => ({ ruta, contenido }));
+    const back = generarBorradores(r("repo-back", ["modules/wellness/c.ts"]), [], "back", previos);
+    expect(back.resumen.funcionalidades).toBe(0);
+    const wellness = back.archivos["_drafts/producto/feat-wellness.md"]!;
+    expect(wellness).toContain("  - repo-front:src/features/wellness\n  - repo-back:modules/wellness\n");
+    // Una segunda corrida no duplica la ruta.
+    const otra = generarBorradores(r("repo-back", ["modules/wellness/c.ts"]), [], "back", [{ ruta: "_drafts/producto/feat-wellness.md", contenido: wellness }]);
+    expect(otra.archivos["_drafts/producto/feat-wellness.md"]).toBeUndefined();
   });
 });

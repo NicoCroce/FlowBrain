@@ -30,7 +30,8 @@ Comandos:
                                             con --claude-code registra los hooks en ~/.claude/settings.json
   compile                                   compila páginas y JSON → _build/, INDEX.md, backlinks
   index <ruta-repo> [--repo <repo-id>]      corre los parsers y escribe contratos, archivos y extracción en _build/
-  draft <ruta-repo> [--repo <repo-id>]      borradores de páginas en _drafts/<repo>/ (no toca tecnologia/ ni _build/)
+  draft <ruta-repo> [--repo <repo-id>]      borradores en _drafts/<repo>/ y funcionalidades en _drafts/producto/
+                                            (no toca tecnologia/, producto/ ni _build/)
   verify [--repos <dir>] [--clon id=ruta]   verifica evidencias contra los clones locales; marca dudosas
          [--dias n] [--hoy AAAA-MM-DD]      sale con 1 si aparecen dudosas nuevas (apto para CI)
   nota <nodo> <texto>                       agrega una nota a _drafts/notas/<nodo>.md
@@ -147,11 +148,11 @@ export async function ejecutar(
     if (comando === "draft") {
       if (!arg) throw new ConsultaError("parametro_invalido", "falta <ruta-repo>");
       const r = await draftDir(resolve(cwd, arg), raiz, o.repo !== undefined ? { repo: o.repo } : {});
-      const { paginas, relaciones, preguntas, tablas, externos } = r.resumen;
+      const { paginas, relaciones, preguntas, tablas, externos, funcionalidades } = r.resumen;
       const lineas = [
-        `borradores de ${r.repo}: ${paginas} páginas (${tablas} tablas y ${externos} externos propuestos), ${relaciones} relaciones nuevas, ${preguntas} preguntas abiertas; ${r.escritos.length} archivos escritos`,
+        `borradores de ${r.repo}: ${paginas} páginas (${funcionalidades} funcionalidades, ${tablas} tablas y ${externos} externos propuestos), ${relaciones} relaciones nuevas, ${preguntas} preguntas abiertas; ${r.escritos.length} archivos escritos`,
         ...r.escritos.map((e) => `  ${e}`),
-        `revisá _drafts/${r.repo}/ (o pasale PROMPT.md a un agente), movelo a tecnologia/ y corré brain index + brain compile`,
+        `revisá _drafts/${r.repo}/ y _drafts/producto/ (o pasale PROMPT.md a un agente), movelos a tecnologia/ y producto/ y corré brain index + brain compile`,
       ];
       return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
     }

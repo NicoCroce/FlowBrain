@@ -29,7 +29,7 @@ describe("viewer.html", () => {
     const g = await graph();
     const malo = { ...g, nodes: g.nodes.map((n, i) => (i === 0 ? { ...n, nombre: "</script><script>alert(1)</script><!--" } : n)) };
     const html = renderViewer(malo, "/* lib */");
-    expect(html.match(/<\/script>/g)).toHaveLength(3);
+    expect(html.match(/<\/script>/g)).toHaveLength(4);
     expect(datos(html).nodes[0]!.n).toBe("</script><script>alert(1)</script><!--");
   });
 

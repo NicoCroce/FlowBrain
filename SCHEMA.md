@@ -104,6 +104,8 @@ vive_en: [repo-tienda]            # opcional
 pertenece_a: [team-plataforma]    # opcional
 puntos_de_entrada:                # solo para svc; rutas relativas al único repo de vive_en
   arranque: apps/payments/src/main.ts
+codigo:                           # solo para feat: carpetas (o archivos) que la componen, en uno o varios repos
+  - repo-tienda:apps/web/src/features/checkout
 relaciones:                       # opcional
   - verbo: llama_a                # obligatorio
     destino: svc-auth             # obligatorio, id existente, nunca null
@@ -117,6 +119,8 @@ relaciones:                       # opcional
 Un campo desconocido, un enum fuera de rango, un destino inexistente o un verbo que no admite ese par de tipos hacen fallar la compilación. El error indica archivo y línea.
 
 Si una página tiene `puntos_de_entrada`, su `vive_en` tiene que tener exactamente un repo.
+
+**`codigo` (solo `feat`):** cada entrada es `<repo-id>:<ruta>`, sin línea, con el repo existente. El compilador genera `implementa` (origen `parser`, evidencia = la entrada) desde cada servicio de ese repo hacia la funcionalidad. En un monorepo, solo desde los servicios cuya raíz (la carpeta común de sus `puntos_de_entrada`) contiene la ruta o está dentro de ella; si ninguno, desde todos los del repo; si el repo no tiene servicios, desde el repo.
 
 Los destinos sin resolver nunca llegan a una página compilada. Van como prosa en la sección `## Preguntas abiertas`.
 
@@ -168,13 +172,42 @@ Los símbolos se quedan en este JSON y no pasan a `graph.json`. `brain verify` l
 
 `compile` marca `estado: dudoso` en cada arista cuya `(desde, verbo, hasta, endpoint, evidencia)` aparezca acá, salvo que esté `deprecado`. Si la evidencia de la página cambia, la arista deja de coincidir y vuelve a `vigente` hasta la próxima verificación.
 
+### `_build/funcionalidades.json` (escrito por `brain compile`)
+
+Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build/extraccion/*.json` (que conserva cada llamada y cada acceso con su evidencia). Se escribe solo si hay alguna `feat`.
+
+```json
+{
+  "funcionalidades": [
+    {
+      "archivos": 12,
+      "codigo": ["repo-tienda:apps/web/src/features/checkout"],
+      "cuerpo": "# Checkout\n\nEl cliente confirma el carrito…",
+      "datos": [{ "escribe": 1, "evidencia": "repo-tienda:apps/bff/src/routes/checkout.ts#L30", "lee": 0, "tabla": "tabla-pagos" }],
+      "expone": ["svc-bff:POST:/checkout"],
+      "id": "feat-checkout",
+      "implementan": ["svc-bff"],
+      "usa": [{ "endpoint": "svc-payments:POST:/charges", "evidencia": "repo-tienda:apps/bff/src/routes/checkout.ts#L18", "hasta": "svc-payments", "veces": 1 }],
+      "usadaPor": ["feat-carrito"],
+      "usaFuncionalidades": ["feat-pagos"]
+    }
+  ],
+  "version": 1
+}
+```
+
+- `expone`: endpoints cuya evidencia cae dentro de `codigo`. `usa`: llamadas (`llama_a`) hechas desde `codigo`, agrupadas por destino y endpoint. `datos`: accesos a tablas desde `codigo`.
+- `usaFuncionalidades`: las `feat` dueñas (por `codigo`) de los endpoints que esta llama. `usadaPor` es la inversa.
+- `cuerpo`: el Markdown de la página sin la sección de backlinks.
+
 ### `_drafts/` (fuera de la compilación)
 
 - `_drafts/<repo-id>/tecnologia/*.md`: páginas propuestas por `brain draft`, con el mismo formato que `tecnologia/` y `resumen: "Borrador: completar resumen."` donde falta. Lo no resuelto va en una sección `## Preguntas abiertas`.
+- `_drafts/producto/feat-*.md`: funcionalidades propuestas por `brain draft`, una por cada hija de una carpeta `features/`, `modules/` o `domains/` (hasta 4 niveles, salvo debajo de `shared/`, `core/`, `common/` y similares). Si ya hay una página o un borrador con el mismo id, se le suma la ruta a `codigo`: la misma carpeta en dos repos queda en una sola funcionalidad.
 - `_drafts/<repo-id>/PROMPT.md`: instrucciones fijas para que un agente refine los borradores.
 - `_drafts/notas/<id>.md`: notas de contradicciones entre el código y el brain (`brain nota` o el hook `SessionEnd`).
 
-`compile` nunca lee `_drafts/`. Un humano mueve los borradores a `tecnologia/` tras revisarlos.
+`compile` nunca lee `_drafts/`. Un humano mueve los borradores a `tecnologia/` y `producto/` tras revisarlos.
 
 ## 8. `graph.json`
 

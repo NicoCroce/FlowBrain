@@ -1,3 +1,5 @@
+import type { Ficha } from "./funcionalidades.js";
+import { PRODUCTO_JS } from "./viewer-producto.js";
 import type { Graph } from "./schema.js";
 
 /**
@@ -37,8 +39,9 @@ export function reposDelGrafo(graph: Graph): Record<string, RepoVisor> {
   return out;
 }
 
-export function renderViewer(graph: Graph, cytoscapeJs: string): string {
+export function renderViewer(graph: Graph, cytoscapeJs: string, funcionalidades: Ficha[] = []): string {
   const datos = {
+    funcionalidades,
     repos: reposDelGrafo(graph),
     edges: graph.edges.map((e) => ({
       c: e.confianza,
@@ -88,7 +91,37 @@ export function renderViewer(graph: Graph, cytoscapeJs: string): string {
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--fondo); color: var(--texto); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-#app { display: grid; grid-template-columns: 300px 1fr 340px; height: 100vh; }
+#cabecera { display: flex; align-items: center; gap: 18px; height: 48px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--borde); position: sticky; top: 0; z-index: 2; }
+#cabecera strong { font-size: 15px; }
+#cabecera nav { display: flex; gap: 4px; }
+#cabecera nav a { padding: 6px 10px; border-radius: 6px; color: var(--suave); text-decoration: none; }
+#cabecera nav a.activa { background: var(--fondo); color: var(--texto); font-weight: 600; }
+.oculto { display: none !important; }
+#app { display: grid; grid-template-columns: 300px 1fr 340px; height: calc(100vh - 48px); }
+#producto { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+#producto h1 { font-size: 22px; margin: 0 0 4px; }
+.subtitulo { color: var(--suave); margin: 0 0 18px; }
+#filtro-feat { max-width: 420px; margin-bottom: 18px; }
+.tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.tarjeta { display: block; padding: 14px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); color: var(--texto); text-decoration: none; }
+.tarjeta:hover { border-color: var(--acento); }
+.tarjeta h3 { margin: 0 0 6px; font-size: 15px; }
+.tarjeta p { margin: 0 0 10px; color: var(--suave); font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--fondo); border: 1px solid var(--borde); font-size: 12px; color: var(--suave); text-decoration: none; }
+a.chip { color: var(--acento); }
+.pendiente { color: var(--suave); font-style: italic; }
+.ficha { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; }
+.ficha .volver { display: inline-block; margin-bottom: 12px; text-decoration: none; }
+.ficha .texto h3 { font-size: 16px; margin: 22px 0 8px; }
+.ficha .texto h4 { font-size: 14px; margin: 16px 0 6px; }
+.ficha .texto blockquote { margin: 0; padding: 6px 12px; border-left: 3px solid var(--borde); color: var(--suave); }
+.ficha section { margin-bottom: 22px; }
+.ficha section h2 { margin-top: 0; }
+.lista { list-style: none; margin: 0; padding: 0; }
+.lista li { padding: 5px 0; border-bottom: 1px solid var(--borde); }
+.lista small { color: var(--suave); }
+.aviso { padding: 10px 12px; border: 1px dashed var(--borde); border-radius: 8px; color: var(--suave); margin: 0 0 16px; }
 aside { background: var(--panel); border-right: 1px solid var(--borde); overflow: auto; padding: 14px; }
 #detalle { border-right: 0; border-left: 1px solid var(--borde); }
 h1 { font-size: 16px; margin: 0 0 10px; }
@@ -115,15 +148,17 @@ a { color: var(--acento); }
 main { position: relative; }
 .boton { padding: 3px 8px; border: 1px solid var(--borde); border-radius: 6px; background: var(--fondo); color: var(--texto); font: inherit; font-size: 12px; cursor: pointer; }
 @media (max-width: 900px) {
+  .ficha { grid-template-columns: 1fr; }
   #app { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; height: auto; }
   aside, #detalle { border: 0; border-bottom: 1px solid var(--borde); }
 }
 </style>
 </head>
 <body>
+<header id="cabecera"><strong>Brain</strong><nav><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/mapa" data-vista="mapa">Mapa técnico</a></nav></header>
+<div id="producto"></div>
 <div id="app">
   <aside>
-    <h1>Brain</h1>
     <input id="buscar" type="search" placeholder="Buscar por id, nombre o alias" autocomplete="off">
     <ul id="resultados"></ul>
     <h2>Tipo</h2><div id="f-tipo"></div>
@@ -238,7 +273,12 @@ main { position: relative; }
   var sel = document.getElementById("layout");
   if (D.nodes.filter(function (n) { return D.tiposIniciales.indexOf(n.t) >= 0; }).length > 400) sel.value = "concentric";
   sel.addEventListener("change", layout);
-  aplicar(true);
+  // El mapa se arma la primera vez que se muestra: oculto, Cytoscape no tiene tamaño para el layout.
+  var mapaListo = false;
+  function mostrarMapa() {
+    cy.resize();
+    if (!mapaListo) { mapaListo = true; aplicar(true); }
+  }
 
   var detalle = document.getElementById("detalle");
   function campo(k, v) { return v === null || v === undefined || (Array.isArray(v) && v.length === 0) ? "" : "<dt>" + k + "</dt><dd>" + v + "</dd>"; }
@@ -270,12 +310,14 @@ main { position: relative; }
       '<dl class="campo">' + campo("tipo", esc(n.t)) + campo("estado", '<span class="estado-' + esc(n.e) + '">' + esc(n.e) + "</span>") + campo("origen", esc(n.o)) +
       campo("aliases", n.a.map(esc).join(", ")) + campo("actualizado", n.act && esc(n.act)) + campo("verificado", n.ver && esc(n.ver)) +
       campo("página", n.p && '<a href="../' + esc(n.p) + '">' + esc(n.p) + "</a>") + "</dl>" +
+      (n.t === "feat" ? '<p><a href="#/f/' + esc(n.id) + '">Abrir la ficha de la funcionalidad →</a></p>' : "") +
       (n.t === "svc" && repoDeSvc[id] ? seccionRepo(repoDeSvc[id]) : "") +
       (n.t === "repo" ? seccionRepo(id, true) + "<h2>Servicios</h2>" + (D.repos[id].svcs.map(function (s) { return "<p>" + enlaceNodo(s) + "</p>"; }).join("") || '<p class="vacio">Ninguno.</p>') : "") +
       "<h2>Salientes (" + sal.length + ")</h2>" + (sal.map(function (e) { return lineaArista(e, true); }).join("") || '<p class="vacio">Ninguna.</p>') +
       "<h2>Entrantes (" + ent.length + ")</h2>" + (ent.map(function (e) { return lineaArista(e, false); }).join("") || '<p class="vacio">Ninguna.</p>');
   }
   function enfocar(id) {
+    mostrarMapa();
     var n = cy.getElementById(id);
     if (n.empty()) return;
     if (n.style("display") === "none") {
@@ -346,9 +388,10 @@ main { position: relative; }
   });
   buscar.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { var c = coincidencias(buscar.value)[0]; if (c) enfocar(c.id); } });
   resultados.addEventListener("click", function (ev) { var li = ev.target.closest("li"); if (li) enfocar(li.getAttribute("data-id")); });
-  window.brainVisor = { cy: cy, enfocar: enfocar, expandidos: expandidos };
+  window.brainVisor = { cy: cy, enfocar: enfocar, expandidos: expandidos, mostrarMapa: mostrarMapa, D: D, porId: porId, esc: esc };
 })();
 </script>
+<script>${seguroEnScript(PRODUCTO_JS)}</script>
 </body>
 </html>
 `;

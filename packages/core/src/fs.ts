@@ -33,6 +33,7 @@ export async function leerEntradas(raiz: string): Promise<Entradas> {
     paginas: [...(await listar(raiz, "producto", ".md")), ...(await listar(raiz, "tecnologia", ".md"))],
     contratos: await listar(raiz, "_build/contratos", ".json"),
     archivos: await listar(raiz, "_build/archivos", ".json"),
+    extracciones: await listar(raiz, "_build/extraccion", ".json"),
     verificacion: await readFile(join(raiz, RUTA_VERIFICACION), "utf8").then(
       (contenido) => ({ ruta: RUTA_VERIFICACION, contenido }),
       () => null,
@@ -64,6 +65,6 @@ export async function escribirSalidas(raiz: string, s: Salidas): Promise<string[
 /** `brain compile`: lee, compila y escribe. */
 export async function compileDir(raiz: string): Promise<{ salidas: Salidas; escritos: string[] }> {
   const salidas = compile(await leerEntradas(raiz));
-  salidas.generados[RUTA_VIEWER] = renderViewer(salidas.graph, await cytoscapeJs());
+  salidas.generados[RUTA_VIEWER] = renderViewer(salidas.graph, await cytoscapeJs(), salidas.funcionalidades);
   return { salidas, escritos: await escribirSalidas(raiz, salidas) };
 }

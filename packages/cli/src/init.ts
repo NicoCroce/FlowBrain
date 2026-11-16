@@ -37,10 +37,10 @@ generado por los parsers (\`_build/\`). El contrato está en \`SCHEMA.md\`.
 ## Flujo
 
 \`\`\`bash
-${cmd} draft /ruta/a/un/repo      # borradores en _drafts/<repo>/ a partir del código
-# revisar, completar y mover _drafts/<repo>/tecnologia/*.md a tecnologia/
+${cmd} draft /ruta/a/un/repo      # borradores en _drafts/<repo>/ y funcionalidades en _drafts/producto/
+# revisar, completar y mover _drafts/<repo>/tecnologia/*.md a tecnologia/ y _drafts/producto/*.md a producto/
 ${cmd} index /ruta/a/un/repo      # contratos y archivos en _build/
-${cmd} compile                    # graph.json, INDEX.md, backlinks y _build/viewer.html
+${cmd} compile                    # graph.json, INDEX.md, backlinks y _build/viewer.html (funcionalidades y mapa)
 ${cmd} verify --repos /ruta/a/los/clones   # evidencias rotas → dudoso (para CI)
 \`\`\`
 

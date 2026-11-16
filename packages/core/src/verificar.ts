@@ -157,7 +157,8 @@ export async function verifyDir(
         k,
         readFile(join(base, ruta), "utf8").then(
           (t) => t.replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n"),
-          () => null,
+          // Una carpeta existe aunque no se pueda leer como texto (evidencia de `codigo` de una feat).
+          (e: NodeJS.ErrnoException) => (e.code === "EISDIR" ? [] : null),
         ),
       );
     }
@@ -168,6 +169,7 @@ export async function verifyDir(
     graph,
     generados: { [RUTA_VERIFICACION]: stringifyCanonical({ dudosas: r.dudosas, version: 1 }) },
     paginas: {},
+    funcionalidades: [],
   });
   const s = await compileDir(raiz);
   escritos.push(...s.escritos);

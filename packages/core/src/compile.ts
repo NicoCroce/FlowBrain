@@ -16,6 +16,7 @@ import {
   VERBOS_RELACION,
   endpointId,
   evidenciaValida,
+  CODIGO,
   normalizarRuta,
   verboAdmite,
   type Estado,
@@ -26,6 +27,7 @@ import {
   type Origen,
   type Verbo,
 } from "./schema.js";
+import { aristasDeExtracciones, fichasDeFuncionalidades, RUTA_FUNCIONALIDADES, type Ficha } from "./funcionalidades.js";
 
 /** Un archivo de entrada. `ruta` es relativa a la raíz del brain, con `/`. */
 export interface Fuente {
@@ -39,6 +41,8 @@ export interface Entradas {
   archivos: Fuente[];
   /** `_build/verificacion.json` de `brain verify`: sus aristas salen con estado `dudoso`. */
   verificacion?: Fuente | null;
+  /** `_build/extraccion/*.json` de `brain index`: solo alimentan la vista de funcionalidades. */
+  extracciones?: Fuente[];
 }
 
 export interface Salidas {
@@ -47,6 +51,8 @@ export interface Salidas {
   generados: Record<string, string>;
   /** Todas las páginas con la sección de backlinks inyectada: ruta relativa → contenido. */
   paginas: Record<string, string>;
+  /** Vista de producto de cada `feat` (también va a `_build/funcionalidades.json`). */
+  funcionalidades: Ficha[];
 }
 
 export const RUTAS_SALIDA = {
@@ -128,6 +134,9 @@ export function compile(entradas: Entradas): Salidas {
     }
     if (fm.puntos_de_entrada && fm.tipo !== "svc") {
       errores.push({ archivo: f.ruta, linea: L(["puntos_de_entrada"]), mensaje: "puntos_de_entrada solo aplica a svc" });
+    }
+    if (fm.codigo && fm.tipo !== "feat") {
+      errores.push({ archivo: f.ruta, linea: L(["codigo"]), mensaje: "codigo solo aplica a feat" });
     }
     if (fm.puntos_de_entrada && (fm.vive_en?.length ?? 0) !== 1) {
       errores.push({
@@ -258,6 +267,22 @@ export function compile(entradas: Entradas): Salidas {
     campo("vive_en", fm.vive_en);
     campo("pertenece_a", fm.pertenece_a);
 
+    // codigo de una feat: cada servicio que vive en ese repo la implementa (o el repo, si no tiene servicios).
+    (fm.tipo === "feat" ? (fm.codigo ?? []) : []).forEach((c, i) => {
+      const m = CODIGO.exec(c);
+      if (!m) return void errores.push({ archivo: ruta, linea: L(["codigo", i]), mensaje: `codigo con formato inválido: "${c}" (se espera "repo-x:ruta/a/carpeta")` });
+      const repo = m[1]!;
+      if (!esRepo(repo)) return rotos.has(repo) ? undefined : void errores.push({ archivo: ruta, linea: L(["codigo", i]), mensaje: `codigo: repo inexistente: ${repo}` });
+      const enRepo = paginas.filter((q) => q.fm.tipo === "svc" && (q.fm.vive_en ?? []).includes(repo));
+      // En un monorepo, solo los servicios cuya raíz (por puntos_de_entrada) contiene la ruta o está dentro de ella.
+      const precisos = enRepo.filter((q) => {
+        const r = raizDeServicio(q.fm.puntos_de_entrada);
+        return r !== null && (r === "" || m[2] === r || m[2]!.startsWith(`${r}/`) || r.startsWith(`${m[2]}/`));
+      });
+      const svcs = (precisos.length ? precisos : enRepo).map((q) => q.fm.id);
+      for (const d of svcs.length ? svcs : [repo]) aristas.push(arista(d, "implementa", fm.id, "parser", { evidencia: `${repo}:${m[2]}` }));
+    });
+
     (fm.relaciones ?? []).forEach((r, i) => {
       const at = (k?: string) => L(k ? ["relaciones", i, k] : ["relaciones", i]);
       const err = (k: string | undefined, mensaje: string) => errores.push({ archivo: ruta, linea: at(k), mensaje });
@@ -322,14 +347,32 @@ export function compile(entradas: Entradas): Salidas {
     [RUTAS_SALIDA.mapa]: renderMermaid(graph),
     [RUTAS_SALIDA.index]: renderIndex(graph),
   };
+  const funcionalidades = fichasDeFuncionalidades(
+    graph,
+    paginas.filter((p) => p.fm.tipo === "feat").map((p) => ({ id: p.fm.id, codigo: p.fm.codigo ?? [], cuerpo: p.cuerpo })),
+    aristasDeExtracciones([...(entradas.extracciones ?? [])].sort(porRuta).map((f) => f.contenido)),
+  );
+  if (funcionalidades.length > 0) generados[RUTA_FUNCIONALIDADES] = stringifyCanonical({ funcionalidades, version: 1 });
   const salidaPaginas: Record<string, string> = {};
   for (const p of paginas) {
     salidaPaginas[p.ruta] = `---\n${p.frontmatter}---\n${aplicarBacklinks(p.cuerpo, p.fm.id, graph, p.ruta)}`;
   }
-  return { graph, generados, paginas: salidaPaginas };
+  return { graph, generados, paginas: salidaPaginas, funcionalidades };
 }
 
 // ---------- helpers ----------
+
+/** Carpeta común a los puntos de entrada de un servicio (`""` = el repo entero; `null` = no declarados). */
+export function raizDeServicio(puntos: Record<string, string> | undefined): string | null {
+  const dirs = Object.values(puntos ?? {}).map((v) => {
+    const t = v.replace(/^\.\/?/, "");
+    return (t.endsWith("/") ? t.slice(0, -1) : t.includes("/") ? t.slice(0, t.lastIndexOf("/")) : "").split("/").filter(Boolean);
+  });
+  if (dirs.length === 0) return null;
+  const comun: string[] = [];
+  for (let i = 0; dirs.every((d) => i < d.length && d[i] === dirs[0]![i]); i++) comun.push(dirs[0]![i]!);
+  return comun.join("/");
+}
 
 function generado(id: string, tipo: GraphNode["tipo"], nombre: string, atributos: Record<string, unknown>): GraphNode {
   return {

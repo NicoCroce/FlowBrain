@@ -86,6 +86,17 @@ export function verboAdmite(verbo: Verbo, desde: Tipo, hasta: Tipo): boolean {
 }
 
 export const ID_PAGINA = /^[a-z]+-[a-z0-9]+(-[a-z0-9]+)*$/;
+/** Ruta de código de una funcionalidad: `<repo-id>:<carpeta o archivo>`, sin línea. */
+export const CODIGO = /^(repo-[a-z0-9-]+):((?!\/)(?!\.\.?\/)(?!.*\/\.\.?(\/|$))[^\s#:]+?)\/?$/;
+
+/** ¿La evidencia `repo:ruta#L…` cae dentro de la ruta de código `repo:carpeta`? */
+export function dentroDe(evidencia: string, codigo: string): boolean {
+  const m = CODIGO.exec(codigo);
+  const e = EVIDENCIA.exec(evidencia);
+  if (!m || !e || m[1] !== e[1]) return false;
+  return e[2] === m[2] || e[2]!.startsWith(`${m[2]}/`);
+}
+
 export const EVIDENCIA = /^(repo-[a-z0-9-]+):([^\s#:]+)(#L\d+(-L\d+)?)?$/;
 export const ENDPOINT_REF = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) (\/\S*)$/;
 export const FECHA = /^\d{4}-\d{2}-\d{2}$/;
@@ -146,6 +157,7 @@ export const FrontmatterSchema = z
     vive_en: z.array(z.string()).optional(),
     pertenece_a: z.array(z.string()).optional(),
     puntos_de_entrada: z.record(z.string().regex(/^[a-z0-9_]+$/), z.string().min(1)).optional(),
+    codigo: z.array(z.string()).optional(),
     relaciones: z.array(RelacionSchema).optional(),
   })
   .strict();

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { cmp, leerEntradas } from "@brain/core";
 import { indexar } from "@brain/parsers";
@@ -11,7 +11,10 @@ import { generarBorradores, type Borradores } from "./borrador.js";
 export async function draftDir(rutaRepo: string, raizBrain: string, opciones: { repo?: string } = {}): Promise<Borradores & { repo: string; escritos: string[] }> {
   const r = await indexar(rutaRepo, raizBrain, { ...opciones, permitirRepoNuevo: true });
   const { paginas } = await leerEntradas(raizBrain);
-  const b = generarBorradores(r, paginas, basename(resolve(rutaRepo)));
+  const dirProducto = join(raizBrain, "_drafts/producto");
+  const nombres = (await readdir(dirProducto).catch(() => [] as string[])).filter((n) => n.endsWith(".md")).sort(cmp);
+  const borradoresProducto = await Promise.all(nombres.map(async (n) => ({ ruta: `_drafts/producto/${n}`, contenido: await readFile(join(dirProducto, n), "utf8") })));
+  const b = generarBorradores(r, paginas, basename(resolve(rutaRepo)), borradoresProducto);
   const escritos: string[] = [];
   for (const ruta of Object.keys(b.archivos).sort(cmp)) {
     const destino = join(raizBrain, ruta);
