@@ -2,7 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { cmp, cmpTuple, stringifyCanonical } from "./canonical.js";
 import { compile, type Fuente } from "./compile.js";
-import { leerEntradas, escribirSalidas } from "./fs.js";
+import { compileDir, leerEntradas, escribirSalidas } from "./fs.js";
 import { claveDudosa, EVIDENCIA, RUTA_VERIFICACION, VerificacionSchema, type Dudosa, type Graph, type GraphEdge } from "./schema.js";
 
 /**
@@ -169,7 +169,7 @@ export async function verifyDir(
     generados: { [RUTA_VERIFICACION]: stringifyCanonical({ dudosas: r.dudosas, version: 1 }) },
     paginas: {},
   });
-  const s = compile(await leerEntradas(raiz));
-  escritos.push(...(await escribirSalidas(raiz, s)));
-  return { ...r, sinVerificar: nodosSinVerificar(s.graph, opciones.hoy, opciones.dias ?? 90), escritos: [...new Set(escritos)].sort(cmp) };
+  const s = await compileDir(raiz);
+  escritos.push(...s.escritos);
+  return { ...r, sinVerificar: nodosSinVerificar(s.salidas.graph, opciones.hoy, opciones.dias ?? 90), escritos: [...new Set(escritos)].sort(cmp) };
 }

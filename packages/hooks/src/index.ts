@@ -43,25 +43,11 @@ export async function hookUserPromptSubmit(
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: texto } }) + "\n";
 }
 
-/** Bloque para CLAUDE.md / AGENTS.md (se amplía en el paso 8 con los generadores de reglas). */
-export function bloqueReglas(): string {
-  return [
-    "## Brain",
-    "",
-    "Antes de explorar el código con grep, consultá el grafo de conocimiento por MCP (servidor `brain`):",
-    "- `buscar_nodo` para ubicar servicios, repos, tablas o features por nombre.",
-    "- `recorrer_grafo` con `verbos: [\"depende_de\"], direccion: \"in\"` para saber qué se rompe si cambiás algo.",
-    "- `contrato_de` para ver qué devuelve un endpoint.",
-    "- `trazar` para seguir un flujo desde una ruta HTTP o un archivo.",
-    "Cada arista trae evidencia (`repo:ruta#Lnn`); abrí ese archivo antes de afirmar algo.",
-    `Si el código contradice al brain, escribí en tu respuesta una línea \`${PREFIJO_NOTA} <id-del-nodo>: <qué cambió>\`. Al cerrar la sesión el hook la guarda en \`_drafts/notas/\` para revisión.`,
-    "",
-  ].join("\n");
-}
 
 // ---------- Notas: contradicciones entre el código y el brain ----------
 
-export const PREFIJO_NOTA = "brain-nota";
+import { PREFIJO_NOTA } from "./reglas.js";
+export * from "./reglas.js";
 export const INSTRUCCION_NOTA = `Si algo de esto contradice el código, escribí en tu respuesta una línea \`${PREFIJO_NOTA} <id-del-nodo>: <qué cambió>\`.`;
 
 export interface Nota {

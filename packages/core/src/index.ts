@@ -9,3 +9,4 @@ export * from "./engine/proyeccion.js";
 export * from "./engine/herramientas.js";
 export * from "./engine/prompt.js";
 export * from "./verificar.js";
+export * from "./viewer.js";

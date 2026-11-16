@@ -16,7 +16,7 @@ import {
   type Contexto,
   type Proyeccion,
 } from "@brain/core";
-import { anotar, BUDGET_HOOK, hookSessionEnd, hookUserPromptSubmit, nombreRepo } from "@brain/hooks";
+import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@brain/hooks";
 import { draftDir } from "@brain/indexer";
 import { escribirIndex, indexar } from "@brain/parsers";
 
@@ -29,6 +29,8 @@ Comandos:
   verify [--repos <dir>] [--clon id=ruta]   verifica evidencias contra los clones locales; marca dudosas
          [--dias n] [--hoy AAAA-MM-DD]      sale con 1 si aparecen dudosas nuevas (apto para CI)
   nota <nodo> <texto>                       agrega una nota a _drafts/notas/<nodo>.md
+  gen claude|agents|cursor|windsurf         reglas para el agente (CLAUDE.md, AGENTS.md, .cursor/rules, .windsurf/rules)
+      [--repo <dir|repo-id>] [--escribir]   imprime por stdout; con --escribir las deja en el repo
   buscar <texto> [--tipos a,b] [--limite n]
   recorrer <nodo> [--verbos a,b] [--direccion out|in|both] [--profundidad n]
   contrato <nodo> [--endpoint "MÉTODO /ruta"]
@@ -83,6 +85,7 @@ export async function ejecutar(
         clon: { type: "string", multiple: true },
         dias: { type: "string" },
         hoy: { type: "string" },
+        escribir: { type: "boolean" },
         help: { type: "boolean", short: "h" },
       },
     });
@@ -153,6 +156,17 @@ export async function ejecutar(
           : []),
       ];
       return { codigo: r.nuevas.length > 0 ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+    }
+
+    if (comando === "gen") {
+      if (!arg || !(DESTINOS as readonly string[]).includes(arg)) throw new ConsultaError("parametro_invalido", `destino inválido: ${arg ?? "(falta)"}; usá ${DESTINOS.join(" | ")}`);
+      const ctx = await cargarContexto(raiz);
+      const dir = resolve(cwd, o.repo !== undefined && !ctx.nodo.has(o.repo) ? o.repo : ".");
+      const repo = repoDe(ctx, o.repo !== undefined && ctx.nodo.has(o.repo) ? o.repo : await nombreRepo(dir));
+      const r = generarReglas(arg as Destino, ctx, repo);
+      if (!o.escribir) return { codigo: 0, stdout: r.contenido, stderr: repo ? "" : "brain gen: el repo no está en el brain; se genera el bloque genérico\n" };
+      const cambio = await escribirReglas(dir, r);
+      return { codigo: 0, stdout: `${cambio ? "escrito" : "sin cambios"}: ${r.ruta}${repo ? ` (${repo.id})` : " (sin nodo de repo)"}\n`, stderr: "" };
     }
 
     if (comando === "nota") {

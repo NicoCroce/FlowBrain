@@ -1,0 +1,122 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { cmp, repoPorDirectorio, type Contexto, type GraphNode } from "@brain/core";
+
+/**
+ * Generadores de reglas (`brain gen claude|agents|cursor|windsurf`): el bloque que le dice al agente que existe el
+ * brain, qué nodo es este repo y cómo consultarlo. Determinísticos: dependen solo del grafo y del repo.
+ */
+
+export const PREFIJO_NOTA = "brain-nota";
+export const MARCA_REGLAS_INICIO = "<!-- brain:reglas:inicio -->";
+export const MARCA_REGLAS_FIN = "<!-- brain:reglas:fin -->";
+
+export const DESTINOS = ["claude", "agents", "cursor", "windsurf"] as const;
+export type Destino = (typeof DESTINOS)[number];
+
+/** Verbos que cuentan como dependencia (el superverbo `depende_de` del SCHEMA). */
+const DEPENDENCIA = new Set(["depende_de", "llama_a", "publica_en", "consume_de", "lee_de", "escribe_en"]);
+const MAX_LISTA = 8;
+
+const lista = (ids: string[]) => {
+  const u = [...new Set(ids)].sort(cmp);
+  if (u.length === 0) return "—";
+  const ver = u.slice(0, MAX_LISTA).map((x) => `\`${x}\``).join(", ");
+  return u.length > MAX_LISTA ? `${ver} (+${u.length - MAX_LISTA} más)` : ver;
+};
+
+/** Sección "este repo en el brain": servicios que viven acá, de qué dependen y quién los usa. */
+function seccionRepo(ctx: Contexto, repo: GraphNode): string[] {
+  const svcs = (ctx.entrantes.get(repo.id) ?? []).filter((e) => e.verbo === "vive_en").map((e) => ctx.nodo.get(e.desde)!).filter(Boolean);
+  svcs.sort((a, b) => cmp(a.id, b.id));
+  const lineas = [`Este repo es \`${repo.id}\` (${repo.nombre}) en el brain.${repo.resumen ? ` ${repo.resumen}` : ""}`];
+  if (svcs.length > 0) {
+    lineas.push("", "Lo que vive acá:");
+    for (const s of svcs) {
+      const usa = (ctx.salientes.get(s.id) ?? []).filter((e) => DEPENDENCIA.has(e.verbo) && e.hasta !== s.id).map((e) => e.hasta);
+      const usan = (ctx.entrantes.get(s.id) ?? []).filter((e) => DEPENDENCIA.has(e.verbo) && e.desde !== s.id).map((e) => e.desde);
+      lineas.push(`- \`${s.id}\`${s.resumen ? ` — ${s.resumen}` : ""} Depende de: ${lista(usa)}. Lo usan: ${lista(usan)}.`);
+    }
+  }
+  return lineas;
+}
+
+/** Bloque Markdown de reglas. Con `ctx` y `repo`, incluye el nodo del repo y sus servicios. */
+export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): string {
+  return [
+    "## Brain",
+    "",
+    ...(ctx && repo ? [...seccionRepo(ctx, repo), ""] : []),
+    "Antes de explorar el código con grep, consultá el grafo de conocimiento por MCP (servidor `brain`):",
+    "- `buscar_nodo` para ubicar servicios, repos, tablas o features por nombre.",
+    "- `recorrer_grafo` con `verbos: [\"depende_de\"], direccion: \"in\"` para saber qué se rompe si cambiás algo.",
+    "- `contrato_de` para ver qué devuelve un endpoint.",
+    "- `trazar` para seguir un flujo desde una ruta HTTP o un archivo.",
+    "Sin MCP, los mismos comandos por CLI: `brain buscar <texto>`, `brain recorrer <nodo>`, `brain contrato <nodo>`, `brain trazar --desde <ruta>`.",
+    "Cada arista trae evidencia (`repo:ruta#Lnn`); abrí ese archivo antes de afirmar algo.",
+    `Si el código contradice al brain, escribí en tu respuesta una línea \`${PREFIJO_NOTA} <id-del-nodo>: <qué cambió>\`. Al cerrar la sesión el hook la guarda en \`_drafts/notas/\` para revisión.`,
+    "",
+  ].join("\n");
+}
+
+export interface Reglas {
+  destino: Destino;
+  /** Ruta relativa a la raíz del repo. */
+  ruta: string;
+  /** `bloque`: se inserta entre marcadores en un archivo compartido; `archivo`: el archivo es de brain. */
+  modo: "bloque" | "archivo";
+  contenido: string;
+  repo: string | null;
+}
+
+/** Resuelve el nodo del repo por id o por nombre de directorio. */
+export function repoDe(ctx: Contexto, idONombre: string | null): GraphNode | null {
+  if (!idONombre) return null;
+  const n = ctx.nodo.get(idONombre);
+  if (n?.tipo === "repo") return n;
+  return repoPorDirectorio(ctx, idONombre);
+}
+
+export function generarReglas(destino: Destino, ctx: Contexto | null, repo: GraphNode | null): Reglas {
+  const bloque = bloqueReglas(ctx, repo);
+  const envuelto = `${MARCA_REGLAS_INICIO}\n${bloque}${MARCA_REGLAS_FIN}\n`;
+  const r = { destino, repo: repo?.id ?? null };
+  switch (destino) {
+    case "claude":
+      return { ...r, ruta: "CLAUDE.md", modo: "bloque", contenido: envuelto };
+    case "agents":
+      return { ...r, ruta: "AGENTS.md", modo: "bloque", contenido: envuelto };
+    case "cursor":
+      return {
+        ...r,
+        ruta: ".cursor/rules/brain.mdc",
+        modo: "archivo",
+        contenido: `---\ndescription: Grafo de conocimiento Brain: servicios, contratos y dependencias de este repo\nalwaysApply: true\n---\n\n${bloque}`,
+      };
+    case "windsurf":
+      return { ...r, ruta: ".windsurf/rules/brain.md", modo: "archivo", contenido: `---\ntrigger: always_on\n---\n\n${bloque}` };
+  }
+}
+
+/** Inserta o reemplaza el bloque entre marcadores; si no hay marcadores, lo agrega al final. */
+export function fusionarBloque(previo: string | null, envuelto: string): string {
+  if (previo === null || previo.trim() === "") return envuelto;
+  const i = previo.indexOf(MARCA_REGLAS_INICIO);
+  const f = previo.indexOf(MARCA_REGLAS_FIN);
+  if (i >= 0 && f > i) {
+    const resto = previo.slice(f + MARCA_REGLAS_FIN.length).replace(/^\n/, "");
+    return previo.slice(0, i) + envuelto + resto;
+  }
+  return `${previo.replace(/\n*$/, "\n\n")}${envuelto}`;
+}
+
+/** Escribe las reglas en el repo. Devuelve si el archivo cambió. */
+export async function escribirReglas(dirRepo: string, r: Reglas): Promise<boolean> {
+  const destino = join(dirRepo, r.ruta);
+  const previo = await readFile(destino, "utf8").catch(() => null);
+  const nuevo = r.modo === "bloque" ? fusionarBloque(previo, r.contenido) : r.contenido;
+  if (nuevo === previo) return false;
+  await mkdir(dirname(destino), { recursive: true });
+  await writeFile(destino, nuevo, "utf8");
+  return true;
+}

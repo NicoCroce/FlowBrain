@@ -73,7 +73,20 @@ pnpm -s -C "$BRAIN_TOOL" brain verify --raiz "$BRAIN_ROOT" --repos /ruta/a/los/c
 
 Busca el clon de cada repo como `<carpeta>/<id>`, `<carpeta>/<id sin repo->` o `<carpeta>/<alias>` (o `--clon repo-x=/ruta`). Sale con 1 si aparecen aristas dudosas nuevas. Las aristas de repos sin clon local no se verifican y conservan su estado anterior.
 
-## 6. Probar a mano
+## 6. Reglas para el agente
+
+```bash
+cd /ruta/a/un/repo
+pnpm -s -C "$BRAIN_TOOL" brain gen claude --raiz "$BRAIN_ROOT" --repo "$PWD" --escribir
+```
+
+Destinos: `claude` (bloque en `CLAUDE.md`), `agents` (bloque en `AGENTS.md`), `cursor` (`.cursor/rules/brain.mdc`) y `windsurf` (`.windsurf/rules/brain.md`). En `CLAUDE.md` y `AGENTS.md` el bloque va entre `<!-- brain:reglas:inicio -->` y `<!-- brain:reglas:fin -->`, así que regenerarlo no toca el resto del archivo. Sin `--escribir`, lo imprime. `--repo` acepta un directorio o un id de repo.
+
+## 7. Visor
+
+`brain compile` escribe `_build/viewer.html`: un único archivo con el grafo y Cytoscape embebidos, sin servidor ni red. Se abre con doble clic. Tiene filtros por tipo, estado y origen, búsqueda, y al hacer clic en un nodo muestra su detalle, sus aristas con evidencia y el enlace a la página. Los endpoints y archivos arrancan ocultos.
+
+## 8. Probar a mano
 
 ```bash
 pnpm -s -C "$BRAIN_TOOL" brain context --raiz "$BRAIN_ROOT" --repo . --prompt "¿qué se rompe si cambio /checkout?"

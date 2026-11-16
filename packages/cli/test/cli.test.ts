@@ -109,3 +109,19 @@ describe("brain verify, draft, nota y hook SessionEnd por CLI", () => {
     expect(h.stdout).toBe("");
   });
 });
+
+describe("brain gen por CLI", () => {
+  it("imprime por stdout y rechaza destinos desconocidos", async () => {
+    const r = await ejecutar(["gen", "agents", "--raiz", raiz, "--repo", "repo-tienda"]);
+    expect(r.codigo).toBe(0);
+    expect(r.stdout).toContain("Este repo es `repo-tienda`");
+    const mal = await ejecutar(["gen", "vscode", "--raiz", raiz]);
+    expect(mal.codigo).toBe(2);
+    expect(mal.stdout).toContain("destino inválido");
+  });
+
+  it("compile escribe el visor", async () => {
+    const html = await readFile(join(raiz, "_build/viewer.html"), "utf8");
+    expect(html).toContain("<title>Brain · visor</title>");
+  });
+});

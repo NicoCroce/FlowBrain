@@ -1,8 +1,16 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { cmp } from "./canonical.js";
 import { compile, type Entradas, type Fuente, type Salidas } from "./compile.js";
 import { RUTA_VERIFICACION } from "./schema.js";
+import { renderViewer } from "./viewer.js";
+
+export const RUTA_VIEWER = "_build/viewer.html";
+
+let cytoscape: Promise<string> | null = null;
+/** Cytoscape minificado, embebido tal cual en el visor (versión fija en package.json). */
+const cytoscapeJs = () => (cytoscape ??= readFile(createRequire(import.meta.url).resolve("cytoscape/dist/cytoscape.min.js"), "utf8"));
 
 async function listar(raiz: string, dir: string, ext: string): Promise<Fuente[]> {
   let nombres: string[];
@@ -56,5 +64,6 @@ export async function escribirSalidas(raiz: string, s: Salidas): Promise<string[
 /** `brain compile`: lee, compila y escribe. */
 export async function compileDir(raiz: string): Promise<{ salidas: Salidas; escritos: string[] }> {
   const salidas = compile(await leerEntradas(raiz));
+  salidas.generados[RUTA_VIEWER] = renderViewer(salidas.graph, await cytoscapeJs());
   return { salidas, escritos: await escribirSalidas(raiz, salidas) };
 }

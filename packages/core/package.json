@@ -8,6 +8,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "cytoscape": "3.34.4",
     "yaml": "^2.9.1",
     "zod": "^3.25.76"
   }
