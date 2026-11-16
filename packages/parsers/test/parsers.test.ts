@@ -266,3 +266,16 @@ describe("desempate por prefijo aprendido de la base dinámica", () => {
     expect(r.pendientes).toEqual([]);
   });
 });
+
+describe("fusionar: tests y duplicados", () => {
+  const ep = (archivo: string, linea: number) => ({ paquete: ".", metodo: "GET", ruta: "/health/live", archivo, linea, request: null, response: null });
+  const base = { parser: "ts", archivos: [], llamadas: [], tablas: [], modelos: [], formas: {}, autoritativo: [] };
+  it("descarta endpoints de archivos de test y deja uno por ruta", async () => {
+    const { fusionar, esArchivoDeTest } = await import("../src/indexar.js");
+    expect(esArchivoDeTest("src/metrics/metrics.test.ts")).toBe(true);
+    expect(esArchivoDeTest("tests/Feature/UserTest.php")).toBe(true);
+    expect(esArchivoDeTest("src/http/health.controller.ts")).toBe(false);
+    const x = fusionar([{ ...base, endpoints: [ep("src/b.ts", 3), ep("src/metrics.test.ts", 1), ep("src/a.ts", 9)] } as never]);
+    expect(x.endpoints.map((e) => `${e.archivo}#${e.linea}`)).toEqual(["src/a.ts#9"]);
+  });
+});

@@ -183,7 +183,7 @@ main { position: relative; }
   function layout() {
     var visibles = cy.elements(":visible");
     var nombre = document.getElementById("layout").value;
-    visibles.layout({ name: nombre, animate: false, randomize: false, nodeDimensionsIncludeLabels: true, concentric: function (n) { return n.degree(); }, levelWidth: function () { return 2; }, padding: 30 }).run();
+    visibles.layout({ name: nombre, animate: false, randomize: false, nodeDimensionsIncludeLabels: true, concentric: function (n) { return n.degree(); }, levelWidth: function () { return 2; }, padding: 30, fit: true, stop: function () { cy.fit(cy.elements(":visible"), 30); } }).run();
   }
   var sel = document.getElementById("layout");
   if (D.nodes.filter(function (n) { return D.tiposIniciales.indexOf(n.t) >= 0; }).length > 400) sel.value = "concentric";

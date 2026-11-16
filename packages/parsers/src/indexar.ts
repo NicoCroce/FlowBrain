@@ -105,7 +105,15 @@ async function leerContratos(raizBrain: string): Promise<Contrato[]> {
   return Promise.all(nombres.map(async (n) => JSON.parse(await readFile(join(dir, n), "utf8")) as Contrato));
 }
 
-/** Une extracciones: archivos por ruta (gana el primero), endpoints autoritativos por paquete, formas pisadas en orden. */
+/** Archivos de test y mocks: sus rutas y llamadas no describen el sistema real. */
+export const esArchivoDeTest = (ruta: string) =>
+  /(^|\/)(__tests__|__mocks__|tests?|e2e|cypress|fixtures)\//.test(ruta) || /\.(test|spec|e2e-spec|cy)\.[cm]?[jt]sx?$/.test(ruta) || /Test\.php$/.test(ruta);
+
+/**
+ * Une extracciones: archivos por ruta (gana el primero), endpoints autoritativos por paquete, formas pisadas en orden.
+ * Descarta endpoints, llamadas y accesos a tablas de archivos de test, y deja un solo endpoint por (paquete, método,
+ * ruta): el de menor (archivo, línea).
+ */
 export function fusionar(xs: Extraccion[]): Extraccion {
   const autoritativos = new Set(xs.flatMap((x) => x.autoritativo));
   const archivos = new Map<string, Extraccion["archivos"][number]>();
@@ -117,13 +125,21 @@ export function fusionar(xs: Extraccion[]): Extraccion {
   const declarados = new Set(xs.flatMap((x) => x.endpoints.filter((e) => x.autoritativo.includes(e.paquete)).map(clave)));
   for (const x of xs) {
     for (const a of x.archivos) if (!archivos.has(a.ruta)) archivos.set(a.ruta, a);
-    for (const e of x.endpoints) if (x.autoritativo.includes(e.paquete) || !declarados.has(clave(e))) out.endpoints.push(e);
-    out.llamadas.push(...x.llamadas);
-    out.tablas.push(...x.tablas);
+    for (const e of x.endpoints) {
+      if (esArchivoDeTest(e.archivo)) continue;
+      if (x.autoritativo.includes(e.paquete) || !declarados.has(clave(e))) out.endpoints.push(e);
+    }
+    out.llamadas.push(...x.llamadas.filter((l) => !esArchivoDeTest(l.archivo)));
+    out.tablas.push(...x.tablas.filter((t) => !esArchivoDeTest(t.archivo)));
     out.modelos.push(...x.modelos);
     for (const [p, fs] of Object.entries(x.formas)) Object.assign((formas[p] ??= {}), fs);
   }
   out.archivos = [...archivos.values()].sort((a, b) => cmp(a.ruta, b.ruta));
+  const unicos = new Map<string, Extraccion["endpoints"][number]>();
+  for (const e of [...out.endpoints].sort((a, b) => cmpTuple([a.archivo, String(a.linea).padStart(9, "0")], [b.archivo, String(b.linea).padStart(9, "0")]))) {
+    if (!unicos.has(clave(e))) unicos.set(clave(e), e);
+  }
+  out.endpoints = out.endpoints.filter((e) => unicos.get(clave(e)) === e);
   return out;
 }
 
