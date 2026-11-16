@@ -34,17 +34,23 @@ export const PRODUCTO_JS = String.raw`
       .replace(/\[([^\]]+)\]\(((?:https?:\/\/|#)[^)\s]+)\)/g, '<a href="$2">$1</a>');
   }
   function markdown(md) {
-    var out = [], parrafo = [], lista = false;
+    var out = [], parrafo = [], lista = "";
     function cerrarParrafo() { if (parrafo.length) { out.push("<p>" + inline(esc(parrafo.join(" "))) + "</p>"); parrafo = []; } }
-    function cerrar() { cerrarParrafo(); if (lista) { out.push("</ul>"); lista = false; } }
+    function cerrar() { cerrarParrafo(); if (lista) { out.push("</" + lista + ">"); lista = ""; } }
+    function item(tipo, texto) {
+      cerrarParrafo();
+      if (lista !== tipo) { if (lista) out.push("</" + lista + ">"); out.push("<" + tipo + ">"); lista = tipo; }
+      out.push("<li>" + inline(esc(texto)) + "</li>");
+    }
     md.split("\n").forEach(function (l) {
       var m;
       if (/^#\s/.test(l) || /^>\s*Borrador generado/.test(l)) return cerrar();
       if ((m = /^(#{2,4})\s+(.*)$/.exec(l))) { cerrar(); var h = "h" + (m[1].length + 1); out.push("<" + h + ">" + inline(esc(m[2])) + "</" + h + ">"); return; }
-      if ((m = /^\s*[-*]\s+(.*)$/.exec(l))) { cerrarParrafo(); if (!lista) { out.push("<ul>"); lista = true; } out.push("<li>" + inline(esc(m[1])) + "</li>"); return; }
+      if ((m = /^\s*[-*]\s+(.*)$/.exec(l))) return item("ul", m[1]);
+      if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(l))) return item("ol", m[1]);
       if ((m = /^>\s?(.*)$/.exec(l))) { cerrar(); out.push("<blockquote>" + inline(esc(m[1])) + "</blockquote>"); return; }
       if (l.trim() === "") return cerrar();
-      if (lista) { out.push("</ul>"); lista = false; }
+      if (lista) { out.push("</" + lista + ">"); lista = ""; }
       parrafo.push(l.trim());
     });
     cerrar();
