@@ -89,35 +89,51 @@ export const GRAFO3D_JS = String.raw`
   function actualizarActivos() {
     activos = N.filter(base);
     activos.forEach(ubicar);
+    armarResortes();
   }
 
   // ---------- Fuerzas ----------
   var alpha = 0;
+  // Resortes entre nodos activos: aristas visibles y padre-hijo. La fuerza de cada uno se reparte por la cantidad de
+  // resortes de sus extremos (como d3-force): un repo con miles de archivos no recibe miles de tirones sumados, que
+  // con muchos nodos hacían diverger la simulación y mandaban todos los puntos fuera de la vista.
+  var resortes = [];
+  function armarResortes() {
+    var cuenta = new Map(), L = [];
+    var suma = function (n) { cuenta.set(n, (cuenta.get(n) || 0) + 1); };
+    E.forEach(function (e) { if (base(e.a) && base(e.b) && !S.hiddenVerbs[e.verbo]) { L.push({ a: e.a, b: e.b, len: 170, k: 0.03 }); suma(e.a); suma(e.b); } });
+    activos.forEach(function (n) { if (n.parent && base(n.parent)) { L.push({ a: n, b: n.parent, len: n.tipo === "archivo" ? 45 : 75, k: 0.25 }); suma(n); suma(n.parent); } });
+    L.forEach(function (r) { var ca = cuenta.get(r.a), cb = cuenta.get(r.b); r.k = r.k / Math.min(ca, cb); r.bias = ca / (ca + cb); });
+    resortes = L;
+  }
+  var VMAX = 40;
   function simStep(a) {
     var A = activos, i, j, n, m, dx, dy, dz, d2, d, f;
     if (A.length <= 900) {
       for (i = 0; i < A.length; i++) {
         n = A[i];
         for (j = i + 1; j < A.length; j++) {
-          m = A[j]; dx = n.x - m.x; dy = n.y - m.y; dz = n.z - m.z; d2 = dx * dx + dy * dy + dz * dz + 0.01;
+          m = A[j]; dx = n.x - m.x; dy = n.y - m.y; dz = n.z - m.z; d2 = dx * dx + dy * dy + dz * dz;
           if (d2 > 640000) continue;
+          if (d2 < 100) d2 = 100;
           f = 5200 / d2; d = Math.sqrt(d2); dx /= d; dy /= d; dz /= d;
           n.vx += dx * f; n.vy += dy * f; n.vz += dz * f; m.vx -= dx * f; m.vy -= dy * f; m.vz -= dz * f;
         }
       }
     } else {
       // Muchos nodos (archivos prendidos): repulsión solo entre vecinos de una grilla.
-      var C = 150, g = new Map();
-      for (i = 0; i < A.length; i++) { n = A[i]; var k = Math.floor(n.x / C) + "," + Math.floor(n.y / C) + "," + Math.floor(n.z / C); var l = g.get(k); if (l) l.push(n); else g.set(k, [n]); }
+      var C = 110, g = new Map(), clave = function (x, y, z) { return ((x + 4096) * 8192 + (y + 4096)) * 8192 + (z + 4096); };
+      for (i = 0; i < A.length; i++) { n = A[i]; n.gx = Math.floor(n.x / C); n.gy = Math.floor(n.y / C); n.gz = Math.floor(n.z / C); var k = clave(n.gx, n.gy, n.gz), l = g.get(k); if (l) l.push(n); else g.set(k, [n]); }
       for (i = 0; i < A.length; i++) {
-        n = A[i]; var cx = Math.floor(n.x / C), cy = Math.floor(n.y / C), cz = Math.floor(n.z / C);
+        n = A[i];
         for (var ax = -1; ax <= 1; ax++) for (var ay = -1; ay <= 1; ay++) for (var az = -1; az <= 1; az++) {
-          var L = g.get((cx + ax) + "," + (cy + ay) + "," + (cz + az));
+          var L = g.get(clave(n.gx + ax, n.gy + ay, n.gz + az));
           if (!L) continue;
           for (j = 0; j < L.length; j++) {
             m = L[j]; if (m === n) continue;
-            dx = n.x - m.x; dy = n.y - m.y; dz = n.z - m.z; d2 = dx * dx + dy * dy + dz * dz + 0.01;
+            dx = n.x - m.x; dy = n.y - m.y; dz = n.z - m.z; d2 = dx * dx + dy * dy + dz * dz;
             if (d2 > C * C) continue;
+            if (d2 < 100) d2 = 100;
             f = 2600 / d2; d = Math.sqrt(d2);
             n.vx += dx / d * f; n.vy += dy / d * f; n.vz += dz / d * f;
           }
@@ -125,15 +141,16 @@ export const GRAFO3D_JS = String.raw`
       }
     }
     for (i = 0; i < A.length; i++) { n = A[i]; n.vx -= n.x * 0.004; n.vy -= n.y * 0.004; n.vz -= n.z * 0.004; }
-    function resorte(p, q, Lr, k) {
-      var ex = q.x - p.x, ey = q.y - p.y, ez = q.z - p.z, dd = Math.sqrt(ex * ex + ey * ey + ez * ez) + 0.01, ff = (dd - Lr) * k / dd;
-      p.vx += ex * ff; p.vy += ey * ff; p.vz += ez * ff; q.vx -= ex * ff; q.vy -= ey * ff; q.vz -= ez * ff;
+    for (i = 0; i < resortes.length; i++) {
+      var r = resortes[i], p = r.a, q = r.b, ex = q.x - p.x, ey = q.y - p.y, ez = q.z - p.z, dd = Math.sqrt(ex * ex + ey * ey + ez * ez) + 0.01, ff = (dd - r.len) * r.k / dd;
+      var fq = ff * r.bias, fp = ff * (1 - r.bias);
+      p.vx += ex * fp; p.vy += ey * fp; p.vz += ez * fp; q.vx -= ex * fq; q.vy -= ey * fq; q.vz -= ez * fq;
     }
-    for (i = 0; i < E.length; i++) { var e = E[i]; if (base(e.a) && base(e.b) && !S.hiddenVerbs[e.verbo]) resorte(e.a, e.b, 170, 0.004); }
-    for (i = 0; i < A.length; i++) { n = A[i]; if (n.parent && base(n.parent)) resorte(n, n.parent, n.tipo === "archivo" ? 45 : 75, 0.06); }
     for (i = 0; i < A.length; i++) {
       n = A[i];
       if (n.pin) { n.vx = n.vy = n.vz = 0; continue; }
+      var v = Math.sqrt(n.vx * n.vx + n.vy * n.vy + n.vz * n.vz);
+      if (v > VMAX) { n.vx *= VMAX / v; n.vy *= VMAX / v; n.vz *= VMAX / v; }
       n.x += n.vx * a; n.y += n.vy * a; n.z += n.vz * a; n.vx *= 0.55; n.vy *= 0.55; n.vz *= 0.55;
     }
   }
@@ -420,7 +437,7 @@ export const GRAFO3D_JS = String.raw`
     var d = b.dataset, sel = S.selId ? by[S.selId] : null;
     if (d.pick) { irA(d.pick); if (b.closest("#m3-res")) { S.query = ""; $("m3-buscar").value = ""; resultados(); } return; }
     if (d.tipo) { S.hiddenTypes[d.tipo] = !S.hiddenTypes[d.tipo]; actualizarActivos(); reacomodar(0.3); }
-    else if (d.verbo) S.hiddenVerbs[d.verbo] = !S.hiddenVerbs[d.verbo];
+    else if (d.verbo) { S.hiddenVerbs[d.verbo] = !S.hiddenVerbs[d.verbo]; armarResortes(); }
     else if (d.mostrarOcultos) { S.hiddenIds = {}; actualizarActivos(); }
     else if (d.tam) S.sizeMode = d.tam;
     else if (d.etq) S.labels = d.etq;
