@@ -14,3 +14,4 @@ export * from "./funcionalidades.js";
 export * from "./impacto.js";
 export * from "./engine/codigo.js";
 export * from "./git.js";
+export * from "./engine/evaluar.js";

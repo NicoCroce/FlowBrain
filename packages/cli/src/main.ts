@@ -1,4 +1,5 @@
 import { realpathSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -18,6 +19,8 @@ import {
   stringifyCanonical,
   trazar,
   contextoParaPrompt,
+  evaluar,
+  leerPreguntas,
   verifyDir,
   type Contexto,
   type Proyeccion,
@@ -49,6 +52,8 @@ Comandos:
   recorrido <"MÉTODO /ruta"|Clase.metodo>   pasos controller → servicio → repositorio, con lo que toca cada uno
   quien-llama <Clase.metodo|Clase> [--profundidad n]
   impacto <pieza>                           qué se ve afectado si cambia una tabla, endpoint, servicio, feat o símbolo
+  evaluar [archivo] [--minimo pct]          corre preguntas con respuesta conocida (por defecto evals/preguntas.json)
+                                            y da el porcentaje de aciertos; sale con 1 si queda debajo de --minimo
   context --prompt <texto> [--repo <dir>]   contexto para inyectar en un prompt (budget por defecto 1500)
   hook claude-code                          hooks UserPromptSubmit y SessionEnd: lee el JSON de Claude Code por stdin
   serve                                     servidor MCP por stdio
@@ -99,6 +104,7 @@ export async function ejecutar(
         clon: { type: "string", multiple: true },
         dias: { type: "string" },
         hoy: { type: "string" },
+        minimo: { type: "string" },
         escribir: { type: "boolean" },
         "claude-code": { type: "boolean" },
         settings: { type: "string" },
@@ -276,6 +282,13 @@ export async function ejecutar(
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <pieza>");
         resultado = impactoDe(ctx, { pieza: arg, ...opt("budget_tokens", comunes.budget_tokens) });
         break;
+      case "evaluar": {
+        const archivo = resolve(raiz, arg ?? "evals/preguntas.json");
+        const r = evaluar(ctx, leerPreguntas(await readFile(archivo, "utf8")));
+        const minimo = o.minimo === undefined ? null : Number(o.minimo);
+        if (minimo !== null && Number.isNaN(minimo)) throw new ConsultaError("parametro_invalido", "--minimo debe ser un número");
+        return { codigo: minimo !== null && r.porcentaje < minimo ? 1 : 0, stdout: stringifyCanonical(r), stderr: `${r.aciertos}/${r.total} correctas (${r.porcentaje}%), cobertura de lo esperado ${r.cobertura}%\n` };
+      }
       case "context": {
         if (!o.prompt) throw new ConsultaError("parametro_invalido", "falta --prompt");
         const repoDir = o.repo !== undefined ? await nombreRepo(resolve(cwd, o.repo)) : null;

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, commitDe, compile, ConsultaError, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, commitDe, compile, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -89,5 +89,17 @@ describe("consultas de código", () => {
     expect(recorrido(c, { desde: "POST /checkout" }).avisos).toEqual([
       "índice desactualizado: repo-tienda se indexó en aaaaaaaaaaaa y el clon está en bbbbbbbbbbbb; las líneas pueden no coincidir (corré `brain index` y `brain compile`)",
     ]);
+  });
+  it("evaluar cuenta aciertos por herramienta: textos esperados, prohibidos y errores esperados", () => {
+    const preguntas = leerPreguntas(JSON.stringify({ preguntas: [
+      { id: "a", pregunta: "¿Qué ejecuta POST /checkout?", herramienta: "recorrido", args: { desde: "POST /checkout" }, espera: ["postCheckout", "escribe_en tabla-pagos"] },
+      { id: "b", herramienta: "quien_llama", args: { simbolo: "crearPago" }, espera: ["postCheckout @"], noEspera: ["feat-inexistente"] },
+      { id: "c", herramienta: "recorrido", args: { desde: "POST /checkout" }, espera: ["tabla-inexistente", "postCheckout"] },
+      { id: "d", herramienta: "quien_llama", args: { simbolo: "NoExiste.metodo" }, error: true },
+    ] }));
+    const r = evaluar(ctx, preguntas);
+    expect(r).toMatchObject({ total: 4, aciertos: 3, porcentaje: 75, cobertura: 80, porHerramienta: { quien_llama: { total: 2, aciertos: 2 }, recorrido: { total: 2, aciertos: 1 } } });
+    expect(r.falladas).toEqual([{ id: "c", pregunta: "c", herramienta: "recorrido", ok: false, faltan: ["tabla-inexistente"], sobran: [] }]);
+    expect(() => leerPreguntas('[{"id":"x","herramienta":"otra","args":{}}]')).toThrow(/herramienta desconocida/);
   });
 });
