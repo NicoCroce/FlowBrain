@@ -1,0 +1,52 @@
+{
+  "consulta": {
+    "endpoint": null,
+    "nodo": "svc-bff",
+    "proyeccion": "resumen"
+  },
+  "eventos": [],
+  "fuente": "ts-parser",
+  "herramienta": "contrato_de",
+  "nodos": [
+    {
+      "endpoints": [
+        {
+          "evidencia": "repo-tienda:apps/bff/src/routes/checkout.ts#L14",
+          "id": "svc-bff:POST:/checkout",
+          "llamado_por": [
+            "svc-web"
+          ],
+          "metodo": "POST",
+          "request": {
+            "forma": {
+              "carritoId": "string",
+              "medioDePago": "string"
+            },
+            "nombre": "CheckoutRequest"
+          },
+          "response": {
+            "forma": {
+              "estado": "'aprobado' | 'rechazado' | 'pendiente'",
+              "pedidoId": "string"
+            },
+            "nombre": "CheckoutResponse"
+          },
+          "ruta": "/checkout"
+        }
+      ],
+      "estado": "vigente",
+      "id": "svc-bff",
+      "nombre": "BFF de la tienda",
+      "resumen": "Backend-for-frontend que orquesta el checkout para la web.",
+      "tipo": "svc"
+    }
+  ],
+  "omitidos": {
+    "aristas": 0,
+    "endpoints": 0,
+    "nodos": 0,
+    "prosa": 0,
+    "saltos": 0
+  },
+  "truncado": false
+}

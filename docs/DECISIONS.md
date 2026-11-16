@@ -46,3 +46,20 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
 18. **`backlinks.json`:** `{ "<id>": [{ desde, endpoint, verbo }] }` para todo nodo con entrantes. En la página, la sección lista `[[desde]] · verbo · endpoint`; si no hay, `_Sin backlinks._`.
 19. **`viewer.html` se pospone al paso 8** (visor), donde el PRD lo construye.
 20. **Golden files:** `graph.json` es el oráculo a mano y los tests nunca lo reescriben. El resto (`backlinks.json`, `INDEX.md`, `mapa.mmd`, `paginas/`) se regenera con `UPDATE_GOLDEN=1 pnpm test` y se revisa en el diff.
+
+## 2026-11-16 · Paso 3 (motor + CLI)
+
+21. **`budget_tokens` por defecto: 2000.** `null` (CLI: `--budget none`) desactiva el límite. Motivo: frugal por defecto; el hook usará 1500.
+22. **Recorte, pasos extra:** si después de prosa → endpoints → aristas sigue sin entrar, se quitan nodos desde el final y, en `trazar`, saltos desde el final. `omitidos` cuenta `prosa`, `endpoints`, `aristas`, `nodos` y `saltos`; `truncado` es `true` si alguno es > 0. Las aristas se quitan con búsqueda binaria sobre un orden fijo (determinístico y O(log n) serializaciones).
+23. **La proyección `relaciones` oculta `contiene` y `expone`;** `recorrer_grafo` sin `verbos` usa todos menos esos dos. Motivo: un repo `contiene` miles de archivos; los endpoints se ven con `contrato`.
+24. **`contrato_de` usa `resumen` por defecto y siempre incluye los endpoints** (con tipos expandidos y `llamado_por`) y los eventos, aunque la proyección no los pida. Motivo: son el objeto de la consulta; las aristas del svc son ruido para "¿qué devuelve X?".
+25. **`recorrer_grafo` devuelve la raíz como nivel 0** y cada nodo alcanzado con `nivel` y `via` (la arista que lo alcanzó; si hay varias en el mismo nivel, la de mayor confianza y luego orden canónico).
+26. **`trazar` desde un endpoint sobre-aproxima:** después de las llamadas entrantes se expande el svc dueño completo, no solo el handler de ese endpoint (no hay grafo de llamadas intra-servicio en v0.1).
+27. **`trazar` desde un archivo** (`repo-x:ruta` o ruta relativa): el nivel 1 son las aristas cuya evidencia está en ese archivo. Último recurso de resolución: nombre o alias exacto.
+28. **`buscar_nodo`:** devuelve `coincidencia` (`exacta`/`prefijo`/`difusa`) y `total`; `limite` por defecto 10.
+29. **Errores de consulta:** `ConsultaError` con `codigo` (`nodo_inexistente`, `parametro_invalido`). La CLI los imprime como `{ "error": { codigo, mensaje } }` y sale con 2; errores de compilación salen por stderr con código 1.
+30. **La CLI corre con `tsx` (`pnpm brain …`).** Empaquetado para `npx brain` queda para cuando se resuelva la instalación (criterio "< 5 minutos").
+31. **Golden de consultas** en `fixtures/checkout/expected/consultas/`; el catálogo de casos lo comparten los tests del motor y de la CLI (y lo usarán MCP y hook en el paso 4).
+
+### Para revisar
+- Con presupuestos chicos, quitar nodos "desde el final" deja los de confianza 1 (`implementa`, `vive_en`) y descarta los de datos (`llama_a`, `escribe_en`), que suelen ser los más útiles. Alternativa: ordenar priorizando verbos de datos. No se cambió porque el PRD fija "confianza desc, id asc".

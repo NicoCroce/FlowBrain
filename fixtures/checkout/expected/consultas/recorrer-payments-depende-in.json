@@ -1,0 +1,65 @@
+{
+  "consulta": {
+    "direccion": "in",
+    "nodo": "svc-payments",
+    "profundidad": 1,
+    "proyeccion": "resumen",
+    "verbos": [
+      "depende_de"
+    ]
+  },
+  "herramienta": "recorrer_grafo",
+  "nodos": [
+    {
+      "estado": "vigente",
+      "id": "svc-payments",
+      "nivel": 0,
+      "nombre": "Servicio de pagos",
+      "resumen": "Cobra pedidos a través de la pasarela y registra cada pago.",
+      "tipo": "svc",
+      "via": null
+    },
+    {
+      "estado": "vigente",
+      "id": "ext-pasarela",
+      "nivel": 1,
+      "nombre": "Pasarela de pagos",
+      "resumen": "Proveedor externo que procesa tarjetas y notifica el resultado por webhook.",
+      "tipo": "ext",
+      "via": {
+        "confianza": 1,
+        "desde": "ext-pasarela",
+        "endpoint": "svc-payments:POST:/webhooks/pasarela",
+        "estado": "vigente",
+        "evidencia": "repo-tienda:apps/payments/src/routes/webhooks.ts#L7",
+        "hasta": "svc-payments",
+        "verbo": "llama_a"
+      }
+    },
+    {
+      "estado": "vigente",
+      "id": "svc-bff",
+      "nivel": 1,
+      "nombre": "BFF de la tienda",
+      "resumen": "Backend-for-frontend que orquesta el checkout para la web.",
+      "tipo": "svc",
+      "via": {
+        "confianza": 0.9,
+        "desde": "svc-bff",
+        "endpoint": "svc-payments:POST:/payments",
+        "estado": "vigente",
+        "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+        "hasta": "svc-payments",
+        "verbo": "llama_a"
+      }
+    }
+  ],
+  "omitidos": {
+    "aristas": 0,
+    "endpoints": 0,
+    "nodos": 0,
+    "prosa": 0,
+    "saltos": 0
+  },
+  "truncado": false
+}

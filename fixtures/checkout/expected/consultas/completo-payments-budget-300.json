@@ -1,0 +1,66 @@
+{
+  "consulta": {
+    "direccion": "out",
+    "nodo": "svc-payments",
+    "profundidad": 1,
+    "proyeccion": "completo",
+    "verbos": []
+  },
+  "herramienta": "recorrer_grafo",
+  "nodos": [
+    {
+      "aristas": [],
+      "estado": "vigente",
+      "id": "svc-payments",
+      "nivel": 0,
+      "nombre": "Servicio de pagos",
+      "resumen": "Cobra pedidos a través de la pasarela y registra cada pago.",
+      "tipo": "svc",
+      "via": null
+    },
+    {
+      "aristas": [],
+      "estado": "vigente",
+      "id": "feat-checkout",
+      "nivel": 1,
+      "nombre": "Checkout",
+      "resumen": "El cliente confirma el carrito, paga con tarjeta y recibe el estado del pedido.",
+      "tipo": "feat",
+      "via": {
+        "confianza": 1,
+        "desde": "svc-payments",
+        "endpoint": null,
+        "estado": "vigente",
+        "evidencia": null,
+        "hasta": "feat-checkout",
+        "verbo": "implementa"
+      }
+    },
+    {
+      "aristas": [],
+      "estado": "vigente",
+      "id": "repo-tienda",
+      "nivel": 1,
+      "nombre": "Monorepo de la tienda",
+      "resumen": "Monorepo pnpm con la web, el BFF y el servicio de pagos en apps/.",
+      "tipo": "repo",
+      "via": {
+        "confianza": 1,
+        "desde": "svc-payments",
+        "endpoint": null,
+        "estado": "vigente",
+        "evidencia": null,
+        "hasta": "repo-tienda",
+        "verbo": "vive_en"
+      }
+    }
+  ],
+  "omitidos": {
+    "aristas": 16,
+    "endpoints": 2,
+    "nodos": 2,
+    "prosa": 5,
+    "saltos": 0
+  },
+  "truncado": true
+}

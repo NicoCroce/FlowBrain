@@ -1,0 +1,278 @@
+{
+  "consulta": {
+    "direccion": "both",
+    "nodo": "svc-bff",
+    "profundidad": 1,
+    "proyeccion": "relaciones",
+    "verbos": []
+  },
+  "herramienta": "recorrer_grafo",
+  "nodos": [
+    {
+      "aristas": [
+        {
+          "confianza": 1,
+          "direccion": "out",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "feat-checkout",
+          "verbo": "implementa"
+        },
+        {
+          "confianza": 1,
+          "direccion": "out",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "repo-tienda",
+          "verbo": "vive_en"
+        },
+        {
+          "confianza": 0.9,
+          "direccion": "out",
+          "endpoint": "svc-payments:POST:/payments",
+          "estado": "vigente",
+          "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+          "nodo": "svc-payments",
+          "verbo": "llama_a"
+        },
+        {
+          "confianza": 0.5,
+          "direccion": "in",
+          "endpoint": "svc-bff:POST:/checkout",
+          "estado": "vigente",
+          "evidencia": "repo-tienda:apps/web/src/api/checkout.ts#L9",
+          "nodo": "svc-web",
+          "verbo": "llama_a"
+        }
+      ],
+      "estado": "vigente",
+      "id": "svc-bff",
+      "nivel": 0,
+      "nombre": "BFF de la tienda",
+      "resumen": "Backend-for-frontend que orquesta el checkout para la web.",
+      "tipo": "svc",
+      "via": null
+    },
+    {
+      "aristas": [
+        {
+          "confianza": 1,
+          "direccion": "in",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "svc-bff",
+          "verbo": "implementa"
+        },
+        {
+          "confianza": 1,
+          "direccion": "in",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "svc-payments",
+          "verbo": "implementa"
+        },
+        {
+          "confianza": 1,
+          "direccion": "in",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "svc-web",
+          "verbo": "implementa"
+        }
+      ],
+      "estado": "vigente",
+      "id": "feat-checkout",
+      "nivel": 1,
+      "nombre": "Checkout",
+      "resumen": "El cliente confirma el carrito, paga con tarjeta y recibe el estado del pedido.",
+      "tipo": "feat",
+      "via": {
+        "confianza": 1,
+        "desde": "svc-bff",
+        "endpoint": null,
+        "estado": "vigente",
+        "evidencia": null,
+        "hasta": "feat-checkout",
+        "verbo": "implementa"
+      }
+    },
+    {
+      "aristas": [
+        {
+          "confianza": 1,
+          "direccion": "in",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "svc-bff",
+          "verbo": "vive_en"
+        },
+        {
+          "confianza": 1,
+          "direccion": "in",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "svc-payments",
+          "verbo": "vive_en"
+        },
+        {
+          "confianza": 1,
+          "direccion": "in",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "svc-web",
+          "verbo": "vive_en"
+        }
+      ],
+      "estado": "vigente",
+      "id": "repo-tienda",
+      "nivel": 1,
+      "nombre": "Monorepo de la tienda",
+      "resumen": "Monorepo pnpm con la web, el BFF y el servicio de pagos en apps/.",
+      "tipo": "repo",
+      "via": {
+        "confianza": 1,
+        "desde": "svc-bff",
+        "endpoint": null,
+        "estado": "vigente",
+        "evidencia": null,
+        "hasta": "repo-tienda",
+        "verbo": "vive_en"
+      }
+    },
+    {
+      "aristas": [
+        {
+          "confianza": 1,
+          "direccion": "out",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "feat-checkout",
+          "verbo": "implementa"
+        },
+        {
+          "confianza": 1,
+          "direccion": "out",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "repo-tienda",
+          "verbo": "vive_en"
+        },
+        {
+          "confianza": 1,
+          "direccion": "in",
+          "endpoint": "svc-payments:POST:/webhooks/pasarela",
+          "estado": "vigente",
+          "evidencia": "repo-tienda:apps/payments/src/routes/webhooks.ts#L7",
+          "nodo": "ext-pasarela",
+          "verbo": "llama_a"
+        },
+        {
+          "confianza": 0.9,
+          "direccion": "out",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": "repo-tienda:apps/payments/src/routes/payments.ts#L21",
+          "nodo": "tabla-pagos",
+          "verbo": "escribe_en"
+        },
+        {
+          "confianza": 0.9,
+          "direccion": "out",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": "repo-tienda:apps/payments/src/clients/pasarela.ts#L8",
+          "nodo": "ext-pasarela",
+          "verbo": "llama_a"
+        },
+        {
+          "confianza": 0.9,
+          "direccion": "in",
+          "endpoint": "svc-payments:POST:/payments",
+          "estado": "vigente",
+          "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+          "nodo": "svc-bff",
+          "verbo": "llama_a"
+        }
+      ],
+      "estado": "vigente",
+      "id": "svc-payments",
+      "nivel": 1,
+      "nombre": "Servicio de pagos",
+      "resumen": "Cobra pedidos a través de la pasarela y registra cada pago.",
+      "tipo": "svc",
+      "via": {
+        "confianza": 0.9,
+        "desde": "svc-bff",
+        "endpoint": "svc-payments:POST:/payments",
+        "estado": "vigente",
+        "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+        "hasta": "svc-payments",
+        "verbo": "llama_a"
+      }
+    },
+    {
+      "aristas": [
+        {
+          "confianza": 1,
+          "direccion": "out",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "feat-checkout",
+          "verbo": "implementa"
+        },
+        {
+          "confianza": 1,
+          "direccion": "out",
+          "endpoint": null,
+          "estado": "vigente",
+          "evidencia": null,
+          "nodo": "repo-tienda",
+          "verbo": "vive_en"
+        },
+        {
+          "confianza": 0.5,
+          "direccion": "out",
+          "endpoint": "svc-bff:POST:/checkout",
+          "estado": "vigente",
+          "evidencia": "repo-tienda:apps/web/src/api/checkout.ts#L9",
+          "nodo": "svc-bff",
+          "verbo": "llama_a"
+        }
+      ],
+      "estado": "vigente",
+      "id": "svc-web",
+      "nivel": 1,
+      "nombre": "Web de la tienda",
+      "resumen": "SPA donde el cliente arma el carrito y paga.",
+      "tipo": "svc",
+      "via": {
+        "confianza": 0.5,
+        "desde": "svc-web",
+        "endpoint": "svc-bff:POST:/checkout",
+        "estado": "vigente",
+        "evidencia": "repo-tienda:apps/web/src/api/checkout.ts#L9",
+        "hasta": "svc-bff",
+        "verbo": "llama_a"
+      }
+    }
+  ],
+  "omitidos": {
+    "aristas": 0,
+    "endpoints": 0,
+    "nodos": 0,
+    "prosa": 0,
+    "saltos": 0
+  },
+  "truncado": false
+}

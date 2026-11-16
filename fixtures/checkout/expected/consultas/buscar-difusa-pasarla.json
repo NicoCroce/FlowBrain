@@ -1,0 +1,28 @@
+{
+  "consulta": {
+    "limite": 10,
+    "proyeccion": "resumen",
+    "texto": "pasarla",
+    "tipos": []
+  },
+  "herramienta": "buscar_nodo",
+  "nodos": [
+    {
+      "coincidencia": "difusa",
+      "estado": "vigente",
+      "id": "ext-pasarela",
+      "nombre": "Pasarela de pagos",
+      "resumen": "Proveedor externo que procesa tarjetas y notifica el resultado por webhook.",
+      "tipo": "ext"
+    }
+  ],
+  "omitidos": {
+    "aristas": 0,
+    "endpoints": 0,
+    "nodos": 0,
+    "prosa": 0,
+    "saltos": 0
+  },
+  "total": 1,
+  "truncado": false
+}

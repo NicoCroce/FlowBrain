@@ -189,14 +189,17 @@ Los símbolos se quedan en este JSON y no pasan a `graph.json`.
 2. Endpoints.
 3. Aristas, de menor a mayor confianza y, con la misma confianza, en orden inverso al canónico.
 
-Si con todo eso sigue sin entrar, se devuelve solo `resumen`. La salida incluye `truncado: boolean` y `omitidos: { prosa, endpoints, aristas }`.
+Si con todo eso sigue sin entrar, se quitan nodos desde el final y, en `trazar`, saltos desde el final. La salida incluye `truncado: boolean` y `omitidos: { aristas, endpoints, nodos, prosa, saltos }`. Presupuesto por defecto: 2000; `null` desactiva el límite.
+
+La proyección `relaciones` no muestra `contiene` ni `expone` (se ven con `contrato`).
 
 ## 10. Semántica de consultas
 
 Todas las herramientas ordenan sus resultados por confianza descendente y después por id ascendente.
 
 - **`buscar_nodo`:** la coincidencia exacta con id, nombre o alias va antes que la de prefijo, y la de prefijo antes que la difusa. La comparación ignora mayúsculas y acentos (NFD sin marcas). La difusa usa la distancia de Levenshtein ≤ 2 sobre id, nombre y aliases.
-- **`recorrer_grafo`:** BFS por niveles desde el nodo, con profundidad por defecto 1 y máximo 5. Cada nodo aparece una sola vez, en el primer nivel donde se lo alcanza.
+- **`recorrer_grafo`:** BFS por niveles desde el nodo, con profundidad por defecto 1 y máximo 5. Sin `verbos`, usa todos menos `contiene` y `expone`. La raíz va como nivel 0; cada nodo aparece una sola vez, en el primer nivel donde se lo alcanza, con `nivel` y `via` (la arista de mayor confianza que lo alcanzó).
+- **`contrato_de`:** acepta un svc o un endpoint; proyección por defecto `resumen`, pero siempre incluye los endpoints (tipos expandidos y `llamado_por`) y los eventos.
 - **`trazar`:**
   1. `desde` se resuelve a un nodo: un id, una URL o ruta (contra la `ruta` de los endpoints, con `{param}` como comodín) o un archivo.
   2. Si es un endpoint, el nivel 1 son las aristas `llama_a` que lo tienen como `endpoint`, y se sigue desde el svc dueño.

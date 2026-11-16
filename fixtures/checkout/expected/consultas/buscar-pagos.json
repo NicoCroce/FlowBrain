@@ -1,0 +1,36 @@
+{
+  "consulta": {
+    "limite": 10,
+    "proyeccion": "resumen",
+    "texto": "pagos",
+    "tipos": []
+  },
+  "herramienta": "buscar_nodo",
+  "nodos": [
+    {
+      "coincidencia": "exacta",
+      "estado": "vigente",
+      "id": "svc-payments",
+      "nombre": "Servicio de pagos",
+      "resumen": "Cobra pedidos a través de la pasarela y registra cada pago.",
+      "tipo": "svc"
+    },
+    {
+      "coincidencia": "prefijo",
+      "estado": "vigente",
+      "id": "tabla-pagos",
+      "nombre": "Tabla de pagos",
+      "resumen": "Un registro por intento de cobro, con su estado.",
+      "tipo": "tabla"
+    }
+  ],
+  "omitidos": {
+    "aristas": 0,
+    "endpoints": 0,
+    "nodos": 0,
+    "prosa": 0,
+    "saltos": 0
+  },
+  "total": 2,
+  "truncado": false
+}

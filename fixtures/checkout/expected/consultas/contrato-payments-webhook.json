@@ -1,0 +1,47 @@
+{
+  "consulta": {
+    "endpoint": "POST /webhooks/pasarela",
+    "nodo": "svc-payments",
+    "proyeccion": "resumen"
+  },
+  "eventos": [],
+  "fuente": "ts-parser",
+  "herramienta": "contrato_de",
+  "nodos": [
+    {
+      "endpoints": [
+        {
+          "evidencia": "repo-tienda:apps/payments/src/routes/webhooks.ts#L7",
+          "id": "svc-payments:POST:/webhooks/pasarela",
+          "llamado_por": [
+            "ext-pasarela"
+          ],
+          "metodo": "POST",
+          "request": {
+            "forma": {
+              "cargoId": "string",
+              "estado": "'aprobado' | 'rechazado'",
+              "tipo": "string"
+            },
+            "nombre": "EventoPasarela"
+          },
+          "response": null,
+          "ruta": "/webhooks/pasarela"
+        }
+      ],
+      "estado": "vigente",
+      "id": "svc-payments",
+      "nombre": "Servicio de pagos",
+      "resumen": "Cobra pedidos a través de la pasarela y registra cada pago.",
+      "tipo": "svc"
+    }
+  ],
+  "omitidos": {
+    "aristas": 0,
+    "endpoints": 0,
+    "nodos": 0,
+    "prosa": 0,
+    "saltos": 0
+  },
+  "truncado": false
+}

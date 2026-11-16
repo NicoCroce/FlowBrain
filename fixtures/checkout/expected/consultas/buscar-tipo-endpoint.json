@@ -1,0 +1,46 @@
+{
+  "consulta": {
+    "limite": 10,
+    "proyeccion": "resumen",
+    "texto": "POST",
+    "tipos": [
+      "endpoint"
+    ]
+  },
+  "herramienta": "buscar_nodo",
+  "nodos": [
+    {
+      "coincidencia": "prefijo",
+      "estado": "vigente",
+      "id": "svc-bff:POST:/checkout",
+      "nombre": "POST /checkout",
+      "resumen": null,
+      "tipo": "endpoint"
+    },
+    {
+      "coincidencia": "prefijo",
+      "estado": "vigente",
+      "id": "svc-payments:POST:/payments",
+      "nombre": "POST /payments",
+      "resumen": null,
+      "tipo": "endpoint"
+    },
+    {
+      "coincidencia": "prefijo",
+      "estado": "vigente",
+      "id": "svc-payments:POST:/webhooks/pasarela",
+      "nombre": "POST /webhooks/pasarela",
+      "resumen": null,
+      "tipo": "endpoint"
+    }
+  ],
+  "omitidos": {
+    "aristas": 0,
+    "endpoints": 0,
+    "nodos": 0,
+    "prosa": 0,
+    "saltos": 0
+  },
+  "total": 3,
+  "truncado": false
+}
