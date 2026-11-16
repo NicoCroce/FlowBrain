@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
-import { cmp, cmpTuple, ConsultaError, FrontmatterSchema, parsePagina, stringifyCanonical, type Contrato } from "@brain/core";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, parsePagina, stringifyCanonical, type Contrato } from "@brain/core";
 import { leerRepo } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
 import { tsParser } from "./ts-parser.js";
@@ -52,7 +52,7 @@ export interface ResultadoIndex {
   accesos: AristaExtraida[];
   pendientes: Pendiente[];
   contratos: Contrato[];
-  archivos: { archivos: Extraccion["archivos"]; repo: string; commit?: string };
+  archivos: { archivos: Extraccion["archivos"]; repo: string; commit?: string; /** Ruta del clon relativa al brain, para comparar su HEAD actual con `commit`. */ raiz: string };
 }
 
 export const normalizar = (s: string) =>
@@ -197,6 +197,7 @@ export async function indexar(
 ): Promise<ResultadoIndex> {
   const repo = leerRepo(rutaRepo);
   const commit = await commitDe(repo.raiz);
+  const ubicacion = relative(resolve(raizBrain), repo.raiz) || ".";
   const nodos = await leerNodosPaginas(raizBrain);
   const porId = new Map(nodos.map((n) => [n.id, n]));
 
@@ -368,36 +369,11 @@ export async function indexar(
     accesos,
     pendientes,
     contratos: contratos.sort((a, b) => cmp(a.svc, b.svc)),
-    archivos: { archivos: x.archivos, repo: repoId, ...(commit ? { commit } : {}) },
+    archivos: { archivos: x.archivos, raiz: ubicacion, repo: repoId, ...(commit ? { commit } : {}) },
   };
 }
 
-/**
- * Commit de HEAD leyendo `.git` (sin ejecutar git): así las consultas pueden decir de qué versión del código salió el
- * índice. `null` si no es un repo git o no se puede resolver.
- */
-export async function commitDe(raiz: string): Promise<string | null> {
-  const leer = (p: string) => readFile(p, "utf8").then((t) => t.trim(), () => null);
-  let git = join(raiz, ".git");
-  const archivoGit = await leer(git);
-  if (archivoGit?.startsWith("gitdir:")) git = resolve(raiz, archivoGit.slice(7).trim());
-  const head = await leer(join(git, "HEAD"));
-  if (!head) return null;
-  if (/^[0-9a-f]{40}$/.test(head)) return head;
-  const ref = /^ref: (.+)$/.exec(head)?.[1];
-  if (!ref) return null;
-  // En un worktree, las refs viven en el directorio común.
-  const comun = await leer(join(git, "commondir"));
-  const bases = [git, ...(comun ? [resolve(git, comun)] : [])];
-  for (const b of bases) {
-    const suelta = await leer(join(b, ref));
-    if (suelta && /^[0-9a-f]{40}$/.test(suelta)) return suelta;
-    const packed = await leer(join(b, "packed-refs"));
-    const m = packed?.split("\n").find((l) => l.endsWith(" " + ref));
-    if (m) return m.slice(0, 40);
-  }
-  return null;
-}
+export { commitDe };
 
 export const rutasIndex = (repo: string) => ({
   archivos: `_build/archivos/${repo}.json`,

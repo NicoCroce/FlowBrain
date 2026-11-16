@@ -13,3 +13,4 @@ export * from "./viewer.js";
 export * from "./funcionalidades.js";
 export * from "./impacto.js";
 export * from "./engine/codigo.js";
+export * from "./git.js";

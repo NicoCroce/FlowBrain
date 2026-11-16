@@ -24,7 +24,8 @@
     "agents"
   ],
   "scripts": {
-    "build": "node ../../scripts/build.mjs"
+    "build": "node ../../scripts/build.mjs",
+    "prepublishOnly": "cd ../.. && pnpm typecheck && pnpm test && node scripts/build.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

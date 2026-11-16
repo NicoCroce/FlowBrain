@@ -202,6 +202,8 @@ export const ArchivosSchema = z
     repo: z.string(),
     /** Commit de HEAD del clon indexado, si se pudo leer. */
     commit: z.string().optional(),
+    /** Ruta del clon relativa al brain (para avisar si su HEAD avanzó desde que se indexó). */
+    raiz: z.string().optional(),
     archivos: z.array(
       z
         .object({

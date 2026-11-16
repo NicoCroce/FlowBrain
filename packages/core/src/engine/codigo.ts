@@ -1,4 +1,6 @@
+import { resolve } from "node:path";
 import { cmp } from "../canonical.js";
+import { commitDe } from "../git.js";
 import {
   aristasDeExtracciones,
   crearRecorredor,
@@ -29,6 +31,10 @@ export interface IndiceCodigo {
   recorredor: Recorredor;
   /** repo → commit de HEAD al indexar. */
   commits: Record<string, string>;
+  /** repo → ruta del clon relativa al brain (de `_build/archivos`). */
+  raices: Record<string, string>;
+  /** repo → HEAD actual del clon, leído al consultar (`actualizarHeads`); ausente si no se pudo leer. */
+  actuales: Record<string, string>;
   /** `repo:ruta#Simbolo` → quién lo llama, con la línea de la llamada. */
   llamadores: Map<string, Array<{ clave: string; linea: number }>>;
   /** Nombre de símbolo → claves `repo:ruta#Simbolo`. */
@@ -49,10 +55,12 @@ const partes = (k: string) => {
 export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: string[], extracciones: string[]): IndiceCodigo {
   const estructura = new Map<string, EstructuraArchivo>();
   const commits: Record<string, string> = {};
+  const raices: Record<string, string> = {};
   for (const c of archivos) {
     try {
-      const j = JSON.parse(c) as { repo: string; commit?: string; archivos: Array<{ ruta: string } & Partial<EstructuraArchivo>> };
+      const j = JSON.parse(c) as { repo: string; commit?: string; raiz?: string; archivos: Array<{ ruta: string } & Partial<EstructuraArchivo>> };
       if (j.commit) commits[j.repo] = j.commit;
+      if (j.raiz) raices[j.repo] = j.raiz;
       for (const a of j.archivos ?? []) estructura.set(`${j.repo}:${a.ruta}`, { simbolos: a.simbolos ?? [], importa: a.importa ?? [], invoca: a.invoca ?? [] });
     } catch {
       /* ignorado */
@@ -88,7 +96,25 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
     if (!lista.some((x) => x.clave === k && x.verbo === a.verbo)) lista.push({ clave: k, verbo: a.verbo, evidencia: a.evidencia });
     tocanTabla.set(a.hasta, lista);
   }
-  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, llamadores, porNombre, atiende, tocanTabla };
+  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, porNombre, atiende, tocanTabla };
+}
+
+/** Lee el HEAD actual de cada clon indexado, para avisar si el índice quedó atrás. Barato: unas lecturas de `.git`. */
+export async function actualizarHeads(ix: IndiceCodigo, raizBrain: string): Promise<void> {
+  const actuales: Record<string, string> = {};
+  for (const [repo, r] of Object.entries(ix.raices)) {
+    const c = await commitDe(resolve(raizBrain, r));
+    if (c) actuales[repo] = c;
+  }
+  ix.actuales = actuales;
+}
+
+/** Avisos de índice viejo: el clon avanzó (o cambió de rama) desde que se indexó. */
+export function avisosIndice(ix: IndiceCodigo): string[] {
+  return Object.keys(ix.commits)
+    .sort(cmp)
+    .filter((r) => ix.actuales[r] && ix.actuales[r] !== ix.commits[r])
+    .map((r) => `índice desactualizado: ${r} se indexó en ${corto(ix.commits[r]!)} y el clon está en ${corto(ix.actuales[r]!)}; las líneas pueden no coincidir (corré \`brain index\` y \`brain compile\`)`);
 }
 
 // ------------------------------------------------------------------ utilidades
@@ -233,6 +259,7 @@ export function funcionalidad(ctx: Contexto, p: FuncionalidadParams) {
     avisos: [
       ...(f.recorridos.some((r) => r.pasos.some((x) => x.aviso)) ? [`hay pasos de repositorio sin tabla detectada: ver recorrido(endpoint)`] : []),
       ...(f.expone.length === 0 && f.usa.length === 0 ? ["sin endpoints expuestos ni consumidos dentro de codigo"] : []),
+      ...avisosIndice(ix),
     ],
     indice: versiones(ix),
   };
@@ -272,6 +299,7 @@ export function recorrido(ctx: Contexto, p: RecorridoParams) {
     ...(recorridos.some((r) => !r.atiende) ? ["no se encontró el método que atiende algún endpoint (¿otro lenguaje o framework sin soporte?)"] : []),
     ...(recorridos.some((r) => r.truncado) ? ["recorrido cortado por profundidad (6) o cantidad de pasos (40)"] : []),
     ...((eps.length || 0) > 3 ? [`${eps.length} endpoints coinciden; se muestran 3`] : []),
+    ...avisosIndice(ix),
   ];
   const res = { recorridos, avisos, indice: versiones(ix) };
   if (recorridos.length === 1) return ajustarLista({ ...recorridos[0]!, avisos, indice: versiones(ix) }, "pasos", p.budget_tokens);
@@ -325,6 +353,7 @@ export function quienLlama(ctx: Contexto, p: QuienLlamaParams) {
     avisos: [
       ...(frente.length ? [`hay más llamadores por encima de la profundidad ${prof}`] : []),
       "solo llamadas resueltas estáticamente en TypeScript: inyección por token, reflexión o eventos no aparecen",
+      ...avisosIndice(ix),
     ],
     indice: versiones(ix),
   };
@@ -371,7 +400,7 @@ export function impactoDe(ctx: Contexto, p: ImpactoParams) {
     funcionalidades: afectados.filter((a) => a.tipo === "feat"),
     ...(ix.tocanTabla.has(id) ? { tocadaPor: ix.tocanTabla.get(id)!.map((t) => ({ verbo: t.verbo, quien: t.clave.includes("#") && !/#L\d/.test(t.clave) ? cita(ix, t.clave) : t.clave, ev: t.evidencia })) } : {}),
     tecnicas: afectados.filter((a) => a.tipo !== "feat"),
-    avisos: afectados.length ? [] : ["nada depende de esta pieza en el grafo"],
+    avisos: [...(afectados.length ? [] : ["nada depende de esta pieza en el grafo"]), ...avisosIndice(ix)],
     indice: versiones(ix),
   };
   return ajustarLista(res, ["tecnicas", "tocadaPor", "funcionalidades"], p.budget_tokens);

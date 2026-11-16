@@ -65,6 +65,9 @@ describe("paquete brain-graph", () => {
     const bin = join(RAIZ, "packages/brain-graph/dist/brain.mjs");
     const pkg = JSON.parse(await readFile(join(RAIZ, "packages/brain-graph/package.json"), "utf8")) as { version: string };
     expect((await run("node", [bin, "--version"])).stdout).toBe(`${pkg.version}\n`);
+    // El bundle trae todas las herramientas del MCP (si no, el paquete quedó viejo respecto del código).
+    const bundle = await readFile(bin, "utf8");
+    for (const h of ["buscar_nodo", "recorrer_grafo", "contrato_de", "trazar", "funcionalidad", "recorrido", "quien_llama", "impacto"]) expect(bundle).toContain(`"${h}"`);
     const { stdout } = await run("node", [bin, "init", join(dir, "b")], { cwd: dir });
     expect(stdout).toContain(`npx -y brain-graph@${pkg.version} serve --raiz ${join(dir, "b")}`);
     expect(await readFile(join(dir, "b/_build/viewer.html"), "utf8")).toContain("<title>Brain · visor</title>");

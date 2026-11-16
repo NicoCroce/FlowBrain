@@ -5,7 +5,7 @@ import type { Salidas } from "../compile.js";
 import { MARCA_FIN, MARCA_INICIO } from "../render.js";
 import type { Ficha } from "../funcionalidades.js";
 import type { Contrato, Graph, GraphEdge, GraphNode } from "../schema.js";
-import { crearIndiceCodigo, type IndiceCodigo } from "./codigo.js";
+import { actualizarHeads, crearIndiceCodigo, type IndiceCodigo } from "./codigo.js";
 
 /** Todo lo que el motor necesita, ya indexado. Inmutable después de construido. */
 export interface Contexto {
@@ -85,5 +85,6 @@ export async function cargarContexto(raiz: string): Promise<Contexto> {
   }
   const archivos = await jsonDe(join(raiz, "_build/archivos"));
   const codigo = archivos.length ? crearIndiceCodigo(graph, fichas, archivos, await jsonDe(join(raiz, "_build/extraccion"))) : null;
+  if (codigo) await actualizarHeads(codigo, raiz);
   return crearContexto(graph, contratos, prosa, codigo);
 }

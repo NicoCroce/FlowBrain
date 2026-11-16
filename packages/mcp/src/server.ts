@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
+  actualizarHeads,
   BUDGET_POR_DEFECTO,
   buscarNodo,
   cargarContexto,
@@ -21,12 +22,17 @@ import {
 } from "@brain/core";
 import { z } from "zod";
 
+/** Versión del paquete, la inyecta el build de brain-graph; "dev" corriendo desde el repo. */
+declare const __BRAIN_VERSION__: string | undefined;
+
 /** Carga el contexto y lo recarga si `_build/graph.json` cambió (por mtime). */
 export function cargadorConCache(raiz: string): () => Promise<Contexto> {
   let cache: { mtime: number; ctx: Contexto } | null = null;
   return async () => {
     const mtime = (await stat(join(raiz, "_build/graph.json"))).mtimeMs;
     if (!cache || cache.mtime !== mtime) cache = { mtime, ctx: await cargarContexto(raiz) };
+    // El clon puede avanzar sin que cambie el brain: el HEAD se relee en cada consulta.
+    else if (cache.ctx.codigo) await actualizarHeads(cache.ctx.codigo, raiz);
     return cache.ctx;
   };
 }
@@ -65,7 +71,7 @@ function limpio<T extends Record<string, unknown>>(o: T): SinUndefined<T> {
 }
 
 export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
-  const server = new McpServer({ name: "brain", version: "0.1.0" });
+  const server = new McpServer({ name: "brain", version: typeof __BRAIN_VERSION__ === "string" ? __BRAIN_VERSION__ : "dev" });
 
   server.registerTool(
     "buscar_nodo",

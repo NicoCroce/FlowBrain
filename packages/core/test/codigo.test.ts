@@ -1,7 +1,9 @@
-import { dirname, resolve } from "node:path";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { compile, ConsultaError, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, commitDe, compile, ConsultaError, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -70,5 +72,22 @@ describe("consultas de código", () => {
     }
     expect(() => recorrido(sinIndice, { desde: "POST /checkout" })).toThrow(ConsultaError);
     expect(() => quienLlama(ctx, { simbolo: "noExiste" })).toThrow(/no existe el símbolo/);
+  });
+  it("avisa cuando el clon avanzó desde que se indexó (HEAD leído de .git, incluso con packed-refs)", async () => {
+    const brain = await mkdtemp(join(tmpdir(), "brain-head-"));
+    const git = join(brain, "clon/.git");
+    await mkdir(join(git, "refs/heads"), { recursive: true });
+    await writeFile(join(git, "HEAD"), "ref: refs/heads/main\n");
+    await writeFile(join(git, "packed-refs"), `# pack-refs\n${"a".repeat(40)} refs/heads/main\n`);
+    expect(await commitDe(join(brain, "clon"))).toBe("a".repeat(40));
+    const ix = { ...ctx.codigo!, commits: { "repo-tienda": "a".repeat(40) }, raices: { "repo-tienda": "clon" }, actuales: {} };
+    const c = { ...ctx, codigo: ix };
+    await actualizarHeads(ix, brain);
+    expect(recorrido(c, { desde: "POST /checkout" }).avisos).toEqual([]);
+    await writeFile(join(git, "refs/heads/main"), `${"b".repeat(40)}\n`);
+    await actualizarHeads(ix, brain);
+    expect(recorrido(c, { desde: "POST /checkout" }).avisos).toEqual([
+      "índice desactualizado: repo-tienda se indexó en aaaaaaaaaaaa y el clon está en bbbbbbbbbbbb; las líneas pueden no coincidir (corré `brain index` y `brain compile`)",
+    ]);
   });
 });
