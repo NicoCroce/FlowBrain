@@ -28,6 +28,7 @@ import {
   type Verbo,
 } from "./schema.js";
 import { aristasDeExtracciones, fichasDeFuncionalidades, tablasSinPagina, RUTA_FUNCIONALIDADES, type EstructuraArchivo, type Ficha } from "./funcionalidades.js";
+import { grafoDePantallas } from "./pantallas.js";
 
 /** Un archivo de entrada. `ruta` es relativa a la raíz del brain, con `/`. */
 export interface Fuente {
@@ -250,6 +251,24 @@ export function compile(entradas: Entradas): Salidas {
       agregarNodo(generado(id, "archivo", arc.ruta, { lenguaje: arc.lenguaje, repo: a.repo, ruta: arc.ruta }), f.ruta, null);
       aristas.push(arista(a.repo, "contiene", id, "parser"));
     });
+    // Pantallas del front: cada una es del servicio cuya raíz contiene su componente (o del repo, si no tiene).
+    if (a.pantallas?.length) {
+      const svcs = paginas.filter((q) => q.fm.tipo === "svc" && (q.fm.vive_en ?? []).includes(a.repo));
+      const dueñoDe = (archivo: string) => {
+        const precisos = svcs.filter((q) => {
+          const r = raizDeServicio(q.fm.puntos_de_entrada);
+          return r !== null && (r === "" || archivo === r || archivo.startsWith(`${r}/`));
+        });
+        const elegido = (precisos.length ? precisos : svcs).map((q) => q.fm.id).sort(cmp)[0];
+        return elegido ?? a.repo;
+      };
+      const pg = grafoDePantallas(a.repo, a.pantallas, a.navegaciones ?? [], estructura, dueñoDe);
+      for (const n of pg.nodos) {
+        agregarNodo({ ...generado(n.id, "pantalla", n.nombre, n.atributos as unknown as Record<string, unknown>), aliases: n.aliases }, f.ruta, null);
+        aristas.push(arista(n.id.slice(0, n.id.indexOf(":pantalla:")), "contiene", n.id, "parser", { evidencia: n.atributos.evidencia }));
+      }
+      for (const e of pg.aristas) aristas.push(arista(e.desde, "navega_a", e.hasta, "parser", { evidencia: e.evidencia }));
+    }
   }
 
   // ---------- 4. Aristas de páginas ----------

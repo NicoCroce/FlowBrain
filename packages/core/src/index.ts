@@ -16,3 +16,4 @@ export * from "./mapa3d.js";
 export * from "./engine/codigo.js";
 export * from "./git.js";
 export * from "./engine/evaluar.js";
+export * from "./pantallas.js";

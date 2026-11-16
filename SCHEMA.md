@@ -13,6 +13,7 @@ Contrato del grafo. El compilador lo hace cumplir y el motor responde según él
 | `contrato` | `<svc-id>:contrato` | `svc-bff:contrato` |
 | `endpoint` | `<svc-id>:<MÉTODO>:<ruta>` | `svc-bff:POST:/checkout` |
 | `archivo` | `<repo-id>:<ruta/relativa>` | `repo-tienda:apps/bff/src/main.ts` |
+| `pantalla` | `<svc-id>:pantalla:<ruta>` | `svc-web:pantalla:/perfil/{id}` |
 
 Las rutas de endpoint se normalizan a `/segmento/{param}`: `:id`, `[id]` y `{id}` se escriben `{id}`, sin barra final, y el método va en mayúsculas.
 
@@ -35,6 +36,7 @@ Un ID duplicado hace fallar la compilación.
 | `contrato` | — | `_build/contratos/<svc-id>.json` | `svc`, `fuente` |
 | `endpoint` | — | `_build/contratos/<svc-id>.json` | `metodo`, `ruta`, `request`, `response`, `evidencia` |
 | `archivo` | — | `_build/archivos/<repo-id>.json` | `repo`, `ruta`, `lenguaje` |
+| `pantalla` | — | `_build/archivos/<repo-id>.json` | `ruta`, `componentes`, `evidencia`, `envuelta`, `sale`, `desdeEnvolturas` |
 
 `svc` incluye todo proceso que se despliega: APIs, workers, crons y también frontends (SPA, app mobile). Un mismo repo puede tener varios `svc`, por ejemplo un monorepo o el mismo código desplegado con distintos roles.
 
@@ -55,11 +57,12 @@ Toda arista va de `desde` a `hasta`.
 | `vive_en` | svc, lib → repo · tabla → db | | campo `vive_en` | no |
 | `pertenece_a` | repo, svc, lib, db, queue, ext, feat | team | campo `pertenece_a` | no |
 | `expone` | svc | contrato | solo el compilador | no |
-| `contiene` | repo → archivo · svc → endpoint | | solo el compilador | no |
+| `contiene` | repo → archivo · svc → endpoint · svc, repo → pantalla | | solo el compilador | no |
+| `navega_a` | pantalla | pantalla | solo el compilador | no |
 
 Reglas:
 - `vive_en` y `pertenece_a` se escriben solo como campos de primer nivel, nunca dentro de `relaciones`.
-- `expone` y `contiene` los genera el compilador a partir de los JSON. Si aparecen en una página, la compilación falla.
+- `expone`, `contiene` y `navega_a` los genera el compilador a partir de los JSON. Si aparecen en una página, la compilación falla.
 - Se permite `desde == hasta`: un servicio que se llama a sí mismo por HTTP.
 - **`depende_de` en consultas es un superverbo:** `recorrer_grafo` con `verbos: [depende_de]` incluye también `llama_a`, `publica_en`, `consume_de`, `lee_de` y `escribe_en`. La arista explícita `depende_de` queda para dependencias que no son llamadas, como librerías o infraestructura.
 
@@ -169,6 +172,11 @@ Los destinos sin resolver nunca llegan a una página compilada. Van como prosa e
 - `commit` (opcional): commit de HEAD del clon al indexar, leído de `.git` sin ejecutar git.
 - `simbolos`: funciones, clases, métodos (`Clase.metodo`, en la línea del nombre), interfaces, tipos y enums; `fin` es la última línea, si el parser la conoce.
 - `importa` (opcional): archivos del mismo repo que importa. `invoca` (opcional): llamadas de cada método o función a símbolos de otros archivos o clases del repo; una llamada a una interfaz o método abstracto se atribuye a las clases que lo implementan. Hoy los genera el ts-parser.
+
+- `pantallas` (opcional): rutas del router del front con `ruta` (normalizada como las de endpoint), `archivo` y `linea` donde se declaran, `componente` (`{archivo, simbolo}` o `null`) y `envuelta` (componentes de las rutas contenedoras: layouts y guardas, de afuera hacia adentro).
+- `navegaciones` (opcional): `{paquete, archivo, linea, desde, ruta, tipo}`, con `tipo` `navega` (`navigate(…)`), `enlace` (`<Link to>`, ítems de menú) o `redirige` (`<Navigate>`); `desde` es la función que navega, o `null` si es un dato suelto del archivo.
+
+`compile` crea un nodo `pantalla` por ruta y servicio. Una pantalla `navega_a` otra si su componente, o algo que llama o dibuja (hasta 8 niveles), navega a esa ruta; los datos sueltos cuentan si su archivo es parte del recorrido o lo importa. Lo que navegan los layouts y las guardas queda en `envuelta[].sale` y, del lado del destino, en `desdeEnvolturas`.
 
 Los símbolos se quedan en este JSON y no pasan a `graph.json`. `brain verify` los usa para comprobar que la línea citada por una evidencia todavía nombre al símbolo (en un método, su nombre sin la clase); `compile`, para la sección "cómo está construida" de cada funcionalidad.
 

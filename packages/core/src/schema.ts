@@ -3,7 +3,7 @@ import { z } from "zod";
 /** Constantes y validaciones de SCHEMA.md. Cualquier cambio acá tiene que reflejarse allá. */
 
 export const TIPOS_PAGINA = ["repo", "svc", "lib", "db", "queue", "ext", "tabla", "feat", "team", "decision"] as const;
-export const TIPOS_GENERADOS = ["contrato", "endpoint", "archivo"] as const;
+export const TIPOS_GENERADOS = ["contrato", "endpoint", "archivo", "pantalla"] as const;
 export type TipoPagina = (typeof TIPOS_PAGINA)[number];
 export type Tipo = TipoPagina | (typeof TIPOS_GENERADOS)[number];
 
@@ -40,6 +40,7 @@ export const VERBOS = [
   "decidido_por",
   "expone",
   "contiene",
+  "navega_a",
 ] as const;
 export type Verbo = (typeof VERBOS)[number];
 
@@ -78,7 +79,9 @@ export const DOMINIO: Record<Verbo, ReadonlyArray<readonly [readonly Tipo[], rea
   contiene: [
     [["repo"], ["archivo"]],
     [["svc"], ["endpoint"]],
+    [["svc", "repo"], ["pantalla"]],
   ],
+  navega_a: [[["pantalla"], ["pantalla"]]],
 };
 
 export function verboAdmite(verbo: Verbo, desde: Tipo, hasta: Tipo): boolean {
@@ -197,6 +200,8 @@ export const ContratoSchema = z
   })
   .strict();
 
+const RefSimboloSchema = z.object({ archivo: z.string().min(1), simbolo: z.string().min(1) }).strict();
+
 export const ArchivosSchema = z
   .object({
     repo: z.string(),
@@ -220,6 +225,34 @@ export const ArchivosSchema = z
         })
         .strict(),
     ),
+    pantallas: z
+      .array(
+        z
+          .object({
+            paquete: z.string(),
+            ruta: z.string().startsWith("/"),
+            archivo: z.string().min(1),
+            linea: z.number().int().positive(),
+            componente: RefSimboloSchema.nullable(),
+            envuelta: z.array(RefSimboloSchema),
+          })
+          .strict(),
+      )
+      .optional(),
+    navegaciones: z
+      .array(
+        z
+          .object({
+            paquete: z.string(),
+            archivo: z.string().min(1),
+            linea: z.number().int().positive(),
+            desde: z.string().nullable(),
+            ruta: z.string().startsWith("/"),
+            tipo: z.enum(["navega", "enlace", "redirige"]),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 

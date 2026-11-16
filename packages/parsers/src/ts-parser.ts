@@ -619,6 +619,18 @@ function extraer(repo: RepoFuente): Extraccion {
 
   // ---------- Pantallas y navegación del front ----------
   /** Ruta de navegación evaluada estáticamente (`ROUTES.x`, `buildPath(ROUTES.y, {id})`, "/a/" + id). */
+  /** Rutas posibles de una expresión: las dos ramas de `a ?? b`, `a || b` y `c ? a : b`. */
+  const rutasFront = (e: ts.Expression | undefined): string[] => {
+    if (!e) return [];
+    let x = e;
+    while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x)) x = x.expression;
+    if (ts.isConditionalExpression(x)) return [...rutasFront(x.whenTrue), ...rutasFront(x.whenFalse)];
+    if (ts.isBinaryExpression(x) && (x.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken || x.operatorToken.kind === ts.SyntaxKind.BarBarToken)) {
+      return [...rutasFront(x.left), ...rutasFront(x.right)];
+    }
+    const r = rutaFront(x);
+    return r ? [r] : [];
+  };
   const rutaFront = (e: ts.Expression | undefined): string | null => {
     if (!e) return null;
     const partes = evaluar(e);
@@ -702,11 +714,28 @@ function extraer(repo: RepoFuente): Extraccion {
     // Padres: objetos con `children` (o `<Route>` anidados). Sin path: guardas o layouts que envuelven a la pantalla.
     const envuelta: RefSimbolo[] = [];
     let completa = path;
+    const saltos = new Set<ts.Node>();
+    let ancla: ts.Node = n;
     for (let p: ts.Node | undefined = n.parent; p && !ts.isSourceFile(p); p = p.parent) {
+      // Rutas en una constante aparte (`const appRoutes = [...]` y después `children: appRoutes`): se sigue desde donde se usa.
+      if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name) && !saltos.has(p)) {
+        saltos.add(p);
+        const nombreVar = p.name;
+        const sym = checker.getSymbolAtLocation(nombreVar);
+        let uso: ts.Node | undefined;
+        const buscar = (x: ts.Node): void => {
+          if (uso) return;
+          if (ts.isIdentifier(x) && x !== nombreVar && checker.getSymbolAtLocation(x) === sym) uso = x;
+          else ts.forEachChild(x, buscar);
+        };
+        if (sym) buscar(p.getSourceFile());
+        if (uso) p = ancla = uso;
+        continue;
+      }
       let padre: { path: string | null; elemento: ts.Expression | undefined } | null = null;
       if (ts.isObjectLiteralExpression(p) && p !== n) {
         const hijos = propiedad(p, "children");
-        if (hijos && hijos.pos <= n.pos && n.end <= hijos.end) {
+        if (hijos && hijos.pos <= ancla.pos && ancla.end <= hijos.end) {
           const pe = propiedad(p, "path");
           padre = { path: pe ? rutaFront(pe) : null, elemento: propiedad(p, "element") ?? propiedad(p, "Component") ?? propiedad(p, "component") };
         }
@@ -724,22 +753,24 @@ function extraer(repo: RepoFuente): Extraccion {
   };
   const NAVEGA = new Set(["navigate", "push", "replace", "redirect", "navigateByUrl"]);
   const navegaciones = (n: ts.Node, archivo: string, paquete: string) => {
-    const agregar = (destino: string | null, tipo: "navega" | "enlace" | "redirige") => {
-      if (destino === null || !destino.startsWith("/")) return;
-      out.navegaciones.push({ paquete, archivo, linea: linea(n), desde: simboloContenedor(n), ruta: normalizarRuta(destino), tipo });
+    const agregar = (destinos: string[], tipo: "navega" | "enlace" | "redirige") => {
+      for (const destino of new Set(destinos)) {
+        if (!destino.startsWith("/")) continue;
+        out.navegaciones.push({ paquete, archivo, linea: linea(n), desde: simboloContenedor(n), ruta: normalizarRuta(destino), tipo });
+      }
     };
     if (ts.isCallExpression(n) && n.arguments.length) {
       const e = n.expression;
       const nombre = ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : null;
-      if (nombre && NAVEGA.has(nombre)) agregar(rutaFront(n.arguments[0]), nombre === "redirect" ? "redirige" : "navega");
+      if (nombre && NAVEGA.has(nombre)) agregar(rutasFront(n.arguments[0]), nombre === "redirect" ? "redirige" : "navega");
     } else if (ts.isJsxAttribute(n) && (n.name.getText() === "to" || n.name.getText() === "href") && n.initializer) {
       const v = ts.isJsxExpression(n.initializer) ? n.initializer.expression : n.initializer;
       const tag = n.parent.parent.tagName.getText();
-      if (tag !== "Route") agregar(rutaFront(v), /^(Navigate|Redirect)$/.test(tag) ? "redirige" : "enlace");
+      if (tag !== "Route") agregar(rutasFront(v), /^(Navigate|Redirect)$/.test(tag) ? "redirige" : "enlace");
     } else if (ts.isPropertyAssignment(n) && /^(path|to|href|route)$/.test(n.name.getText()) && ts.isObjectLiteralExpression(n.parent)) {
       // Ítems de menú declarados como datos (`{ path: ROUTES.staff, title }`), salvo las propias definiciones de rutas.
       const o = n.parent;
-      if (!MARCAS_PANTALLA.some((m) => propiedad(o, m)) && !propiedad(o, "children")) agregar(rutaFront(n.initializer), "enlace");
+      if (!MARCAS_PANTALLA.some((m) => propiedad(o, m)) && !propiedad(o, "children")) agregar(rutasFront(n.initializer), "enlace");
     }
   };
 
