@@ -63,3 +63,13 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
 
 ### Para revisar
 - Con presupuestos chicos, quitar nodos "desde el final" deja los de confianza 1 (`implementa`, `vive_en`) y descarta los de datos (`llama_a`, `escribe_en`), que suelen ser los más útiles. Alternativa: ordenar priorizando verbos de datos. No se cambió porque el PRD fija "confianza desc, id asc".
+
+## 2026-11-16 · Paso 4 (MCP + hook)
+
+32. **El hook lee stdin, no `$PROMPT`.** Claude Code entrega al hook `UserPromptSubmit` un JSON por stdin (`prompt`, `cwd`), no una variable de entorno. Por eso hay dos comandos sobre la misma función del core: `brain hook claude-code` (lee stdin y devuelve `hookSpecificOutput.additionalContext`) y `brain context --prompt … --repo …` (texto plano, para OpenCode o pruebas a mano).
+33. **Detección determinística de qué consultar en el prompt** (`contextoParaPrompt`, en el core): rutas HTTP, URLs y archivos → `trazar` si resuelven (máx. 3); menciones exactas de id, nombre o alias (n-gramas de hasta 4 palabras, sin acentos, ≥ 3 caracteres) → `recorrer_grafo` en ambas direcciones (máx. 5). Sin coincidencia difusa, para no inyectar ruido. El JSON de cada sección es compacto y es exactamente la salida del motor.
+34. **Repo actual = nombre del directorio raíz de git** comparado contra id (sin `repo-`), nombre y aliases de los nodos `repo`. Alternativa futura: un campo `remoto` en la página del repo comparado con `git remote get-url origin`.
+35. **El hook nunca bloquea:** ante cualquier error sale 0 sin stdout y deja el motivo en stderr.
+36. **El servidor MCP recarga el contexto cuando cambia el mtime de `_build/graph.json`.** Errores de consulta: `isError: true` con el mismo JSON de error que la CLI.
+37. **El hook `SessionEnd` queda pendiente (paso 7).** En `SessionEnd` la sesión ya terminó y el hook no puede preguntarle nada al agente. Opciones: (a) un hook `Stop` que le pida al agente anotar contradicciones en `_drafts/` antes de cerrar; (b) un comando `/brain-feedback` que el usuario invoca; (c) analizar el transcript al cerrar sin LLM (solo detectar archivos de evidencia que el agente editó). Hay que decidirlo junto con los borradores del indexador.
+38. **El test de identidad entre puertas vive en `packages/cli/test/puertas.test.ts`** (la CLI depende de `mcp` y `hooks`; así se evita una dependencia circular).

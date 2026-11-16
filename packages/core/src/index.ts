@@ -7,3 +7,4 @@ export * from "./fs.js";
 export * from "./engine/contexto.js";
 export * from "./engine/proyeccion.js";
 export * from "./engine/herramientas.js";
+export * from "./engine/prompt.js";

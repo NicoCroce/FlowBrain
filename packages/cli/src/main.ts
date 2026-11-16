@@ -11,9 +11,11 @@ import {
   recorrerGrafo,
   stringifyCanonical,
   trazar,
+  contextoParaPrompt,
   type Contexto,
   type Proyeccion,
 } from "@brain/core";
+import { BUDGET_HOOK, hookUserPromptSubmit, nombreRepo } from "@brain/hooks";
 
 const AYUDA = `brain <comando> [opciones]
 
@@ -23,6 +25,9 @@ Comandos:
   recorrer <nodo> [--verbos a,b] [--direccion out|in|both] [--profundidad n]
   contrato <nodo> [--endpoint "MÉTODO /ruta"]
   trazar --desde <nodo|URL|ruta|archivo> [--hasta <nodo>]
+  context --prompt <texto> [--repo <dir>]   contexto para inyectar en un prompt (budget por defecto 1500)
+  hook claude-code                          hook UserPromptSubmit: lee el JSON de Claude Code por stdin
+  serve                                     servidor MCP por stdio
 
 Opciones comunes:
   --raiz <dir>          raíz del brain (por defecto $BRAIN_ROOT o el directorio actual)
@@ -41,7 +46,12 @@ const entero = (v: string | undefined, nombre: string) => {
 };
 
 /** Ejecuta la CLI sin efectos sobre el proceso: devuelve código y salidas. Testeable. */
-export async function ejecutar(argv: string[], env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): Promise<Salida> {
+export async function ejecutar(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+  cwd = process.cwd(),
+  stdin: () => Promise<string> = async () => "",
+): Promise<Salida> {
   let parsed;
   try {
     parsed = parseArgs({
@@ -59,6 +69,8 @@ export async function ejecutar(argv: string[], env: NodeJS.ProcessEnv = process.
         endpoint: { type: "string" },
         desde: { type: "string" },
         hasta: { type: "string" },
+        prompt: { type: "string" },
+        repo: { type: "string" },
         help: { type: "boolean", short: "h" },
       },
     });
@@ -75,6 +87,18 @@ export async function ejecutar(argv: string[], env: NodeJS.ProcessEnv = process.
       const { salidas, escritos } = await compileDir(raiz);
       const resumen = `compilado: ${salidas.graph.nodes.length} nodos, ${salidas.graph.edges.length} aristas; ${escritos.length} archivos escritos\n`;
       return { codigo: 0, stdout: resumen + escritos.map((e) => `  ${e}\n`).join(""), stderr: "" };
+    }
+
+    if (comando === "hook") {
+      if (arg !== "claude-code") return { codigo: 2, stdout: "", stderr: `hook desconocido: ${arg ?? ""}\n` };
+      try {
+        const entrada = JSON.parse((await stdin()) || "{}") as { prompt?: string; cwd?: string };
+        const budget = o.budget === undefined ? BUDGET_HOOK : (entero(o.budget, "--budget") ?? BUDGET_HOOK);
+        return { codigo: 0, stdout: await hookUserPromptSubmit(entrada, () => cargarContexto(raiz), budget), stderr: "" };
+      } catch (e) {
+        // Un hook roto nunca debe bloquear el prompt del usuario.
+        return { codigo: 0, stdout: "", stderr: `brain hook: ${(e as Error).message}\n` };
+      }
     }
 
     const budget = o.budget === undefined ? undefined : o.budget === "none" ? null : entero(o.budget, "--budget");
@@ -109,6 +133,16 @@ export async function ejecutar(argv: string[], env: NodeJS.ProcessEnv = process.
         resultado = trazar(ctx, { desde, ...opt("hasta", o.hasta), ...comunes });
         break;
       }
+      case "context": {
+        if (!o.prompt) throw new ConsultaError("parametro_invalido", "falta --prompt");
+        const repoDir = o.repo !== undefined ? await nombreRepo(resolve(cwd, o.repo)) : null;
+        const r = contextoParaPrompt(ctx, {
+          prompt: o.prompt,
+          repoDir,
+          budget_tokens: typeof budget === "number" ? budget : BUDGET_HOOK,
+        });
+        return { codigo: 0, stdout: r.texto, stderr: "" };
+      }
       default:
         return { codigo: 2, stdout: "", stderr: `comando desconocido: ${comando}\n\n${AYUDA}` };
     }
@@ -127,9 +161,18 @@ function opt<K extends string, V>(k: K, v: V | undefined): { [P in K]?: V } {
   return (v === undefined ? {} : { [k]: v }) as { [P in K]?: V };
 }
 
+async function leerStdin(): Promise<string> {
+  const partes: Buffer[] = [];
+  for await (const p of process.stdin) partes.push(p as Buffer);
+  return Buffer.concat(partes).toString("utf8");
+}
+
 const esMain = process.argv[1] !== undefined && import.meta.url === new URL(`file://${resolve(process.argv[1])}`).href;
-if (esMain) {
-  const r = await ejecutar(process.argv.slice(2));
+if (esMain && process.argv[2] === "serve") {
+  const { servir } = await import("@brain/mcp");
+  await servir(process.argv.slice(3));
+} else if (esMain) {
+  const r = await ejecutar(process.argv.slice(2), process.env, process.cwd(), leerStdin);
   process.stdout.write(r.stdout);
   process.stderr.write(r.stderr);
   process.exitCode = r.codigo;
