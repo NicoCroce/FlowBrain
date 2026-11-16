@@ -1,0 +1,115 @@
+{
+  "archivos": [
+    {
+      "lenguaje": "typescript",
+      "ruta": "apps/bff/src/clients/payments.ts",
+      "simbolos": [
+        {
+          "linea": 11,
+          "nombre": "crearPago",
+          "tipo": "funcion"
+        }
+      ]
+    },
+    {
+      "lenguaje": "typescript",
+      "ruta": "apps/bff/src/main.ts",
+      "simbolos": [
+        {
+          "linea": 1,
+          "nombre": "main",
+          "tipo": "funcion"
+        }
+      ]
+    },
+    {
+      "lenguaje": "typescript",
+      "ruta": "apps/bff/src/routes/checkout.ts",
+      "simbolos": [
+        {
+          "linea": 14,
+          "nombre": "postCheckout",
+          "tipo": "funcion"
+        }
+      ]
+    },
+    {
+      "lenguaje": "prisma",
+      "ruta": "apps/payments/prisma/schema.prisma",
+      "simbolos": [
+        {
+          "linea": 5,
+          "nombre": "Pago",
+          "tipo": "modelo"
+        }
+      ]
+    },
+    {
+      "lenguaje": "typescript",
+      "ruta": "apps/payments/src/clients/pasarela.ts",
+      "simbolos": [
+        {
+          "linea": 8,
+          "nombre": "cobrar",
+          "tipo": "funcion"
+        }
+      ]
+    },
+    {
+      "lenguaje": "typescript",
+      "ruta": "apps/payments/src/main.ts",
+      "simbolos": [
+        {
+          "linea": 1,
+          "nombre": "main",
+          "tipo": "funcion"
+        }
+      ]
+    },
+    {
+      "lenguaje": "typescript",
+      "ruta": "apps/payments/src/routes/payments.ts",
+      "simbolos": [
+        {
+          "linea": 12,
+          "nombre": "postPayment",
+          "tipo": "funcion"
+        }
+      ]
+    },
+    {
+      "lenguaje": "typescript",
+      "ruta": "apps/payments/src/routes/webhooks.ts",
+      "simbolos": [
+        {
+          "linea": 7,
+          "nombre": "postWebhookPasarela",
+          "tipo": "funcion"
+        }
+      ]
+    },
+    {
+      "lenguaje": "typescript",
+      "ruta": "apps/web/src/api/checkout.ts",
+      "simbolos": [
+        {
+          "linea": 9,
+          "nombre": "confirmarCheckout",
+          "tipo": "funcion"
+        }
+      ]
+    },
+    {
+      "lenguaje": "typescript",
+      "ruta": "apps/web/src/main.tsx",
+      "simbolos": [
+        {
+          "linea": 1,
+          "nombre": "main",
+          "tipo": "funcion"
+        }
+      ]
+    }
+  ],
+  "repo": "repo-tienda"
+}

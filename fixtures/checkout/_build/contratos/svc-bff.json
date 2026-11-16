@@ -1,0 +1,24 @@
+{
+  "endpoints": [
+    {
+      "evidencia": "repo-tienda:apps/bff/src/routes/checkout.ts#L14",
+      "metodo": "POST",
+      "request": "CheckoutRequest",
+      "response": "CheckoutResponse",
+      "ruta": "/checkout"
+    }
+  ],
+  "eventos": [],
+  "fuente": "ts-parser",
+  "svc": "svc-bff",
+  "tipos": {
+    "CheckoutRequest": {
+      "carritoId": "string",
+      "medioDePago": "string"
+    },
+    "CheckoutResponse": {
+      "estado": "'aprobado' | 'rechazado' | 'pendiente'",
+      "pedidoId": "string"
+    }
+  }
+}

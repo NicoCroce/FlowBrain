@@ -1,0 +1,181 @@
+{
+  "db-tienda": [
+    {
+      "desde": "tabla-pagos",
+      "endpoint": null,
+      "verbo": "vive_en"
+    }
+  ],
+  "ext-pasarela": [
+    {
+      "desde": "svc-payments",
+      "endpoint": null,
+      "verbo": "llama_a"
+    }
+  ],
+  "feat-checkout": [
+    {
+      "desde": "svc-bff",
+      "endpoint": null,
+      "verbo": "implementa"
+    },
+    {
+      "desde": "svc-payments",
+      "endpoint": null,
+      "verbo": "implementa"
+    },
+    {
+      "desde": "svc-web",
+      "endpoint": null,
+      "verbo": "implementa"
+    }
+  ],
+  "repo-tienda": [
+    {
+      "desde": "svc-bff",
+      "endpoint": null,
+      "verbo": "vive_en"
+    },
+    {
+      "desde": "svc-payments",
+      "endpoint": null,
+      "verbo": "vive_en"
+    },
+    {
+      "desde": "svc-web",
+      "endpoint": null,
+      "verbo": "vive_en"
+    }
+  ],
+  "repo-tienda:apps/bff/src/clients/payments.ts": [
+    {
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "repo-tienda:apps/bff/src/main.ts": [
+    {
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "repo-tienda:apps/bff/src/routes/checkout.ts": [
+    {
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "repo-tienda:apps/payments/prisma/schema.prisma": [
+    {
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "repo-tienda:apps/payments/src/clients/pasarela.ts": [
+    {
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "repo-tienda:apps/payments/src/main.ts": [
+    {
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "repo-tienda:apps/payments/src/routes/payments.ts": [
+    {
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "repo-tienda:apps/payments/src/routes/webhooks.ts": [
+    {
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "repo-tienda:apps/web/src/api/checkout.ts": [
+    {
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "repo-tienda:apps/web/src/main.tsx": [
+    {
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "svc-bff": [
+    {
+      "desde": "svc-web",
+      "endpoint": "svc-bff:POST:/checkout",
+      "verbo": "llama_a"
+    }
+  ],
+  "svc-bff:POST:/checkout": [
+    {
+      "desde": "svc-bff",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "svc-bff:contrato": [
+    {
+      "desde": "svc-bff",
+      "endpoint": null,
+      "verbo": "expone"
+    }
+  ],
+  "svc-payments": [
+    {
+      "desde": "ext-pasarela",
+      "endpoint": "svc-payments:POST:/webhooks/pasarela",
+      "verbo": "llama_a"
+    },
+    {
+      "desde": "svc-bff",
+      "endpoint": "svc-payments:POST:/payments",
+      "verbo": "llama_a"
+    }
+  ],
+  "svc-payments:POST:/payments": [
+    {
+      "desde": "svc-payments",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "svc-payments:POST:/webhooks/pasarela": [
+    {
+      "desde": "svc-payments",
+      "endpoint": null,
+      "verbo": "contiene"
+    }
+  ],
+  "svc-payments:contrato": [
+    {
+      "desde": "svc-payments",
+      "endpoint": null,
+      "verbo": "expone"
+    }
+  ],
+  "tabla-pagos": [
+    {
+      "desde": "svc-payments",
+      "endpoint": null,
+      "verbo": "escribe_en"
+    }
+  ]
+}

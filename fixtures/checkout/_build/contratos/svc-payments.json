@@ -1,0 +1,46 @@
+{
+  "endpoints": [
+    {
+      "evidencia": "repo-tienda:apps/payments/src/routes/payments.ts#L12",
+      "metodo": "POST",
+      "request": "CrearPagoRequest",
+      "response": "Pago",
+      "ruta": "/payments"
+    },
+    {
+      "evidencia": "repo-tienda:apps/payments/src/routes/webhooks.ts#L7",
+      "metodo": "POST",
+      "request": "EventoPasarela",
+      "response": null,
+      "ruta": "/webhooks/pasarela"
+    }
+  ],
+  "eventos": [],
+  "fuente": "ts-parser",
+  "svc": "svc-payments",
+  "tipos": {
+    "CargoPasarela": {
+      "moneda": "string",
+      "monto": "number",
+      "token": "string"
+    },
+    "CrearPagoRequest": {
+      "medioDePago": "string",
+      "moneda": "string",
+      "monto": "number",
+      "pedidoId": "string"
+    },
+    "EventoPasarela": {
+      "cargoId": "string",
+      "estado": "'aprobado' | 'rechazado'",
+      "tipo": "string"
+    },
+    "Pago": {
+      "estado": "'pendiente' | 'aprobado' | 'rechazado'",
+      "id": "string",
+      "moneda": "string",
+      "monto": "number",
+      "pedidoId": "string"
+    }
+  }
+}

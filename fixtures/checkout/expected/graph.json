@@ -1,0 +1,745 @@
+{
+  "edges": [
+    {
+      "confianza": 1,
+      "dato": null,
+      "desde": "ext-pasarela",
+      "endpoint": "svc-payments:POST:/webhooks/pasarela",
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/payments/src/routes/webhooks.ts#L7",
+      "hasta": "svc-payments",
+      "origen": "curado",
+      "verbo": "llama_a"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda:apps/bff/src/clients/payments.ts",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda:apps/bff/src/main.ts",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda:apps/bff/src/routes/checkout.ts",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda:apps/payments/prisma/schema.prisma",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda:apps/payments/src/clients/pasarela.ts",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda:apps/payments/src/main.ts",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda:apps/payments/src/routes/payments.ts",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda:apps/payments/src/routes/webhooks.ts",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda:apps/web/src/api/checkout.ts",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "repo-tienda",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda:apps/web/src/main.tsx",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "svc-bff",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/bff/src/routes/checkout.ts#L14",
+      "hasta": "svc-bff:POST:/checkout",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "svc-bff",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "svc-bff:contrato",
+      "origen": "parser",
+      "verbo": "expone"
+    },
+    {
+      "confianza": 1,
+      "dato": null,
+      "desde": "svc-bff",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "feat-checkout",
+      "origen": "curado",
+      "verbo": "implementa"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "svc-bff",
+      "endpoint": "svc-payments:POST:/payments",
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+      "hasta": "svc-payments",
+      "origen": "parser",
+      "verbo": "llama_a"
+    },
+    {
+      "confianza": 1,
+      "dato": null,
+      "desde": "svc-bff",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda",
+      "origen": "curado",
+      "verbo": "vive_en"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "svc-payments",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/payments/src/routes/payments.ts#L12",
+      "hasta": "svc-payments:POST:/payments",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "svc-payments",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/payments/src/routes/webhooks.ts#L7",
+      "hasta": "svc-payments:POST:/webhooks/pasarela",
+      "origen": "parser",
+      "verbo": "contiene"
+    },
+    {
+      "confianza": 0.9,
+      "dato": "Pago",
+      "desde": "svc-payments",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/payments/src/routes/payments.ts#L21",
+      "hasta": "tabla-pagos",
+      "origen": "parser",
+      "verbo": "escribe_en"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
+      "desde": "svc-payments",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "svc-payments:contrato",
+      "origen": "parser",
+      "verbo": "expone"
+    },
+    {
+      "confianza": 1,
+      "dato": null,
+      "desde": "svc-payments",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "feat-checkout",
+      "origen": "curado",
+      "verbo": "implementa"
+    },
+    {
+      "confianza": 0.9,
+      "dato": "CargoPasarela",
+      "desde": "svc-payments",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/payments/src/clients/pasarela.ts#L8",
+      "hasta": "ext-pasarela",
+      "origen": "parser",
+      "verbo": "llama_a"
+    },
+    {
+      "confianza": 1,
+      "dato": null,
+      "desde": "svc-payments",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda",
+      "origen": "curado",
+      "verbo": "vive_en"
+    },
+    {
+      "confianza": 1,
+      "dato": null,
+      "desde": "svc-web",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "feat-checkout",
+      "origen": "curado",
+      "verbo": "implementa"
+    },
+    {
+      "confianza": 0.5,
+      "dato": null,
+      "desde": "svc-web",
+      "endpoint": "svc-bff:POST:/checkout",
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/web/src/api/checkout.ts#L9",
+      "hasta": "svc-bff",
+      "origen": "inferido",
+      "verbo": "llama_a"
+    },
+    {
+      "confianza": 1,
+      "dato": null,
+      "desde": "svc-web",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "repo-tienda",
+      "origen": "curado",
+      "verbo": "vive_en"
+    },
+    {
+      "confianza": 1,
+      "dato": null,
+      "desde": "tabla-pagos",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": null,
+      "hasta": "db-tienda",
+      "origen": "curado",
+      "verbo": "vive_en"
+    }
+  ],
+  "nodes": [
+    {
+      "actualizado": "2026-11-15",
+      "aliases": [
+        "postgres tienda"
+      ],
+      "atributos": {},
+      "estado": "vigente",
+      "id": "db-tienda",
+      "nombre": "Base de datos de la tienda",
+      "origen": "curado",
+      "pagina": "tecnologia/db-tienda.md",
+      "resumen": "PostgreSQL principal de la tienda.",
+      "tecnologia": [
+        "postgresql"
+      ],
+      "tipo": "db",
+      "verificado": "2026-11-15"
+    },
+    {
+      "actualizado": "2026-11-15",
+      "aliases": [
+        "pasarela",
+        "gateway de pagos"
+      ],
+      "atributos": {},
+      "estado": "vigente",
+      "id": "ext-pasarela",
+      "nombre": "Pasarela de pagos",
+      "origen": "curado",
+      "pagina": "tecnologia/ext-pasarela.md",
+      "resumen": "Proveedor externo que procesa tarjetas y notifica el resultado por webhook.",
+      "tecnologia": [],
+      "tipo": "ext",
+      "verificado": "2026-11-15"
+    },
+    {
+      "actualizado": "2026-11-15",
+      "aliases": [
+        "compra",
+        "pago del carrito"
+      ],
+      "atributos": {},
+      "estado": "vigente",
+      "id": "feat-checkout",
+      "nombre": "Checkout",
+      "origen": "curado",
+      "pagina": "producto/feat-checkout.md",
+      "resumen": "El cliente confirma el carrito, paga con tarjeta y recibe el estado del pedido.",
+      "tecnologia": [],
+      "tipo": "feat",
+      "verificado": "2026-11-15"
+    },
+    {
+      "actualizado": "2026-11-15",
+      "aliases": [
+        "tienda"
+      ],
+      "atributos": {},
+      "estado": "vigente",
+      "id": "repo-tienda",
+      "nombre": "Monorepo de la tienda",
+      "origen": "curado",
+      "pagina": "tecnologia/repo-tienda.md",
+      "resumen": "Monorepo pnpm con la web, el BFF y el servicio de pagos en apps/.",
+      "tecnologia": [
+        "typescript",
+        "pnpm"
+      ],
+      "tipo": "repo",
+      "verificado": "2026-11-15"
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "lenguaje": "typescript",
+        "repo": "repo-tienda",
+        "ruta": "apps/bff/src/clients/payments.ts"
+      },
+      "estado": "vigente",
+      "id": "repo-tienda:apps/bff/src/clients/payments.ts",
+      "nombre": "apps/bff/src/clients/payments.ts",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "archivo",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "lenguaje": "typescript",
+        "repo": "repo-tienda",
+        "ruta": "apps/bff/src/main.ts"
+      },
+      "estado": "vigente",
+      "id": "repo-tienda:apps/bff/src/main.ts",
+      "nombre": "apps/bff/src/main.ts",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "archivo",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "lenguaje": "typescript",
+        "repo": "repo-tienda",
+        "ruta": "apps/bff/src/routes/checkout.ts"
+      },
+      "estado": "vigente",
+      "id": "repo-tienda:apps/bff/src/routes/checkout.ts",
+      "nombre": "apps/bff/src/routes/checkout.ts",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "archivo",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "lenguaje": "prisma",
+        "repo": "repo-tienda",
+        "ruta": "apps/payments/prisma/schema.prisma"
+      },
+      "estado": "vigente",
+      "id": "repo-tienda:apps/payments/prisma/schema.prisma",
+      "nombre": "apps/payments/prisma/schema.prisma",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "archivo",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "lenguaje": "typescript",
+        "repo": "repo-tienda",
+        "ruta": "apps/payments/src/clients/pasarela.ts"
+      },
+      "estado": "vigente",
+      "id": "repo-tienda:apps/payments/src/clients/pasarela.ts",
+      "nombre": "apps/payments/src/clients/pasarela.ts",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "archivo",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "lenguaje": "typescript",
+        "repo": "repo-tienda",
+        "ruta": "apps/payments/src/main.ts"
+      },
+      "estado": "vigente",
+      "id": "repo-tienda:apps/payments/src/main.ts",
+      "nombre": "apps/payments/src/main.ts",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "archivo",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "lenguaje": "typescript",
+        "repo": "repo-tienda",
+        "ruta": "apps/payments/src/routes/payments.ts"
+      },
+      "estado": "vigente",
+      "id": "repo-tienda:apps/payments/src/routes/payments.ts",
+      "nombre": "apps/payments/src/routes/payments.ts",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "archivo",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "lenguaje": "typescript",
+        "repo": "repo-tienda",
+        "ruta": "apps/payments/src/routes/webhooks.ts"
+      },
+      "estado": "vigente",
+      "id": "repo-tienda:apps/payments/src/routes/webhooks.ts",
+      "nombre": "apps/payments/src/routes/webhooks.ts",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "archivo",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "lenguaje": "typescript",
+        "repo": "repo-tienda",
+        "ruta": "apps/web/src/api/checkout.ts"
+      },
+      "estado": "vigente",
+      "id": "repo-tienda:apps/web/src/api/checkout.ts",
+      "nombre": "apps/web/src/api/checkout.ts",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "archivo",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "lenguaje": "typescript",
+        "repo": "repo-tienda",
+        "ruta": "apps/web/src/main.tsx"
+      },
+      "estado": "vigente",
+      "id": "repo-tienda:apps/web/src/main.tsx",
+      "nombre": "apps/web/src/main.tsx",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "archivo",
+      "verificado": null
+    },
+    {
+      "actualizado": "2026-11-15",
+      "aliases": [
+        "bff",
+        "backend for frontend"
+      ],
+      "atributos": {
+        "puntos_de_entrada": {
+          "arranque": "apps/bff/src/main.ts",
+          "clientes_externos": "apps/bff/src/clients/",
+          "rutas_http": "apps/bff/src/routes/"
+        }
+      },
+      "estado": "vigente",
+      "id": "svc-bff",
+      "nombre": "BFF de la tienda",
+      "origen": "curado",
+      "pagina": "tecnologia/svc-bff.md",
+      "resumen": "Backend-for-frontend que orquesta el checkout para la web.",
+      "tecnologia": [
+        "typescript",
+        "express"
+      ],
+      "tipo": "svc",
+      "verificado": "2026-11-15"
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "evidencia": "repo-tienda:apps/bff/src/routes/checkout.ts#L14",
+        "metodo": "POST",
+        "request": "CheckoutRequest",
+        "response": "CheckoutResponse",
+        "ruta": "/checkout"
+      },
+      "estado": "vigente",
+      "id": "svc-bff:POST:/checkout",
+      "nombre": "POST /checkout",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "endpoint",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "fuente": "ts-parser",
+        "svc": "svc-bff"
+      },
+      "estado": "vigente",
+      "id": "svc-bff:contrato",
+      "nombre": "contrato svc-bff",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "contrato",
+      "verificado": null
+    },
+    {
+      "actualizado": "2026-11-15",
+      "aliases": [
+        "payments",
+        "pagos"
+      ],
+      "atributos": {
+        "puntos_de_entrada": {
+          "arranque": "apps/payments/src/main.ts",
+          "clientes_externos": "apps/payments/src/clients/",
+          "rutas_http": "apps/payments/src/routes/"
+        }
+      },
+      "estado": "vigente",
+      "id": "svc-payments",
+      "nombre": "Servicio de pagos",
+      "origen": "curado",
+      "pagina": "tecnologia/svc-payments.md",
+      "resumen": "Cobra pedidos a través de la pasarela y registra cada pago.",
+      "tecnologia": [
+        "typescript",
+        "express",
+        "prisma"
+      ],
+      "tipo": "svc",
+      "verificado": "2026-11-15"
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "evidencia": "repo-tienda:apps/payments/src/routes/payments.ts#L12",
+        "metodo": "POST",
+        "request": "CrearPagoRequest",
+        "response": "Pago",
+        "ruta": "/payments"
+      },
+      "estado": "vigente",
+      "id": "svc-payments:POST:/payments",
+      "nombre": "POST /payments",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "endpoint",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "evidencia": "repo-tienda:apps/payments/src/routes/webhooks.ts#L7",
+        "metodo": "POST",
+        "request": "EventoPasarela",
+        "response": null,
+        "ruta": "/webhooks/pasarela"
+      },
+      "estado": "vigente",
+      "id": "svc-payments:POST:/webhooks/pasarela",
+      "nombre": "POST /webhooks/pasarela",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "endpoint",
+      "verificado": null
+    },
+    {
+      "actualizado": null,
+      "aliases": [],
+      "atributos": {
+        "fuente": "ts-parser",
+        "svc": "svc-payments"
+      },
+      "estado": "vigente",
+      "id": "svc-payments:contrato",
+      "nombre": "contrato svc-payments",
+      "origen": "parser",
+      "pagina": null,
+      "resumen": null,
+      "tecnologia": [],
+      "tipo": "contrato",
+      "verificado": null
+    },
+    {
+      "actualizado": "2026-11-15",
+      "aliases": [
+        "web",
+        "storefront"
+      ],
+      "atributos": {
+        "puntos_de_entrada": {
+          "arranque": "apps/web/src/main.tsx",
+          "clientes_http": "apps/web/src/api/"
+        }
+      },
+      "estado": "vigente",
+      "id": "svc-web",
+      "nombre": "Web de la tienda",
+      "origen": "curado",
+      "pagina": "tecnologia/svc-web.md",
+      "resumen": "SPA donde el cliente arma el carrito y paga.",
+      "tecnologia": [
+        "typescript",
+        "react",
+        "vite"
+      ],
+      "tipo": "svc",
+      "verificado": "2026-11-15"
+    },
+    {
+      "actualizado": "2026-11-15",
+      "aliases": [
+        "pagos tabla",
+        "Pago"
+      ],
+      "atributos": {},
+      "estado": "vigente",
+      "id": "tabla-pagos",
+      "nombre": "Tabla de pagos",
+      "origen": "curado",
+      "pagina": "tecnologia/tabla-pagos.md",
+      "resumen": "Un registro por intento de cobro, con su estado.",
+      "tecnologia": [],
+      "tipo": "tabla",
+      "verificado": "2026-11-15"
+    }
+  ],
+  "version": 1
+}

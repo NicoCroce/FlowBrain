@@ -1,0 +1,21 @@
+flowchart LR
+  db_tienda[("Base de datos de la tienda")]
+  ext_pasarela{{"Pasarela de pagos"}}
+  feat_checkout(["Checkout"])
+  repo_tienda["Monorepo de la tienda"]
+  svc_bff["BFF de la tienda"]
+  svc_payments["Servicio de pagos"]
+  svc_web["Web de la tienda"]
+  tabla_pagos[("Tabla de pagos")]
+  ext_pasarela -->|"llama_a POST /webhooks/pasarela"| svc_payments
+  svc_bff -->|"implementa"| feat_checkout
+  svc_bff -->|"llama_a POST /payments"| svc_payments
+  svc_bff -->|"vive_en"| repo_tienda
+  svc_payments -->|"escribe_en"| tabla_pagos
+  svc_payments -->|"implementa"| feat_checkout
+  svc_payments -->|"llama_a"| ext_pasarela
+  svc_payments -->|"vive_en"| repo_tienda
+  svc_web -->|"implementa"| feat_checkout
+  svc_web -->|"llama_a POST /checkout"| svc_bff
+  svc_web -->|"vive_en"| repo_tienda
+  tabla_pagos -->|"vive_en"| db_tienda
