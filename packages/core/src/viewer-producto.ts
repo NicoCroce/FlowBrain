@@ -136,6 +136,8 @@ export const PRODUCTO_JS = String.raw`
         ? '<ol class="pasos">' + r.pasos.map(function (p) {
             return '<li style="margin-left:' + p.nivel * 18 + 'px">' + (p.nivel ? '<span class="flecha">↳</span> ' : "") + capa(p.capa) + " <strong>" + esc(p.simbolo) + "</strong>" +
               ' <small><code>' + esc(corta(f, p.evidencia)) + "</code></small>" +
+              (p.repite ? ' <small class="vacio">' + (p.repite === "ciclo" ? "(recursivo)" : "(ya recorrido arriba)") + "</small>" : "") +
+              (p.aviso ? ' <small class="vacio">⚠ ' + esc(p.aviso) + "</small>" : "") +
               (p.toca.length ? '<div class="chips toca">' + p.toca.map(toque).join("") + "</div>" : "") + "</li>";
           }).join("") + "</ol>"
         : '<p class="vacio">No se encontró el método que atiende este endpoint.</p>';

@@ -178,6 +178,7 @@ const paso = (ix: IndiceCodigo, p: Paso) => ({
   ev: p.evidencia,
   ...(p.toca.length ? { toca: p.toca.map(toque) } : {}),
   ...(p.aviso ? { aviso: p.aviso } : {}),
+  ...(p.repite ? { repite: p.repite === "ciclo" ? "llamada recursiva: no se expande" : "ya recorrido antes: toca resume lo que tocó (él y lo que llama)" } : {}),
 });
 
 // ------------------------------------------------------------------ funcionalidad

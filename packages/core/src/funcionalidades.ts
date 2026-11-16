@@ -122,6 +122,11 @@ export interface Paso {
   toca: Toque[];
   /** Hueco conocido: p. ej. un repositorio sin acceso a tabla detectado. Ausente si no hay nada que advertir. */
   aviso?: string;
+  /**
+   * El método ya apareció antes en este recorrido: no se expande de nuevo y `toca` resume lo que tocó esa vez
+   * (él y lo que llama). `ciclo` si se llega a sí mismo mientras se recorre (recursión).
+   */
+  repite?: "antes" | "ciclo";
 }
 
 export interface Recorrido {
@@ -213,11 +218,14 @@ export const AVISO_SIN_TABLA = "no se detectó a qué tabla accede (posible SQL 
 /** Marca los pasos de repositorio que no tocan ninguna tabla, ni ellos ni lo que llaman: el silencio no es "no toca nada". */
 function marcarHuecos(pasos: Paso[]): Paso[] {
   return pasos.map((p, i) => {
-    if (p.toca.length || !PARECE_REPOSITORIO.test(p.evidencia)) return p;
+    if (p.toca.length || p.repite === "ciclo" || !PARECE_REPOSITORIO.test(p.evidencia)) return p;
     for (let j = i + 1; j < pasos.length && pasos[j]!.nivel > p.nivel; j++) if (pasos[j]!.toca.length) return p;
     return { ...p, aviso: AVISO_SIN_TABLA };
   });
 }
+
+const mismoToque = (a: Toque, b: Toque) => a.verbo === b.verbo && a.hasta === b.hasta && a.endpoint === b.endpoint;
+const ordenToque = (a: Toque, b: Toque) => cmpTuple([a.verbo, a.hasta, a.endpoint ?? ""], [b.verbo, b.hasta, b.endpoint ?? ""]);
 
 export interface Recorredor {
   /** Método o función que atiende un endpoint (por la evidencia del endpoint). */
@@ -256,27 +264,37 @@ export function crearRecorredor(
   const desdeSimbolo = (inicio: string, simboloInicio: string) => {
     const pasos: Paso[] = [];
     let truncado = false;
-    const vistos = new Set<string>();
+    // Lo que tocó cada método visitado, sumando lo que llama; `null` mientras se está recorriendo (recursión).
+    const resumen = new Map<string, Toque[] | null>();
     const visitar = (archivo: string, simbolo: string, nivel: number, desde: string | null) => {
       const k = `${archivo}#${simbolo}`;
-      if (vistos.has(k)) return;
       if (pasos.length >= MAX_PASOS || nivel > MAX_NIVEL) {
         truncado = true;
         return;
       }
-      vistos.add(k);
       const est = estructura.get(archivo);
       const s = est?.simbolos.find((x) => x.nombre === simbolo);
       const desdeL = s?.linea ?? 1, hastaL = s?.fin ?? desdeL;
+      const base = { simbolo, evidencia: `${archivo}#L${desdeL}`, capa: capaDe(archivo.slice(archivo.indexOf(":") + 1)), nivel, desde };
+      if (resumen.has(k)) {
+        const r = resumen.get(k);
+        pasos.push({ ...base, toca: r ? [...r] : [], repite: r ? "antes" : "ciclo" });
+        return;
+      }
+      resumen.set(k, null);
       const toca: Toque[] = [];
       for (const t of toques.get(archivo) ?? []) {
         if (t.linea < desdeL || t.linea > hastaL) continue;
-        if (!toca.some((x) => x.verbo === t.toque.verbo && x.hasta === t.toque.hasta && x.endpoint === t.toque.endpoint)) toca.push(t.toque);
+        if (!toca.some((x) => mismoToque(x, t.toque))) toca.push(t.toque);
       }
-      toca.sort((a, b) => cmpTuple([a.verbo, a.hasta, a.endpoint ?? ""], [b.verbo, b.hasta, b.endpoint ?? ""]));
-      pasos.push({ simbolo, evidencia: `${archivo}#L${desdeL}`, capa: capaDe(archivo.slice(archivo.indexOf(":") + 1)), nivel, desde, toca });
+      toca.sort(ordenToque);
+      const desdeI = pasos.length;
+      pasos.push({ ...base, toca });
       const repo = archivo.slice(0, archivo.indexOf(":"));
       for (const i of est?.invoca ?? []) if (i.desde === simbolo) visitar(`${repo}:${i.archivo}`, i.simbolo, nivel + 1, simbolo);
+      const total: Toque[] = [];
+      for (const p of pasos.slice(desdeI)) for (const t of p.toca) if (!total.some((x) => mismoToque(x, t))) total.push(t);
+      resumen.set(k, total.sort(ordenToque));
     };
     visitar(inicio, simboloInicio, 0, null);
     return { pasos: marcarHuecos(podar(pasos)), truncado };

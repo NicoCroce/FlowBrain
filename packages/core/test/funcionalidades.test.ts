@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { capaDe, compile, podar, CompileError, dentroDe, dependenciasDelGrafo, impacto, leerEntradas, raizDeServicio, renderViewer, type Entradas } from "../src/index.js";
+import { AVISO_SIN_TABLA, capaDe, crearRecorredor, compile, podar, CompileError, dentroDe, dependenciasDelGrafo, impacto, leerEntradas, raizDeServicio, renderViewer, type Entradas } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -156,5 +156,29 @@ describe("funcionalidades", () => {
     const p = (simbolo: string, nivel: number, toca: number = 0) => ({ simbolo, evidencia: "repo-a:x.ts#L1", capa: "logica" as const, nivel, desde: null, toca: Array.from({ length: toca }, () => ({ verbo: "lee_de", hasta: "tabla-x", endpoint: null })) });
     const r = podar([p("Ctrl.get", 0), p("ayuda", 1), p("Svc.leer", 2), p("Repo.find", 3, 1), p("formatear", 1), p("leerCrudo", 1, 1)]);
     expect(r.map((x) => `${x.nivel} ${x.simbolo} <${x.desde}`)).toEqual(["0 Ctrl.get <null", "1 Svc.leer <Ctrl.get", "2 Repo.find <Svc.leer", "1 leerCrudo <Ctrl.get"]);
+  });
+  it("un método repetido en el recorrido hereda lo que tocó la primera vez y no se marca como hueco", () => {
+    const graph = { nodes: [], edges: [] } as unknown as Parameters<typeof crearRecorredor>[0];
+    const est = new Map([
+      ["r:svc.ts", { simbolos: [{ nombre: "Svc.a", tipo: "metodo", linea: 1, fin: 5 }, { nombre: "Svc.rec", tipo: "metodo", linea: 6, fin: 8 }], importa: [], invoca: [
+        { desde: "Svc.a", archivo: "pago.repository.ts", simbolo: "Repo.find", linea: 2 },
+        { desde: "Svc.a", archivo: "pago.repository.ts", simbolo: "Repo.find", linea: 3 },
+        { desde: "Svc.a", archivo: "pago.repository.ts", simbolo: "Repo.vacio", linea: 4 },
+        { desde: "Svc.a", archivo: "svc.ts", simbolo: "Svc.rec", linea: 4 },
+        { desde: "Svc.rec", archivo: "svc.ts", simbolo: "Svc.rec", linea: 7 },
+      ] }],
+      ["r:pago.repository.ts", { simbolos: [{ nombre: "Repo.find", tipo: "metodo", linea: 1, fin: 3 }, { nombre: "Repo.vacio", tipo: "metodo", linea: 4, fin: 5 }], importa: [], invoca: [{ desde: "Repo.find", archivo: "pago.repository.ts", simbolo: "Repo.find", linea: 2 }] }],
+    ]);
+    const aristas = [{ dato: null, desde: "svc-x", endpoint: null, evidencia: "r:pago.repository.ts#L2", hasta: "tabla-x", origen: "parser", verbo: "lee_de" }];
+    const { pasos } = crearRecorredor(graph, est, aristas).desdeSimbolo("r:svc.ts", "Svc.a");
+    expect(pasos.map((p) => [p.nivel, p.simbolo, p.toca.map((t) => t.hasta).join(","), p.repite ?? "", p.aviso ?? ""])).toEqual([
+      [0, "Svc.a", "", "", ""],
+      [1, "Repo.find", "tabla-x", "", ""],
+      [2, "Repo.find", "", "ciclo", ""],
+      [1, "Repo.find", "tabla-x", "antes", ""],
+      [1, "Repo.vacio", "", "", AVISO_SIN_TABLA],
+      [1, "Svc.rec", "", "", ""],
+      [2, "Svc.rec", "", "ciclo", ""],
+    ]);
   });
 });
