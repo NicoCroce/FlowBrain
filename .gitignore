@@ -3,3 +3,7 @@ _drafts/
 .DS_Store
 *.log
 coverage/
+packages/brain-graph/dist/
+packages/brain-graph/SCHEMA.md
+packages/brain-graph/LICENSE
+*.tgz

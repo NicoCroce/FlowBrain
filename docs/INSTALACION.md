@@ -1,6 +1,22 @@
-# Instalación en Claude Code (v0.1, desde el repo)
+# Instalación en Claude Code
 
-Hasta que exista `npx brain init`, Brain se usa desde este repo con `pnpm`. En los ejemplos:
+## Con el paquete publicado (`brain-graph`)
+
+```bash
+npx brain-graph init mi-brain --claude-code
+```
+
+Crea el brain (estructura, `SCHEMA.md`, `README.md`), lo compila, registra los hooks `UserPromptSubmit` y `SessionEnd` en `~/.claude/settings.json` (conserva los demás hooks y deja un respaldo `settings.json.brain.bak`) e imprime la única línea que falta, la del servidor MCP:
+
+```bash
+claude mcp add --scope user brain -- npx -y brain-graph@0.1.0 serve --raiz /ruta/absoluta/a/mi-brain
+```
+
+Los hooks y el servidor usan una versión fija (`brain-graph@0.1.0`) para que una publicación nueva no cambie el comportamiento sin aviso. `init` nunca pisa archivos existentes y se puede repetir. Sin `--claude-code` no toca la configuración de Claude Code. El paquete instala dos comandos equivalentes, `brain-graph` y `brain`.
+
+## Desde el repo (desarrollo)
+
+Brain también se usa desde este repo con `pnpm` (`pnpm brain init …` genera comandos que apuntan al repo). En los ejemplos:
 
 - `BRAIN_TOOL` es la ruta a este repo (el código de Brain).
 - `BRAIN_ROOT` es la ruta a tu brain (la carpeta con `producto/`, `tecnologia/` y `_build/`).

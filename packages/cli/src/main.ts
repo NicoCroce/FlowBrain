@@ -1,4 +1,6 @@
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
   buscarNodo,
@@ -18,11 +20,14 @@ import {
 } from "@brain/core";
 import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@brain/hooks";
 import { draftDir } from "@brain/indexer";
+import { init, VERSION } from "./init.js";
 import { escribirIndex, indexar } from "@brain/parsers";
 
 const AYUDA = `brain <comando> [opciones]
 
 Comandos:
+  init [dir] [--claude-code]                crea un brain en dir (por defecto el actual) y lo compila;
+                                            con --claude-code registra los hooks en ~/.claude/settings.json
   compile                                   compila páginas y JSON → _build/, INDEX.md, backlinks
   index <ruta-repo> [--repo <repo-id>]      corre los parsers y escribe contratos, archivos y extracción en _build/
   draft <ruta-repo> [--repo <repo-id>]      borradores de páginas en _drafts/<repo>/ (no toca tecnologia/ ni _build/)
@@ -86,6 +91,9 @@ export async function ejecutar(
         dias: { type: "string" },
         hoy: { type: "string" },
         escribir: { type: "boolean" },
+        "claude-code": { type: "boolean" },
+        settings: { type: "string" },
+        version: { type: "boolean", short: "v" },
         help: { type: "boolean", short: "h" },
       },
     });
@@ -94,10 +102,29 @@ export async function ejecutar(
   }
   const { values: o, positionals } = parsed;
   const [comando, arg] = positionals;
+  if (o.version) return { codigo: 0, stdout: `${VERSION}\n`, stderr: "" };
   if (o.help || !comando) return { codigo: comando || o.help ? 0 : 2, stdout: AYUDA, stderr: "" };
   const raiz = resolve(cwd, o.raiz ?? env.BRAIN_ROOT ?? ".");
 
   try {
+    if (comando === "init") {
+      const r = await init(resolve(cwd, arg ?? "."), { claudeCode: o["claude-code"] === true, ...(o.settings !== undefined ? { settings: resolve(cwd, o.settings) } : {}), env });
+      const lineas = [
+        `brain listo en ${r.raiz}`,
+        ...r.creados.map((c) => `  ${c}`),
+        "",
+        "Servidor MCP (una línea, una sola vez):",
+        `  ${r.mcp}`,
+        "",
+        r.hooks
+          ? `Hooks de Claude Code ${r.hooks.cambio ? "registrados" : "ya estaban registrados"} en ${r.hooks.settings} (UserPromptSubmit y SessionEnd).`
+          : "Hooks de Claude Code: repetí con --claude-code para registrarlos en ~/.claude/settings.json.",
+        "",
+        `Siguiente: ${r.comando} draft /ruta/a/un/repo --raiz ${r.raiz}`,
+      ];
+      return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+    }
+
     if (comando === "compile") {
       const { salidas, escritos } = await compileDir(raiz);
       const resumen = `compilado: ${salidas.graph.nodes.length} nodos, ${salidas.graph.edges.length} aristas; ${escritos.length} archivos escritos\n`;
@@ -258,7 +285,15 @@ async function leerStdin(): Promise<string> {
   return Buffer.concat(partes).toString("utf8");
 }
 
-const esMain = process.argv[1] !== undefined && import.meta.url === new URL(`file://${resolve(process.argv[1])}`).href;
+// npx y `npm i -g` invocan el bin a través de un symlink: se compara contra la ruta real.
+const real = (p: string) => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return resolve(p);
+  }
+};
+const esMain = process.argv[1] !== undefined && real(fileURLToPath(import.meta.url)) === real(process.argv[1]);
 if (esMain && process.argv[2] === "serve") {
   const { servir } = await import("@brain/mcp");
   await servir(process.argv.slice(3));
