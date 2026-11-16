@@ -1,4 +1,6 @@
 import type { Ficha } from "./funcionalidades.js";
+import { dependenciasDelGrafo } from "./impacto.js";
+import { MAPA_JS } from "./viewer-mapa.js";
 import { PRODUCTO_JS } from "./viewer-producto.js";
 import type { Graph } from "./schema.js";
 
@@ -41,6 +43,7 @@ export function reposDelGrafo(graph: Graph): Record<string, RepoVisor> {
 
 export function renderViewer(graph: Graph, cytoscapeJs: string, funcionalidades: Ficha[] = []): string {
   const datos = {
+    dependencias: dependenciasDelGrafo(graph, funcionalidades),
     funcionalidades,
     repos: reposDelGrafo(graph),
     edges: graph.edges.map((e) => ({
@@ -98,10 +101,22 @@ html, body { margin: 0; height: 100%; background: var(--fondo); color: var(--tex
 #cabecera nav a.activa { background: var(--fondo); color: var(--texto); font-weight: 600; }
 .oculto { display: none !important; }
 #app { display: grid; grid-template-columns: 300px 1fr 340px; height: calc(100vh - 48px); }
-#producto { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
-#producto h1 { font-size: 22px; margin: 0 0 4px; }
+.pagina { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+.pagina h1 { font-size: 22px; margin: 0 0 4px; }
+.pagina .volver { display: inline-block; margin-bottom: 12px; text-decoration: none; }
+#buscar-impacto { max-width: 560px; }
+#resultados-impacto { max-width: 560px; margin-bottom: 18px; }
+.columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 28px; margin-top: 12px; }
+.resumen-impacto { margin: 4px 0 12px; }
+.resumen-impacto .chip { font-size: 13px; color: var(--texto); }
+#deps { display: grid; grid-template-columns: 1fr 360px; height: calc(100vh - 48px); }
+#cy-deps { width: 100%; height: 100%; }
+.barra-mapa { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 6px 10px; background: var(--panel); border: 1px solid var(--borde); border-radius: 8px; }
+.barra-mapa input[type=search] { width: 240px; }
+.barra-mapa label { padding: 0; }
+.barra-mapa small { color: var(--suave); }
 .subtitulo { color: var(--suave); margin: 0 0 18px; }
-#filtro-feat { max-width: 420px; margin-bottom: 18px; }
+#filtro-feat, #buscar-impacto { max-width: 420px; margin-bottom: 18px; }
 .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
 .tarjeta { display: block; padding: 14px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); color: var(--texto); text-decoration: none; }
 .tarjeta:hover { border-color: var(--acento); }
@@ -123,7 +138,7 @@ a.chip { color: var(--acento); }
 .lista small { color: var(--suave); }
 .aviso { padding: 10px 12px; border: 1px dashed var(--borde); border-radius: 8px; color: var(--suave); margin: 0 0 16px; }
 aside { background: var(--panel); border-right: 1px solid var(--borde); overflow: auto; padding: 14px; }
-#detalle { border-right: 0; border-left: 1px solid var(--borde); }
+#detalle, .derecha { border-right: 0; border-left: 1px solid var(--borde); }
 h1 { font-size: 16px; margin: 0 0 10px; }
 h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); margin: 16px 0 6px; }
 input[type=search], select { width: 100%; padding: 7px 9px; border: 1px solid var(--borde); border-radius: 6px; background: var(--fondo); color: var(--texto); font: inherit; }
@@ -149,15 +164,30 @@ main { position: relative; }
 .boton { padding: 3px 8px; border: 1px solid var(--borde); border-radius: 6px; background: var(--fondo); color: var(--texto); font: inherit; font-size: 12px; cursor: pointer; }
 @media (max-width: 900px) {
   .ficha { grid-template-columns: 1fr; }
-  #app { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; height: auto; }
-  aside, #detalle { border: 0; border-bottom: 1px solid var(--borde); }
+  #app, #deps { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; height: auto; }
+  #deps { grid-template-rows: 70vh auto; }
+  aside, #detalle, .derecha { border: 0; border-bottom: 1px solid var(--borde); }
 }
 </style>
 </head>
 <body>
-<header id="cabecera"><strong>Brain</strong><nav><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/mapa" data-vista="mapa">Mapa técnico</a></nav></header>
-<div id="producto"></div>
-<div id="app">
+<header id="cabecera"><strong>Brain</strong><nav><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/mapa" data-vista="deps">Dependencias</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/grafo" data-vista="grafo">Grafo completo</a></nav></header>
+<div id="producto" class="pagina"></div>
+<div id="impacto" class="pagina oculto"></div>
+<div id="deps" class="oculto">
+  <main>
+    <div id="cy-deps"></div>
+    <div class="barra-mapa">
+      <input id="buscar-deps" type="search" placeholder="Ir a una funcionalidad (Enter)" autocomplete="off">
+      <label><input type="checkbox" id="ver-tablas"> Tablas</label>
+      <label><input type="checkbox" id="ver-ext"> Externos</label>
+      <label><input type="checkbox" id="ver-sueltas"> Sin relaciones <small id="cuenta-sueltas"></small></label>
+      <button class="boton" id="ajustar-deps">Ajustar</button>
+    </div>
+  </main>
+  <aside id="detalle-deps" class="derecha"></aside>
+</div>
+<div id="app" class="oculto">
   <aside>
     <input id="buscar" type="search" placeholder="Buscar por id, nombre o alias" autocomplete="off">
     <ul id="resultados"></ul>
@@ -311,6 +341,7 @@ main { position: relative; }
       campo("aliases", n.a.map(esc).join(", ")) + campo("actualizado", n.act && esc(n.act)) + campo("verificado", n.ver && esc(n.ver)) +
       campo("página", n.p && '<a href="../' + esc(n.p) + '">' + esc(n.p) + "</a>") + "</dl>" +
       (n.t === "feat" ? '<p><a href="#/f/' + esc(n.id) + '">Abrir la ficha de la funcionalidad →</a></p>' : "") +
+      '<p><a href="#/impacto/' + encodeURIComponent(n.id) + '">¿Qué se ve afectado si cambia? →</a></p>' +
       (n.t === "svc" && repoDeSvc[id] ? seccionRepo(repoDeSvc[id]) : "") +
       (n.t === "repo" ? seccionRepo(id, true) + "<h2>Servicios</h2>" + (D.repos[id].svcs.map(function (s) { return "<p>" + enlaceNodo(s) + "</p>"; }).join("") || '<p class="vacio">Ninguno.</p>') : "") +
       "<h2>Salientes (" + sal.length + ")</h2>" + (sal.map(function (e) { return lineaArista(e, true); }).join("") || '<p class="vacio">Ninguna.</p>') +
@@ -388,10 +419,11 @@ main { position: relative; }
   });
   buscar.addEventListener("keydown", function (ev) { if (ev.key === "Enter") { var c = coincidencias(buscar.value)[0]; if (c) enfocar(c.id); } });
   resultados.addEventListener("click", function (ev) { var li = ev.target.closest("li"); if (li) enfocar(li.getAttribute("data-id")); });
-  window.brainVisor = { cy: cy, enfocar: enfocar, expandidos: expandidos, mostrarMapa: mostrarMapa, D: D, porId: porId, esc: esc };
+  window.brainVisor = { cy: cy, enfocar: enfocar, expandidos: expandidos, mostrarMapa: mostrarMapa, D: D, porId: porId, esc: esc, color: color };
 })();
 </script>
 <script>${seguroEnScript(PRODUCTO_JS)}</script>
+<script>${seguroEnScript(MAPA_JS)}</script>
 </body>
 </html>
 `;

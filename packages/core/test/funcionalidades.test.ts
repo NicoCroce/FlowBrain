@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { compile, CompileError, dentroDe, leerEntradas, raizDeServicio, renderViewer, type Entradas } from "../src/index.js";
+import { compile, CompileError, dentroDe, dependenciasDelGrafo, impacto, leerEntradas, raizDeServicio, renderViewer, type Entradas } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -77,5 +77,41 @@ describe("funcionalidades", () => {
     expect(() => compile(conFuncionalidades("repo-noexiste:src"))).toThrow(/repo inexistente/);
     const mal = { ...base, paginas: base.paginas.map((p) => (p.ruta === "tecnologia/svc-bff.md" ? { ...p, contenido: p.contenido.replace("vive_en:", "codigo: [\"repo-tienda:apps\"]\nvive_en:") } : p)) };
     expect(() => compile(mal)).toThrow(/codigo solo aplica a feat/);
+  });
+
+  it("el modelo de dependencias une el grafo técnico con lo que derivan las fichas", () => {
+    const { graph, funcionalidades } = compile(conFuncionalidades());
+    const deps = dependenciasDelGrafo(graph, funcionalidades);
+    expect(deps).toContainEqual(["feat-carrito", "feat-checkout", "usa", 1]);
+    expect(deps).toContainEqual(["feat-carrito", "svc-bff:POST:/checkout", "llama_a", 2]);
+    expect(deps).toContainEqual(["feat-checkout", "tabla-pagos", "escribe_en", 1]);
+    expect(deps).toContainEqual(["svc-web", "svc-bff:POST:/checkout", "llama_a", 1]);
+    expect(deps).toContainEqual(["feat-checkout", "svc-bff", "implementa", 1]);
+    expect(deps).toContainEqual(["tabla-pagos", "db-tienda", "vive_en", 1]);
+    expect(deps.map((d) => d.slice(0, 3).join(" "))).toEqual([...deps.map((d) => d.slice(0, 3).join(" "))].sort());
+  });
+
+  it("impacto recorre hacia atrás por niveles y dice por qué", () => {
+    const { graph, funcionalidades } = compile(conFuncionalidades());
+    const deps = dependenciasDelGrafo(graph, funcionalidades);
+    const niveles = (id: string) => impacto(deps, id).map((nv) => nv.map((x) => `${x.id}<${x.verbo}<${x.via}`));
+    expect(niveles("tabla-pagos")).toEqual([
+      ["feat-checkout<escribe_en<tabla-pagos", "svc-payments<escribe_en<tabla-pagos"],
+      ["ext-pasarela<llama_a<svc-payments", "feat-carrito<usa<feat-checkout", "svc-bff<llama_a<svc-payments"],
+      ["svc-web<llama_a<svc-bff"],
+    ]);
+    // implementa solo se sigue desde el origen: llegar a svc-web por propagación no arrastra a sus funcionalidades.
+    expect(niveles("svc-bff")).toEqual([["feat-checkout<implementa<svc-bff", "svc-web<llama_a<svc-bff"], ["feat-carrito<usa<feat-checkout"]]);
+    expect(niveles("feat-carrito")).toEqual([]);
+    expect(niveles("no-existe")).toEqual([]);
+  });
+
+  it("el visor embebe las dependencias y las vistas de mapa e impacto", () => {
+    const { graph, funcionalidades } = compile(conFuncionalidades());
+    const html = renderViewer(graph, "/* lib */", funcionalidades);
+    expect(html).toContain('"dependencias":[[');
+    expect(html).toContain('href="#/impacto"');
+    expect(html).toContain('href="#/grafo"');
+    expect(html).toContain("function impacto(deps, origen)");
   });
 });

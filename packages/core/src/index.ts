@@ -11,3 +11,4 @@ export * from "./engine/prompt.js";
 export * from "./verificar.js";
 export * from "./viewer.js";
 export * from "./funcionalidades.js";
+export * from "./impacto.js";

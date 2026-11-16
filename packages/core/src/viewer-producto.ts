@@ -1,7 +1,6 @@
 /**
  * Vista de producto del visor: catálogo de funcionalidades y ficha de cada una. Corre en el navegador sobre los
- * datos embebidos (`window.brainVisor.D`); navega por `location.hash` (`#/funcionalidades`, `#/f/<id>`, `#/mapa`,
- * `#/mapa/<id>`), así funcionan Atrás y los enlaces compartidos. Sin dependencias ni red.
+ * datos embebidos (`window.brainVisor.D`); la navegación por `location.hash` está en `viewer-mapa.ts`. Sin dependencias ni red.
  *
  * Es JavaScript plano dentro de `String.raw`: sin backticks ni `${` (los backticks de Markdown van como \x60).
  */
@@ -16,7 +15,7 @@ export const PRODUCTO_JS = String.raw`
   fichas.forEach(function (f) { f.expone.forEach(function (e) { (duenas[e] = duenas[e] || []).push(f.id); }); });
   var consumidoras = {};
   fichas.forEach(function (f) { f.usa.forEach(function (u) { if (u.endpoint) (consumidoras[u.endpoint] = consumidoras[u.endpoint] || []).push(f.id); }); });
-  var raiz = document.getElementById("producto"), app = document.getElementById("app");
+  var raiz = document.getElementById("producto");
   var filtro = "";
 
   var nombre = function (id) { return porId[id] ? porId[id].n : id; };
@@ -156,27 +155,15 @@ export const PRODUCTO_JS = String.raw`
       seccion("Código", lista(codigo) + "<p><small>" + plural(f.archivos, "archivo", "archivos") +
         (f.implementan.length ? " · " + f.implementan.map(function (s) { return esc(nombre(s)); }).join(", ") : "") + "</small></p>" +
         (n.p ? '<p><small>Página: <code>' + esc(n.p) + "</code></small></p>" : "")) +
-      '<p><a href="#/mapa/' + encodeURIComponent(id) + '">Ver en el mapa técnico →</a></p>' +
+      '<p><a href="#/mapa/' + encodeURIComponent(id) + '">Ver sus dependencias en el mapa →</a><br><a href="#/impacto/' + encodeURIComponent(id) + '">¿Qué se ve afectado si cambia? →</a></p>' +
       "</div></div>";
   }
 
-  // ---------- Navegación ----------
-  function ir() {
-    var h = decodeURIComponent(location.hash.replace(/^#/, "")), m;
-    var vista = /^\/mapa/.test(h) || (h === "" && !fichas.length) ? "mapa" : "producto";
-    document.querySelectorAll("#cabecera nav a").forEach(function (a) { a.classList.toggle("activa", a.getAttribute("data-vista") === vista); });
-    raiz.classList.toggle("oculto", vista !== "producto");
-    app.classList.toggle("oculto", vista !== "mapa");
-    if (vista === "mapa") {
-      V.mostrarMapa();
-      if ((m = /^\/mapa\/(.+)$/.exec(h))) V.enfocar(m[1]);
-      return;
-    }
-    if ((m = /^\/f\/(.+)$/.exec(h))) raiz.innerHTML = ficha(m[1]);
-    else pintarCatalogo();
-    window.scrollTo(0, 0);
-  }
-  window.addEventListener("hashchange", ir);
-  ir();
+  // La navegación entre vistas la hace el enrutador de viewer-mapa.
+  window.brainProducto = {
+    mostrar: function (h) { var m = /^\/f\/(.+)$/.exec(h); if (m) raiz.innerHTML = ficha(m[1]); else pintarCatalogo(); },
+    datosDe: datosDe,
+    pendiente: pendiente
+  };
 })();
 `;
