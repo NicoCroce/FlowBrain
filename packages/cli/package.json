@@ -10,6 +10,7 @@
   "dependencies": {
     "@brain/core": "workspace:*",
     "@brain/hooks": "workspace:*",
+    "@brain/indexer": "workspace:*",
     "@brain/mcp": "workspace:*",
     "@brain/parsers": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2"

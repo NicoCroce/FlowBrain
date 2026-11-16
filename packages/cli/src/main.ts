@@ -12,10 +12,12 @@ import {
   stringifyCanonical,
   trazar,
   contextoParaPrompt,
+  verifyDir,
   type Contexto,
   type Proyeccion,
 } from "@brain/core";
-import { BUDGET_HOOK, hookUserPromptSubmit, nombreRepo } from "@brain/hooks";
+import { anotar, BUDGET_HOOK, hookSessionEnd, hookUserPromptSubmit, nombreRepo } from "@brain/hooks";
+import { draftDir } from "@brain/indexer";
 import { escribirIndex, indexar } from "@brain/parsers";
 
 const AYUDA = `brain <comando> [opciones]
@@ -23,12 +25,16 @@ const AYUDA = `brain <comando> [opciones]
 Comandos:
   compile                                   compila páginas y JSON → _build/, INDEX.md, backlinks
   index <ruta-repo> [--repo <repo-id>]      corre los parsers y escribe contratos, archivos y extracción en _build/
+  draft <ruta-repo> [--repo <repo-id>]      borradores de páginas en _drafts/<repo>/ (no toca tecnologia/ ni _build/)
+  verify [--repos <dir>] [--clon id=ruta]   verifica evidencias contra los clones locales; marca dudosas
+         [--dias n] [--hoy AAAA-MM-DD]      sale con 1 si aparecen dudosas nuevas (apto para CI)
+  nota <nodo> <texto>                       agrega una nota a _drafts/notas/<nodo>.md
   buscar <texto> [--tipos a,b] [--limite n]
   recorrer <nodo> [--verbos a,b] [--direccion out|in|both] [--profundidad n]
   contrato <nodo> [--endpoint "MÉTODO /ruta"]
   trazar --desde <nodo|URL|ruta|archivo> [--hasta <nodo>]
   context --prompt <texto> [--repo <dir>]   contexto para inyectar en un prompt (budget por defecto 1500)
-  hook claude-code                          hook UserPromptSubmit: lee el JSON de Claude Code por stdin
+  hook claude-code                          hooks UserPromptSubmit y SessionEnd: lee el JSON de Claude Code por stdin
   serve                                     servidor MCP por stdio
 
 Opciones comunes:
@@ -73,6 +79,10 @@ export async function ejecutar(
         hasta: { type: "string" },
         prompt: { type: "string" },
         repo: { type: "string" },
+        repos: { type: "string" },
+        clon: { type: "string", multiple: true },
+        dias: { type: "string" },
+        hoy: { type: "string" },
         help: { type: "boolean", short: "h" },
       },
     });
@@ -104,10 +114,62 @@ export async function ejecutar(
       return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
     }
 
+    if (comando === "draft") {
+      if (!arg) throw new ConsultaError("parametro_invalido", "falta <ruta-repo>");
+      const r = await draftDir(resolve(cwd, arg), raiz, o.repo !== undefined ? { repo: o.repo } : {});
+      const { paginas, relaciones, preguntas, tablas, externos } = r.resumen;
+      const lineas = [
+        `borradores de ${r.repo}: ${paginas} páginas (${tablas} tablas y ${externos} externos propuestos), ${relaciones} relaciones nuevas, ${preguntas} preguntas abiertas; ${r.escritos.length} archivos escritos`,
+        ...r.escritos.map((e) => `  ${e}`),
+        `revisá _drafts/${r.repo}/ (o pasale PROMPT.md a un agente), movelo a tecnologia/ y corré brain index + brain compile`,
+      ];
+      return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+    }
+
+    if (comando === "verify") {
+      const clones: Record<string, string> = {};
+      for (const c of o.clon ?? []) {
+        const i = c.indexOf("=");
+        if (i <= 0) throw new ConsultaError("parametro_invalido", `--clon espera <repo-id>=<ruta>, llegó "${c}"`);
+        clones[c.slice(0, i)] = resolve(cwd, c.slice(i + 1));
+      }
+      const carpetas = (o.repos ?? env.BRAIN_REPOS ?? "").split(":").filter(Boolean).map((d) => resolve(cwd, d));
+      const hoy = o.hoy ?? new Date().toISOString().slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(hoy)) throw new ConsultaError("parametro_invalido", "--hoy debe ser AAAA-MM-DD");
+      const r = await verifyDir(raiz, { repos: clones, carpetas, hoy, dias: entero(o.dias, "--dias") ?? 90 });
+      const ev = (d: { desde: string; verbo: string; hasta: string; evidencia: string; motivo: string }) => `  ${d.desde} ${d.verbo} ${d.hasta} — ${d.evidencia}: ${d.motivo}`;
+      const lineas = [
+        `verificadas ${r.verificadas} aristas: ${r.dudosas.length} dudosas (${r.nuevas.length} nuevas, ${r.recuperadas.length} recuperadas)`,
+        ...(r.nuevas.length ? ["nuevas dudosas:", ...r.nuevas.map(ev)] : []),
+        ...(r.recuperadas.length ? ["recuperadas:", ...r.recuperadas.map(ev)] : []),
+        ...(r.noVerificables.length ? [`sin clon local (no verificadas): ${r.noVerificables.map((x) => `${x.repo} (${x.aristas})`).join(", ")}`] : []),
+        ...(r.sinVerificar.length
+          ? [
+              `nodos sin verificar en ${entero(o.dias, "--dias") ?? 90} días (${r.sinVerificar.length}): ${r.sinVerificar
+                .slice(0, 20)
+                .map((n) => n.id)
+                .join(", ")}${r.sinVerificar.length > 20 ? `, … (+${r.sinVerificar.length - 20} más)` : ""}`,
+            ]
+          : []),
+      ];
+      return { codigo: r.nuevas.length > 0 ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+    }
+
+    if (comando === "nota") {
+      const texto = positionals.slice(2).join(" ").trim();
+      if (!arg || !texto) throw new ConsultaError("parametro_invalido", "uso: brain nota <nodo> <texto>");
+      const escritos = await anotar(raiz, [{ id: arg, texto }], "manual");
+      return { codigo: 0, stdout: escritos.length ? `nota agregada: ${escritos.join(", ")}\n` : "la nota ya existía\n", stderr: "" };
+    }
+
     if (comando === "hook") {
       if (arg !== "claude-code") return { codigo: 2, stdout: "", stderr: `hook desconocido: ${arg ?? ""}\n` };
       try {
-        const entrada = JSON.parse((await stdin()) || "{}") as { prompt?: string; cwd?: string };
+        const entrada = JSON.parse((await stdin()) || "{}") as { prompt?: string; cwd?: string; hook_event_name?: string; session_id?: string; transcript_path?: string };
+        if (entrada.hook_event_name === "SessionEnd") {
+          const escritos = await hookSessionEnd(entrada, raiz);
+          return { codigo: 0, stdout: "", stderr: escritos.length ? `brain: notas guardadas en ${escritos.join(", ")}\n` : "" };
+        }
         const budget = o.budget === undefined ? BUDGET_HOOK : (entero(o.budget, "--budget") ?? BUDGET_HOOK);
         return { codigo: 0, stdout: await hookUserPromptSubmit(entrada, () => cargarContexto(raiz), budget), stderr: "" };
       } catch (e) {

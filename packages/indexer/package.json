@@ -4,5 +4,10 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
-  "scripts": { "test": "vitest run --passWithNoTests" }
+  "scripts": { "test": "vitest run --passWithNoTests" },
+  "dependencies": {
+    "@brain/core": "workspace:*",
+    "@brain/parsers": "workspace:*",
+    "yaml": "^2.9.1"
+  }
 }

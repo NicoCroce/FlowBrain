@@ -153,7 +153,28 @@ Los destinos sin resolver nunca llegan a una página compilada. Van como prosa e
 }
 ```
 
-Los símbolos se quedan en este JSON y no pasan a `graph.json`.
+Los símbolos se quedan en este JSON y no pasan a `graph.json`. `brain verify` los usa para comprobar que la línea citada por una evidencia todavía nombre al símbolo.
+
+### `_build/verificacion.json` (escrito por `brain verify`)
+
+```json
+{
+  "dudosas": [
+    { "desde": "svc-x", "endpoint": null, "evidencia": "repo-x:src/a.ts#L3", "hasta": "ext-y", "motivo": "archivo inexistente", "verbo": "llama_a" }
+  ],
+  "version": 1
+}
+```
+
+`compile` marca `estado: dudoso` en cada arista cuya `(desde, verbo, hasta, endpoint, evidencia)` aparezca acá, salvo que esté `deprecado`. Si la evidencia de la página cambia, la arista deja de coincidir y vuelve a `vigente` hasta la próxima verificación.
+
+### `_drafts/` (fuera de la compilación)
+
+- `_drafts/<repo-id>/tecnologia/*.md`: páginas propuestas por `brain draft`, con el mismo formato que `tecnologia/` y `resumen: "Borrador: completar resumen."` donde falta. Lo no resuelto va en una sección `## Preguntas abiertas`.
+- `_drafts/<repo-id>/PROMPT.md`: instrucciones fijas para que un agente refine los borradores.
+- `_drafts/notas/<id>.md`: notas de contradicciones entre el código y el brain (`brain nota` o el hook `SessionEnd`).
+
+`compile` nunca lee `_drafts/`. Un humano mueve los borradores a `tecnologia/` tras revisarlos.
 
 ## 8. `graph.json`
 

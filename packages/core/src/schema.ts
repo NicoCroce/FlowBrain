@@ -239,3 +239,26 @@ export interface Graph {
   nodes: GraphNode[];
   version: 1;
 }
+
+// ---------- Verificación (`brain verify`) ----------
+
+export const RUTA_VERIFICACION = "_build/verificacion.json";
+
+export const DudosaSchema = z
+  .object({
+    desde: z.string(),
+    endpoint: z.string().nullable(),
+    evidencia: z.string(),
+    hasta: z.string(),
+    motivo: z.string(),
+    verbo: z.string(),
+  })
+  .strict();
+export const VerificacionSchema = z.object({ dudosas: z.array(DudosaSchema), version: z.literal(1) }).strict();
+export type Dudosa = z.infer<typeof DudosaSchema>;
+export type Verificacion = z.infer<typeof VerificacionSchema>;
+
+/** Clave de una dudosa: la arista y la evidencia que falló (si la evidencia cambia, deja de ser la misma). */
+export const claveDudosa = (d: Pick<Dudosa, "desde" | "verbo" | "hasta" | "endpoint" | "evidencia">) =>
+  [d.desde, d.verbo, d.hasta, d.endpoint ?? "", d.evidencia].join("\u0000");
+

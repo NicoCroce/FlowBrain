@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { cmp } from "./canonical.js";
 import { compile, type Entradas, type Fuente, type Salidas } from "./compile.js";
+import { RUTA_VERIFICACION } from "./schema.js";
 
 async function listar(raiz: string, dir: string, ext: string): Promise<Fuente[]> {
   let nombres: string[];
@@ -24,6 +25,10 @@ export async function leerEntradas(raiz: string): Promise<Entradas> {
     paginas: [...(await listar(raiz, "producto", ".md")), ...(await listar(raiz, "tecnologia", ".md"))],
     contratos: await listar(raiz, "_build/contratos", ".json"),
     archivos: await listar(raiz, "_build/archivos", ".json"),
+    verificacion: await readFile(join(raiz, RUTA_VERIFICACION), "utf8").then(
+      (contenido) => ({ ruta: RUTA_VERIFICACION, contenido }),
+      () => null,
+    ),
   };
 }
 

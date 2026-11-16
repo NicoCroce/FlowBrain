@@ -29,6 +29,9 @@ importers:
       '@brain/hooks':
         specifier: workspace:*
         version: link:../hooks
+      '@brain/indexer':
+        specifier: workspace:*
+        version: link:../indexer
       '@brain/mcp':
         specifier: workspace:*
         version: link:../mcp
@@ -54,7 +57,17 @@ importers:
         specifier: workspace:*
         version: link:../core
 
-  packages/indexer: {}
+  packages/indexer:
+    dependencies:
+      '@brain/core':
+        specifier: workspace:*
+        version: link:../core
+      '@brain/parsers':
+        specifier: workspace:*
+        version: link:../parsers
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   packages/mcp:
     dependencies:

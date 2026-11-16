@@ -34,6 +34,8 @@ export interface Pendiente {
   desde: string;
   evidencia: string;
   motivo: string;
+  /** Lo que falta en el brain para resolverla: host (`host sin nodo`) o tabla física (`modelo sin tabla`). */
+  objetivo: string | null;
   verbo: "llama_a" | "lee_de" | "escribe_en";
   /** URL reconstruida o modelo de datos. */
   referencia: string;
@@ -41,6 +43,8 @@ export interface Pendiente {
 
 export interface ResultadoIndex {
   repo: string;
+  /** El repo no tiene página en el brain (solo con `permitirRepoNuevo`). */
+  repoNuevo: boolean;
   servicios: Array<{ nuevo: boolean; paquete: string; svc: string }>;
   aristas: AristaExtraida[];
   pendientes: Pendiente[];
@@ -48,13 +52,13 @@ export interface ResultadoIndex {
   archivos: { archivos: Array<{ lenguaje: string; ruta: string; simbolos: Array<{ linea: number; nombre: string; tipo: string }> }>; repo: string };
 }
 
-const normalizar = (s: string) =>
+export const normalizar = (s: string) =>
   s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .trim();
-const slug = (s: string) => normalizar(s).replace(/^@[^/]+\//, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+export const slug = (s: string) => normalizar(s).replace(/^@[^/]+\//, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const sinPrefijo = (id: string) => id.slice(id.indexOf("-") + 1);
 const clavesDe = (n: NodoPagina) => new Set([n.id, sinPrefijo(n.id), n.nombre, ...n.aliases].map(normalizar));
 
@@ -167,7 +171,11 @@ export function endpointsAlcanzables<E extends { ruta: string; metodo: string }>
  * `brain index <repo>`: corre los parsers, resuelve contra las páginas del brain y devuelve contratos,
  * árbol de archivos y aristas extraídas (más las pendientes, para el indexador del paso 7). Puro salvo lecturas.
  */
-export async function indexar(rutaRepo: string, raizBrain: string, opciones: { repo?: string } = {}): Promise<ResultadoIndex> {
+export async function indexar(
+  rutaRepo: string,
+  raizBrain: string,
+  opciones: { repo?: string; permitirRepoNuevo?: boolean } = {},
+): Promise<ResultadoIndex> {
   const repo = leerRepo(rutaRepo);
   const nodos = await leerNodosPaginas(raizBrain);
   const porId = new Map(nodos.map((n) => [n.id, n]));
@@ -177,10 +185,12 @@ export async function indexar(rutaRepo: string, raizBrain: string, opciones: { r
     (() => {
       const q = normalizar(basename(repo.raiz));
       const hits = nodos.filter((n) => n.tipo === "repo" && clavesDe(n).has(q));
+      if (hits.length === 0 && opciones.permitirRepoNuevo) return `repo-${slug(basename(repo.raiz))}`;
       if (hits.length !== 1) throw new ConsultaError("parametro_invalido", `no se pudo identificar el repo "${basename(repo.raiz)}" en el brain; usá --repo <repo-id>`);
       return hits[0]!.id;
     })();
-  if (porId.get(repoId)?.tipo !== "repo") throw new ConsultaError("nodo_inexistente", `repo inexistente en el brain: ${repoId}`);
+  const repoNuevo = !porId.has(repoId) && opciones.permitirRepoNuevo === true;
+  if (!repoNuevo && porId.get(repoId)?.tipo !== "repo") throw new ConsultaError("nodo_inexistente", `repo inexistente en el brain: ${repoId}`);
 
   const x = fusionar(await Promise.all(PARSERS.filter((p) => p.detect(repo)).map((p) => p.extract(repo))));
   const ev = (archivo: string, linea: number) => `${repoId}:${archivo}#L${linea}`;
@@ -254,13 +264,13 @@ export async function indexar(rutaRepo: string, raizBrain: string, opciones: { r
   for (const l of x.llamadas) {
     for (const desde of svcsDe.get(l.paquete) ?? []) {
       const evidencia = ev(l.archivo, l.linea);
-      const pendiente = (motivo: string, candidatos: Pendiente["candidatos"]) =>
-        pendientes.push({ candidatos, desde, evidencia, motivo, referencia: `${l.metodo} ${l.url.texto}`, verbo: "llama_a" });
+      const pendiente = (motivo: string, candidatos: Pendiente["candidatos"], objetivo: string | null = null) =>
+        pendientes.push({ candidatos, desde, evidencia, motivo, objetivo, referencia: `${l.metodo} ${l.url.texto}`, verbo: "llama_a" });
       if (l.url.base === "literal" && l.url.host) {
         const etiquetas = [l.url.host, ...l.url.host.split(/[.]/)].map(normalizar);
         const hits = [...new Set(etiquetas.flatMap((e) => destinosPorClave(e, ["svc", "ext"]).map((n) => n.id)))].sort(cmp);
         if (hits.length !== 1) {
-          pendiente(hits.length === 0 ? `host sin nodo: ${l.url.host}` : "host ambiguo", hits.map((h) => ({ endpoint: null, hasta: h })));
+          pendiente(hits.length === 0 ? `host sin nodo: ${l.url.host}` : "host ambiguo", hits.map((h) => ({ endpoint: null, hasta: h })), l.url.host);
           continue;
         }
         const hasta = hits[0]!;
@@ -301,6 +311,7 @@ export async function indexar(rutaRepo: string, raizBrain: string, opciones: { r
           desde,
           evidencia,
           motivo: hits.length === 0 ? `modelo sin tabla en el brain: ${t.modelo}` : "modelo ambiguo",
+          objetivo: modelo?.tabla ?? t.modelo,
           referencia: t.modelo,
           verbo: t.verbo,
         });
@@ -328,6 +339,7 @@ export async function indexar(rutaRepo: string, raizBrain: string, opciones: { r
 
   return {
     repo: repoId,
+    repoNuevo,
     servicios,
     aristas: aristasFinales,
     pendientes,

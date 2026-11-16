@@ -55,3 +55,57 @@ describe("brain CLI produce el mismo JSON que el motor", () => {
     expect(r.stderr).toContain("comando desconocido");
   });
 });
+
+describe("brain verify, draft, nota y hook SessionEnd por CLI", () => {
+  const REPOS = resolve(FIXTURE, "../repos");
+
+  it("verify sale con 1 si aparecen dudosas nuevas y con 0 en la siguiente corrida", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "brain-cli-verify-"));
+    try {
+      await cp(join(REPOS, "tienda"), join(dir, "tienda"), { recursive: true });
+      const ok = await ejecutar(["verify", "--raiz", raiz, "--clon", `repo-tienda=${join(dir, "tienda")}`, "--hoy", "2026-11-16"]);
+      expect(ok.codigo).toBe(0);
+      expect(ok.stdout).toMatch(/^verificadas \d+ aristas: 0 dudosas/);
+      await rm(join(dir, "tienda/apps/payments/src/clients/pasarela.ts"));
+      const mal = await ejecutar(["verify", "--raiz", raiz, "--repos", dir, "--hoy", "2026-11-16"]);
+      expect(mal.codigo).toBe(1);
+      expect(mal.stdout).toContain("svc-payments llama_a ext-pasarela — repo-tienda:apps/payments/src/clients/pasarela.ts#L8: archivo inexistente");
+      expect((await ejecutar(["verify", "--raiz", raiz, "--repos", dir, "--hoy", "2026-11-16"])).codigo).toBe(0);
+      await cp(join(REPOS, "tienda"), join(dir, "tienda"), { recursive: true });
+      const vuelta = await ejecutar(["verify", "--raiz", raiz, "--repos", dir, "--hoy", "2026-11-16"]);
+      expect(vuelta.stdout).toContain("1 recuperadas");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("verify rechaza --clon mal formado", async () => {
+    const r = await ejecutar(["verify", "--raiz", raiz, "--clon", "sin-igual"]);
+    expect(r.codigo).toBe(2);
+  });
+
+  it("draft escribe en _drafts/ y lo informa", async () => {
+    const r = await ejecutar(["draft", join(REPOS, "tienda"), "--raiz", raiz]);
+    expect(r.codigo).toBe(0);
+    expect(r.stdout).toMatch(/^borradores de repo-tienda: /);
+    expect(r.stdout).toContain("_drafts/repo-tienda/PROMPT.md");
+  });
+
+  it("nota y hook SessionEnd escriben en _drafts/notas/", async () => {
+    const n = await ejecutar(["nota", "svc-bff", "el", "handler", "cambió", "--raiz", raiz]);
+    expect(n).toEqual({ codigo: 0, stdout: "nota agregada: _drafts/notas/svc-bff.md\n", stderr: "" });
+    const t = join(raiz, "t.jsonl");
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(t, JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "brain-nota svc-bff: devuelve 202" }] } }) + "\n");
+    const h = await ejecutar(["hook", "claude-code", "--raiz", raiz], {}, raiz, async () => JSON.stringify({ hook_event_name: "SessionEnd", session_id: "s1", transcript_path: t }));
+    expect(h.codigo).toBe(0);
+    expect(h.stdout).toBe("");
+    expect(await readFile(join(raiz, "_drafts/notas/svc-bff.md"), "utf8")).toBe("# Notas sobre `svc-bff`\n\n- el handler cambió (manual)\n- devuelve 202 (sesión s1)\n");
+  });
+
+  it("un SessionEnd roto nunca falla hacia Claude Code", async () => {
+    const h = await ejecutar(["hook", "claude-code", "--raiz", raiz], {}, raiz, async () => JSON.stringify({ hook_event_name: "SessionEnd", transcript_path: "/no/existe.jsonl" }));
+    expect(h.codigo).toBe(0);
+    expect(h.stdout).toBe("");
+  });
+});

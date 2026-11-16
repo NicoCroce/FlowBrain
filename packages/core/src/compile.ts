@@ -7,6 +7,8 @@ import {
   CARPETA_POR_TIPO,
   CONFIANZA,
   ContratoSchema,
+  claveDudosa,
+  VerificacionSchema,
   ENDPOINT_REF,
   FrontmatterSchema,
   ID_PAGINA,
@@ -35,6 +37,8 @@ export interface Entradas {
   paginas: Fuente[];
   contratos: Fuente[];
   archivos: Fuente[];
+  /** `_build/verificacion.json` de `brain verify`: sus aristas salen con estado `dudoso`. */
+  verificacion?: Fuente | null;
 }
 
 export interface Salidas {
@@ -292,11 +296,21 @@ export function compile(entradas: Entradas): Salidas {
     });
   }
 
+  // ---------- 4b. Verificación: aristas cuya evidencia ya no está → dudoso (deprecado manda) ----------
+  const dudosas = new Set<string>();
+  if (entradas.verificacion) {
+    const v = VerificacionSchema.safeParse(parseJson(entradas.verificacion, errores));
+    if (v.success) for (const d of v.data.dudosas) dudosas.add(claveDudosa(d));
+    else if (entradas.verificacion.contenido.trim() !== "") errores.push({ archivo: entradas.verificacion.ruta, linea: null, mensaje: "verificación con formato inválido; borrala y corré brain verify" });
+  }
+
   if (errores.length > 0) throw new CompileError(ordenarErrores(errores));
 
   // ---------- 5. Dedupe y orden ----------
   const graph: Graph = {
-    edges: dedupe(aristas).sort((a, b) => cmpTuple(claveArista(a), claveArista(b))),
+    edges: dedupe(aristas)
+      .map((e) => (e.estado === "vigente" && e.evidencia !== null && dudosas.has(claveDudosa({ ...e, evidencia: e.evidencia })) ? { ...e, estado: "dudoso" as const } : e))
+      .sort((a, b) => cmpTuple(claveArista(a), claveArista(b))),
     nodes: [...nodos.values()].sort((a, b) => cmp(a.id, b.id)),
     version: 1,
   };
