@@ -1,0 +1,15 @@
+{
+  "descripcion": "Aristas y endpoints etiquetados a mano en fixtures/repos/tienda. Oráculo de precisión del ts-parser (criterio: ≥ 90%). El webhook ext-pasarela → svc-payments no se etiqueta: es entrante y ningún parser puede verlo desde el código.",
+  "repo": "repo-tienda",
+  "aristas": [
+    { "dato": null, "desde": "svc-web", "endpoint": "svc-bff:POST:/checkout", "evidencia": "repo-tienda:apps/web/src/api/checkout.ts#L9", "hasta": "svc-bff", "origen": "inferido", "verbo": "llama_a" },
+    { "dato": null, "desde": "svc-bff", "endpoint": "svc-payments:POST:/payments", "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11", "hasta": "svc-payments", "origen": "parser", "verbo": "llama_a" },
+    { "dato": "CargoPasarela", "desde": "svc-payments", "endpoint": null, "evidencia": "repo-tienda:apps/payments/src/clients/pasarela.ts#L8", "hasta": "ext-pasarela", "origen": "parser", "verbo": "llama_a" },
+    { "dato": "Pago", "desde": "svc-payments", "endpoint": null, "evidencia": "repo-tienda:apps/payments/src/routes/payments.ts#L21", "hasta": "tabla-pagos", "origen": "parser", "verbo": "escribe_en" }
+  ],
+  "endpoints": [
+    { "evidencia": "repo-tienda:apps/bff/src/routes/checkout.ts#L14", "metodo": "POST", "request": "CheckoutRequest", "response": "CheckoutResponse", "ruta": "/checkout", "svc": "svc-bff" },
+    { "evidencia": "repo-tienda:apps/payments/src/routes/payments.ts#L12", "metodo": "POST", "request": "CrearPagoRequest", "response": "Pago", "ruta": "/payments", "svc": "svc-payments" },
+    { "evidencia": "repo-tienda:apps/payments/src/routes/webhooks.ts#L7", "metodo": "POST", "request": "EventoPasarela", "response": null, "ruta": "/webhooks/pasarela", "svc": "svc-payments" }
+  ]
+}

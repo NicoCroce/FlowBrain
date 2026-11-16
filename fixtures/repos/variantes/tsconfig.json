@@ -1,0 +1,7 @@
+{
+  // con comentarios, como los tsconfig reales
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": { "@http/*": ["./src/http/*"] }
+  }
+}

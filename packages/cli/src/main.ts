@@ -16,11 +16,13 @@ import {
   type Proyeccion,
 } from "@brain/core";
 import { BUDGET_HOOK, hookUserPromptSubmit, nombreRepo } from "@brain/hooks";
+import { escribirIndex, indexar } from "@brain/parsers";
 
 const AYUDA = `brain <comando> [opciones]
 
 Comandos:
   compile                                   compila páginas y JSON → _build/, INDEX.md, backlinks
+  index <ruta-repo> [--repo <repo-id>]      corre los parsers y escribe contratos, archivos y extracción en _build/
   buscar <texto> [--tipos a,b] [--limite n]
   recorrer <nodo> [--verbos a,b] [--direccion out|in|both] [--profundidad n]
   contrato <nodo> [--endpoint "MÉTODO /ruta"]
@@ -87,6 +89,19 @@ export async function ejecutar(
       const { salidas, escritos } = await compileDir(raiz);
       const resumen = `compilado: ${salidas.graph.nodes.length} nodos, ${salidas.graph.edges.length} aristas; ${escritos.length} archivos escritos\n`;
       return { codigo: 0, stdout: resumen + escritos.map((e) => `  ${e}\n`).join(""), stderr: "" };
+    }
+
+    if (comando === "index") {
+      if (!arg) throw new ConsultaError("parametro_invalido", "falta <ruta-repo>");
+      const r = await indexar(resolve(cwd, arg), raiz, o.repo !== undefined ? { repo: o.repo } : {});
+      const escritos = await escribirIndex(raiz, r);
+      const nuevos = r.servicios.filter((s) => s.nuevo).map((s) => `${s.svc} (${s.paquete || "."})`);
+      const lineas = [
+        `indexado ${r.repo}: ${r.contratos.length} contratos, ${r.aristas.length} aristas, ${r.pendientes.length} pendientes; ${escritos.length} archivos escritos`,
+        ...escritos.map((e) => `  ${e}`),
+        ...(nuevos.length ? [`servicios sin página (los propone el indexador): ${nuevos.join(", ")}`] : []),
+      ];
+      return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
     }
 
     if (comando === "hook") {

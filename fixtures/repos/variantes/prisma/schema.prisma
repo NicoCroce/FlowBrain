@@ -1,0 +1,4 @@
+model Cliente {
+  id String @id
+  @@map("clientes")
+}

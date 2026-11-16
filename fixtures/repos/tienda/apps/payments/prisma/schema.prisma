@@ -1,0 +1,11 @@
+datasource db {
+  provider = "postgresql"
+}
+
+model Pago {
+  id       String @id
+  pedidoId String
+  monto    Int
+  moneda   String
+  estado   String
+}

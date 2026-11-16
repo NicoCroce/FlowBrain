@@ -1,0 +1,42 @@
+openapi: 3.0.3
+info:
+  title: Catálogo
+  version: 1.0.0
+paths:
+  /productos/{id}:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Producto"
+  /productos:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NuevoProducto"
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Producto"
+components:
+  schemas:
+    Producto:
+      type: object
+      required: [id, nombre, precio]
+      properties:
+        id: { type: string }
+        nombre: { type: string }
+        precio: { type: integer }
+        estado: { type: string, enum: [activo, pausado] }
+    NuevoProducto:
+      type: object
+      required: [nombre, precio]
+      properties:
+        nombre: { type: string }
+        precio: { type: integer }
