@@ -47,6 +47,14 @@ describe("brain draft sobre un brain casi vacío", () => {
     expect(r.resumen).toEqual({ paginas: 5, relaciones: 4, preguntas: 4, tablas: 2, externos: 1, funcionalidades: 0 });
   });
 
+  it("el borrador de una tabla dice qué métodos la leen o escriben", async () => {
+    await draftDir(clon, brain);
+    const t = await readFile(join(brain, "_drafts/repo-envios/tecnologia/tabla-envios.md"), "utf8");
+    expect(t).toContain("## Quién la usa");
+    // El parser de PHP no da métodos con rango: queda la evidencia del acceso.
+    expect(t).toContain("- `repo-envios:app/Http/Controllers/EnvioController.php#L20` (escribe)");
+  });
+
   it("las relaciones del borrador son las aristas etiquetadas a mano, con evidencia", async () => {
     await draftDir(clon, brain);
     const etiquetas = JSON.parse(await readFile(F("repos/envios.etiquetas.json"), "utf8")) as { aristas: Array<Record<string, unknown>> };

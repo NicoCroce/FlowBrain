@@ -1,5 +1,5 @@
 import { isMap, isScalar, isSeq, parseDocument, Document, Scalar, YAMLSeq } from "yaml";
-import { cmp, dentroDe, FrontmatterSchema, MARCA_INICIO, normalizarRuta, parsePagina, type Fuente } from "@brain/core";
+import { cmp, dentroDe, FrontmatterSchema, MARCA_INICIO, normalizarRuta, parsePagina, simboloDeLinea, type Fuente } from "@brain/core";
 import { slug, type AristaExtraida, type Pendiente, type ResultadoIndex } from "@brain/parsers";
 
 /**
@@ -61,6 +61,8 @@ interface PaginaExistente {
   frontmatter: string;
   cuerpo: string;
   relaciones: Set<string>;
+  viveEn: string[];
+  codigo: string[];
 }
 
 export interface Borradores {
@@ -92,7 +94,7 @@ function leerPaginas(paginas: Fuente[]): Map<string, PaginaExistente> {
       const r = FrontmatterSchema.safeParse(p.data);
       if (!r.success) continue;
       const relaciones = new Set((r.data.relaciones ?? []).map((x) => claveRel(x.verbo, x.destino, x.endpoint)));
-      out.set(r.data.id, { ruta: f.ruta, id: r.data.id, tipo: r.data.tipo, frontmatter: p.frontmatter, cuerpo: p.cuerpo, relaciones });
+      out.set(r.data.id, { ruta: f.ruta, id: r.data.id, tipo: r.data.tipo, frontmatter: p.frontmatter, cuerpo: p.cuerpo, relaciones, viveEn: r.data.vive_en ?? [], codigo: r.data.codigo ?? [] });
     } catch {
       /* páginas rotas: las reporta compile */
     }
@@ -210,6 +212,25 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
     });
   }
 
+  // Para las tablas: qué método hace cada acceso (por la estructura del índice) y de qué funcionalidad es.
+  const estructura = new Map(r.archivos.archivos.map((a) => [`${r.repo}:${a.ruta}`, a]));
+  const metodoDe = (ev: string) => {
+    const m = /^([^#]+)#L(\d+)$/.exec(ev);
+    const a = m ? estructura.get(m[1]!) : undefined;
+    const s = a ? simboloDeLinea({ simbolos: a.simbolos, importa: [], invoca: [] }, Number(m![2])) : null;
+    return s ? `${s.nombre} @ ${m![1]}#L${s.linea}` : ev;
+  };
+  const featsConCodigo = [...existentes.values()].filter((p) => p.tipo === "feat" && p.codigo.length);
+  const featDe = (ev: string) => featsConCodigo.filter((f) => f.codigo.some((c) => dentroDe(ev.replace(/#L\d+$/, ""), c))).map((f) => f.id);
+  // Base probable: donde viven las tablas con página que tocan los mismos servicios, si es una sola.
+  const basesDe = (servicios: Set<string>) => {
+    const dbs = new Set<string>();
+    for (const a of r.aristas) {
+      if ((a.verbo === "lee_de" || a.verbo === "escribe_en") && servicios.has(a.desde)) for (const d of existentes.get(a.hasta)?.viveEn ?? []) dbs.add(d);
+    }
+    return [...dbs].sort(cmp);
+  };
+
   for (const [id, prop] of [...propuestas].sort((a, b) => cmp(a[0], b[0]))) {
     const evs = [...new Set(prop.evidencias)].sort(cmp);
     const campos: Record<string, unknown> = {
@@ -220,14 +241,38 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
       aliases: [...prop.aliases].sort(cmp),
     };
     const titulo = `# ${prop.nombre}\n\n${AVISO}\n\n`;
-    const detalle =
+    let detalle =
       prop.tipo === "tabla"
         ? `Modelo${prop.modelos.size > 1 ? "s" : ""} ${[...prop.modelos].sort(cmp).map((m) => `\`${m}\``).join(", ")}; primer acceso en \`${evs[0]}\` (${evs.length} en total).\n`
         : `Host \`${[...prop.aliases].sort(cmp).join("`, `")}\`; primera llamada en \`${evs[0]}\` (${evs.length} en total).\n`;
-    const pregunta =
+    let pregunta =
       prop.tipo === "tabla"
         ? "- ¿En qué base de datos vive? Agregá `vive_en: [db-…]` (y la página de la base si no existe)."
         : "- ¿Es un sistema de terceros (`ext`) o un servicio propio (`svc`)? Si es propio, renombrá la página.";
+    if (prop.tipo === "tabla") {
+      const accesos = propuestas_aristas.filter((a) => a.hasta === id);
+      const porMetodo = new Map<string, Set<string>>();
+      for (const a of accesos) {
+        const k = metodoDe(a.evidencia);
+        porMetodo.set(k, (porMetodo.get(k) ?? new Set<string>()).add(a.verbo === "escribe_en" ? "escribe" : "lee"));
+      }
+      const lista = [...porMetodo].sort((a, b) => cmp(a[0], b[0]));
+      const fs = [...new Set(accesos.flatMap((a) => featDe(a.evidencia)))].sort(cmp);
+      detalle +=
+        "\n## Quién la usa\n\n" +
+        lista
+          .slice(0, 30)
+          .map(([m, v]) => `- \`${m}\` (${[...v].sort(cmp).join(" y ")})`)
+          .join("\n") +
+        (lista.length > 30 ? `\n- … y ${lista.length - 30} métodos más` : "") +
+        "\n" +
+        (fs.length ? `\nFuncionalidades: ${fs.map((f) => `[[${f}]]`).join(", ")}.\n` : "");
+      const dbs = basesDe(new Set(accesos.map((a) => a.desde)));
+      if (dbs.length === 1) {
+        campos["vive_en"] = dbs;
+        pregunta = `- Se propone \`vive_en: [${dbs[0]}]\` porque las demás tablas que usan esos servicios viven ahí: confirmalo.`;
+      }
+    }
     archivos[`${base}/tecnologia/${id}.md`] = pagina(nuevoFrontmatter(campos, []), conPreguntas(titulo + detalle, [pregunta]));
     resumen.paginas++;
     resumen.preguntas++;
