@@ -681,6 +681,36 @@ function extraer(repo: RepoFuente): Extraccion {
       ts.forEachChild(n, visitar);
     };
 
+    // Un decorador del repo que, adentro, aplica uno de ruta de Nest. La ruta sale del literal o del argumento que recibe.
+    const rutaEnvuelta = (d: ts.Decorator): { metodo: string; ruta: string | null } | null => {
+      const call = ts.isCallExpression(d.expression) ? d.expression : null;
+      const id = call ? call.expression : d.expression;
+      if (!ts.isIdentifier(id) || Object.hasOwn(DECORADORES_NEST, id.text)) return null;
+      const decl = declDe(id);
+      if (!decl || !delRepo(decl.getSourceFile())) return null;
+      const fn = ts.isFunctionDeclaration(decl) ? decl : ts.isVariableDeclaration(decl) ? funcionLiteral(decl.initializer) : null;
+      if (!fn?.body) return null;
+      let r: { metodo: string; ruta: string | null } | null = null;
+      const ver = (n: ts.Node): void => {
+        if (r) return;
+        if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && Object.hasOwn(DECORADORES_NEST, n.expression.text)) {
+          const a = n.arguments[0];
+          let ruta: string | null = null;
+          if (a && ts.isStringLiteralLike(a)) ruta = a.text;
+          else if (a && ts.isIdentifier(a) && call) {
+            const i = fn.parameters.findIndex((p) => ts.isIdentifier(p.name) && p.name.text === a.text);
+            const arg = i >= 0 ? call.arguments[i] : undefined;
+            if (arg && ts.isStringLiteralLike(arg)) ruta = arg.text;
+          }
+          r = { metodo: DECORADORES_NEST[n.expression.text]!, ruta };
+          return;
+        }
+        ts.forEachChild(n, ver);
+      };
+      ver(fn.body);
+      return r;
+    };
+
     // NestJS: @Controller("x") + @Get("y")
     const nest = (c: ts.ClassDeclaration) => {
       const ctrl = decorador(c, "Controller");
@@ -688,14 +718,22 @@ function extraer(repo: RepoFuente): Extraccion {
       const prefijo = argTexto(ctrl) ?? "";
       for (const m of c.members) {
         if (!ts.isMethodDeclaration(m)) continue;
+        const rutas: Array<{ metodo: string; ruta: string | null }> = [];
         for (const [nombre, metodo] of Object.entries(DECORADORES_NEST)) {
           const d = decorador(m, nombre);
-          if (!d) continue;
+          if (d) rutas.push({ metodo, ruta: argTexto(d) });
+        }
+        // Decoradores propios que envuelven uno de Nest: `LegacyPost = (p) => applyDecorators(Post(p), HttpCode(200))`.
+        for (const d of ts.getDecorators(m) ?? []) {
+          const r = rutaEnvuelta(d);
+          if (r) rutas.push(r);
+        }
+        for (const { metodo, ruta } of rutas) {
           const body = m.parameters.find((p) => decorador(p, "Body"));
           out.endpoints.push({
             paquete,
             metodo,
-            ruta: normalizarRuta(`/${prefijo}/${argTexto(d) ?? ""}`),
+            ruta: normalizarRuta(`/${prefijo}/${ruta ?? ""}`),
             request: nombreTipo(body?.type),
             response: nombreTipo(m.type),
             archivo,

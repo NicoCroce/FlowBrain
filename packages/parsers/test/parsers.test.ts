@@ -437,9 +437,26 @@ describe("ts-parser: llamadas indirectas (eventos, colas, inyección por token) 
       "  }",
       "}",
     ]);
+    await w("src/rutas.ts", ['import { applyDecorators, HttpCode, Put } from "@nestjs/common";', "export const LegacyPut = (path?: string) => applyDecorators(Put(path), HttpCode(200));", 'export function Fijo() { return Put("fijo"); }']);
+    await w("src/sesion.controller.ts", [
+      'import { Controller } from "@nestjs/common";',
+      'import { LegacyPut, Fijo } from "./rutas";',
+      '@Controller("api")',
+      "export class SesionController {",
+      '  @LegacyPut("login")',
+      "  login() {}",
+      "  @Fijo()",
+      "  otro() {}",
+      "}",
+    ]);
     await w("src/escucha.ts", ['import { OnEvent } from "@nestjs/event-emitter";', "export class Escucha {", '  @OnEvent("usuario.creado")', "  alCrear() {}", "}"]);
   });
   afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("un decorador propio que envuelve uno de ruta de Nest cuenta como endpoint", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    expect(x.endpoints.map((e) => `${e.metodo} ${e.ruta} L${e.linea}`).sort()).toEqual(["PUT /api/fijo L7", "PUT /api/login L5"]);
+  });
 
   it("publicar con una clave llama en diferido a quien se suscribe con la misma; @Inject(TOKEN) va a la clase ligada", async () => {
     const x = await tsParser.extract(leerRepo(dir));
