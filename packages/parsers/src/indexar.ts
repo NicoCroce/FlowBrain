@@ -1,13 +1,14 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { cmp, cmpTuple, FrontmatterSchema, parsePagina, stringifyCanonical, type Contrato } from "@brain/core";
+import { cmp, cmpTuple, ConsultaError, FrontmatterSchema, parsePagina, stringifyCanonical, type Contrato } from "@brain/core";
 import { leerRepo } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
 import { tsParser } from "./ts-parser.js";
+import { phpParser } from "./php-parser.js";
 import type { Extraccion, Forma, LlamadaCruda, Parser } from "./tipos.js";
 
 /** Parsers en orden de prioridad: los posteriores pisan formas y, si son autoritativos, endpoints. */
-export const PARSERS: Parser[] = [tsParser, openapiParser];
+export const PARSERS: Parser[] = [tsParser, phpParser, openapiParser];
 
 export interface NodoPagina {
   id: string;
@@ -122,12 +123,44 @@ export function fusionar(xs: Extraccion[]): Extraccion {
   return out;
 }
 
+const esParam = (s: string) => s.startsWith("{") && s.endsWith("}");
+
 /** Coincidencia de rutas con `{param}` como comodín en cualquiera de los dos lados. */
 function rutasCoinciden(a: string, b: string): boolean {
   const x = a.split("/");
   const y = b.split("/");
-  const param = (s: string) => s.startsWith("{") && s.endsWith("}");
-  return x.length === y.length && x.every((s, i) => s === y[i] || param(s) || param(y[i]!));
+  return x.length === y.length && x.every((s, i) => s === y[i] || esParam(s) || esParam(y[i]!));
+}
+
+/** Segmentos literales iguales en ambos lados: mide qué tan específica es una coincidencia. */
+const literalesIguales = (a: string, b: string) => {
+  const y = b.split("/");
+  return a.split("/").filter((s, i) => s !== "" && !esParam(s) && s === y[i]).length;
+};
+
+/**
+ * Endpoints que puede alcanzar una llamada con base dinámica o relativa. Primero coincidencia exacta; si no hay,
+ * por sufijo (la base suele incluir un prefijo fijo como `/api` o `/v1`: el endpoint es `<prefijo literal> + ruta`).
+ * Entre varias, se queda con las más específicas (más segmentos literales iguales); exige al menos uno.
+ */
+export function endpointsAlcanzables<E extends { ruta: string; metodo: string }>(eps: E[], metodo: string, ruta: string): E[] {
+  if (!ruta.split("/").some((s) => s !== "" && !esParam(s))) return [];
+  const delMetodo = eps.filter((e) => e.metodo === metodo);
+  const segs = ruta.split("/").filter(Boolean);
+  /** Cola del endpoint con la misma cantidad de segmentos que la llamada. */
+  const cola = (e: E) => "/" + e.ruta.split("/").filter(Boolean).slice(-segs.length).join("/");
+  const puntaje = (e: E) => literalesIguales(cola(e), "/" + segs.join("/"));
+  let hits = delMetodo.filter((e) => rutasCoinciden(e.ruta, ruta));
+  if (!hits.some((e) => puntaje(e) > 0)) {
+    hits = delMetodo.filter((e) => {
+      const todos = e.ruta.split("/").filter(Boolean);
+      const prefijo = todos.slice(0, todos.length - segs.length);
+      return prefijo.length > 0 && prefijo.every((x) => !esParam(x)) && rutasCoinciden(cola(e), "/" + segs.join("/"));
+    });
+  }
+  // Al menos un segmento literal debe coincidir: un parámetro solo no alcanza para afirmar la arista.
+  const max = Math.max(0, ...hits.map(puntaje));
+  return max === 0 ? [] : hits.filter((e) => puntaje(e) === max);
 }
 
 /**
@@ -144,12 +177,12 @@ export async function indexar(rutaRepo: string, raizBrain: string, opciones: { r
     (() => {
       const q = normalizar(basename(repo.raiz));
       const hits = nodos.filter((n) => n.tipo === "repo" && clavesDe(n).has(q));
-      if (hits.length !== 1) throw new Error(`no se pudo identificar el repo "${basename(repo.raiz)}" en el brain; usá --repo <repo-id>`);
+      if (hits.length !== 1) throw new ConsultaError("parametro_invalido", `no se pudo identificar el repo "${basename(repo.raiz)}" en el brain; usá --repo <repo-id>`);
       return hits[0]!.id;
     })();
-  if (porId.get(repoId)?.tipo !== "repo") throw new Error(`repo inexistente en el brain: ${repoId}`);
+  if (porId.get(repoId)?.tipo !== "repo") throw new ConsultaError("nodo_inexistente", `repo inexistente en el brain: ${repoId}`);
 
-  const x = fusionar(PARSERS.filter((p) => p.detect(repo)).map((p) => p.extract(repo)));
+  const x = fusionar(await Promise.all(PARSERS.filter((p) => p.detect(repo)).map((p) => p.extract(repo))));
   const ev = (archivo: string, linea: number) => `${repoId}:${archivo}#L${linea}`;
 
   // ---------- Paquetes → servicios ----------
@@ -184,7 +217,7 @@ export async function indexar(rutaRepo: string, raizBrain: string, opciones: { r
     if (esNuevo.has(svc)) continue;
     const eps = x.endpoints.filter((e) => e.paquete === paquete);
     if (eps.length === 0) continue;
-    const fuente = x.autoritativo.includes(paquete) ? "openapi-parser" : "ts-parser";
+    const fuente = x.autoritativo.includes(paquete) ? "openapi-parser" : eps.some((e) => e.archivo.endsWith(".php")) ? "php-parser" : "ts-parser";
     contratos.push({
       endpoints: eps
         .map((e) => ({ evidencia: ev(e.archivo, e.linea), metodo: e.metodo as Contrato["endpoints"][number]["metodo"], request: e.request, response: e.response, ruta: e.ruta }))
@@ -204,6 +237,20 @@ export async function indexar(rutaRepo: string, raizBrain: string, opciones: { r
   const aristas: AristaExtraida[] = [];
   const pendientes: Pendiente[] = [];
   const destinosPorClave = (clave: string, tipos: string[]) => nodos.filter((n) => tipos.includes(n.tipo) && clavesDe(n).has(clave));
+  // Prefijo que aporta cada base dinámica (`${env.apiBaseUrl}` → `/api`), aprendido de las llamadas que
+  // resuelven sin ambigüedad. Si es único, desempata las que coinciden con varios endpoints.
+  const baseDe = (l: LlamadaCruda) => (l.url.base === "dinamica" ? (/^\$\{[^}]*\}/.exec(l.url.texto)?.[0] ?? "") : "");
+  const prefijo = (ruta: string, deLlamada: string) => {
+    const s = ruta.split("/").filter(Boolean);
+    return "/" + s.slice(0, s.length - deLlamada.split("/").filter(Boolean).length).join("/");
+  };
+  const prefijosPorBase = new Map<string, Set<string>>();
+  for (const l of x.llamadas) {
+    if (l.url.base === "literal" || !l.url.ruta) continue;
+    const c = endpointsAlcanzables(endpointsConocidos, l.metodo, l.url.ruta);
+    if (c.length === 1) prefijosPorBase.set(baseDe(l), (prefijosPorBase.get(baseDe(l)) ?? new Set()).add(prefijo(c[0]!.ruta, l.url.ruta)));
+  }
+
   for (const l of x.llamadas) {
     for (const desde of svcsDe.get(l.paquete) ?? []) {
       const evidencia = ev(l.archivo, l.linea);
@@ -225,9 +272,11 @@ export async function indexar(rutaRepo: string, raizBrain: string, opciones: { r
         pendiente("URL sin ruta reconocible", []);
         continue;
       }
-      const cands = endpointsConocidos.filter((e) => e.metodo === l.metodo && rutasCoinciden(e.ruta, l.url.ruta!));
-      if (cands.length === 1) {
-        const c = cands[0]!;
+      const cands = endpointsAlcanzables(endpointsConocidos, l.metodo, l.url.ruta);
+      const conocido = prefijosPorBase.get(baseDe(l));
+      const desempate = cands.length > 1 && conocido?.size === 1 ? cands.filter((c) => conocido.has(prefijo(c.ruta, l.url.ruta!))) : [];
+      if (cands.length === 1 || desempate.length === 1) {
+        const c = (desempate[0] ?? cands[0])!;
         aristas.push({ dato: null, desde, endpoint: epId(c.svc, c.metodo, c.ruta), evidencia, hasta: c.svc, origen: "inferido", verbo: "llama_a" });
       } else {
         pendiente(

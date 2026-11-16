@@ -1,0 +1,29 @@
+{
+  "endpoints": [
+    {
+      "evidencia": "repo-api:src/main.ts#L1",
+      "metodo": "POST",
+      "request": null,
+      "response": null,
+      "ruta": "/api/login"
+    },
+    {
+      "evidencia": "repo-api:src/main.ts#L2",
+      "metodo": "POST",
+      "request": null,
+      "response": null,
+      "ruta": "/api/ulite/login"
+    },
+    {
+      "evidencia": "repo-api:src/main.ts#L3",
+      "metodo": "GET",
+      "request": null,
+      "response": null,
+      "ruta": "/api/usuarios/{id}"
+    }
+  ],
+  "eventos": [],
+  "fuente": "ts-parser",
+  "svc": "svc-api",
+  "tipos": {}
+}

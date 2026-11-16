@@ -9,7 +9,9 @@
   },
   "dependencies": {
     "@brain/core": "workspace:*",
+    "tree-sitter-php": "0.24.2",
     "typescript": "^5.9.3",
+    "web-tree-sitter": "0.25.10",
     "yaml": "^2.9.1"
   }
 }

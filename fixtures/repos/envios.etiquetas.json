@@ -1,0 +1,15 @@
+{
+  "descripcion": "Aristas y endpoints etiquetados a mano en fixtures/repos/envios (Laravel). Oráculo del php-parser (criterio: ≥ 80%). La llamada curl a env('TRACKING_URL') no se etiqueta: su destino no se puede saber desde el código.",
+  "repo": "repo-envios",
+  "aristas": [
+    { "dato": null, "desde": "svc-envios", "endpoint": null, "evidencia": "repo-envios:app/Services/Correo.php#L17", "hasta": "ext-correo", "origen": "parser", "verbo": "llama_a" },
+    { "dato": null, "desde": "svc-envios", "endpoint": null, "evidencia": "repo-envios:app/Services/Correo.php#L19", "hasta": "svc-notificaciones", "origen": "parser", "verbo": "llama_a" },
+    { "dato": "Envio", "desde": "svc-envios", "endpoint": null, "evidencia": "repo-envios:app/Http/Controllers/EnvioController.php#L20", "hasta": "tabla-envios", "origen": "parser", "verbo": "escribe_en" },
+    { "dato": "Tarifa", "desde": "svc-envios", "endpoint": null, "evidencia": "repo-envios:app/Http/Controllers/EnvioController.php#L19", "hasta": "tabla-tarifas", "origen": "parser", "verbo": "lee_de" }
+  ],
+  "endpoints": [
+    { "evidencia": "repo-envios:app/Http/Controllers/EnvioController.php#L17", "metodo": "POST", "request": "CrearEnvioRequest", "response": "EnvioResource", "ruta": "/api/envios", "svc": "svc-envios" },
+    { "evidencia": "repo-envios:app/Http/Controllers/EnvioController.php#L25", "metodo": "GET", "request": null, "response": "EnvioResource", "ruta": "/api/envios/{envio}", "svc": "svc-envios" },
+    { "evidencia": "repo-envios:app/Http/Controllers/EnvioController.php#L30", "metodo": "POST", "request": null, "response": null, "ruta": "/api/envios/{envio}/cancelar", "svc": "svc-envios" }
+  ]
+}

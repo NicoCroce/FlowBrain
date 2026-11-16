@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { compileDir, stringifyCanonical } from "@brain/core";
-import { escribirIndex, indexar, leerRepo, openapiParser, tsParser, type ResultadoIndex } from "../src/index.js";
+import { endpointsAlcanzables, escribirIndex, indexar, leerRepo, openapiParser, phpParser, tsParser, type Extraccion, type ResultadoIndex } from "../src/index.js";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const F = (p: string) => join(RAIZ, "fixtures", p);
@@ -97,7 +97,7 @@ describe("openapi-parser", () => {
 });
 
 describe("ts-parser: variantes de frameworks y clientes HTTP", () => {
-  const x = tsParser.extract(leerRepo(F("repos/variantes")));
+  const x = tsParser.extract(leerRepo(F("repos/variantes"))) as Extraccion;
   const ep = (archivo: string) => x.endpoints.filter((e) => e.archivo === archivo).map(({ metodo, ruta, request, response, linea }) => ({ metodo, ruta, request, response, linea }));
 
   it("Fastify con genéricos Body/Reply", () => {
@@ -140,5 +140,129 @@ describe("ts-parser: variantes de frameworks y clientes HTTP", () => {
       ["Cliente", "clientes", "prisma/schema.prisma"],
       ["Cliente", "clientes", "src/entidades.ts"],
     ]);
+  });
+});
+
+describe("php-parser sobre fixtures/repos/envios (Laravel + Eloquent)", () => {
+  let r: ResultadoIndex;
+  let etiquetas: Etiquetas;
+  beforeAll(async () => {
+    r = await indexar(F("repos/envios"), F("envios-brain"));
+    etiquetas = JSON.parse(await readFile(F("repos/envios.etiquetas.json"), "utf8")) as Etiquetas;
+  });
+
+  it("recupera ≥ 80% de las aristas y endpoints etiquetados a mano", () => {
+    const claves = (xs: Array<Record<string, unknown>>) => new Set(xs.map((x) => stringifyCanonical(x)));
+    const extraidas = claves(r.aristas as unknown as Array<Record<string, unknown>>);
+    const endpoints = claves(r.contratos.flatMap((c) => c.endpoints.map((e) => ({ ...e, svc: c.svc }))));
+    const aciertos =
+      etiquetas.aristas.filter((a) => extraidas.has(stringifyCanonical(a))).length +
+      etiquetas.endpoints.filter((e) => endpoints.has(stringifyCanonical(e))).length;
+    const total = etiquetas.aristas.length + etiquetas.endpoints.length;
+    expect(aciertos / total).toBeGreaterThanOrEqual(0.8);
+    expect(aciertos).toBe(total);
+    expect(r.aristas).toHaveLength(etiquetas.aristas.length);
+  });
+
+  it("el host dinámico sin endpoint conocido queda pendiente, no se inventa", () => {
+    expect(r.pendientes.map((p) => [p.evidencia, p.referencia])).toEqual([["repo-envios:app/Services/Correo.php#L21", "GET ${env:TRACKING_URL}/track"]]);
+  });
+
+  it("contrato con formas de FormRequest y JsonResource", () => {
+    const c = r.contratos[0]!;
+    expect(c.fuente).toBe("php-parser");
+    expect(c.tipos).toEqual({
+      CrearEnvioRequest: { destino: "string", notas: "string | null | undefined", peso: "number", zona: "string" },
+      EnvioResource: { costo: "unknown", estado: "unknown", id: "unknown" },
+    });
+  });
+
+  it("árbol de archivos con clases PHP", () => {
+    const a = r.archivos.archivos.find((x) => x.ruta === "app/Http/Controllers/EnvioController.php");
+    expect(a).toMatchObject({ lenguaje: "php", simbolos: [{ nombre: "EnvioController", tipo: "clase" }] });
+  });
+
+  it("es determinístico", async () => {
+    expect(stringifyCanonical(await indexar(F("repos/envios"), F("envios-brain")))).toBe(stringifyCanonical(r));
+  });
+});
+
+describe("php-parser: Symfony (atributos, anotaciones, Doctrine)", () => {
+  let x: Extraccion;
+  beforeAll(async () => {
+    x = await phpParser.extract(leerRepo(F("repos/symfony")));
+  });
+
+  it("#[Route] y @Route con prefijo de clase; OPTIONS/HEAD se descartan; GET por defecto", () => {
+    expect(x.endpoints.map((e) => [e.metodo, e.ruta, e.archivo, e.linea])).toEqual([
+      ["GET", "/facturas", "src/Controller/FacturaController.php", 17],
+      ["POST", "/facturas/{id}/emitir", "src/Controller/FacturaController.php", 24],
+      ["GET", "/legacy/clientes/{id}", "src/Controller/LegacyController.php", 16],
+      ["GET", "/legacy/ping", "src/Controller/LegacyController.php", 25],
+    ]);
+  });
+
+  it("HttpClient->request() con URL literal y curl_init con getenv", () => {
+    expect(x.llamadas.map((l) => [l.archivo, l.linea, l.metodo, l.url.base, l.url.host, l.url.ruta])).toEqual([
+      ["src/Controller/FacturaController.php", 26, "POST", "literal", "fiscal.example", "/api/comprobantes"],
+      ["src/Controller/LegacyController.php", 18, "GET", "dinamica", null, "/clientes/{param}"],
+    ]);
+  });
+
+  it("entidades Doctrine (atributo y anotación), getRepository y persist", () => {
+    expect(x.modelos.map((m) => [m.nombre, m.tabla])).toEqual([
+      ["Cliente", "clientes"],
+      ["Factura", "facturas_emitidas"],
+    ]);
+    expect(x.tablas.map((t) => [t.archivo, t.linea, t.modelo, t.verbo])).toEqual([
+      ["src/Controller/FacturaController.php", 19, "Factura", "lee_de"],
+      ["src/Controller/FacturaController.php", 28, "Factura", "escribe_en"],
+      ["src/Controller/LegacyController.php", 19, "Cliente", "lee_de"],
+    ]);
+  });
+
+  it("detect solo con archivos .php", () => {
+    expect(phpParser.detect(leerRepo(F("repos/symfony")))).toBe(true);
+    expect(phpParser.detect(leerRepo(F("repos/tienda")))).toBe(false);
+  });
+});
+
+describe("resolución de llamadas con base dinámica", () => {
+  const eps = [
+    { metodo: "GET", ruta: "/api/user/get/me" },
+    { metodo: "GET", ruta: "/api/user/get/{id}" },
+    { metodo: "GET", ruta: "/{token}" },
+    { metodo: "PUT", ruta: "/api/user/switcher/club/{clubId}" },
+    { metodo: "GET", ruta: "/v1/club/list" },
+    { metodo: "GET", ruta: "/v2/club/list" },
+  ];
+  const r = (m: string, ruta: string) => endpointsAlcanzables(eps, m, ruta).map((e) => e.ruta);
+
+  it("por sufijo cuando la base incluye un prefijo literal (/api)", () => {
+    expect(r("PUT", "/user/switcher/club/{param}")).toEqual(["/api/user/switcher/club/{clubId}"]);
+  });
+  it("prefiere la coincidencia más específica", () => {
+    expect(r("GET", "/user/get/me")).toEqual(["/api/user/get/me"]);
+  });
+  it("una ruta solo de parámetros no se resuelve (evita rutas comodín)", () => {
+    expect(r("GET", "/{param}")).toEqual([]);
+  });
+  it("prefijos distintos que empatan quedan ambiguos", () => {
+    expect(r("GET", "/club/list")).toEqual(["/v1/club/list", "/v2/club/list"]);
+  });
+  it("el prefijo nunca contiene parámetros", () => {
+    expect(r("GET", "/get/me")).toEqual(["/api/user/get/me"]);
+    expect(endpointsAlcanzables([{ metodo: "GET", ruta: "/{tenant}/club/list" }], "GET", "/club/list")).toEqual([]);
+  });
+});
+
+describe("desempate por prefijo aprendido de la base dinámica", () => {
+  it("si las llamadas sin ambigüedad de una base revelan /api, se usa para elegir entre /api/login y /api/ulite/login", async () => {
+    const r = await indexar(F("repos/prefijo"), F("prefijo-brain"));
+    expect(r.aristas.map((a) => [a.evidencia, a.endpoint, a.origen])).toEqual([
+      ["repo-cliente:src/api.ts#L3", "svc-api:GET:/api/usuarios/{id}", "inferido"],
+      ["repo-cliente:src/api.ts#L4", "svc-api:POST:/api/login", "inferido"],
+    ]);
+    expect(r.pendientes).toEqual([]);
   });
 });

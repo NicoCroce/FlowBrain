@@ -86,7 +86,7 @@ export interface Extraccion {
 export interface Parser {
   nombre: string;
   detect(repo: RepoFuente): boolean;
-  extract(repo: RepoFuente): Extraccion;
+  extract(repo: RepoFuente): Extraccion | Promise<Extraccion>;
 }
 
 export const extraccionVacia = (parser: string): Extraccion => ({
