@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { renderViewer, type Graph } from "../src/index.js";
+import { renderViewer, reposDelGrafo, type Graph } from "../src/index.js";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const graph = async () => JSON.parse(await readFile(join(RAIZ, "fixtures/checkout/expected/graph.json"), "utf8")) as Graph;
@@ -31,5 +31,23 @@ describe("viewer.html", () => {
     const html = renderViewer(malo, "/* lib */");
     expect(html.match(/<\/script>/g)).toHaveLength(3);
     expect(datos(html).nodes[0]!.n).toBe("</script><script>alert(1)</script><!--");
+  });
+
+  it("agrupa servicios por repo: caja con varios, plegado con uno", async () => {
+    const g = await graph();
+    const tienda = reposDelGrafo(g)["repo-tienda"]!;
+    expect(tienda.contenedor).toBe(true);
+    expect(tienda.svcs.length).toBe(3);
+    expect([...tienda.svcs].sort()).toEqual(tienda.svcs);
+
+    const nodo = (id: string, tipo: string) => ({ ...g.nodes[0]!, id, nombre: id, tipo, pagina: null }) as Graph["nodes"][number];
+    const arista = (desde: string, verbo: string, hasta: string) => ({ ...g.edges[0]!, desde, verbo, hasta, endpoint: null, evidencia: null }) as Graph["edges"][number];
+    const chico: Graph = {
+      ...g,
+      nodes: [nodo("repo-web", "repo"), nodo("svc-web", "svc"), nodo("archivo-a", "archivo"), nodo("archivo-b", "archivo")],
+      edges: [arista("svc-web", "vive_en", "repo-web"), arista("repo-web", "contiene", "archivo-a"), arista("repo-web", "contiene", "archivo-b")],
+    };
+    expect(reposDelGrafo(chico)).toEqual({ "repo-web": { svcs: ["svc-web"], archivos: 2, contenedor: false } });
+    expect(datos(renderViewer(chico, "/* lib */")).tiposIniciales).not.toContain("repo");
   });
 });
