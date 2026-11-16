@@ -30,6 +30,19 @@ import {
 const EXT_TS = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 const METODOS_HTTP = ["get", "post", "put", "patch", "delete", "head", "options"] as const;
 const OPS_PRISMA_ESCRITURA = new Set(["create", "createMany", "update", "updateMany", "upsert", "delete", "deleteMany"]);
+/** Kysely: método del query builder → verbo sobre la tabla del primer argumento. */
+const OPS_KYSELY: Record<string, "lee_de" | "escribe_en"> = {
+  selectFrom: "lee_de",
+  innerJoin: "lee_de",
+  leftJoin: "lee_de",
+  rightJoin: "lee_de",
+  fullJoin: "lee_de",
+  insertInto: "escribe_en",
+  replaceInto: "escribe_en",
+  updateTable: "escribe_en",
+  deleteFrom: "escribe_en",
+  mergeInto: "escribe_en",
+};
 const OPS_PRISMA_LECTURA = new Set(["findMany", "findUnique", "findUniqueOrThrow", "findFirst", "findFirstOrThrow", "count", "aggregate", "groupBy"]);
 const DECORADORES_NEST: Record<string, string> = { Get: "GET", Post: "POST", Put: "PUT", Patch: "PATCH", Delete: "DELETE", Head: "HEAD", Options: "OPTIONS" };
 
@@ -205,16 +218,32 @@ function extraer(repo: RepoFuente): Extraccion {
   };
 
   // ---------- Evaluación estática de URLs ----------
-  const evaluar = (e: ts.Expression | undefined, prof = 0): Parte[] => {
+  type Ligaduras = Map<ts.Node, Parte[]>;
+  /** Cuerpo evaluable de una función auxiliar: arrow con expresión o bloque con un único `return`. */
+  const cuerpoDe = (callee: ts.Expression): { params: readonly ts.ParameterDeclaration[]; cuerpo: ts.Expression } | null => {
+    let f: ts.Node | undefined = ts.isIdentifier(callee) || ts.isPropertyAccessExpression(callee) ? declaracion(callee) : undefined;
+    if (f && ts.isVariableDeclaration(f)) f = f.initializer;
+    if (f && ts.isPropertyAssignment(f)) f = f.initializer;
+    if (!f || !(ts.isArrowFunction(f) || ts.isFunctionExpression(f) || ts.isFunctionDeclaration(f)) || !f.body) return null;
+    if (!ts.isBlock(f.body)) return { params: f.parameters, cuerpo: f.body };
+    const [unico] = f.body.statements;
+    if (f.body.statements.length === 1 && unico && ts.isReturnStatement(unico) && unico.expression) return { params: f.parameters, cuerpo: unico.expression };
+    return null;
+  };
+  const empiezaConRuta = (p: Parte[]) => {
+    const a = p[0];
+    return !!a && "lit" in a && a.lit.startsWith("/");
+  };
+  const evaluar = (e: ts.Expression | undefined, prof = 0, lig: Ligaduras = new Map()): Parte[] => {
     if (!e) return [];
     if (ts.isStringLiteral(e) || ts.isNoSubstitutionTemplateLiteral(e)) return [{ lit: e.text }];
-    if (ts.isParenthesizedExpression(e) || ts.isAsExpression(e)) return evaluar(e.expression, prof);
+    if (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isNonNullExpression(e)) return evaluar(e.expression, prof, lig);
     if (ts.isTemplateExpression(e)) {
       const p: Parte[] = [{ lit: e.head.text }];
-      for (const s of e.templateSpans) p.push(...evaluar(s.expression, prof), { lit: s.literal.text });
+      for (const s of e.templateSpans) p.push(...evaluar(s.expression, prof, lig), { lit: s.literal.text });
       return p;
     }
-    if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.PlusToken) return [...evaluar(e.left, prof), ...evaluar(e.right, prof)];
+    if (ts.isBinaryExpression(e) && e.operatorToken.kind === ts.SyntaxKind.PlusToken) return [...evaluar(e.left, prof, lig), ...evaluar(e.right, prof, lig)];
     if (ts.isPropertyAccessExpression(e)) {
       const t = e.getText();
       const env = /^(?:process\.env|import\.meta\.env)\.(\w+)$/.exec(t);
@@ -224,14 +253,32 @@ function extraer(repo: RepoFuente): Extraccion {
       if (d && ts.isPropertyAssignment(d)) return evaluar(d.initializer, prof + 1);
       return [{ din: t }];
     }
-    if (ts.isIdentifier(e) && prof < 4) {
+    if (ts.isIdentifier(e)) {
       const d = declaracion(e);
-      if (d && ts.isVariableDeclaration(d) && d.initializer && ts.isVariableDeclarationList(d.parent) && d.parent.flags & ts.NodeFlags.Const) {
+      if (d && lig.has(d)) return lig.get(d)!;
+      if (prof < 4 && d && ts.isVariableDeclaration(d) && d.initializer && ts.isVariableDeclarationList(d.parent) && d.parent.flags & ts.NodeFlags.Const) {
         return evaluar(d.initializer, prof + 1);
       }
     }
+    if (ts.isCallExpression(e) && prof < 4) {
+      // Auxiliar del repo (`withId = (ep, id) => \`${ep}/${id}\``): se evalúa su cuerpo con los argumentos ligados.
+      const f = cuerpoDe(e.expression);
+      if (f) {
+        const nuevas: Ligaduras = new Map();
+        f.params.forEach((p, i) => nuevas.set(p, e.arguments[i] ? evaluar(e.arguments[i], prof + 1, lig) : [{ din: p.name.getText() }]));
+        return evaluar(f.cuerpo, prof + 1, nuevas);
+      }
+      // Constructor de rutas de librería (`generatePath("/x/:id", {id})`): la plantilla es el primer argumento.
+      const primero = evaluar(e.arguments[0], prof + 1, lig);
+      if (e.arguments.length <= 2 && empiezaConRuta(primero) && (!e.arguments[1] || ts.isObjectLiteralExpression(e.arguments[1]))) return primero;
+    }
     return [{ din: e.getText() }];
   };
+
+  // Kysely solo si algún paquete lo declara como dependencia (evita confundir `.leftJoin("x")` de otras librerías).
+  const usaKysely = repo.archivos
+    .filter((a) => a === "package.json" || a.endsWith("/package.json"))
+    .some((a) => /"kysely"\s*:/.test(readFileSync(join(repo.raiz, a), "utf8")));
 
   // ---------- Recorrido ----------
   const fuentes = programa
@@ -283,7 +330,7 @@ function extraer(repo: RepoFuente): Extraccion {
     const visitar = (n: ts.Node): void => {
       if (ts.isClassDeclaration(n)) nest(n);
       if (ts.isCallExpression(n)) {
-        ruta(n) || saliente(n) || prisma(n);
+        ruta(n) || saliente(n) || prisma(n) || (usaKysely && kysely(n));
       }
       ts.forEachChild(n, visitar);
     };
@@ -415,6 +462,23 @@ function extraer(repo: RepoFuente): Extraccion {
       if (!verbo) return false;
       out.tablas.push({ paquete, archivo, linea: linea(call), modelo, verbo });
       return true;
+    };
+
+    // Kysely: db.selectFrom("tabla as t"), .insertInto("tabla"), .innerJoin("otra as o", …). Solo literales.
+    const kysely = (call: ts.CallExpression): boolean => {
+      const c = call.expression;
+      if (!ts.isPropertyAccessExpression(c) || !Object.hasOwn(OPS_KYSELY, c.name.text)) return false;
+      const arg = call.arguments[0];
+      const literales = arg && ts.isArrayLiteralExpression(arg) ? arg.elements : arg ? [arg] : [];
+      let alguna = false;
+      for (const l of literales) {
+        if (!ts.isStringLiteralLike(l)) continue;
+        const tabla = l.text.trim().split(/\s+as\s+/i)[0]!.split(".").pop()!;
+        if (!/^\w+$/.test(tabla)) continue;
+        out.tablas.push({ paquete, archivo, linea: linea(call), modelo: tabla, verbo: OPS_KYSELY[c.name.text]! });
+        alguna = true;
+      }
+      return alguna;
     };
 
     // TypeORM: @Entity("tabla") class X

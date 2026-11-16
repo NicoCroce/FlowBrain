@@ -7,3 +7,9 @@ packages/brain-graph/dist/
 packages/brain-graph/SCHEMA.md
 packages/brain-graph/LICENSE
 *.tgz
+# Salida de tsc fuera de lugar (el código se ejecuta con tsx y el paquete se arma con esbuild)
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/test/**/*.js
+packages/*/test/**/*.d.ts
+*.tsbuildinfo

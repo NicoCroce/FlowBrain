@@ -279,3 +279,50 @@ describe("fusionar: tests y duplicados", () => {
     expect(x.endpoints.map((e) => `${e.archivo}#${e.linea}`)).toEqual(["src/a.ts#9"]);
   });
 });
+
+describe("ts-parser: auxiliares de ruta y Kysely", () => {
+  let dir: string;
+  beforeAll(async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    dir = await mkdtemp(join(tmpdir(), "brain-ts-"));
+    const w = async (p: string, t: string) => {
+      await mkdir(dirname(join(dir, p)), { recursive: true });
+      await writeFile(join(dir, p), t);
+    };
+    await w("package.json", JSON.stringify({ name: "x", dependencies: { axios: "1", kysely: "0.29.7", "react-router": "7" } }));
+    await w(
+      "src/api.ts",
+      [
+        'import axios from "axios";',
+        'import { generatePath } from "react-router";',
+        "const buildPath = generatePath;",
+        'const EP = { doc: "/documentation/generate_download/:fileId", skills: "/skill-group/find" } as const;',
+        "const withId = (endpoint: string, id: string) => `${endpoint}/${id}`;",
+        "export const a = (fileId: string) => axios.get(`${import.meta.env.VITE_API}${buildPath(EP.doc, { fileId })}`);",
+        "export const b = (id: string) => axios.get(`${import.meta.env.VITE_API}${withId(EP.skills, id)}`);",
+        "",
+      ].join("\n"),
+    );
+    await w(
+      "src/repo.ts",
+      [
+        "declare const db: any;",
+        'export const leer = () => db.selectFrom("team_has_players as thp").innerJoin("player as p", "p.id", "thp.player_id").selectAll().execute();',
+        'export const escribir = () => db.insertInto("user_token").values({}).execute();',
+        'export const borrar = () => db.deleteFrom("payment").execute();',
+        "",
+      ].join("\n"),
+    );
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("resuelve rutas armadas con funciones auxiliares y constructores de librería", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    expect(x.llamadas.map((l) => `${l.metodo} ${l.url.ruta}`).sort()).toEqual(["GET /documentation/generate_download/{fileId}", "GET /skill-group/find/{param}"]);
+  });
+
+  it("extrae accesos a tablas de Kysely", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    expect(x.tablas.map((t) => `${t.verbo} ${t.modelo}`).sort()).toEqual(["escribe_en payment", "escribe_en user_token", "lee_de player", "lee_de team_has_players"]);
+  });
+});
