@@ -221,7 +221,7 @@ export function simboloDeLinea(e: EstructuraArchivo, linea: number): EstructuraA
   const fn = e.simbolos.filter((s) => s.tipo === "metodo" || s.tipo === "funcion");
   const dentro = fn.filter((s) => s.linea <= linea && linea <= (s.fin ?? s.linea));
   if (dentro.length) return dentro.reduce((a, b) => (b.linea > a.linea ? b : a));
-  const despues = fn.filter((s) => s.tipo === "metodo" && s.linea > linea && s.linea - linea <= 10);
+  const despues = fn.filter((s) => s.tipo === "metodo" && s.linea > linea && s.linea - linea <= 40);
   return despues.length ? despues.reduce((a, b) => (b.linea < a.linea ? b : a)) : null;
 }
 
