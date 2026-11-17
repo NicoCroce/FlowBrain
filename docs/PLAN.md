@@ -23,7 +23,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 2 | Relaciones finas en el grafo | Hecho (decisión 120) |
 | 3 | MCP: respuestas compactas, búsqueda e instrucciones | Hecho (decisión 121) |
 | 4 | Comandos `sync`, `estado` y `doctor` | Hecho (decisión 122) |
-| 5 | Registro del MCP y los hooks | Pendiente, requiere decisión |
+| 5 | Registro del MCP y los hooks | Pendiente: edita configuración fuera del repo, requiere decisión |
 | 6 | Eventos y colas | Hecho (decisión 123) |
 | 7 | Bases de datos y esquema | Hecho (decisión 124) |
 | 8 | Infraestructura | Hecho (decisión 125) |
@@ -38,7 +38,9 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 17 | Deriva de contratos | Hecho (decisión 132) |
 | 18 | Paridad de migración | Hecho (decisión 134), sin probar con un caso real |
 | 19 | Decisiones y notas ancladas | Hecho (decisiones 126 y 133) |
-| 20–22 | Higiene | Pendiente |
+| 20 | Visor fuera de `core` | Hecho (decisión 135) |
+| 21 | Documentación al día | Hecho: el PRD queda como histórico y apunta a las fuentes vigentes |
+| 22 | Publicar `brain-graph` | Pendiente: publicar es una acción externa, requiere confirmación |
 
 ---
 
@@ -203,7 +205,19 @@ Publicar el paquete cuando las fases 1 y 2 estén cerradas (decisión 72 pendien
 
 ## Decisiones abiertas
 
-1. Paso 5: alcance del registro y a qué brain apunta.
-2. ~~Paso 2: verbo de `feat → feat` y marca de aristas derivadas.~~ Resuelto en la decisión 120: `depende_de`, y origen heredado de la extracción en vez de una marca.
-3. Paso 13: qué proyecto de otra pila se usa como segundo banco de pruebas.
+1. **Paso 5:** si el MCP y los hooks se registran a nivel usuario, solo en un proyecto, o todavía no, y a qué brain apuntan. `brain doctor` dice qué falta; `brain init --claude-code` y la línea de `claude mcp add` que imprime lo hacen. Conviene registrar el servidor con `serve --sync`.
+2. **Paso 13:** qué proyecto de otra pila se usa como segundo banco de pruebas. De eso dependen los lenguajes nuevos del paso 14.
+3. **Paso 22:** publicar `brain-graph` en npm.
 4. Carpetas de ejemplo `afip` y `videoAnalysis` en `packages/indexer/test/borrador.test.ts`: renombrarlas si identifican al proyecto de referencia.
+
+## Pendientes anotados en las decisiones
+
+Lo que cada paso dejó afuera está en su decisión (120 a 135), bajo "Queda fuera". Los de más valor:
+
+- Que `impacto` y la ficha lean del grafo en vez de recalcular desde la extracción (120).
+- Preguntas de evaluación para las herramientas sin cubrir (121): hoy `buscar_nodo`, `contrato_de`, `recorrer_grafo`, `trazar`, `infra`, `riesgo`, `deriva` y `paridad`.
+- Proponer páginas de cola y de librería desde `draft` (123, 126).
+- Indexar en un mismo brain el servicio viejo y el nuevo de una migración para probar `paridad` y ver el esquema de las tablas (124, 134).
+- Kubernetes, Terraform y serverless en `infra` (125).
+- Seguir el uso de un tipo o una constante cambiados en `riesgo` (128).
+- Comparar campos entre lo que el front espera y lo que el back declara (132).

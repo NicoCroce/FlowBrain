@@ -1,5 +1,14 @@
 # Brain — PRD v0.1
 
+> **Documento histórico.** Es el diseño original (v0.1) y se conserva para entender de dónde salen las decisiones. No describe el estado actual. Las fuentes vigentes son:
+>
+> - [`SCHEMA.md`](../SCHEMA.md): el contrato del grafo, de los JSON y de las consultas.
+> - [`DECISIONS.md`](DECISIONS.md): cada cambio respecto de este PRD, con fecha y motivo.
+> - [`PLAN.md`](PLAN.md): qué se hizo y qué falta después de la auditoría del 2026-11-16.
+> - [`PARSERS.md`](PARSERS.md): cómo sumar un parser.
+>
+> Lo que hoy existe y este PRD no contempla: funcionalidades de producto y pantallas como nodos; relaciones a nivel de endpoint, pantalla y funcionalidad; consultas de código (`recorrido`, `quien_llama`, `impacto`, `pantalla`, `funcionalidad`), de cambio (`riesgo`), de contratos (`deriva`, `paridad`) y de infraestructura (`infra`); esquema de base de datos, eventos y colas; evaluación con preguntas de respuesta conocida; y los comandos `sync`, `estado`, `doctor` y `promover`. Varios puntos de "Fuera de alcance" de abajo ya no lo están.
+
 Un grafo de conocimiento determinístico e independiente de la herramienta para agentes de código. Markdown y JSON planos en un repo git, compilados por scripts, servidos por MCP y hooks. La misma pregunta da la misma respuesta desde Claude Code, OpenCode, ChatGPT o Cursor.
 
 ## Problema
