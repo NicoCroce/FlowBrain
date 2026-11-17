@@ -267,18 +267,20 @@ export const MAPA_JS =
     else if (/^\/mapa/.test(h)) vista = "deps";
     else if (h === "" && !fichas.length) vista = "grafo";
     else vista = "producto";
+    // La navegación entre pantallas se dibuja en el mismo contenedor que las funcionalidades.
+    var pestana = vista === "producto" && /^\/(pantallas|p\/)/.test(h) ? "pantallas" : vista;
     // Un enlace viejo al mapa con una pieza que no está en el de dependencias va al grafo completo.
     if (vista === "deps" && (m = /^\/mapa\/(.+)$/.exec(h)) && fichas.length && !porFicha[m[1]] && !(entran[m[1]] || []).some(function (d) { return porFicha[d[0]]; })) {
       location.replace("#/grafo/" + encodeURIComponent(m[1]));
       return;
     }
-    document.querySelectorAll("#cabecera nav a").forEach(function (a) { a.classList.toggle("activa", a.getAttribute("data-vista") === vista); });
+    document.querySelectorAll("#cabecera nav a").forEach(function (a) { a.classList.toggle("activa", a.getAttribute("data-vista") === pestana); });
     Object.keys(vistas).forEach(function (k) { vistas[k].classList.toggle("oculto", k !== vista); });
     document.getElementById("presets").classList.toggle("oculto", vista !== "grafo");
     if (vista === "grafo") { V.mostrarMapa(); if ((m = /^\/grafo\/(.+)$/.exec(h))) V.enfocar(m[1]); return; }
     if (vista === "deps") { m = /^\/mapa\/(.+)$/.exec(h); mostrarDeps(m ? m[1] : null); return; }
     if (vista === "impacto") { m = /^\/impacto\/(.+)$/.exec(h); mostrarImpacto(m ? m[1] : null); window.scrollTo(0, 0); return; }
-    P.mostrar(h);
+    if (pestana === "pantallas") window.brainPantallas.mostrar(h); else P.mostrar(h);
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", ir);

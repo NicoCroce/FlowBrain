@@ -3,6 +3,7 @@ import { dependenciasDelGrafo } from "./impacto.js";
 import { mapa3dDelGrafo } from "./mapa3d.js";
 import { GRAFO3D_JS } from "./viewer-3d.js";
 import { MAPA_JS } from "./viewer-mapa.js";
+import { PANTALLAS_JS } from "./viewer-pantallas.js";
 import { PRODUCTO_JS } from "./viewer-producto.js";
 import type { Graph } from "./schema.js";
 
@@ -13,7 +14,7 @@ import type { Graph } from "./schema.js";
  */
 
 /** Tipos visibles al abrir el mapa 3D: los archivos son miles y se prenden a mano. */
-const TIPOS_INICIALES = ["feat", "endpoint", "tabla", "svc", "repo", "lib", "ext", "queue", "db", "team", "decision"];
+const TIPOS_INICIALES = ["feat", "pantalla", "endpoint", "tabla", "svc", "repo", "lib", "ext", "queue", "db", "team", "decision"];
 
 const seguroEnScript = (s: string) => s.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
 
@@ -21,6 +22,8 @@ export function renderViewer(graph: Graph, cytoscapeJs: string, funcionalidades:
   const datos = {
     dependencias: dependenciasDelGrafo(graph, funcionalidades),
     funcionalidades,
+    // Pantallas del front con su envoltura y a dónde llevan; el recorrido de cada una viene en su funcionalidad.
+    pantallas: graph.nodes.filter((n) => n.tipo === "pantalla").map((n) => ({ id: n.id, ...n.atributos })),
     mapa3d: mapa3dDelGrafo(graph, funcionalidades),
     edges: graph.edges.map((e) => ({
       c: e.confianza,
@@ -59,7 +62,7 @@ export function renderViewer(graph: Graph, cytoscapeJs: string, funcionalidades:
   --sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; --display: "Space Grotesk", Inter, system-ui, -apple-system, sans-serif;
   --fondo: #0A0C11; --panel: #0D1016; --tarjeta: #10141C; --hover: #171B25; --texto: #E6E8EE; --claro: #D5DAE4; --medio: #A3ABBD; --suave: #8A93A6;
   --borde: #1F2433; --borde2: #2A3142; --linea: #3A4256; --acento: #9DB4FF; --primario: #4F6BFF;
-  --feat: #F5A524; --endpoint: #7DD3FC; --tabla: #4ADE80; --svc: #5B7CFF; --repo: #B794F6; --lib: #FDE68A; --ext: #F472B6; --queue: #FB7185;
+  --feat: #F5A524; --pantalla: #E879F9; --endpoint: #7DD3FC; --tabla: #4ADE80; --svc: #5B7CFF; --repo: #B794F6; --lib: #FDE68A; --ext: #F472B6; --queue: #FB7185;
   --db: #14B8A6; --team: #FCA5A5; --decision: #C4B5FD; --contrato: #64748B; --archivo: #94A3B8; --dudoso: #F87171;
 }
 * { box-sizing: border-box; }
@@ -110,7 +113,11 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .pagina h4 { font-size: 14px; margin: 16px 0 6px; }
 .subtitulo { color: var(--medio); margin: 0 0 20px; }
 .volver { display: inline-block; margin-bottom: 14px; text-decoration: none; font-size: 13px; }
-#filtro-feat, #buscar-impacto { max-width: 460px; margin-bottom: 20px; }
+#filtro-feat, #filtro-pant, #buscar-impacto { max-width: 460px; margin-bottom: 20px; }
+.pagina h1.ruta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 24px; overflow-wrap: anywhere; }
+.grupo-pant { margin-bottom: 14px; padding: 6px 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
+.grupo-pant h3 { margin: 10px 0 4px; font-size: 15px; } .grupo-pant h3 a { color: var(--texto); text-decoration: none; } .grupo-pant h3 small { color: var(--suave); font-weight: 500; }
+.recorrido h4 { margin: 14px 0 4px; font-size: 13px; color: var(--claro); }
 #resultados-impacto { max-width: 560px; margin-bottom: 18px; }
 .tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .tarjeta { display: block; padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); color: var(--texto); text-decoration: none; transition: border-color .15s; }
@@ -223,7 +230,7 @@ a.nb { text-decoration: none; }
 <body>
 <header id="cabecera">
   <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>Brain</div>
-  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/mapa" data-vista="deps">Dependencias</a></nav>
+  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/mapa" data-vista="deps">Dependencias</a></nav>
   <div id="presets" class="oculto"></div>
 </header>
 <div id="producto" class="pagina"></div>
@@ -302,6 +309,7 @@ a.nb { text-decoration: none; }
 <script type="application/json" id="datos">${seguroEnScript(JSON.stringify(datos))}</script>
 <script>${seguroEnScript(GRAFO3D_JS)}</script>
 <script>${seguroEnScript(PRODUCTO_JS)}</script>
+<script>${seguroEnScript(PANTALLAS_JS)}</script>
 <script>${seguroEnScript(MAPA_JS)}</script>
 </body>
 </html>

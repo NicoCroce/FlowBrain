@@ -232,6 +232,18 @@ export function podar(pasos: Paso[]): Paso[] {
   }
   return out;
 }
+/** Solo la raíz, lo que toca datos o servicios y los pasos en el camino hacia eso (para recorridos de pantallas). */
+export function soloCamino(pasos: Paso[]): Paso[] {
+  const quedan = new Set<number>();
+  pasos.forEach((p, i) => {
+    if (p.nivel === 0) quedan.add(i);
+    if (!p.toca.length) return;
+    quedan.add(i);
+    let nivel = p.nivel;
+    for (let j = i - 1; j >= 0 && nivel > 0; j--) if (pasos[j]!.nivel < nivel) { quedan.add(j); nivel = pasos[j]!.nivel; }
+  });
+  return pasos.filter((_, i) => quedan.has(i));
+}
 /** Límites del recorrido: pasos visibles (los que quedan después de `podar`) y profundidad. */
 export interface LimitesRecorrido {
   pasos: number;
@@ -241,6 +253,8 @@ export interface LimitesRecorrido {
 }
 /** Para la ficha del visor: lo que una persona lee. */
 export const LIMITES_FICHA: LimitesRecorrido = { pasos: 25, nivel: 6 };
+/** Para las pantallas de la ficha: el árbol de componentes es ancho; se recorre hondo y después queda solo el camino a la API. */
+export const LIMITES_PANTALLA: LimitesRecorrido = { pasos: 300, nivel: 12 };
 /** Para las consultas de un agente: completo; el presupuesto de tokens recorta después. */
 export const LIMITES_AGENTE: LimitesRecorrido = { pasos: 200, nivel: 12, cruzarHttp: true };
 const EV = /^([^:]+:[^#]+)(?:#L(\d+))?/;
@@ -388,6 +402,7 @@ export function fichasDeFuncionalidades(
   };
 
   const rec = crearRecorredor(graph, estructura, aristas, sinPagina);
+  const recPantalla = crearRecorredor(graph, estructura, aristas, sinPagina, LIMITES_PANTALLA);
   const entrantes = new Map<string, Array<{ desde: string; evidencia: string }>>();
   for (const e of graph.edges) if (e.verbo === "navega_a") entrantes.set(e.hasta, [...(entrantes.get(e.hasta) ?? []), { desde: e.desde, evidencia: e.evidencia ?? "" }]);
   const pantallasDe = (codigo: string[]): PantallaFicha[] =>
@@ -398,7 +413,8 @@ export function fichasDeFuncionalidades(
         const propio = a.componentes.find((c) => enCodigo(c.slice(0, c.lastIndexOf("#")), codigo));
         if (!propio) return [];
         const i = propio.lastIndexOf("#");
-        const r = rec.desdeSimbolo(propio.slice(0, i), propio.slice(i + 1));
+        const crudo = recPantalla.desdeSimbolo(propio.slice(0, i), propio.slice(i + 1));
+        const r = { pasos: soloCamino(crudo.pasos), truncado: crudo.truncado };
         const endpoints = [...new Set(r.pasos.flatMap((p) => p.toca.flatMap((t) => (t.verbo === "llama_a" && t.endpoint ? [t.endpoint] : []))))];
         return [
           {

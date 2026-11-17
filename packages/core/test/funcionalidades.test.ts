@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { AVISO_SIN_TABLA, capaDe, crearRecorredor, compile, podar, CompileError, dentroDe, dependenciasDelGrafo, impacto, leerEntradas, raizDeServicio, renderViewer, mapa3dDelGrafo, type Entradas } from "../src/index.js";
+import { AVISO_SIN_TABLA, capaDe, crearRecorredor, compile, podar, soloCamino, CompileError, dentroDe, dependenciasDelGrafo, impacto, leerEntradas, raizDeServicio, renderViewer, mapa3dDelGrafo, type Entradas } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -185,6 +185,11 @@ describe("funcionalidades", () => {
     // En el camino hacia algo que toca (un hook entre la pantalla y la API), la función suelta se ve.
     const front = podar([p("Pantalla", 0), p("useGuardar", 1), p("api.guardar", 2, 1), p("formatear", 1)]);
     expect(front.map((x) => `${x.nivel} ${x.simbolo} <${x.desde}`)).toEqual(["0 Pantalla <null", "1 useGuardar <Pantalla", "2 api.guardar <useGuardar"]);
+  });
+  it("el recorrido de una pantalla deja solo la raíz y el camino hasta lo que toca datos o servicios", () => {
+    const p = (simbolo: string, nivel: number, toca: number = 0) => ({ simbolo, evidencia: "repo-a:x.ts#L1", capa: "interfaz" as const, nivel, desde: null, toca: Array.from({ length: toca }, () => ({ verbo: "llama_a", hasta: "svc-b", endpoint: "svc-b:GET:/x" })) });
+    const r = soloCamino([p("Pantalla", 0), p("analytics.track", 1), p("Provider.track", 2), p("useDatos", 1), p("api.get", 2, 1), p("Boton.render", 1)]);
+    expect(r.map((x) => `${x.nivel} ${x.simbolo}`)).toEqual(["0 Pantalla", "1 useDatos", "2 api.get"]);
   });
   it("un método repetido en el recorrido hereda lo que tocó la primera vez y no se marca como hueco", () => {
     const graph = { nodes: [], edges: [] } as unknown as Parameters<typeof crearRecorredor>[0];

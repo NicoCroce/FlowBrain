@@ -55,6 +55,7 @@ export function mapa3dDelGrafo(graph: Graph, fichas: Ficha[] = []): Mapa3D {
   const endpointDeArchivo: Record<string, string> = {};
   const featDeArchivo: Record<string, string> = {};
   const duenaDeTabla: Record<string, [string, number]> = {};
+  const featDePantalla: Record<string, string> = {};
   const archivos = graph.nodes.filter((n) => n.tipo === "archivo").map((n) => n.id);
   for (const f of fichas) {
     for (const ep of f.expone) {
@@ -76,6 +77,10 @@ export function mapa3dDelGrafo(graph: Graph, fichas: Ficha[] = []): Mapa3D {
         agregar(r.endpoint, archivo, "recorrido");
         if (!endpointDeArchivo[archivo]) endpointDeArchivo[archivo] = r.endpoint;
       }
+    for (const p of f.pantallas ?? []) {
+      if (!featDePantalla[p.id]) featDePantalla[p.id] = f.id;
+      for (const ep of p.endpoints) agregar(p.id, ep, "llama_a");
+    }
     for (const c of f.codigo)
       for (const a of archivos) if (!featDeArchivo[a] && (a === c || a.startsWith(c + "/"))) featDeArchivo[a] = f.id;
   }
@@ -100,6 +105,9 @@ export function mapa3dDelGrafo(graph: Graph, fichas: Ficha[] = []): Mapa3D {
     } else if (n.tipo === "tabla") {
       feat = duenaDeTabla[id]?.[0];
       svc = dbDe[id];
+    } else if (n.tipo === "pantalla") {
+      svc = n.id.slice(0, n.id.indexOf(":pantalla:"));
+      feat = featDePantalla[id] ?? svc;
     } else if (n.tipo === "archivo") {
       feat = endpointDeArchivo[id] ?? featDeArchivo[id] ?? repoDe[id];
       svc = endpointDeArchivo[id] ?? repoDe[id];

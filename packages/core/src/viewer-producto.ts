@@ -119,6 +119,16 @@ export const PRODUCTO_JS = String.raw`
     var destino = t.endpoint ? nombre(t.endpoint) + " (" + nombre(t.hasta) + ")" : nombre(t.hasta) + (t.sinPagina ? " · sin página" : "");
     return '<span class="chip">' + esc(VERBO_TOQUE[t.verbo] || t.verbo) + " " + esc(destino) + "</span>";
   }
+  // Pasos de un recorrido, indentados por nivel, con lo que toca cada uno. cortar acorta la evidencia.
+  function pasosHtml(pasos, cortar) {
+    return '<ol class="pasos">' + pasos.map(function (p) {
+      return '<li style="margin-left:' + p.nivel * 18 + 'px">' + (p.nivel ? '<span class="flecha">↳</span> ' : "") + capa(p.capa) + " <strong>" + esc(p.simbolo) + "</strong>" +
+        ' <small><code>' + esc(cortar(p.evidencia)) + "</code></small>" +
+        (p.repite ? ' <small class="vacio">' + (p.repite === "ciclo" ? "(recursivo)" : "(ya recorrido arriba)") + "</small>" : "") +
+        (p.aviso ? ' <small class="vacio">⚠ ' + esc(p.aviso) + "</small>" : "") +
+        (p.toca.length ? '<div class="chips toca">' + p.toca.map(toque).join("") + "</div>" : "") + "</li>";
+    }).join("") + "</ol>";
+  }
   function resumenRecorrido(r) {
     var tablas = {}, otros = {};
     r.pasos.forEach(function (p) { p.toca.forEach(function (t) { if (t.verbo === "llama_a") otros[nombre(t.hasta)] = true; else tablas[nombre(t.hasta)] = true; }); });
@@ -133,13 +143,7 @@ export const PRODUCTO_JS = String.raw`
     var abiertos = f.recorridos.length <= 2;
     return f.recorridos.map(function (r) {
       var cuerpo = r.pasos.length
-        ? '<ol class="pasos">' + r.pasos.map(function (p) {
-            return '<li style="margin-left:' + p.nivel * 18 + 'px">' + (p.nivel ? '<span class="flecha">↳</span> ' : "") + capa(p.capa) + " <strong>" + esc(p.simbolo) + "</strong>" +
-              ' <small><code>' + esc(corta(f, p.evidencia)) + "</code></small>" +
-              (p.repite ? ' <small class="vacio">' + (p.repite === "ciclo" ? "(recursivo)" : "(ya recorrido arriba)") + "</small>" : "") +
-              (p.aviso ? ' <small class="vacio">⚠ ' + esc(p.aviso) + "</small>" : "") +
-              (p.toca.length ? '<div class="chips toca">' + p.toca.map(toque).join("") + "</div>" : "") + "</li>";
-          }).join("") + "</ol>"
+        ? pasosHtml(r.pasos, function (ev) { return corta(f, ev); })
         : '<p class="vacio">No se encontró el método que atiende este endpoint.</p>';
       if (r.truncado) cuerpo += '<p class="vacio">Recorrido recortado para que se pueda leer. Completo: <code>brain recorrido "' + esc(nombre(r.endpoint)) + '"</code>.</p>';
       return "<details" + (abiertos ? " open" : "") + ' class="recorrido"><summary><code>' + esc(nombre(r.endpoint)) + "</code><br><small>" + resumenRecorrido(r) + "</small></summary>" + cuerpo + "</details>";
@@ -203,6 +207,7 @@ export const PRODUCTO_JS = String.raw`
       "<h1>" + esc(n.n) + "</h1>" +
       (pendiente(n.r) ? '<p class="subtitulo pendiente">Sin descripción todavía</p>' : '<p class="subtitulo">' + esc(n.r) + "</p>") +
       (cuerpo || '<p class="aviso">La página no tiene texto. Escribí qué es y cómo se usa en <code>' + esc(n.p || "") + "</code>.</p>") +
+      (window.brainPantallas ? window.brainPantallas.seccionFicha(f) : "") +
       seccion("Qué consume (" + consume.length + ")", lista(consume)) +
       seccion("Qué expone (" + expone.length + ")", lista(expone)) +
       construida(f) +
@@ -223,6 +228,9 @@ export const PRODUCTO_JS = String.raw`
   window.brainProducto = {
     mostrar: function (h) { var m = /^\/f\/(.+)$/.exec(h); if (m) raiz.innerHTML = ficha(m[1]); else pintarCatalogo(); },
     datosDe: datosDe,
+    pasosHtml: pasosHtml,
+    resumenRecorrido: resumenRecorrido,
+    seccion: seccion,
     pendiente: pendiente
   };
 })();

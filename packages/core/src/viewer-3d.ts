@@ -15,12 +15,12 @@ export const GRAFO3D_JS = String.raw`
   var color = function (v) { return css.getPropertyValue("--" + v).trim() || "#888888"; };
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
 
-  var TIPOS = [["feat", "Funcionalidades", "Funcionalidad"], ["endpoint", "Endpoints", "Endpoint"], ["tabla", "Tablas", "Tabla"], ["svc", "Servicios", "Servicio"],
+  var TIPOS = [["feat", "Funcionalidades", "Funcionalidad"], ["pantalla", "Pantallas", "Pantalla"], ["endpoint", "Endpoints", "Endpoint"], ["tabla", "Tablas", "Tabla"], ["svc", "Servicios", "Servicio"],
     ["repo", "Repositorios", "Repositorio"], ["lib", "Librerías", "Librería"], ["ext", "Externos", "Externo"], ["queue", "Colas", "Cola"], ["db", "Bases de datos", "Base de datos"],
     ["team", "Equipos", "Equipo"], ["decision", "Decisiones", "Decisión"], ["archivo", "Archivos", "Archivo"]];
   var TIPO = {};
   TIPOS.forEach(function (t) { TIPO[t[0]] = { label: t[1], uno: t[2] }; });
-  var ORDEN_VERBOS = ["implementa", "llama_a", "lee_de", "escribe_en", "publica_en", "consume_de", "depende_de", "contiene", "vive_en", "recorrido", "pertenece_a", "decidido_por"];
+  var ORDEN_VERBOS = ["implementa", "navega_a", "llama_a", "lee_de", "escribe_en", "publica_en", "consume_de", "depende_de", "contiene", "vive_en", "recorrido", "pertenece_a", "decidido_por"];
   var colores = {};
   var col = function (t) { return colores[t] || (colores[t] = color(t)); };
 
