@@ -300,3 +300,10 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **`docs/PARSERS.md`** describe el contrato de un parser y las reglas para sumar uno.
    - En el proyecto de referencia: de 85 a 99 de 109 endpoints con `response`, y 42 con `query`. **Queda fuera:** cuerpos leídos con decoradores sin `Body` en el nombre, Express/Fastify sin genéricos y los 10 endpoints restantes.
 131. **Segundo proyecto de otra pila: solo una prueba de humo.** El paso 13 pide validar las heurísticas contra un proyecto de otra pila, y cuál usar es decisión del usuario. Mientras tanto se corrió `draft` en un brain temporal sobre tres repos que no estaban indexados, de pilas distintas (PHP con migraciones, React en JavaScript sin tipos, React Native): ninguno rompió. El de PHP propuso 172 tablas; el de JavaScript, ninguna funcionalidad y 444 preguntas abiertas, casi todas llamadas a un back que no estaba en ese brain. No reemplaza al paso 13: no se revisó la calidad de lo extraído ni se escribieron preguntas de evaluación.
+
+## 2026-11-17 · Auditoría: diferenciación
+
+132. **Consulta `deriva`: lo que se llama contra lo que se atiende.** Tres listas: llamadas a rutas que ningún endpoint atiende (con aviso si la ruta existe con otro método), llamadas que coinciden con varios endpoints, y endpoints que ningún consumidor indexado llama. Los datos ya estaban: las dos primeras salen de los `pendientes` de la extracción, que antes solo leía `draft`.
+   - **Cuándo "nadie lo llama" significa algo.** Solo se listan endpoints de servicios que tienen al menos un consumidor indexado, y la respuesta dice cuáles son. Sin eso, todo endpoint parecería sin uso.
+   - **Falsos positivos declarados.** Las llamadas con URL armada en tiempo de ejecución no se pueden unir a un endpoint; se cuentan en `avisos` y se advierte que pueden explicar algún endpoint listado.
+   - En el proyecto de referencia: 0 llamadas sin endpoint, 1 ambigua, 15 endpoints sin llamadas detectadas (con 9 llamadas sin analizar). **Queda fuera:** comparar campos (lo que el front manda o espera contra el tipo que declara el back): hoy el tipo del lado que llama casi nunca se conoce.

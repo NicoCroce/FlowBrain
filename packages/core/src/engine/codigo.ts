@@ -48,6 +48,8 @@ export interface IndiceCodigo {
   llamanEndpoint: Map<string, Array<{ clave: string; evidencia: string }>>;
   /** Tabla → métodos que la leen o escriben, con su evidencia. */
   tocanTabla: Map<string, Array<{ clave: string; verbo: string; evidencia: string }>>;
+  /** Llamadas HTTP que el índice no pudo unir a un endpoint (`pendientes` de la extracción). */
+  llamadasPendientes: Array<{ desde: string; referencia: string; motivo: string; evidencia: string; candidatos: number }>;
 }
 
 const clave = (archivo: string, simbolo: string) => `${archivo}#${simbolo}`;
@@ -111,7 +113,17 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
     if (!lista.some((x) => x.clave === k && x.verbo === a.verbo)) lista.push({ clave: k, verbo: a.verbo, evidencia: a.evidencia });
     tocanTabla.set(a.hasta, lista);
   }
-  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, porNombre, atiende, llamanEndpoint, tocanTabla };
+  const llamadasPendientes: IndiceCodigo["llamadasPendientes"] = [];
+  for (const c of extracciones) {
+    try {
+      const j = JSON.parse(c) as { pendientes?: Array<{ verbo: string; desde: string; referencia: string; motivo: string; evidencia: string; candidatos?: unknown[] }> };
+      for (const p of j.pendientes ?? []) if (p.verbo === "llama_a") llamadasPendientes.push({ desde: p.desde, referencia: p.referencia, motivo: p.motivo, evidencia: p.evidencia, candidatos: p.candidatos?.length ?? 0 });
+    } catch {
+      /* ignorado */
+    }
+  }
+  llamadasPendientes.sort((a, b) => cmp(a.evidencia, b.evidencia) || cmp(a.referencia, b.referencia));
+  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, porNombre, atiende, llamanEndpoint, tocanTabla, llamadasPendientes };
 }
 
 /** Lee el HEAD actual de cada clon indexado, para avisar si el índice quedó atrás. Barato: unas lecturas de `.git`. */
@@ -755,4 +767,61 @@ export function riesgo(ctx: Contexto, p: RiesgoParams) {
     indice: versiones(ix),
   };
   return ajustarLista(res, ["llamadores", "cambia", "pantallas", "endpoints"], p.budget_tokens);
+}
+
+// ------------------------------------------------------------------ deriva de contratos
+
+export interface DerivaParams {
+  /** Servicio a revisar; sin esto, todos. */
+  nodo?: string;
+  budget_tokens?: number | null;
+}
+
+/**
+ * Deriva entre lo que se llama y lo que se atiende: llamadas a rutas que ningún endpoint conocido atiende (o que
+ * existen con otro método), llamadas que coinciden con varios endpoints, y endpoints que nadie llama. Lo último solo
+ * dice algo si los consumidores del servicio están indexados: por eso se informa cuántos tiene cada servicio.
+ */
+export function deriva(ctx: Contexto, p: DerivaParams) {
+  const ix = indice(ctx);
+  if (p.nodo !== undefined && ctx.nodo.get(p.nodo)?.tipo !== "svc") throw new ConsultaError("nodo_inexistente", `no existe el servicio: ${p.nodo}`);
+  const endpoints = ctx.graph.nodes.filter((n) => n.tipo === "endpoint");
+  const svcDe = (ep: string) => ep.slice(0, ep.indexOf(":"));
+  const llamados = new Set(ctx.graph.edges.filter((e) => e.verbo === "llama_a" && e.endpoint && e.estado !== "deprecado").map((e) => e.endpoint!));
+  // Consumidores de cada servicio: otros servicios o pantallas que le llaman algún endpoint.
+  const consumidores = new Map<string, Set<string>>();
+  for (const e of ctx.graph.edges) {
+    if (e.verbo !== "llama_a" || !e.endpoint || e.desde === e.hasta) continue;
+    const quien = ctx.nodo.get(e.desde);
+    if (quien?.tipo === "svc") consumidores.set(e.hasta, (consumidores.get(e.hasta) ?? new Set()).add(e.desde));
+  }
+  const svcs = (p.nodo ? [p.nodo] : [...new Set(endpoints.map((n) => svcDe(n.id)))]).sort(cmp);
+  const sinLlamadas = endpoints
+    .filter((n) => svcs.includes(svcDe(n.id)) && !llamados.has(n.id) && (consumidores.get(svcDe(n.id))?.size ?? 0) > 0)
+    .map((n) => ({ endpoint: n.id, ev: String(n.atributos["evidencia"] ?? "") }));
+  const rutaDe = (ref: string) => /^(\w+) (?:\$\{[^}]*\})?(\/\S*)$/.exec(ref);
+  const pend = ix.llamadasPendientes.filter((l) => !p.nodo || l.desde === p.nodo || endpoints.some((n) => svcDe(n.id) === p.nodo && l.motivo.includes(String(n.atributos["ruta"]))));
+  const sinEndpoint = pend
+    .filter((l) => l.motivo.startsWith("base dinámica y ningún endpoint"))
+    .map((l) => {
+      const m = rutaDe(l.referencia);
+      const otros = m ? endpoints.filter((n) => rutaCoincide(String(n.atributos["ruta"]), normalizarRuta(m[2]!)) && n.atributos["metodo"] !== m[1]).map((n) => n.id).sort(cmp) : [];
+      return { desde: l.desde, llamada: l.referencia, ev: l.evidencia, ...(otros.length ? { existeConOtroMetodo: otros } : {}) };
+    });
+  const ambiguas = pend.filter((l) => l.motivo === "varios endpoints coinciden").map((l) => ({ desde: l.desde, llamada: l.referencia, ev: l.evidencia, candidatos: l.candidatos }));
+  const sinAnalizar = pend.filter((l) => l.motivo === "URL sin ruta reconocible").length;
+  const res = {
+    ...(p.nodo ? { nodo: p.nodo } : {}),
+    llamadasSinEndpoint: sinEndpoint,
+    llamadasAmbiguas: ambiguas,
+    endpointsSinLlamadasDetectadas: sinLlamadas,
+    consumidoresIndexados: Object.fromEntries(svcs.map((s) => [s, [...(consumidores.get(s) ?? [])].sort(cmp)])),
+    avisos: [
+      ...svcs.filter((s) => !(consumidores.get(s)?.size ?? 0)).map((s) => `${s} no tiene consumidores indexados: no se puede decir qué endpoints suyos no se usan`),
+      ...(sinAnalizar ? [`${sinAnalizar} llamadas con URL armada en tiempo de ejecución no se pudieron analizar: alguna puede ser la que usa un endpoint listado como sin llamadas`] : []),
+      ...avisosIndice(ix),
+    ],
+    indice: versiones(ix),
+  };
+  return ajustarLista(res, ["endpointsSinLlamadasDetectadas", "llamadasAmbiguas", "llamadasSinEndpoint"], p.budget_tokens);
 }

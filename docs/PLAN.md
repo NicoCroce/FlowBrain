@@ -34,7 +34,9 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 13 | Segundo proyecto de otra pila | Pendiente: falta elegir el proyecto (prueba de humo en decisión 131) |
 | 14 | Interfaz de parsers | Hecho: `docs/PARSERS.md`; lenguajes nuevos esperan al paso 13 |
 | 15 | Huecos de contratos | Hecho en parte (decisión 130) |
-| 16–19 | Diferenciación | Pendiente |
+| 16 | `riesgo` | Hecho (decisión 128) |
+| 17 | Deriva de contratos | Hecho (decisión 132) |
+| 18–19 | Paridad de migración y notas ancladas | Pendiente |
 | 20–22 | Higiene | Pendiente |
 
 ---

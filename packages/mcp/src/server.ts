@@ -9,6 +9,7 @@ import {
   cargarContexto,
   ConsultaError,
   contratoDe,
+  deriva,
   funcionalidad,
   impactoDe,
   infra,
@@ -98,6 +99,7 @@ export const INSTRUCCIONES = [
   "- Qué recibe y devuelve un endpoint: contrato_de.",
   "- Qué se rompe si cambio una tabla, endpoint, servicio o funcionalidad: impacto. Si es un método o una clase: quien_llama.",
   "- Qué tan riesgoso es un cambio concreto (un diff o unos archivos): riesgo.",
+  "- Endpoints que nadie llama o llamadas que nadie atiende: deriva.",
   "- Por dónde viaja un dato entre servicios: trazar.",
   "- Cómo se construye, despliega y configura un servicio (imagen, pipeline, variables de entorno, proxy): infra.",
   "- Vecinos de un nodo por tipo de relación: recorrer_grafo.",
@@ -289,6 +291,19 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     async (a) => {
       const ctx = await obtener();
       return responder(() => riesgo(ctx, limpio(a)));
+    },
+  );
+
+  server.registerTool(
+    "deriva",
+    {
+      description:
+        "Deriva de contratos entre servicios: llamadas a rutas que ningún endpoint atiende (y si existen con otro método), llamadas que coinciden con varios endpoints, y endpoints que ningún consumidor indexado llama. Sirve antes de borrar un endpoint o para encontrar integraciones rotas.",
+      inputSchema: { nodo: z.string().min(1).optional().describe("id de un servicio; sin esto, todos"), ...presupuesto },
+    },
+    async (a) => {
+      const ctx = await obtener();
+      return responder(() => deriva(ctx, limpio(a)));
     },
   );
 

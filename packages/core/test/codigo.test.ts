@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, archivosDeDiff, buscarNodo, riesgo, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, archivosDeDiff, buscarNodo, deriva, riesgo, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -21,7 +21,10 @@ beforeAll(async () => {
       { dato: null, desde: "svc-bff", endpoint: "svc-payments:POST:/payments", evidencia: "repo-tienda:apps/bff/src/clients/payments.ts#L11", hasta: "svc-payments", origen: "parser", verbo: "llama_a" },
       { dato: "Pago", desde: "svc-bff", endpoint: null, evidencia: "repo-tienda:apps/bff/src/routes/checkout.ts#L16", hasta: "tabla-pagos", origen: "parser", verbo: "escribe_en" },
     ],
-    pendientes: [],
+    pendientes: [
+      { candidatos: [], desde: "svc-web", evidencia: "repo-tienda:apps/web/src/api/checkout.ts#L30", motivo: "base dinámica y ningún endpoint conocido coincide con GET /checkout", objetivo: null, referencia: "GET ${base}/checkout", verbo: "llama_a" },
+      { candidatos: [], desde: "svc-web", evidencia: "repo-tienda:apps/web/src/api/checkout.ts#L40", motivo: "URL sin ruta reconocible", objetivo: null, referencia: "GET ${url}", verbo: "llama_a" },
+    ],
     repo: "repo-tienda",
     servicios: [],
   });
@@ -76,6 +79,17 @@ const FINAS_ESPERADAS = [
 ];
 
 describe("consultas de código", () => {
+  it("deriva: llamadas que ningún endpoint atiende y endpoints sin llamadas, con lo que no se pudo medir", () => {
+    const r = deriva(ctx, {}) as { llamadasSinEndpoint: unknown[]; endpointsSinLlamadasDetectadas: Array<{ endpoint: string }>; consumidoresIndexados: Record<string, string[]>; avisos: string[] };
+    // La ruta existe, pero con otro método.
+    expect(r.llamadasSinEndpoint).toEqual([{ desde: "svc-web", llamada: "GET ${base}/checkout", ev: "repo-tienda:apps/web/src/api/checkout.ts#L30", existeConOtroMetodo: ["svc-bff:POST:/checkout"] }]);
+    expect(r.consumidoresIndexados).toEqual({ "svc-bff": ["svc-web"], "svc-payments": ["svc-bff"] });
+    // Todos los endpoints del fixture tienen quién los llame (al webhook, un externo desde una página curada).
+    expect(r.endpointsSinLlamadasDetectadas.map((e) => e.endpoint)).toEqual([]);
+    expect(r.avisos[0]).toContain("1 llamadas con URL armada en tiempo de ejecución");
+    expect(() => deriva(ctx, { nodo: "tabla-pagos" })).toThrow(ConsultaError);
+  });
+
   it("riesgo: de un diff a los métodos que cambian, quién los llama y lo que queda alcanzado", () => {
     const diff = ["diff --git a/apps/bff/src/clients/payments.ts b/apps/bff/src/clients/payments.ts", "--- a/apps/bff/src/clients/payments.ts", "+++ b/apps/bff/src/clients/payments.ts", "@@ -11,2 +11,3 @@ export async function crearPago", "-  viejo", "+  nuevo", "+  otro"].join("\n");
     expect(archivosDeDiff(diff)).toEqual([{ ruta: "apps/bff/src/clients/payments.ts", rangos: [[11, 13]] }]);
@@ -206,7 +220,7 @@ describe("consultas de código", () => {
     const r = evaluar(ctx, preguntas);
     expect(r).toMatchObject({ total: 4, aciertos: 3, porcentaje: 75, cobertura: 80, porHerramienta: { quien_llama: { total: 2, aciertos: 2 }, recorrido: { total: 2, aciertos: 1 } } });
     // Lo que la evaluación no mide queda a la vista.
-    expect(r.sinPreguntas).toEqual(["buscar_nodo", "contrato_de", "funcionalidad", "impacto", "infra", "pantalla", "recorrer_grafo", "riesgo", "trazar"]);
+    expect(r.sinPreguntas).toEqual(["buscar_nodo", "contrato_de", "deriva", "funcionalidad", "impacto", "infra", "pantalla", "recorrer_grafo", "riesgo", "trazar"]);
     expect(r.falladas).toEqual([{ id: "c", pregunta: "c", herramienta: "recorrido", ok: false, faltan: ["tabla-inexistente"], sobran: [] }]);
     expect(() => leerPreguntas('[{"id":"x","herramienta":"otra","args":{}}]')).toThrow(/herramienta desconocida/);
   });

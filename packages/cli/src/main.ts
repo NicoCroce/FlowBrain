@@ -10,6 +10,7 @@ import {
   compileDir,
   ConsultaError,
   contratoDe,
+  deriva,
   funcionalidad,
   impactoDe,
   infra,
@@ -66,6 +67,7 @@ Comandos:
   impacto <pieza>                           qué se ve afectado si cambia una tabla, endpoint, servicio, feat o símbolo
   riesgo [archivo...] [--diff <archivo|->]  alcance de un cambio: desde un diff (git diff | brain riesgo --diff -) o archivos
          [--repo <repo-id>]                 tocados, qué funcionalidades, endpoints, pantallas, tablas y repos alcanza
+  deriva [svc]                              llamadas que ningún endpoint atiende y endpoints que nadie llama
   infra [nodo] [--texto <t>]                imágenes, compose, pipelines, variables de entorno y proxy, con su archivo
   evaluar [archivo] [--minimo pct]          corre preguntas con respuesta conocida (por defecto evals/preguntas.json)
                                             y da el porcentaje de aciertos; sale con 1 si queda debajo de --minimo
@@ -350,6 +352,9 @@ export async function ejecutar(
         resultado = riesgo(ctx, { ...opt("diff", diff), ...(archivos.length ? { archivos } : {}), ...opt("repo", o.repo), ...opt("profundidad", entero(o.profundidad, "--profundidad")), ...opt("budget_tokens", comunes.budget_tokens) });
         break;
       }
+      case "deriva":
+        resultado = deriva(ctx, { ...opt("nodo", arg), ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
       case "infra":
         resultado = infra(ctx, { ...opt("nodo", arg), ...opt("texto", o.texto), ...opt("budget_tokens", comunes.budget_tokens) });
         break;
