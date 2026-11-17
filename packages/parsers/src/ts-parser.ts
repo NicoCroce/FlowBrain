@@ -631,6 +631,11 @@ function extraer(repo: RepoFuente): Extraccion {
   const porRuta = new Map<string, ArchivoCrudo>();
   const publicaciones: Array<{ clave: string; texto: string; archivo: string; desde: string; linea: number }> = [];
   const suscripciones = new Map<string, Array<{ archivo: string; simbolo: string }>>();
+  /** Cada publicación y suscripción vista, para el contrato de eventos. `fuerte`: la forma no deja dudas de que es un mensaje. */
+  const mensajesVistos: Array<{ clave: string; nombre: string; archivo: string; linea: number; direccion: "publica" | "consume"; fuerte: boolean }> = [];
+  const nombreMensaje = (k: { clave: string; texto: string }) => (k.clave.startsWith("s:") ? k.clave.slice(2) : k.texto);
+  /** Verbos que solo se usan para publicar; `add`, `send`, `trigger` y `fire` también nombran otras cosas. */
+  const PUBLICA_FUERTE = new Set(["emit", "emitAsync", "publish", "enqueue", "produce", "dispatch"]);
   const claveMensaje = (e: ts.Expression | undefined): { clave: string; texto: string } | null => {
     if (!e) return null;
     if (ts.isStringLiteralLike(e)) return e.text ? { clave: `s:${e.text}`, texto: `"${e.text}"` } : null;
@@ -686,7 +691,10 @@ function extraer(repo: RepoFuente): Extraccion {
         const d = decorador(n, nd);
         const k = d && ts.isCallExpression(d) ? claveMensaje(d.arguments[0]) : null;
         const m = nombreMiembro(n);
-        if (k && m) suscribir(k.clave, [{ archivo, simbolo: `${n.parent.name.text}.${m}` }]);
+        if (k && m) {
+          suscribir(k.clave, [{ archivo, simbolo: `${n.parent.name.text}.${m}` }]);
+          mensajesVistos.push({ clave: k.clave, nombre: nombreMensaje(k), archivo, linea: linea(n), direccion: "consume", fuerte: true });
+        }
       }
     }
     if (!ts.isCallExpression(n) || !ts.isPropertyAccessExpression(n.expression) || !n.arguments.length) return;
@@ -694,11 +702,17 @@ function extraer(repo: RepoFuente): Extraccion {
     if (PUBLICA.has(metodo)) {
       const k = claveMensaje(n.arguments[0]);
       const desde = k ? simboloContenedor(n) : null;
-      if (k && desde) publicaciones.push({ ...k, archivo, desde, linea: linea(n) });
+      if (k && desde) {
+        publicaciones.push({ ...k, archivo, desde, linea: linea(n) });
+        mensajesVistos.push({ clave: k.clave, nombre: nombreMensaje(k), archivo, linea: linea(n), direccion: "publica", fuerte: PUBLICA_FUERTE.has(metodo) });
+      }
     }
     if (SUSCRIBE.has(metodo) && n.arguments.length >= 2) {
       const k = claveMensaje(n.arguments[0]);
-      if (k) suscribir(k.clave, destinosHandler(n.arguments[1]!, archivo));
+      if (k) {
+        suscribir(k.clave, destinosHandler(n.arguments[1]!, archivo));
+        mensajesVistos.push({ clave: k.clave, nombre: nombreMensaje(k), archivo, linea: linea(n), direccion: "consume", fuerte: false });
+      }
     }
   };
 
@@ -1186,6 +1200,13 @@ function extraer(repo: RepoFuente): Extraccion {
       if (!inv.some((i) => i.via && i.desde === p.desde && i.archivo === t.archivo && i.simbolo === t.simbolo)) inv.push({ desde: p.desde, archivo: t.archivo, simbolo: t.simbolo, linea: p.linea, via: p.texto });
     }
   }
+  // Eventos del contrato: los de forma inequívoca, y los dudosos solo si la misma clave se publica y se consume en el repo.
+  const publicadas = new Set(mensajesVistos.filter((m) => m.direccion === "publica").map((m) => m.clave));
+  const consumidas = new Set(mensajesVistos.filter((m) => m.direccion === "consume").map((m) => m.clave));
+  out.eventos = mensajesVistos
+    // Una clave que no es un texto (una variable, un símbolo) solo cuenta si se ve de los dos lados: sola, puede ser cualquier argumento.
+    .filter((m) => (m.fuerte && m.clave.startsWith("s:")) || (publicadas.has(m.clave) && consumidas.has(m.clave)))
+    .map((m) => ({ paquete: paqueteDe(repo, m.archivo), archivo: m.archivo, linea: m.linea, nombre: m.nombre, direccion: m.direccion }));
   for (const arc of porRuta.values()) arc.invoca?.sort((a, b) => cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo) || a.linea - b.linea || cmp(a.via ?? "", b.via ?? ""));
 
   out.tablas = out.tablas.filter((t) => !deSql.has(t) || !ctesRepo.has(t.modelo.toLowerCase()));
@@ -1258,4 +1279,5 @@ function ordenar(x: Extraccion) {
   x.llamadas.sort((a: LlamadaCruda, b: LlamadaCruda) => porPos(a, b));
   x.tablas.sort((a: AccesoTabla, b: AccesoTabla) => porPos(a, b));
   x.modelos.sort((a: ModeloCrudo, b: ModeloCrudo) => porPos(a, b));
+  x.eventos?.sort((a, b) => porPos(a, b) || cmp(a.nombre, b.nombre) || cmp(a.direccion, b.direccion));
 }

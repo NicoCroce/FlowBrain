@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -647,5 +647,72 @@ describe("ts-parser: pantallas y navegación del front", () => {
     const login = x.archivos.find((a) => a.ruta === "src/Login.tsx")!;
     expect(login.simbolos.map((s) => s.nombre)).toContain("Login");
     expect(login.invoca?.filter((i) => i.desde === "Login").map((i) => i.simbolo)).toContain("Formulario");
+  });
+});
+
+describe("eventos y colas: del código al contrato y al grafo", () => {
+  let dir: string, brain: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "brain-eventos-"));
+    brain = join(dir, "brain");
+    const repo = join(dir, "avisos");
+    const w = async (base: string, ruta: string, lineas: string[]) => {
+      await mkdir(dirname(join(base, ruta)), { recursive: true });
+      await writeFile(join(base, ruta), lineas.join("\n") + "\n");
+    };
+    const pagina = (id: string, tipo: string, extra: string[] = []) => ["---", `id: ${id}`, `tipo: ${tipo}`, `nombre: ${id}`, `resumen: ${id}.`, ...extra, "---", `# ${id}`];
+    await w(brain, "tecnologia/repo-avisos.md", pagina("repo-avisos", "repo"));
+    await w(brain, "tecnologia/svc-avisos.md", pagina("svc-avisos", "svc", ["vive_en: [repo-avisos]"]));
+    await w(brain, "tecnologia/queue-turno-creado.md", pagina("queue-turno-creado", "queue", ['aliases: ["turno.creado"]']));
+    await w(repo, "package.json", ['{ "name": "avisos", "dependencies": { "@nestjs/common": "10" } }']);
+    await w(repo, "src/turno.controller.ts", [
+      'import { Controller, Post } from "@nestjs/common";',
+      'import { TurnoService } from "./turno.service";',
+      '@Controller("turnos")',
+      "export class TurnoController {",
+      "  constructor(private readonly turnos: TurnoService) {}",
+      "  @Post()",
+      "  crear() { return this.turnos.crear(); }",
+      "}",
+    ]);
+    await w(repo, "src/turno.service.ts", [
+      'import { RECORDATORIO } from "./claves";',
+      "export class TurnoService {",
+      "  constructor(private readonly bus: { emit(k: string, p: unknown): void; send(k: string): void }, private readonly vistos: Set<string>) {}",
+      "  crear() {",
+      '    this.bus.emit("turno.creado", { id: 1 });',
+      "    this.bus.emit(RECORDATORIO, {});",
+      '    this.bus.send("sin.suscriptor");',
+      '    this.vistos.add("no.es.evento");',
+      "    this.bus.emit(String(Date.now()), {});",
+      "    const local = this.vistos.size > 0 ? 'a' : 'b';",
+      "    this.bus.emit(local, {});",
+      "    return true;",
+      "  }",
+      "}",
+    ]);
+    await w(repo, "src/claves.ts", ['export const RECORDATORIO = "turno.recordatorio";']);
+    await w(repo, "src/escucha.ts", ['import { OnEvent } from "@nestjs/event-emitter";', "export class Escucha {", '  @OnEvent("turno.creado")', "  alCrear() {}", "}"]);
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("el contrato lista lo que publica y consume; con página de cola, el servicio y el endpoint quedan unidos a ella", async () => {
+    const r = await indexar(join(dir, "avisos"), brain);
+    const contrato = r.contratos.find((c) => c.svc === "svc-avisos")!;
+    // `send` sin suscriptor, `Set.add` y una clave que es una variable suelta no son eventos; la constante se resuelve a su valor.
+    expect(contrato.eventos.map((e) => `${e.direccion} ${e.nombre} → ${e.cola} @ ${e.evidencia}`)).toEqual([
+      "consume turno.creado → queue-turno-creado @ repo-avisos:src/escucha.ts#L3",
+      "publica turno.creado → queue-turno-creado @ repo-avisos:src/turno.service.ts#L5",
+      "publica turno.recordatorio → null @ repo-avisos:src/turno.service.ts#L6",
+    ]);
+    expect(r.aristas.filter((a) => a.hasta === "queue-turno-creado").map((a) => `${a.desde} ${a.verbo} ${a.evidencia}`)).toEqual([
+      "svc-avisos consume_de repo-avisos:src/escucha.ts#L3",
+      "svc-avisos publica_en repo-avisos:src/turno.service.ts#L5",
+    ]);
+    await escribirIndex(brain, r);
+    await compileDir(brain);
+    const g = JSON.parse(await readFile(join(brain, "_build/graph.json"), "utf8")) as { edges: Array<{ desde: string; verbo: string; hasta: string }> };
+    // Las relaciones entre servicios entran al grafo por las páginas (las propone `brain draft`); la del endpoint, directo.
+    expect(g.edges.filter((e) => e.hasta === "queue-turno-creado").map((e) => `${e.desde} ${e.verbo}`)).toEqual(["svc-avisos:POST:/turnos publica_en"]);
   });
 });

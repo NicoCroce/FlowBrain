@@ -109,7 +109,7 @@ export interface EstructuraArchivo {
   sinResolver?: Array<{ desde: string; linea: number; llamada: string }> | undefined;
 }
 
-/** Lo que toca un paso: una tabla (`lee_de`/`escribe_en`) o un servicio o externo (`llama_a`). */
+/** Lo que toca un paso: una tabla (`lee_de`/`escribe_en`), un servicio o externo (`llama_a`) o una cola (`publica_en`/`consume_de`). */
 export interface Toque {
   verbo: string;
   hasta: string;
@@ -284,6 +284,8 @@ function marcarHuecos(pasos: Paso[]): Paso[] {
   });
 }
 
+/** Lo que un método puede tocar: tablas, servicios y colas. */
+const VERBOS_TOQUE = new Set(["lee_de", "escribe_en", "llama_a", "publica_en", "consume_de"]);
 const mismoToque = (a: Toque, b: Toque) => a.verbo === b.verbo && a.hasta === b.hasta && a.endpoint === b.endpoint;
 const ordenToque = (a: Toque, b: Toque) => cmpTuple([a.verbo, a.hasta, a.endpoint ?? ""], [b.verbo, b.hasta, b.endpoint ?? ""]);
 
@@ -305,7 +307,7 @@ export function crearRecorredor(
   const nodo = new Map(graph.nodes.map((n) => [n.id, n]));
   const toques = new Map<string, Array<{ linea: number; toque: Toque }>>();
   for (const a of aristas) {
-    if (a.verbo !== "lee_de" && a.verbo !== "escribe_en" && a.verbo !== "llama_a") continue;
+    if (!VERBOS_TOQUE.has(a.verbo)) continue;
     const m = EV.exec(a.evidencia);
     if (!m?.[2]) continue;
     toques.set(m[1]!, [...(toques.get(m[1]!) ?? []), { linea: Number(m[2]), toque: { verbo: a.verbo, hasta: a.hasta, endpoint: a.endpoint } }]);

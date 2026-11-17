@@ -47,8 +47,8 @@ Toda arista va de `desde` a `hasta`.
 | Verbo | desde | hasta | Dónde se escribe | Lleva datos |
 |---|---|---|---|---|
 | `llama_a` | svc, lib, ext; endpoint, pantalla, feat | svc, ext | `relaciones` (endpoint y pantalla: lo genera el compilador) | sí |
-| `publica_en` | svc | queue | `relaciones` | sí |
-| `consume_de` | svc | queue | `relaciones` | sí |
+| `publica_en` | svc; endpoint, feat | queue | `relaciones` (endpoint: lo genera el compilador) | sí |
+| `consume_de` | svc; endpoint, feat | queue | `relaciones` (endpoint: lo genera el compilador) | sí |
 | `lee_de` | svc; endpoint, feat | db, tabla | `relaciones` (endpoint: lo genera el compilador) | sí |
 | `escribe_en` | svc; endpoint, feat | db, tabla | `relaciones` (endpoint: lo genera el compilador) | sí |
 | `depende_de` | repo, svc, lib → repo, svc, lib, db, queue, ext · feat → feat | | `relaciones` | no |
@@ -70,6 +70,7 @@ Reglas:
   - endpoint → funcionalidad (`implementa`): el handler está en el `codigo` de la funcionalidad.
   - funcionalidad → tabla, servicio o externo: accesos y llamadas dentro de su `codigo` (sin archivos de test).
   - funcionalidad → funcionalidad (`depende_de`): llama a un endpoint que implementa la otra.
+  - endpoint → cola y funcionalidad → cola (`publica_en`/`consume_de`): los mensajes de su recorrido o de su `codigo`, cuando la cola tiene página.
 
   Una funcionalidad también puede declararlas a mano en `relaciones`; si coinciden, gana la curada. Sin extracción no se genera ninguna. Como en todo `llama_a`, el destino es el servicio y el endpoint va en el campo `endpoint`.
 - **`depende_de` en consultas es un superverbo:** `recorrer_grafo` con `verbos: [depende_de]` incluye también `llama_a`, `publica_en`, `consume_de`, `lee_de` y `escribe_en`. La arista explícita `depende_de` queda para dependencias que no son llamadas, como librerías o infraestructura.
@@ -154,6 +155,8 @@ Los destinos sin resolver nunca llegan a una página compilada. Van como prosa e
   "tipos": { "TipoReq": { "campo": "string" } }
 }
 ```
+
+`eventos` lista lo que el servicio publica y consume, uno por (nombre, dirección) con la primera evidencia. `nombre` es la clave del mensaje (el literal o el valor de la constante; si la clave no es un texto, su nombre en el código). `cola` es la página `queue` con ese nombre o alias, o `null` si no hay ninguna: el evento se registra igual. `payload` hoy es siempre `null`. Se cuentan los mensajes de forma inequívoca (`emit`, `publish`, `enqueue`, `produce`, `dispatch` con clave de texto; decoradores de suscripción) y, de los dudosos (`send`, `add`, `on`…), solo los que se publican y se consumen con la misma clave dentro del repo. Un servicio sin endpoints pero con eventos también tiene contrato. Hoy los detecta el ts-parser.
 
 `request` y `response` pueden ser `null` (no se pudo determinar: es un hueco, no "sin cuerpo"). Son el nombre de un tipo, `T[]`, un genérico con su texto (`Record<string, unknown>`) o varios unidos con ` | `. `tipos` es un mapa de nombre a forma, con tipos expresados como strings estilo TS; incluye interfaces, tipos y clases de datos (propiedades públicas). Si un handler devuelve un objeto literal sin tipo, su forma se guarda como `<Clase.metodo>:respuesta`, con `unknown` en lo que no se sabe y la clave `…` si esparce otro objeto. Cuando hay `openapi-parser`, prevalece sobre cualquier tipo inferido.
 

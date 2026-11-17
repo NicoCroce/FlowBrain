@@ -122,6 +122,16 @@ export interface NavegacionCruda {
   tipo: "navega" | "enlace" | "redirige";
 }
 
+/** Mensaje que un método publica o consume: un evento en proceso o una cola, por su clave. */
+export interface EventoCrudo {
+  paquete: string;
+  archivo: string;
+  linea: number;
+  /** Clave del mensaje: el literal, el valor de la constante o, si no es un texto, su nombre en el código. */
+  nombre: string;
+  direccion: "publica" | "consume";
+}
+
 export type Forma = Record<string, string>;
 
 export interface Extraccion {
@@ -133,6 +143,8 @@ export interface Extraccion {
   modelos: ModeloCrudo[];
   pantallas: PantallaCruda[];
   navegaciones: NavegacionCruda[];
+  /** Mensajes publicados y consumidos. Opcional: no todos los parsers los detectan. */
+  eventos?: EventoCrudo[];
   /** Formas de tipos declarados, por paquete y nombre. */
   formas: Record<string, Record<string, Forma>>;
   /** Paquetes cuyos endpoints declara este parser con autoridad (OpenAPI). */

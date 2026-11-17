@@ -26,7 +26,7 @@ export interface AristaExtraida {
   evidencia: string;
   hasta: string;
   origen: "parser" | "inferido";
-  verbo: "llama_a" | "lee_de" | "escribe_en";
+  verbo: "llama_a" | "lee_de" | "escribe_en" | "publica_en" | "consume_de";
 }
 
 export interface Pendiente {
@@ -139,6 +139,7 @@ export function fusionar(xs: Extraccion[]): Extraccion {
     out.llamadas.push(...x.llamadas.filter((l) => !esArchivoDeTest(l.archivo)));
     out.tablas.push(...x.tablas.filter((t) => !esArchivoDeTest(t.archivo)));
     out.modelos.push(...x.modelos);
+    (out.eventos ??= []).push(...(x.eventos ?? []).filter((e) => !esArchivoDeTest(e.archivo)));
     out.pantallas.push(...(x.pantallas ?? []).filter((p) => !esArchivoDeTest(p.archivo)));
     out.navegaciones.push(...(x.navegaciones ?? []).filter((n) => !esArchivoDeTest(n.archivo)));
     for (const [p, fs] of Object.entries(x.formas)) Object.assign((formas[p] ??= {}), fs);
@@ -248,18 +249,28 @@ export async function indexar(
 
   // ---------- Contratos ----------
   const contratos: Contrato[] = [];
+  const eventosPorSvc = new Map<string, Contrato["eventos"]>();
   const llamadasPorSvc = new Map<string, LlamadaCruda[]>();
   for (const l of x.llamadas) for (const s of svcsDe.get(l.paquete) ?? []) llamadasPorSvc.set(s, [...(llamadasPorSvc.get(s) ?? []), l]);
   for (const { paquete, svc } of servicios) {
     if (esNuevo.has(svc)) continue;
     const eps = x.endpoints.filter((e) => e.paquete === paquete);
-    if (eps.length === 0) continue;
+    // Un evento por (nombre, dirección): la primera evidencia. La cola es la página `queue` con ese nombre o alias, si hay una sola.
+    const eventos = new Map<string, Contrato["eventos"][number]>();
+    for (const e of (x.eventos ?? []).filter((e) => e.paquete === paquete)) {
+      const k = `${e.nombre}\u0000${e.direccion}`;
+      if (eventos.has(k)) continue;
+      const colas = nodos.filter((n) => n.tipo === "queue" && clavesDe(n).has(normalizar(e.nombre)));
+      eventos.set(k, { cola: colas.length === 1 ? colas[0]!.id : null, direccion: e.direccion, evidencia: ev(e.archivo, e.linea), nombre: e.nombre, payload: null });
+    }
+    if (eps.length === 0 && eventos.size === 0) continue;
+    eventosPorSvc.set(svc, [...eventos.values()].sort((a, b) => cmpTuple([a.nombre, a.direccion], [b.nombre, b.direccion])));
     const fuente = x.autoritativo.includes(paquete) ? "openapi-parser" : eps.some((e) => e.archivo.endsWith(".php")) ? "php-parser" : "ts-parser";
     contratos.push({
       endpoints: eps
         .map((e) => ({ evidencia: ev(e.archivo, e.linea), metodo: e.metodo as Contrato["endpoints"][number]["metodo"], request: e.request, response: e.response, ruta: e.ruta }))
         .sort((a, b) => cmpTuple([a.ruta, a.metodo], [b.ruta, b.metodo])),
-      eventos: [],
+      eventos: eventosPorSvc.get(svc)!,
       fuente,
       svc,
       tipos: {},
@@ -343,6 +354,11 @@ export async function indexar(
           verbo: t.verbo,
         });
     }
+  }
+
+  // ---------- Eventos con cola conocida: el servicio publica en ella o consume de ella ----------
+  for (const [svc, eventos] of eventosPorSvc) {
+    for (const e of eventos) if (e.cola) aristas.push({ dato: null, desde: svc, endpoint: null, evidencia: e.evidencia, hasta: e.cola, origen: "parser", verbo: e.direccion === "publica" ? "publica_en" : "consume_de" });
   }
 
   // ---------- Dedupe (gana la primera evidencia en orden archivo/línea) y orden ----------

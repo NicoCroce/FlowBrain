@@ -24,7 +24,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 3 | MCP: respuestas compactas, búsqueda e instrucciones | Hecho (decisión 121) |
 | 4 | Comandos `sync`, `estado` y `doctor` | Hecho (decisión 122) |
 | 5 | Registro del MCP y los hooks | Pendiente, requiere decisión |
-| 6–9 | Cobertura del modelo | Pendiente |
+| 6 | Eventos y colas | Hecho (decisión 123) |
+| 7–9 | Cobertura del modelo | Pendiente |
 | 10–12 | Frescura | Pendiente |
 | 13–15 | Agnosticismo | Pendiente |
 | 16–19 | Diferenciación | Pendiente |

@@ -9,7 +9,8 @@ import { CONFIANZA, dentroDe, ORIGENES, verboAdmite, type Graph, type GraphEdge,
  *   lo que toca el método que lo atiende y lo que llama, sin cruzar HTTP.
  * - pantalla → servicio (`llama_a`, con `endpoint`): las llamadas al back en el árbol de sus componentes.
  * - endpoint → funcionalidad (`implementa`): el handler está en el `codigo` de la funcionalidad.
- * - funcionalidad → tabla, servicio o externo: accesos y llamadas dentro de su `codigo`.
+ * - funcionalidad → tabla, servicio, externo o cola: accesos, llamadas y mensajes dentro de su `codigo`.
+ * - endpoint → cola (`publica_en`/`consume_de`): los mensajes que publica o consume su recorrido.
  * - funcionalidad → funcionalidad (`depende_de`): llama a un endpoint que implementa la otra.
  *
  * Cada arista hereda el origen y el dato del acceso o la llamada de la extracción de la que sale: una llamada
@@ -73,6 +74,7 @@ export function aristasFinas(
       for (const { p, t } of toques(rec.desdeEndpoint(n.id).pasos)) {
         if (t.verbo === "lee_de" || t.verbo === "escribe_en") agregar(n.id, t.verbo, t.hasta, citaDe(p, t));
         else if (t.verbo === "llama_a") agregar(n.id, "llama_a", t.hasta, citaDe(p, t), t.endpoint);
+        else if (t.verbo === "publica_en" || t.verbo === "consume_de") agregar(n.id, t.verbo, t.hasta, citaDe(p, t));
       }
     } else if (n.tipo === "pantalla") {
       for (const c of (n.atributos as { componentes?: string[] }).componentes ?? []) {
@@ -88,7 +90,7 @@ export function aristasFinas(
   for (const f of feats) {
     for (const a of aristas) {
       if (!enCodigo(a.evidencia, f.codigo) || ES_TEST.test(a.evidencia.replace(/#L.*$/, ""))) continue;
-      if (a.verbo === "lee_de" || a.verbo === "escribe_en") agregar(f.id, a.verbo, a.hasta, a);
+      if (a.verbo === "lee_de" || a.verbo === "escribe_en" || a.verbo === "publica_en" || a.verbo === "consume_de") agregar(f.id, a.verbo, a.hasta, a);
       else if (a.verbo === "llama_a") {
         agregar(f.id, "llama_a", a.hasta, a, a.endpoint);
         for (const otra of a.endpoint ? (dueñasDe.get(a.endpoint) ?? []) : []) agregar(f.id, "depende_de", otra, { evidencia: a.evidencia, origen: a.origen });

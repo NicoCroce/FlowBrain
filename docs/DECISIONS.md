@@ -253,3 +253,11 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **`estado`** lista por repo si está al día, los conteos de nodos por tipo y de relaciones por verbo, y los huecos conocidos con ejemplos: endpoints sin tipo de respuesta o sin funcionalidad, pantallas sin funcionalidad, tablas sin base o que nadie toca, funcionalidades sin código, archivos fuera de toda funcionalidad (sin tests), relaciones dudosas y borradores sin promover. Sale con 1 si algún repo quedó desactualizado; `--json` para consumirlo.
    - **`doctor`** solo lee: verifica que el grafo cargue, que haya índice de código, que los clones estén y al día, y que los hooks y el servidor MCP estén registrados en Claude Code. No modifica ninguna configuración; dice qué comando lo arregla.
    - En el proyecto de referencia, `estado` mostró que los dos clones avanzaron desde el último índice, 108 tablas sin base, 699 de 2.432 archivos fuera de toda funcionalidad y 42 borradores sin promover.
+
+## 2026-11-17 · Auditoría: cobertura del modelo
+
+123. **Eventos y colas llegan al contrato y al grafo.** `eventos` del contrato estaba fijo en `[]`: el parser ya emparejaba publicaciones y suscripciones para los recorridos (`via`), pero no las registraba.
+   - **Contrato.** Cada servicio lista lo que publica y consume, con evidencia. Un servicio sin endpoints (un worker) ahora tiene contrato si tiene eventos.
+   - **Qué cuenta como evento.** Verbos que solo publican con clave de texto y decoradores de suscripción cuentan solos. Los ambiguos (`send`, `add`, `on`) y las claves que no son texto solo cuentan si la misma clave aparece de los dos lados en el repo. Así `Set.add("x")` o `emit(variable)` no entran. El costo: un evento publicado con `send` y consumido en otro repo no se ve.
+   - **Colas.** Si existe una página `queue` con el nombre o alias de la clave, el evento la referencia y salen aristas `publica_en` / `consume_de`: del servicio (en la extracción, para que `draft` las proponga en la página) y, directo al grafo, del endpoint y de la funcionalidad. Sin página, `cola` queda `null`.
+   - En el proyecto de referencia: 10 eventos (5 trabajos en cola, cada uno publicado y consumido), ninguno con página de cola. **Queda fuera:** `payload`, eventos en PHP, brokers por configuración (tópicos declarados fuera del código) y proponer páginas de cola desde `draft`.

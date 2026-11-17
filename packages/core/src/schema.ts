@@ -66,8 +66,8 @@ export const DOMINIO: Record<Verbo, ReadonlyArray<readonly [readonly Tipo[], rea
     [["svc", "lib", "ext"], ["svc", "ext"]],
     [["pantalla", "endpoint", "feat"], ["svc", "ext"]],
   ],
-  publica_en: [[["svc"], ["queue"]]],
-  consume_de: [[["svc"], ["queue"]]],
+  publica_en: [[["svc", "endpoint", "feat"], ["queue"]]],
+  consume_de: [[["svc", "endpoint", "feat"], ["queue"]]],
   lee_de: [
     [["svc"], ["db", "tabla"]],
     [["endpoint", "feat"], ["db", "tabla"]],
