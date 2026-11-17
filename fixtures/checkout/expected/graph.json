@@ -342,7 +342,7 @@
       "id": "db-tienda",
       "nombre": "Base de datos de la tienda",
       "origen": "curado",
-      "pagina": "tecnologia/db-tienda.md",
+      "pagina": "technology/db-tienda.md",
       "resumen": "PostgreSQL principal de la tienda.",
       "tecnologia": [
         "postgresql"
@@ -361,7 +361,7 @@
       "id": "ext-pasarela",
       "nombre": "Pasarela de pagos",
       "origen": "curado",
-      "pagina": "tecnologia/ext-pasarela.md",
+      "pagina": "technology/ext-pasarela.md",
       "resumen": "Proveedor externo que procesa tarjetas y notifica el resultado por webhook.",
       "tecnologia": [],
       "tipo": "ext",
@@ -378,7 +378,7 @@
       "id": "feat-checkout",
       "nombre": "Checkout",
       "origen": "curado",
-      "pagina": "producto/feat-checkout.md",
+      "pagina": "product/feat-checkout.md",
       "resumen": "El cliente confirma el carrito, paga con tarjeta y recibe el estado del pedido.",
       "tecnologia": [],
       "tipo": "feat",
@@ -394,7 +394,7 @@
       "id": "repo-tienda",
       "nombre": "Monorepo de la tienda",
       "origen": "curado",
-      "pagina": "tecnologia/repo-tienda.md",
+      "pagina": "technology/repo-tienda.md",
       "resumen": "Monorepo pnpm con la web, el BFF y el servicio de pagos en apps/.",
       "tecnologia": [
         "typescript",
@@ -600,7 +600,7 @@
       "id": "svc-bff",
       "nombre": "BFF de la tienda",
       "origen": "curado",
-      "pagina": "tecnologia/svc-bff.md",
+      "pagina": "technology/svc-bff.md",
       "resumen": "Backend-for-frontend que orquesta el checkout para la web.",
       "tecnologia": [
         "typescript",
@@ -663,7 +663,7 @@
       "id": "svc-payments",
       "nombre": "Servicio de pagos",
       "origen": "curado",
-      "pagina": "tecnologia/svc-payments.md",
+      "pagina": "technology/svc-payments.md",
       "resumen": "Cobra pedidos a través de la pasarela y registra cada pago.",
       "tecnologia": [
         "typescript",
@@ -746,7 +746,7 @@
       "id": "svc-web",
       "nombre": "Web de la tienda",
       "origen": "curado",
-      "pagina": "tecnologia/svc-web.md",
+      "pagina": "technology/svc-web.md",
       "resumen": "SPA donde el cliente arma el carrito y paga.",
       "tecnologia": [
         "typescript",
@@ -801,7 +801,7 @@
       "id": "tabla-pagos",
       "nombre": "Tabla de pagos",
       "origen": "curado",
-      "pagina": "tecnologia/tabla-pagos.md",
+      "pagina": "technology/tabla-pagos.md",
       "resumen": "Un registro por intento de cobro, con su estado.",
       "tecnologia": [],
       "tipo": "tabla",

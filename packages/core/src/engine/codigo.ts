@@ -23,8 +23,8 @@ import { tokens } from "./proyeccion.js";
 /**
  * Consultas sobre el código y el producto, pensadas para un agente: respuestas cortas, con `repo:ruta#Ln` en cada
  * dato, y explícitas sobre lo que no saben (`avisos`) y sobre de qué versión del código salieron (`indice`).
- * Se apoyan en `_build/funcionalidades.json`, `_build/archivos/*.json` (símbolos, imports, invocaciones) y
- * `_build/extraccion/*.json` (accesos a tablas y llamadas con su línea).
+ * Se apoyan en `_build/features.json`, `_build/files/*.json` (símbolos, imports, invocaciones) y
+ * `_build/extraction/*.json` (accesos a tablas y llamadas con su línea).
  */
 
 export interface IndiceCodigo {
@@ -34,7 +34,7 @@ export interface IndiceCodigo {
   recorredor: Recorredor;
   /** repo → commit de HEAD al indexar. */
   commits: Record<string, string>;
-  /** repo → ruta del clon relativa al brain (de `_build/archivos`). */
+  /** repo → ruta del clon relativa al brain (de `_build/files`). */
   raices: Record<string, string>;
   /** repo → HEAD actual del clon, leído al consultar (`actualizarHeads`); ausente si no se pudo leer. */
   actuales: Record<string, string>;

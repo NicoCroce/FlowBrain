@@ -86,10 +86,10 @@ export function notasDeTranscript(jsonl: string): Nota[] {
   return out;
 }
 
-const archivoNota = (id: string) => `_drafts/notas/${id.replace(/[^a-z0-9-]+/gi, "_")}.md`;
+const archivoNota = (id: string) => `_drafts/notes/${id.replace(/[^a-z0-9-]+/gi, "_")}.md`;
 
 /**
- * Agrega notas a `_drafts/notas/<id>.md`, una viñeta por nota, sin duplicar. Devuelve las rutas escritas.
+ * Agrega notas a `_drafts/notes/<id>.md`, una viñeta por nota, sin duplicar. Devuelve las rutas escritas.
  * `fuente` identifica de dónde vino (sesión de Claude Code o `manual`).
  */
 export async function anotar(raizBrain: string, notas: Nota[], fuente: string): Promise<string[]> {

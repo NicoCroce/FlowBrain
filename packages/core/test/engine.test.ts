@@ -63,7 +63,7 @@ describe("golden de las cuatro herramientas", () => {
 });
 
 describe("criterios de aceptación", () => {
-  it("trazar --desde /checkout devuelve los 5 saltos esperados, con evidencia y tipos", () => {
+  it("trazar --from /checkout devuelve los 5 saltos esperados, con evidencia y tipos", () => {
     const r = trazar(ctx, { desde: "/checkout" });
     expect(r.saltos.map((s) => [s.nivel, s.desde, s.hasta, s.verbo, s.dato, s.confianza, s.evidencia])).toEqual([
       [1, "svc-web", "svc-bff", "llama_a", "CheckoutRequest → CheckoutResponse", 0.5, "repo-tienda:apps/web/src/api/checkout.ts#L9"],

@@ -43,9 +43,9 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
     const previo = livianos.get(raiz);
     if (previo && previo.m === m && previo.c.nombre === nombre) return previo.c;
     const graph = JSON.parse(await readFile(join(raiz, "_build/graph.json"), "utf8")) as Graph;
-    const dir = join(raiz, "_build/extraccion");
+    const dir = join(raiz, "_build/extraction");
     const extracciones = await Promise.all((await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp).map((n) => readFile(join(dir, n), "utf8")));
-    const dirA = join(raiz, "_build/archivos");
+    const dirA = join(raiz, "_build/files");
     const archivos = await Promise.all((await readdir(dirA).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp).map((n) => readFile(join(dirA, n), "utf8")));
     const c = cerebroLiviano(nombre, graph, extracciones, archivos);
     livianos.set(raiz, { m, c });
@@ -102,7 +102,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
     async conexiones(nombre?: string) {
       const { r, c } = await elegir(nombre);
       const { propio, vecinos } = await vecindario(r, c.nombre, c.raiz);
-      if (!propio) throw new ConsultaError("parametro_invalido", `el cerebro ${c.nombre} no está compilado: corré flowbrain cerebros aplicar`);
+      if (!propio) throw new ConsultaError("parametro_invalido", `el cerebro ${c.nombre} no está compilado: corré flowbrain brains apply`);
       const salen = vecinos.map((v) => crucesEntre(propio, v, r.conexiones));
       const entran = vecinos.map((v) => crucesEntre(v, propio, r.conexiones));
       const mios = (x: { desde: { cerebro: string }; hacia: { cerebro: string } }) => x.desde.cerebro === c.nombre || x.hacia.cerebro === c.nombre;

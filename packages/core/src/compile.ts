@@ -42,9 +42,9 @@ export interface Entradas {
   paginas: Fuente[];
   contratos: Fuente[];
   archivos: Fuente[];
-  /** `_build/verificacion.json` de `flowbrain verify`: sus aristas salen con estado `dudoso`. */
+  /** `_build/verification.json` de `flowbrain verify`: sus aristas salen con estado `dudoso`. */
   verificacion?: Fuente | null;
-  /** `_build/extraccion/*.json` de `flowbrain index`: alimentan las fichas de funcionalidades y las relaciones finas del grafo. */
+  /** `_build/extraction/*.json` de `flowbrain index`: alimentan las fichas de funcionalidades y las relaciones finas del grafo. */
   extracciones?: Fuente[];
 }
 
@@ -54,14 +54,14 @@ export interface Salidas {
   generados: Record<string, string>;
   /** Todas las páginas con la sección de backlinks inyectada: ruta relativa → contenido. */
   paginas: Record<string, string>;
-  /** Vista de producto de cada `feat` (también va a `_build/funcionalidades.json`). */
+  /** Vista de producto de cada `feat` (también va a `_build/features.json`). */
   funcionalidades: Ficha[];
 }
 
 export const RUTAS_SALIDA = {
   graph: "_build/graph.json",
   backlinks: "_build/backlinks.json",
-  mapa: "_build/mapa.mmd",
+  mapa: "_build/map.mmd",
   index: "INDEX.md",
 } as const;
 
@@ -189,8 +189,8 @@ export function compile(entradas: Entradas): Salidas {
       continue;
     }
     const c = res.data;
-    if (f.ruta !== `_build/contratos/${c.svc}.json`) {
-      errores.push({ archivo: f.ruta, linea: null, mensaje: `el archivo debe llamarse _build/contratos/${c.svc}.json` });
+    if (f.ruta !== `_build/contracts/${c.svc}.json`) {
+      errores.push({ archivo: f.ruta, linea: null, mensaje: `el archivo debe llamarse _build/contracts/${c.svc}.json` });
     }
     if (nodos.get(c.svc)?.tipo !== "svc") {
       if (!rotos.has(c.svc)) errores.push({ archivo: f.ruta, linea: null, mensaje: `svc inexistente: ${c.svc}` });
@@ -237,8 +237,8 @@ export function compile(entradas: Entradas): Salidas {
       continue;
     }
     const a = res.data;
-    if (f.ruta !== `_build/archivos/${a.repo}.json`) {
-      errores.push({ archivo: f.ruta, linea: null, mensaje: `el archivo debe llamarse _build/archivos/${a.repo}.json` });
+    if (f.ruta !== `_build/files/${a.repo}.json`) {
+      errores.push({ archivo: f.ruta, linea: null, mensaje: `el archivo debe llamarse _build/files/${a.repo}.json` });
     }
     if (!esRepo(a.repo)) {
       if (!rotos.has(a.repo)) errores.push({ archivo: f.ruta, linea: null, mensaje: `repo inexistente: ${a.repo}` });

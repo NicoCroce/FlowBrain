@@ -94,7 +94,7 @@ export const PRODUCTO_JS = String.raw`
   function pintarCatalogo() {
     if (!fichas.length) {
       raiz.innerHTML = "<h1>Funcionalidades</h1>" +
-        '<p class="aviso">Todavía no hay funcionalidades. <code>flowbrain draft &lt;repo&gt;</code> las propone a partir de las carpetas <code>features/</code>, <code>modules/</code> o <code>domains/</code> en <code>_drafts/producto/</code>: revisalas, movelas a <code>producto/</code> y corré <code>flowbrain compile</code>.</p>';
+        '<p class="aviso">Todavía no hay funcionalidades. <code>flowbrain draft &lt;repo&gt;</code> las propone a partir de las carpetas <code>features/</code>, <code>modules/</code> o <code>domains/</code> en <code>_drafts/product/</code>: revisalas, movelas a <code>product/</code> y corré <code>flowbrain compile</code>.</p>';
       return;
     }
     var sin = fichas.filter(function (f) { return pendiente((porId[f.id] || {}).r); }).length;
@@ -145,7 +145,7 @@ export const PRODUCTO_JS = String.raw`
       var cuerpo = r.pasos.length
         ? pasosHtml(r.pasos, function (ev) { return corta(f, ev); })
         : '<p class="vacio">No se encontró el método que atiende este endpoint.</p>';
-      if (r.truncado) cuerpo += '<p class="vacio">Recorrido recortado para que se pueda leer. Completo: <code>flowbrain recorrido "' + esc(nombre(r.endpoint)) + '"</code>.</p>';
+      if (r.truncado) cuerpo += '<p class="vacio">Recorrido recortado para que se pueda leer. Completo: <code>flowbrain flow "' + esc(nombre(r.endpoint)) + '"</code>.</p>';
       return "<details" + (abiertos ? " open" : "") + ' class="recorrido"><summary><code>' + esc(nombre(r.endpoint)) + "</code><br><small>" + resumenRecorrido(r) + "</small></summary>" + cuerpo + "</details>";
     }).join("");
   }

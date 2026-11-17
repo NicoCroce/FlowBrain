@@ -16,7 +16,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "brain-verify-"));
   brain = join(dir, "brain");
   clon = join(dir, "clones/tienda");
-  for (const d of ["producto", "tecnologia", "_build"]) await cp(F(`checkout/${d}`), join(brain, d), { recursive: true });
+  for (const d of ["product", "technology", "_build"]) await cp(F(`checkout/${d}`), join(brain, d), { recursive: true });
   await cp(F("repos/tienda"), clon, { recursive: true });
   await compileDir(brain);
 });
@@ -82,7 +82,7 @@ describe("flowbrain verify", () => {
   });
 
   it("deprecado (lo marca un humano) manda sobre dudoso", async () => {
-    const pagina = join(brain, "tecnologia/svc-payments.md");
+    const pagina = join(brain, "technology/svc-payments.md");
     await writeFile(pagina, (await readFile(pagina, "utf8")).replace("#L8\", origen: parser }", "#L8\", origen: parser, estado: deprecado }"));
     await rm(join(clon, "apps/payments/src/clients/pasarela.ts"));
     const r = await verifyDir(brain, { repos: { "repo-tienda": clon }, hoy: HOY });
@@ -92,7 +92,7 @@ describe("flowbrain verify", () => {
   });
 
   it("una verificación con formato inválido hace fallar compile con un mensaje claro", () => {
-    expect(() => compile({ paginas: [], contratos: [], archivos: [], verificacion: { ruta: "_build/verificacion.json", contenido: '{"x":1}' } })).toThrow(/verificación con formato inválido/);
+    expect(() => compile({ paginas: [], contratos: [], archivos: [], verificacion: { ruta: "_build/verification.json", contenido: '{"x":1}' } })).toThrow(/verificación con formato inválido/);
   });
 });
 

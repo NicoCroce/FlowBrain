@@ -2,7 +2,7 @@ import { cmp } from "./canonical.js";
 import type { EstructuraArchivo } from "./funcionalidades.js";
 
 /**
- * Pantallas del front y navegación entre ellas, a partir de lo que extrae el parser (`_build/archivos/<repo>.json`).
+ * Pantallas del front y navegación entre ellas, a partir de lo que extrae el parser (`_build/files/<repo>.json`).
  * Una pantalla navega a otra si su componente, o algo que el componente llama o dibuja, navega a esa ruta.
  */
 

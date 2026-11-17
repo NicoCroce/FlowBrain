@@ -5,12 +5,12 @@ import { z } from "zod";
 import { cmp } from "./canonical.js";
 
 /**
- * Registro de cerebros: un archivo `cerebros.yaml` en una carpeta, con hasta `MAX_CEREBROS` cerebros. Cada cerebro
+ * Registro de cerebros: un archivo `flowbrain.yaml` en una carpeta, con hasta `MAX_CEREBROS` cerebros. Cada cerebro
  * es un brain completo en su propia carpeta, con sus repos. Están aislados; `comunicacion` dice entre cuáles se
  * comparten pistas y relaciones, y `conexiones` declara qué servicio de uno llama a qué servicio de otro.
  */
 
-export const ARCHIVO_REGISTRO = "cerebros.yaml";
+export const ARCHIVO_REGISTRO = "flowbrain.yaml";
 export const MAX_CEREBROS = 8;
 
 const NOMBRE = /^[a-z0-9][a-z0-9-]*$/;
@@ -72,7 +72,7 @@ export interface Conexion {
 }
 
 export interface Registro {
-  /** Carpeta donde está `cerebros.yaml`. */
+  /** Carpeta donde está `flowbrain.yaml`. */
   carpeta: string;
   cerebros: Cerebro[];
   conexiones: Conexion[];
@@ -152,7 +152,7 @@ export async function leerRegistro(carpeta: string): Promise<Registro> {
 /** Carpeta que `flowbrain iniciar` crea dentro de un proyecto: ahí viven el registro y los cerebros. */
 export const CARPETA_PROYECTO = ".flowbrain";
 
-/** El registro del proyecto donde se está parado: `<carpeta>/.flowbrain` con su `cerebros.yaml`, en `desde` o en cualquier carpeta por encima. */
+/** El registro del proyecto donde se está parado: `<carpeta>/.flowbrain` con su `flowbrain.yaml`, en `desde` o en cualquier carpeta por encima. */
 export async function buscarRegistro(desde: string): Promise<string | null> {
   for (let d = resolve(desde); ; d = dirname(d)) {
     const c = join(d, CARPETA_PROYECTO);

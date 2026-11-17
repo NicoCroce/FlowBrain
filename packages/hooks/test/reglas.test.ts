@@ -11,7 +11,7 @@ let dir: string;
 let ctx: Contexto;
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), "brain-reglas-"));
-  for (const d of ["producto", "tecnologia", "_build"]) await cp(join(RAIZ, "fixtures/checkout", d), join(dir, "brain", d), { recursive: true });
+  for (const d of ["product", "technology", "_build"]) await cp(join(RAIZ, "fixtures/checkout", d), join(dir, "brain", d), { recursive: true });
   await compileDir(join(dir, "brain"));
   ctx = await cargarContexto(join(dir, "brain"));
 });

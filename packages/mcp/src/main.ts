@@ -5,16 +5,16 @@ import { crearMulti } from "./multi.js";
 import { cargadorConCache, crearServidor } from "./server.js";
 
 /**
- * `flowbrain serve`: servidor MCP por stdio. Raíz: --raiz <dir>, $FLOWBRAIN_ROOT, el `.flowbrain` del proyecto donde se
+ * `flowbrain serve`: servidor MCP por stdio. Raíz: --root <dir>, $FLOWBRAIN_ROOT, el `.flowbrain` del proyecto donde se
  * abrió la sesión (en esa carpeta o por encima) o el directorio actual. Con `--sync` y un
  * `sincronizar` (lo pasa la CLI), reindexa solo cuando un clon avanzó.
  */
 export async function servir(argv: string[], env: NodeJS.ProcessEnv = process.env, sincronizar?: (raiz: string) => Promise<unknown>): Promise<void> {
-  const i = argv.indexOf("--raiz");
+  const i = argv.indexOf("--root");
   // INIT_CWD: la carpeta desde la que se invocó, cuando el comando pasa por pnpm o npm.
   const raiz = resolve(i !== -1 && argv[i + 1] ? argv[i + 1]! : (env.FLOWBRAIN_ROOT ?? (await buscarRegistro(env.INIT_CWD ?? process.cwd())) ?? "."));
   const sync = sincronizar && argv.includes("--sync") ? sincronizar : undefined;
-  // Una carpeta con `cerebros.yaml` sirve todos sus cerebros; si no, es un brain solo.
+  // Una carpeta con `flowbrain.yaml` sirve todos sus cerebros; si no, es un brain solo.
   const server = (await esRegistro(raiz))
     ? crearServidor(() => Promise.reject(new Error("sin cerebro")), crearMulti(raiz, sync ? { sincronizar: sync } : {}))
     : crearServidor(cargadorConCache(raiz, sync ? () => sync(raiz) : undefined));

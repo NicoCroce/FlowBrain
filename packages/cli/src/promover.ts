@@ -4,8 +4,8 @@ import { dirname, join } from "node:path";
 import { cmp, CompileError, formatError } from "@flowbrain/core";
 
 /**
- * `flowbrain promover`: pasa borradores revisados de `_drafts/` a `tecnologia/` y `producto/`. Sin `--escribir` solo
- * lista. Nunca pisa una página existente distinta (salvo `--pisar`), y si el brain deja de compilar con las páginas
+ * `flowbrain promote`: pasa borradores revisados de `_drafts/` a `technology/` y `product/`. Sin `--write` solo
+ * lista. Nunca pisa una página existente distinta (salvo `--overwrite`), y si el brain deja de compilar con las páginas
  * nuevas, deshace todo y devuelve los errores: un borrador a medio completar no rompe el brain.
  */
 
@@ -20,7 +20,7 @@ export interface Candidato {
 export interface ResultadoPromover {
   candidatos: Candidato[];
   movidos: Candidato[];
-  /** Con `--escribir`: borradores que quedaron sin mover y por qué. */
+  /** Con `--write`: borradores que quedaron sin mover y por qué. */
   salteados: Array<Candidato & { motivo: string }>;
   errores: string[];
 }
@@ -29,17 +29,17 @@ const leer = (p: string) => readFile(p, "utf8").catch(() => null);
 
 export async function borradoresPromovibles(raiz: string): Promise<Candidato[]> {
   const out: Candidato[] = [];
-  const agregar = async (rel: string, carpeta: "tecnologia" | "producto") => {
+  const agregar = async (rel: string, carpeta: "technology" | "product") => {
     for (const n of (await readdir(join(raiz, rel)).catch(() => [] as string[])).filter((x) => x.endsWith(".md") && x !== "PROMPT.md").sort(cmp)) {
       const origen = `${rel}/${n}`, destino = `${carpeta}/${n}`;
       const [a, b] = [await leer(join(raiz, origen)), await leer(join(raiz, destino))];
       if (a !== null) out.push({ id: n.slice(0, -3), origen, destino, estado: b === null ? "nuevo" : a === b ? "igual" : "distinto" });
     }
   };
-  await agregar("_drafts/producto", "producto");
-  for (const d of (await readdir(join(raiz, "_drafts"), { withFileTypes: true }).catch(() => [])).filter((e) => e.isDirectory() && !e.name.startsWith("_") && e.name !== "producto" && e.name !== "notas").map((e) => e.name).sort(cmp)) {
-    await agregar(`_drafts/${d}/tecnologia`, "tecnologia");
-    await agregar(`_drafts/${d}/producto`, "producto");
+  await agregar("_drafts/product", "product");
+  for (const d of (await readdir(join(raiz, "_drafts"), { withFileTypes: true }).catch(() => [])).filter((e) => e.isDirectory() && !e.name.startsWith("_") && e.name !== "product" && e.name !== "notes").map((e) => e.name).sort(cmp)) {
+    await agregar(`_drafts/${d}/technology`, "technology");
+    await agregar(`_drafts/${d}/product`, "product");
   }
   return out.sort((a, b) => cmp(a.destino, b.destino) || cmp(a.origen, b.origen));
 }
@@ -55,7 +55,7 @@ export async function promover(raiz: string, opciones: { ids?: string[]; todos?:
   const respaldo = new Map<string, string | null>();
   const destinos = new Set<string>();
   for (const c of elegidos) {
-    if (c.estado === "distinto" && !opciones.pisar) { res.salteados.push({ ...c, motivo: "ya existe una página distinta (revisala o usá --pisar)" }); continue; }
+    if (c.estado === "distinto" && !opciones.pisar) { res.salteados.push({ ...c, motivo: "ya existe una página distinta (revisala o usá --overwrite)" }); continue; }
     if (destinos.has(c.destino)) { res.salteados.push({ ...c, motivo: "otro borrador va al mismo destino" }); continue; }
     destinos.add(c.destino);
     const contenido = (await leer(join(raiz, c.origen)))!;

@@ -18,8 +18,8 @@ let cliente: Client;
 
 beforeAll(async () => {
   raiz = await mkdtemp(join(tmpdir(), "brain-puertas-"));
-  for (const d of ["producto", "tecnologia", "_build"]) await cp(join(FIXTURE, d), join(raiz, d), { recursive: true });
-  expect((await ejecutar(["compile", "--raiz", raiz])).codigo).toBe(0);
+  for (const d of ["product", "technology", "_build"]) await cp(join(FIXTURE, d), join(raiz, d), { recursive: true });
+  expect((await ejecutar(["compile", "--root", raiz])).codigo).toBe(0);
   await mkdir(join(raiz, "ws/tienda/.git"), { recursive: true });
 
   const [a, b] = InMemoryTransport.createLinkedPair();
@@ -41,7 +41,7 @@ async function mcp(nombre: string, args: Record<string, unknown>): Promise<{ tex
 const legible = (texto: string) => stringifyCanonical(JSON.parse(texto));
 
 async function hook(prompt: string, cwd = join(raiz, "ws/tienda")): Promise<string> {
-  const r = await ejecutar(["hook", "claude-code", "--raiz", raiz], {}, raiz, async () => JSON.stringify({ prompt, cwd }));
+  const r = await ejecutar(["hook", "claude-code", "--root", raiz], {}, raiz, async () => JSON.stringify({ prompt, cwd }));
   expect(r.codigo).toBe(0);
   if (r.stdout === "") return "";
   return (JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
@@ -56,17 +56,17 @@ function seccion(texto: string, titulo: string): string {
 }
 
 const CASOS: Array<{ golden: string; cli: string[]; mcp: [string, Record<string, unknown>] }> = [
-  { golden: "trazar-checkout", cli: ["trazar", "--desde", "/checkout"], mcp: ["trazar", { desde: "/checkout" }] },
+  { golden: "trazar-checkout", cli: ["trace", "--from", "/checkout"], mcp: ["trazar", { desde: "/checkout" }] },
   {
     golden: "recorrer-payments-depende-in",
-    cli: ["recorrer", "svc-payments", "--verbos", "depende_de", "--direccion", "in"],
+    cli: ["traverse", "svc-payments", "--verbs", "depende_de", "--direction", "in"],
     mcp: ["recorrer_grafo", { nodo: "svc-payments", verbos: ["depende_de"], direccion: "in" }],
   },
-  { golden: "buscar-pagos", cli: ["buscar", "pagos"], mcp: ["buscar_nodo", { texto: "pagos" }] },
-  { golden: "contrato-bff", cli: ["contrato", "svc-bff"], mcp: ["contrato_de", { nodo: "svc-bff" }] },
+  { golden: "buscar-pagos", cli: ["search", "pagos"], mcp: ["buscar_nodo", { texto: "pagos" }] },
+  { golden: "contrato-bff", cli: ["contract", "svc-bff"], mcp: ["contrato_de", { nodo: "svc-bff" }] },
   {
     golden: "completo-payments-budget-300",
-    cli: ["recorrer", "svc-payments", "--proyeccion", "completo", "--budget", "300"],
+    cli: ["traverse", "svc-payments", "--projection", "completo", "--budget", "300"],
     mcp: ["recorrer_grafo", { nodo: "svc-payments", proyeccion: "completo", budget_tokens: 300 }],
   },
 ];
@@ -75,7 +75,7 @@ describe("CLI, MCP y hook devuelven el mismo JSON", () => {
   for (const c of CASOS) {
     it(c.golden, async () => {
       const esperado = await golden(c.golden);
-      const cli = await ejecutar([...c.cli, "--raiz", raiz]);
+      const cli = await ejecutar([...c.cli, "--root", raiz]);
       const m = await mcp(...c.mcp);
       expect(cli.stdout).toBe(esperado);
       expect(m.error).toBe(false);
@@ -85,13 +85,13 @@ describe("CLI, MCP y hook devuelven el mismo JSON", () => {
     });
   }
 
-  it("trazar --desde /checkout: 5 saltos idénticos por CLI, MCP y hook", async () => {
+  it("trazar --from /checkout: 5 saltos idénticos por CLI, MCP y hook", async () => {
     const esperado = await golden("trazar-checkout");
     const desdeHook = seccion(await hook("¿Qué se rompe si cambio /checkout?"), "trazar /checkout");
     expect(desdeHook).toBe(esperado);
     expect((JSON.parse(desdeHook) as { saltos: unknown[] }).saltos).toHaveLength(5);
     expect(legible((await mcp("trazar", { desde: "/checkout" })).texto)).toBe(esperado);
-    expect((await ejecutar(["trazar", "--desde", "/checkout", "--raiz", raiz])).stdout).toBe(esperado);
+    expect((await ejecutar(["trace", "--from", "/checkout", "--root", raiz])).stdout).toBe(esperado);
   });
 
   it("recorrer_grafo por hook coincide con MCP para un nodo mencionado", async () => {
@@ -101,7 +101,7 @@ describe("CLI, MCP y hook devuelven el mismo JSON", () => {
   });
 
   it("los errores de consulta son iguales por CLI y MCP", async () => {
-    const cli = await ejecutar(["recorrer", "svc-nada", "--raiz", raiz]);
+    const cli = await ejecutar(["traverse", "svc-nada", "--root", raiz]);
     const m = await mcp("recorrer_grafo", { nodo: "svc-nada" });
     expect(m.error).toBe(true);
     expect(legible(m.texto)).toBe(cli.stdout);
@@ -144,7 +144,7 @@ describe("hook de Claude Code", () => {
   });
 
   it("un brain roto no bloquea el prompt: sale 0 sin salida", async () => {
-    const r = await ejecutar(["hook", "claude-code", "--raiz", join(raiz, "no-existe")], {}, raiz, async () =>
+    const r = await ejecutar(["hook", "claude-code", "--root", join(raiz, "no-existe")], {}, raiz, async () =>
       JSON.stringify({ prompt: "/checkout", cwd: raiz }),
     );
     expect(r).toMatchObject({ codigo: 0, stdout: "" });

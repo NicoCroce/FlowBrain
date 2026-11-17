@@ -370,3 +370,12 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **El MCP no se registra solo:** `instalar` imprime las líneas de `claude mcp`, igual que `init`.
 
 146. **Hasta 8 cerebros (2026-11-17).** El tope era 5 y el primer proyecto real tiene 7 repos que se quieren ver cada uno como un cerebro. El visor suma tres colores; la ubicación en polígono ya servía para cualquier cantidad. Más cerebros comunicados son más pares que cruzar en cada consulta, así que el tope sigue existiendo.
+
+147. **Comandos, opciones y nombres de archivo en inglés; `install` único y con preguntas (2026-11-17).** Las decisiones anteriores nombran los comandos y archivos como eran entonces.
+   - **Comandos.** `install`, `brains` (`propose`, `apply`, `viewer`, `register`), `connections`, `status`, `promote`, `note`, `search`, `traverse`, `contract`, `trace`, `feature`, `flow`, `screen`, `callers`, `impact`, `risk`, `parity`, `drift`, `eval`. Sin cambio: `init`, `compile`, `index`, `draft`, `verify`, `sync`, `doctor`, `gen`, `infra`, `context`, `hook`, `serve`.
+   - **Opciones.** `--root`, `--brain`, `--projection`, `--types`, `--limit`, `--verbs`, `--direction`, `--depth`, `--from`, `--to`, `--clone`, `--days`, `--today`, `--min`, `--text`, `--write`, `--force`, `--all`, `--overwrite`.
+   - **Archivos y carpetas.** `flowbrain.yaml` (antes `cerebros.yaml`), `flowbrain.html`, `flowbrain.proposal.yaml`; dentro de un brain: `product/`, `technology/`, `_build/files`, `_build/extraction`, `_build/contracts`, `_build/features.json`, `_build/verification.json`, `_build/map.mmd`, `_drafts/notes`, `evals/questions.json`.
+   - **Qué sigue en castellano.** Las claves dentro de los archivos (`cerebros:`, `nombre:`, `comunicacion:`, el frontmatter de las páginas), los verbos y tipos del grafo, las herramientas MCP y sus respuestas, y los textos de ayuda. Cambiarlos es cambiar el esquema, no los nombres de archivo.
+   - **`install` reemplaza a `instalar` e `iniciar`.** Parado en el proyecto, hace la parte de la máquina (idempotente) y la del proyecto. Pregunta la carpeta de los repos y si va un cerebro por repo o uno solo; con un cerebro por repo activa la comunicación entre todos. Sin terminal no pregunta: usa `--repos`, `--split`/`--single`, y por defecto un cerebro por repo si entran en el tope.
+   - **Sin compatibilidad hacia atrás.** Un brain con los nombres viejos hay que renombrarlo (carpetas y registro) y volver a indexar.
+

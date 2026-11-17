@@ -4,14 +4,14 @@ import { slug, type AristaExtraida, type Pendiente, type ResultadoIndex } from "
 
 /**
  * Generador de borradores del indexador (`flowbrain draft`). Determinístico y sin LLM: a partir de la extracción
- * propone páginas para `_drafts/<repo>/tecnologia/` y deja en "Preguntas abiertas" lo que no pudo resolver.
- * Un agente puede refinarlas con `PROMPT.md`; un humano las revisa y las mueve a `tecnologia/`.
+ * propone páginas para `_drafts/<repo>/technology/` y deja en "Preguntas abiertas" lo que no pudo resolver.
+ * Un agente puede refinarlas con `PROMPT.md`; un humano las revisa y las mueve a `technology/`.
  */
 
 export const RESUMEN_PENDIENTE = "Borrador: completar resumen.";
 export const TITULO_PREGUNTAS = "## Preguntas abiertas";
-const AVISO = "> Borrador generado por `flowbrain draft`. Revisalo, completalo y movelo a `tecnologia/`.";
-const AVISO_PRODUCTO = "> Borrador generado por `flowbrain draft` a partir de la estructura del código. Revisalo, completalo y movelo a `producto/`.";
+const AVISO = "> Borrador generado por `flowbrain draft`. Revisalo, completalo y movelo a `technology/`.";
+const AVISO_PRODUCTO = "> Borrador generado por `flowbrain draft` a partir de la estructura del código. Revisalo, completalo y movelo a `product/`.";
 export const QUE_ES_PENDIENTE = "_Completar: qué problema resuelve para quien la usa, quién la usa y cuál es el flujo principal._";
 
 /** Carpetas que agrupan funcionalidades por convención, en cualquier lenguaje o framework. */
@@ -273,7 +273,7 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
         pregunta = `- Se propone \`vive_en: [${dbs[0]}]\` porque las demás tablas que usan esos servicios viven ahí: confirmalo.`;
       }
     }
-    archivos[`${base}/tecnologia/${id}.md`] = pagina(nuevoFrontmatter(campos, []), conPreguntas(titulo + detalle, [pregunta]));
+    archivos[`${base}/technology/${id}.md`] = pagina(nuevoFrontmatter(campos, []), conPreguntas(titulo + detalle, [pregunta]));
     resumen.paginas++;
     resumen.preguntas++;
     if (prop.tipo === "tabla") resumen.tablas++;
@@ -286,7 +286,7 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
     const campos = { id: r.repo, tipo: "repo", nombre: carpetaRepo, resumen: RESUMEN_PENDIENTE, aliases: [carpetaRepo] };
     const lista = svcs.map((s) => `- \`${s.svc}\` (paquete \`${s.paquete || "."}\`)`).join("\n");
     const cuerpo = `# ${carpetaRepo}\n\n${AVISO}\n\n${r.archivos.archivos.length} archivos indexados. Servicios detectados:\n\n${lista}\n`;
-    archivos[`${base}/tecnologia/${r.repo}.md`] = pagina(nuevoFrontmatter(campos, []), cuerpo);
+    archivos[`${base}/technology/${r.repo}.md`] = pagina(nuevoFrontmatter(campos, []), cuerpo);
     resumen.paginas++;
   }
 
@@ -327,14 +327,14 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
       };
       contenido = pagina(nuevoFrontmatter(campos, nuevas), conPreguntas(`# ${nombre}\n\n${AVISO}\n`, qs));
     }
-    archivos[`${base}/tecnologia/${s.svc}.md`] = contenido;
+    archivos[`${base}/technology/${s.svc}.md`] = contenido;
     resumen.paginas++;
     resumen.relaciones += nuevas.length;
     resumen.preguntas += qs.length;
   }
 
   // ---------- 4. Funcionalidades: una por carpeta de features/modules/domains ----------
-  // Van a `_drafts/producto/` (una funcionalidad puede abarcar varios repos). Si ya existe una página o un borrador
+  // Van a `_drafts/product/` (una funcionalidad puede abarcar varios repos). Si ya existe una página o un borrador
   // con el mismo id, se le suma la ruta a `codigo`: así `pagos` del front y `pagos` del back quedan juntas.
   const feats = new Map<string, { ruta: string; frontmatter: string; cuerpo: string; codigo: string[]; borrador: boolean }>();
   const cargar = (fuentes: Fuente[], borrador: boolean) => {
@@ -348,7 +348,7 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
       }
     }
   };
-  cargar(paginas.filter((f) => f.ruta.startsWith("producto/")), false);
+  cargar(paginas.filter((f) => f.ruta.startsWith("product/")), false);
   cargar(borradoresProducto, true);
   // Una carpeta repartida entre varias funcionalidades (cada subcarpeta en el `codigo` de alguna) también está
   // cubierta: los archivos sueltos de su raíz (`pedidos.module.ts`) solo cablean las partes.
@@ -390,7 +390,7 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
         "- ¿Qué equipo es responsable? Agregá `pertenece_a: [team-…]`.",
       ]);
     }
-    const nueva = { ruta: `_drafts/producto/${id}.md`, frontmatter, cuerpo, codigo: [...(previa?.codigo ?? []), codigo], borrador: true };
+    const nueva = { ruta: `_drafts/product/${id}.md`, frontmatter, cuerpo, codigo: [...(previa?.codigo ?? []), codigo], borrador: true };
     feats.set(id, nueva);
     archivos[nueva.ruta] = pagina(frontmatter, cuerpo);
     if (!previa) resumen.funcionalidades++;
@@ -410,12 +410,12 @@ export function promptAgente(repo: string, paginas: string[]): string {
     "",
     "Reglas:",
     "",
-    `1. Trabajá solo dentro de \`_drafts/${repo}/\`. Nunca escribas en \`tecnologia/\` ni en \`producto/\`: un humano mueve los borradores tras revisarlos.`,
+    `1. Trabajá solo dentro de \`_drafts/${repo}/\`. Nunca escribas en \`technology/\` ni en \`product/\`: un humano mueve los borradores tras revisarlos.`,
     `2. Reemplazá cada \`resumen: ${RESUMEN_PENDIENTE}\` por una línea (máximo 140 caracteres) que diga qué hace el nodo, sacada de leer el código.`,
     "3. Para cada ítem de \"Preguntas abiertas\": abrí la evidencia citada. Si podés resolverlo con certeza, agregá la relación con `evidencia: \"<repo>:<ruta>#L<n>\"` y `origen: inferido`, y borrá el ítem. Si no, dejalo como está.",
     "4. No agregues relaciones sin evidencia, no cambies ids ni borres relaciones con `origen: parser`.",
-    `5. En \`_drafts/producto/\`, completá "Qué es" de cada funcionalidad leyendo las pantallas y textos de su \`codigo\`: qué le permite hacer a quien la usa, en lenguaje de producto, sin nombres de archivos ni de clases. Si no queda claro, dejá el texto pendiente.`,
-    "6. Al terminar, verificá que el borrador compile: copiá `tecnologia/` del borrador sobre una copia del brain, corré `flowbrain index <repo>` y `flowbrain compile`.",
+    `5. En \`_drafts/product/\`, completá "Qué es" de cada funcionalidad leyendo las pantallas y textos de su \`codigo\`: qué le permite hacer a quien la usa, en lenguaje de producto, sin nombres de archivos ni de clases. Si no queda claro, dejá el texto pendiente.`,
+    "6. Al terminar, verificá que el borrador compile: copiá `technology/` del borrador sobre una copia del brain, corré `flowbrain index <repo>` y `flowbrain compile`.",
     "",
     "Páginas:",
     "",

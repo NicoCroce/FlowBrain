@@ -63,9 +63,9 @@ export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): st
     "- `infra` para saber cómo se construye, despliega y configura un servicio: imagen, pipelines, variables de entorno y proxy.",
     "- `funcionalidad` para la ficha de una funcionalidad de producto: endpoints, consumo, datos y relaciones.",
     "Los `avisos` de cada respuesta son huecos conocidos (no hay dato, no \"no pasa nada\"): llamadas sin resolver o índice desactualizado; ahí sí conviene mirar el código. `indice` dice de qué commit salió.",
-    "Sin MCP, los mismos comandos por CLI: `flowbrain buscar <texto>`, `flowbrain recorrer <nodo>`, `flowbrain contrato <nodo>`, `flowbrain trazar --desde <ruta>`, `flowbrain recorrido <endpoint|Clase.metodo>`, `flowbrain pantalla </ruta>`, `flowbrain quien-llama <Clase.metodo>`, `flowbrain impacto <pieza>`, `flowbrain funcionalidad <id>`.",
+    "Sin MCP, los mismos comandos por CLI: `flowbrain search <texto>`, `flowbrain traverse <nodo>`, `flowbrain contract <nodo>`, `flowbrain trace --from <ruta>`, `flowbrain flow <endpoint|Clase.metodo>`, `flowbrain screen </ruta>`, `flowbrain callers <Clase.metodo>`, `flowbrain impact <pieza>`, `flowbrain feature <id>`.",
     "Cada arista trae evidencia (`repo:ruta#Lnn`); abrí ese archivo antes de afirmar algo.",
-    `Si el código contradice al brain, escribí en tu respuesta una línea \`${PREFIJO_NOTA} <id-del-nodo>: <qué cambió>\`. Al cerrar la sesión el hook la guarda en \`_drafts/notas/\` para revisión.`,
+    `Si el código contradice al brain, escribí en tu respuesta una línea \`${PREFIJO_NOTA} <id-del-nodo>: <qué cambió>\`. Al cerrar la sesión el hook la guarda en \`_drafts/notes/\` para revisión.`,
     "",
   ].join("\n");
 }

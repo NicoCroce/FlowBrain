@@ -51,11 +51,11 @@ describe("compile(fixtures/checkout)", () => {
     expect(s.generados["_build/graph.json"]).toBe(await readFile(join(EXPECTED, "graph.json"), "utf8"));
   });
 
-  it("backlinks.json, INDEX.md y mapa.mmd coinciden con sus golden", async () => {
+  it("backlinks.json, INDEX.md y map.mmd coinciden con sus golden", async () => {
     const s = compile(entradas);
     await golden("backlinks.json", s.generados["_build/backlinks.json"]!);
     await golden("INDEX.md", s.generados["INDEX.md"]!);
-    await golden("mapa.mmd", s.generados["_build/mapa.mmd"]!);
+    await golden("map.mmd", s.generados["_build/map.mmd"]!);
   });
 
   it("las páginas con backlinks inyectados coinciden con sus golden", async () => {
@@ -92,7 +92,7 @@ describe("compileDir", () => {
   let dir: string;
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "brain-compile-"));
-    for (const d of ["producto", "tecnologia", "_build"]) await cp(join(FIXTURE, d), join(dir, d), { recursive: true });
+    for (const d of ["product", "technology", "_build"]) await cp(join(FIXTURE, d), join(dir, d), { recursive: true });
   });
   afterAll(async () => {
     await rm(dir, { recursive: true, force: true });
@@ -101,14 +101,14 @@ describe("compileDir", () => {
   it("la segunda corrida no escribe ningún archivo", async () => {
     const primera = await compileDir(dir);
     expect(primera.escritos).toContain("_build/graph.json");
-    expect(primera.escritos).toContain("tecnologia/svc-payments.md");
+    expect(primera.escritos).toContain("technology/svc-payments.md");
     const segunda = await compileDir(dir);
     expect(segunda.escritos).toEqual([]);
   });
 });
 
 describe("errores ruidosos con archivo y línea", () => {
-  const BFF = "tecnologia/svc-bff.md";
+  const BFF = "technology/svc-bff.md";
 
   it("verbo desconocido", () => {
     const e = conPagina(entradas, BFF, (s) => s.replace("verbo: llama_a, destino: svc-payments", "verbo: invoca_a, destino: svc-payments"));
@@ -156,12 +156,12 @@ describe("errores ruidosos con archivo y línea", () => {
   });
 
   it("id que no coincide con el archivo, y id duplicado", () => {
-    const mal = conPagina(entradas, "tecnologia/svc-otro.md", () =>
+    const mal = conPagina(entradas, "technology/svc-otro.md", () =>
       "---\nid: svc-bff\ntipo: svc\nnombre: Otro\nresumen: Duplicado.\n---\n",
     );
     expect(erroresDe(mal)).toEqual([
-      `tecnologia/svc-otro.md:2: el id "svc-bff" no coincide con el nombre del archivo`,
-      `tecnologia/svc-otro.md:2: id duplicado: svc-bff`,
+      `technology/svc-otro.md:2: el id "svc-bff" no coincide con el nombre del archivo`,
+      `technology/svc-otro.md:2: id duplicado: svc-bff`,
     ]);
   });
 
@@ -172,6 +172,6 @@ describe("errores ruidosos con archivo y línea", () => {
 
   it("YAML inválido", () => {
     const e = conPagina(entradas, BFF, (s) => s.replace("nombre: BFF de la tienda", "nombre: [sin cerrar"));
-    expect(erroresDe(e).some((m) => /^tecnologia\/svc-bff\.md:\d+: YAML inválido/.test(m))).toBe(true);
+    expect(erroresDe(e).some((m) => /^technology\/svc-bff\.md:\d+: YAML inválido/.test(m))).toBe(true);
   });
 });

@@ -18,7 +18,7 @@ const w = async (ruta: string, lineas: string[]) => {
   await mkdir(dirname(join(dir, ruta)), { recursive: true });
   await writeFile(join(dir, ruta), lineas.join("\n") + "\n");
 };
-const brain = (args: string[], cwd = dir) => ejecutar([...args, "--raiz", reg], {}, cwd);
+const brain = (args: string[], cwd = dir) => ejecutar([...args, "--root", reg], {}, cwd);
 const back = (nombre: string, extra: string[] = []) => [
   w(`repos/${nombre}/package.json`, [`{ "name": "${nombre}", "dependencies": { "express": "4" } }`]),
   w(`repos/${nombre}/src/main.ts`, [
@@ -33,7 +33,7 @@ const back = (nombre: string, extra: string[] = []) => [
 ];
 const registro = (extra: string[] = []) =>
   writeFile(
-    join(reg, "cerebros.yaml"),
+    join(reg, "flowbrain.yaml"),
     [
       "version: 1",
       "cerebros:",
@@ -99,35 +99,35 @@ describe("registro de cerebros", () => {
   });
 
   it("proponer explora la carpeta y deja un borrador con los repos, lo detectado y las preguntas", async () => {
-    const r = await brain(["cerebros", "proponer", join(dir, "repos")]);
+    const r = await brain(["brains", "propose", join(dir, "repos")]);
     expect(r.codigo).toBe(0);
     expect(r.stdout).toContain("3 repos");
-    const texto = await readFile(join(reg, "cerebros.yaml"), "utf8");
+    const texto = await readFile(join(reg, "flowbrain.yaml"), "utf8");
     expect(texto).toContain('- ruta: "../repos/tienda-web"');
     expect(texto).toContain("¿Cómo se agrupan estos 3 repos en cerebros (hasta 8)");
     expect(texto).toContain("endpoints: 2");
     // Lo propuesto es un registro válido: un cerebro con todo.
     expect(interpretarRegistro(texto, reg).cerebros.map((c) => `${c.nombre} ${c.repos.length}`)).toEqual(["repos 3"]);
     // Con un registro ya escrito, no lo pisa.
-    expect((await brain(["cerebros", "proponer", join(dir, "repos")])).stdout).toContain("cerebros.propuesta.yaml");
+    expect((await brain(["brains", "propose", join(dir, "repos")])).stdout).toContain("flowbrain.proposal.yaml");
   });
 
   it("aplicar crea e indexa cada cerebro; los comandos eligen el cerebro por nombre o por el repo donde se está", async () => {
     await registro(COMUNICADOS);
-    const r = await brain(["cerebros", "aplicar"]);
+    const r = await brain(["brains", "apply"]);
     expect(r.codigo).toBe(0);
     expect(r.stdout).toMatch(/^front: \d+ nodos/m);
     expect(r.stdout).toMatch(/^legado \(sin curar\): \d+ nodos/m);
-    expect((await brain(["cerebros"])).stdout).toContain("  comunicado con: back");
-    const enBack = JSON.parse((await brain(["buscar", "/pedidos", "--cerebro", "back"])).stdout) as { nodos: Array<{ id: string }> };
+    expect((await brain(["brains"])).stdout).toContain("  comunicado con: back");
+    const enBack = JSON.parse((await brain(["search", "/pedidos", "--brain", "back"])).stdout) as { nodos: Array<{ id: string }> };
     expect(enBack.nodos.map((n) => n.id)).toEqual(["svc-tienda-api:GET:/pedidos", "svc-tienda-api:POST:/pedidos"]);
-    // Parado en el repo del front, sin --cerebro: el suyo, donde esa ruta no es un endpoint.
-    const enFront = JSON.parse((await brain(["buscar", "/pedidos"], join(dir, "repos/tienda-web/src"))).stdout) as { nodos: Array<{ tipo: string }> };
+    // Parado en el repo del front, sin --brain: el suyo, donde esa ruta no es un endpoint.
+    const enFront = JSON.parse((await brain(["search", "/pedidos"], join(dir, "repos/tienda-web/src"))).stdout) as { nodos: Array<{ tipo: string }> };
     expect(enFront.nodos.filter((n) => n.tipo === "endpoint")).toEqual([]);
     // Fuera de todo repo y con varios cerebros, hay que elegir.
-    const sinElegir = await brain(["buscar", "/pedidos"]);
+    const sinElegir = await brain(["search", "/pedidos"]);
     expect(sinElegir.codigo).not.toBe(0);
-    expect(sinElegir.stdout + sinElegir.stderr).toContain("elegí uno con --cerebro");
+    expect(sinElegir.stdout + sinElegir.stderr).toContain("elegí uno con --brain");
   }, 60_000);
 });
 
@@ -177,7 +177,7 @@ describe("varios cerebros por MCP", () => {
       "  - { desde: front/svc-tienda-web, hacia: back/svc-tienda-api, por: API_URL }",
       "  - { desde: front/svc-tienda-web, hacia: legado/svc-tienda-vieja, por: LEGACY_URL }",
     ]);
-    const r = JSON.parse((await brain(["conexiones", "--cerebro", "front"])).stdout) as { conexiones: Array<Record<string, unknown>>; avisos: string[] };
+    const r = JSON.parse((await brain(["connections", "--brain", "front"])).stdout) as { conexiones: Array<Record<string, unknown>>; avisos: string[] };
     expect(r.conexiones.map((x) => `${x["desde"]} → ${x["hacia"]}: ${x["llamadas"]} (declarada ${x["declarada"]})`)).toEqual([
       "front/svc-tienda-web → back/svc-tienda-api: 2 (declarada true)",
       "front/svc-tienda-web → legado/svc-tienda-vieja: 0 (declarada true)",
@@ -187,7 +187,7 @@ describe("varios cerebros por MCP", () => {
 });
 
 describe("hook con varios cerebros", () => {
-  const hook = async (cwd: string, prompt: string) => (await ejecutar(["hook", "claude-code", "--raiz", reg], {}, dir, async () => JSON.stringify({ prompt, cwd }))).stdout;
+  const hook = async (cwd: string, prompt: string) => (await ejecutar(["hook", "claude-code", "--root", reg], {}, dir, async () => JSON.stringify({ prompt, cwd }))).stdout;
   it("carga solo el cerebro del repo donde se está; fuera de todo repo conocido no inyecta nada", async () => {
     expect(await hook(join(dir, "repos/tienda-api"), "¿qué hace GET /pedidos?")).toContain("Repo actual: repo-tienda-api");
     expect(await hook(join(dir, "repos/tienda-web"), "revisá el repo")).toContain("Repo actual: repo-tienda-web");
@@ -200,30 +200,60 @@ describe("registrar en Claude Code", () => {
   it("deja los hooks apuntando al registro e imprime la línea del MCP", async () => {
     const settings = join(dir, "settings.json");
     await writeFile(settings, '{ "hooks": { "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "otro-hook" }] }] } }\n');
-    const r = await ejecutar(["cerebros", "registrar", "--raiz", reg, "--settings", settings], { FLOWBRAIN_COMANDO: "flowbrain" }, dir);
-    expect(r.stdout).toContain(`claude mcp add --scope user flowbrain -- flowbrain serve --sync --raiz ${reg}`);
+    const r = await ejecutar(["brains", "register", "--root", reg, "--settings", settings], { FLOWBRAIN_COMANDO: "flowbrain" }, dir);
+    expect(r.stdout).toContain(`claude mcp add --scope user flowbrain -- flowbrain serve --sync --root ${reg}`);
     const s = JSON.parse(await readFile(settings, "utf8")) as { hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> };
-    expect(s.hooks["UserPromptSubmit"]!.flatMap((e) => e.hooks.map((h) => h.command))).toEqual(["otro-hook", `flowbrain hook claude-code --raiz ${reg}`]);
-    expect(s.hooks["SessionEnd"]!.flatMap((e) => e.hooks.map((h) => h.command))).toEqual([`flowbrain hook claude-code --raiz ${reg}`]);
+    expect(s.hooks["UserPromptSubmit"]!.flatMap((e) => e.hooks.map((h) => h.command))).toEqual(["otro-hook", `flowbrain hook claude-code --root ${reg}`]);
+    expect(s.hooks["SessionEnd"]!.flatMap((e) => e.hooks.map((h) => h.command))).toEqual([`flowbrain hook claude-code --root ${reg}`]);
   });
 });
 
 describe("dentro de un proyecto", () => {
-  it("iniciar crea .flowbrain con todo indexado, y los comandos y el hook lo encuentran desde cualquier subcarpeta", async () => {
+  // Siempre con --settings y --bin: sin eso, install tocaría la instalación real de quien corre los tests.
+  const global = () => ["--settings", join(dir, "global/settings.json"), "--bin", join(dir, "global/bin")];
+  const env = { FLOWBRAIN_COMANDO: "flowbrain" };
+
+  it("install pregunta dónde están los repos y cómo dividirlos, crea .flowbrain e indexa; después todo lo encuentra solo", async () => {
     const proyecto = join(dir, "repos");
-    const r = await ejecutar(["iniciar"], {}, proyecto);
-    expect(r.stdout).toContain(`registro creado en ${join(proyecto, ".flowbrain/cerebros.yaml")}: 3 repos en un cerebro`);
-    expect(await readFile(join(proyecto, ".flowbrain/.gitignore"), "utf8")).toBe("*/_build/\ncerebros.html\n");
-    expect(await readFile(join(proyecto, ".flowbrain/cerebros.yaml"), "utf8")).toContain('- ruta: "../tienda-web"');
-    // Sin --raiz, parado adentro de un repo del proyecto.
-    const b = JSON.parse((await ejecutar(["buscar", "/pedidos", "--tipos", "endpoint"], {}, join(proyecto, "tienda-api/src"))).stdout) as { nodos: Array<{ id: string }> };
+    const preguntas: string[] = [];
+    const responder = async (q: string) => (preguntas.push(q), preguntas.length === 1 ? "" : "1");
+    const r = await ejecutar(["install", ...global()], { ...env, PATH: join(dir, "global/bin") }, proyecto, undefined, responder);
+    expect(preguntas[0]).toBe(`¿En qué carpeta están los repositorios? (Enter: ${proyecto}) `);
+    expect(preguntas[1]).toContain("Encontré 3: tienda-api, tienda-vieja, tienda-web.");
+    expect(r.stdout).toContain(`registro creado en ${join(proyecto, ".flowbrain/flowbrain.yaml")}: 3 repos en 3 cerebros`);
+    const yaml = await readFile(join(proyecto, ".flowbrain/flowbrain.yaml"), "utf8");
+    expect(yaml).toContain('  - nombre: tienda-web\n    curado: true\n    repos:\n      - ruta: "../tienda-web"');
+    expect(yaml).toContain("comunicacion:\n  - { entre: [tienda-api, tienda-vieja], activa: true }\n  - { entre: [tienda-api, tienda-web], activa: true }\n  - { entre: [tienda-vieja, tienda-web], activa: true }");
+    expect(await readFile(join(proyecto, ".flowbrain/.gitignore"), "utf8")).toBe("*/_build/\nflowbrain.html\n");
+    // La parte de la máquina: comando en el PATH, hooks sin carpeta fija y la línea del MCP.
+    expect(await readFile(join(dir, "global/bin/flowbrain"), "utf8")).toContain('exec flowbrain "$@"');
+    expect(JSON.parse(await readFile(join(dir, "global/settings.json"), "utf8")).hooks.UserPromptSubmit[0].hooks[0].command).toBe("flowbrain hook claude-code");
+    expect(r.stdout).toContain("claude mcp add --scope user flowbrain -- flowbrain serve --sync\n");
+    expect(r.stdout).not.toContain("no está en tu PATH");
+    // Sin --root, parado adentro de un repo del proyecto.
+    const b = JSON.parse((await ejecutar(["search", "/pedidos", "--types", "endpoint"], {}, join(proyecto, "tienda-api/src"))).stdout) as { nodos: Array<{ id: string }> };
     expect(b.nodos.map((n) => n.id)).toContain("svc-tienda-api:GET:/pedidos");
-    // El hook no lleva --raiz: usa la carpeta de la sesión. Fuera de un proyecto no dice nada y no falla.
+    // El hook no lleva --root: usa la carpeta de la sesión. Fuera de un proyecto no dice nada y no falla.
     const hook = (cwd: string) => ejecutar(["hook", "claude-code"], {}, dir, async () => JSON.stringify({ hook_event_name: "UserPromptSubmit", prompt: "qué hace GET /pedidos en svc-tienda-api", cwd }));
     expect((await hook(join(proyecto, "tienda-api"))).stdout).toContain("<flowbrain-context>");
     expect(await hook(dir)).toEqual({ codigo: 0, stdout: "", stderr: "" });
-    // Volver a correrlo actualiza, sin pisar el registro.
-    expect((await ejecutar(["iniciar"], {}, proyecto)).stdout).toContain("registro existente");
+    // Volver a correrlo actualiza, sin preguntar ni pisar el registro.
+    expect((await ejecutar(["install", ...global()], env, proyecto, undefined, responder)).stdout).toContain("registro existente");
+    expect(preguntas.length).toBe(2);
+  }, 120_000);
+
+  it("install sin nadie a quién preguntar: --repos elige la carpeta (un monorepo) y --single junta todo en un cerebro", async () => {
+    const mono = join(dir, "mono");
+    await mkdir(join(mono, ".git"), { recursive: true });
+    for (const p of ["api", "web"]) await w(`mono/packages/${p}/package.json`, [`{ "name": "${p}" }`]);
+    const r = await ejecutar(["install", "--repos", "packages", "--single", ...global()], env, mono);
+    expect(r.stdout).toContain("2 repos en un cerebro");
+    const yaml = await readFile(join(mono, ".flowbrain/flowbrain.yaml"), "utf8");
+    expect(yaml).toContain('  - nombre: mono\n    curado: true\n    repos:\n      - ruta: "../packages/api"\n      - ruta: "../packages/web"');
+    // Sin --single ni --split y sin terminal: un cerebro por paquete.
+    await rm(join(mono, ".flowbrain"), { recursive: true });
+    await ejecutar(["install", "--repos", "packages", ...global()], env, mono);
+    expect(await readFile(join(mono, ".flowbrain/flowbrain.yaml"), "utf8")).toContain("  - { entre: [api, web], activa: true }");
   }, 120_000);
 
   it("un repo que guarda otros repos adentro: se indexan los de adentro, no la carpeta entera como un solo repo", async () => {
@@ -234,14 +264,6 @@ describe("dentro de un proyecto", () => {
     await mkdir(join(dir, "solo/.git"), { recursive: true });
     expect(await encontrarRepos(join(dir, "solo"))).toEqual([join(dir, "solo")]);
   });
-
-  it("instalar deja el comando en el PATH y los hooks sin atarlos a una carpeta", async () => {
-    const settings = join(dir, "global/settings.json"), bin = join(dir, "global/bin");
-    const r = await ejecutar(["instalar", "--settings", settings, "--bin", bin], { FLOWBRAIN_COMANDO: "flowbrain", PATH: bin }, dir);
-    expect(await readFile(join(bin, "flowbrain"), "utf8")).toContain('exec flowbrain "$@"');
-    expect(JSON.parse(await readFile(settings, "utf8")).hooks.UserPromptSubmit[0].hooks[0].command).toBe("flowbrain hook claude-code");
-    expect(r.stdout).toContain("claude mcp add --scope user flowbrain -- flowbrain serve --sync\n");
-    expect(r.stdout).not.toContain("no está en tu PATH");
-  });
 });
+
 

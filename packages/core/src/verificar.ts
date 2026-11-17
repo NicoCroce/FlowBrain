@@ -7,8 +7,8 @@ import { claveDudosa, EVIDENCIA, RUTA_VERIFICACION, VerificacionSchema, type Dud
 
 /**
  * Verificador (`flowbrain verify`). Para cada arista con evidencia comprueba que el archivo exista en el clon local
- * del repo, que la línea exista y, si `_build/archivos/<repo>.json` registra un símbolo en esa línea, que la línea
- * todavía lo nombre. Las que fallan quedan en `_build/verificacion.json` y `compile` las marca `dudoso`.
+ * del repo, que la línea exista y, si `_build/files/<repo>.json` registra un símbolo en esa línea, que la línea
+ * todavía lo nombre. Las que fallan quedan en `_build/verification.json` y `compile` las marca `dudoso`.
  */
 
 /**
@@ -27,7 +27,7 @@ export interface ResultadoVerificacion {
   noVerificables: Array<{ repo: string; aristas: number }>;
 }
 
-/** Símbolos por `repo:ruta` → línea → nombres, desde `_build/archivos/*.json`. */
+/** Símbolos por `repo:ruta` → línea → nombres, desde `_build/files/*.json`. */
 export function indiceSimbolos(archivos: Fuente[]): Map<string, Map<number, string[]>> {
   const out = new Map<string, Map<number, string[]>>();
   for (const f of archivos) {
@@ -138,7 +138,7 @@ export async function leerVerificacion(raiz: string): Promise<Dudosa[]> {
 }
 
 /**
- * `flowbrain verify`: compila en memoria, verifica, escribe `_build/verificacion.json` y recompila para que
+ * `flowbrain verify`: compila en memoria, verifica, escribe `_build/verification.json` y recompila para que
  * `graph.json` refleje los `dudoso`. Lecturas acotadas a los clones locales.
  */
 export async function verifyDir(

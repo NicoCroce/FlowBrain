@@ -7,17 +7,17 @@ export const TIPOS_GENERADOS = ["contrato", "endpoint", "archivo", "pantalla"] a
 export type TipoPagina = (typeof TIPOS_PAGINA)[number];
 export type Tipo = TipoPagina | (typeof TIPOS_GENERADOS)[number];
 
-export const CARPETA_POR_TIPO: Record<TipoPagina, "producto" | "tecnologia"> = {
-  repo: "tecnologia",
-  svc: "tecnologia",
-  lib: "tecnologia",
-  db: "tecnologia",
-  queue: "tecnologia",
-  ext: "tecnologia",
-  tabla: "tecnologia",
-  feat: "producto",
-  team: "producto",
-  decision: "producto",
+export const CARPETA_POR_TIPO: Record<TipoPagina, "product" | "technology"> = {
+  repo: "technology",
+  svc: "technology",
+  lib: "technology",
+  db: "technology",
+  queue: "technology",
+  ext: "technology",
+  tabla: "technology",
+  feat: "product",
+  team: "product",
+  decision: "product",
 };
 
 export const ESTADOS = ["vigente", "dudoso", "deprecado"] as const;
@@ -342,7 +342,7 @@ export interface Graph {
 
 // ---------- Verificación (`flowbrain verify`) ----------
 
-export const RUTA_VERIFICACION = "_build/verificacion.json";
+export const RUTA_VERIFICACION = "_build/verification.json";
 
 export const DudosaSchema = z
   .object({

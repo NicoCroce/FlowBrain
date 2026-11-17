@@ -22,10 +22,10 @@ async function listar(raiz: string, dir: string, ext: string): Promise<Fuente[]>
 
 export async function leerEntradas(raiz: string): Promise<Entradas> {
   return {
-    paginas: [...(await listar(raiz, "producto", ".md")), ...(await listar(raiz, "tecnologia", ".md"))],
-    contratos: await listar(raiz, "_build/contratos", ".json"),
-    archivos: await listar(raiz, "_build/archivos", ".json"),
-    extracciones: await listar(raiz, "_build/extraccion", ".json"),
+    paginas: [...(await listar(raiz, "product", ".md")), ...(await listar(raiz, "technology", ".md"))],
+    contratos: await listar(raiz, "_build/contracts", ".json"),
+    archivos: await listar(raiz, "_build/files", ".json"),
+    extracciones: await listar(raiz, "_build/extraction", ".json"),
     verificacion: await readFile(join(raiz, RUTA_VERIFICACION), "utf8").then(
       (contenido) => ({ ruta: RUTA_VERIFICACION, contenido }),
       () => null,

@@ -18,7 +18,7 @@ beforeEach(async () => {
   brain = join(dir, "brain");
   clon = join(dir, "clones/envios");
   await cp(F("repos/envios"), clon, { recursive: true });
-  await mkdir(join(brain, "tecnologia"), { recursive: true });
+  await mkdir(join(brain, "technology"), { recursive: true });
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
@@ -28,7 +28,7 @@ const relaciones = async (ruta: string) => (parsePagina(ruta, await readFile(rut
 
 describe("flowbrain draft sobre un brain casi vacío", () => {
   beforeEach(async () => {
-    await cp(F("envios-brain/tecnologia/svc-notificaciones.md"), join(brain, "tecnologia/svc-notificaciones.md"));
+    await cp(F("envios-brain/technology/svc-notificaciones.md"), join(brain, "technology/svc-notificaciones.md"));
   });
 
   it("propone repo, svc, tablas y externos, y escribe solo en _drafts/", async () => {
@@ -36,20 +36,20 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
     expect(r.repo).toBe("repo-envios");
     expect(r.escritos).toEqual([
       "_drafts/repo-envios/PROMPT.md",
-      "_drafts/repo-envios/tecnologia/ext-correo.md",
-      "_drafts/repo-envios/tecnologia/repo-envios.md",
-      "_drafts/repo-envios/tecnologia/svc-envios.md",
-      "_drafts/repo-envios/tecnologia/tabla-envios.md",
-      "_drafts/repo-envios/tecnologia/tabla-tarifas.md",
+      "_drafts/repo-envios/technology/ext-correo.md",
+      "_drafts/repo-envios/technology/repo-envios.md",
+      "_drafts/repo-envios/technology/svc-envios.md",
+      "_drafts/repo-envios/technology/tabla-envios.md",
+      "_drafts/repo-envios/technology/tabla-tarifas.md",
     ]);
-    expect(await readdir(join(brain, "tecnologia"))).toEqual(["svc-notificaciones.md"]);
-    expect(await readdir(brain)).toEqual(["_drafts", "tecnologia"]);
+    expect(await readdir(join(brain, "technology"))).toEqual(["svc-notificaciones.md"]);
+    expect(await readdir(brain)).toEqual(["_drafts", "technology"]);
     expect(r.resumen).toEqual({ paginas: 5, relaciones: 4, preguntas: 4, tablas: 2, externos: 1, funcionalidades: 0 });
   });
 
   it("el borrador de una tabla dice qué métodos la leen o escriben", async () => {
     await draftDir(clon, brain);
-    const t = await readFile(join(brain, "_drafts/repo-envios/tecnologia/tabla-envios.md"), "utf8");
+    const t = await readFile(join(brain, "_drafts/repo-envios/technology/tabla-envios.md"), "utf8");
     expect(t).toContain("## Quién la usa");
     // El parser de PHP no da métodos con rango: queda la evidencia del acceso.
     expect(t).toContain("- `repo-envios:app/Http/Controllers/EnvioController.php#L20` (escribe)");
@@ -62,22 +62,22 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
       .map((a) => ({ verbo: a.verbo, destino: a.hasta, ...(a.dato ? { dato: a.dato } : {}), evidencia: a.evidencia, origen: a.origen }))
       .map((x) => stringifyCanonical(x))
       .sort();
-    const reales = (await relaciones(join(brain, "_drafts/repo-envios/tecnologia/svc-envios.md"))).map((x) => stringifyCanonical(x)).sort();
+    const reales = (await relaciones(join(brain, "_drafts/repo-envios/technology/svc-envios.md"))).map((x) => stringifyCanonical(x)).sort();
     expect(reales).toEqual(esperadas);
   });
 
   it("lo no resuelto queda en Preguntas abiertas, con evidencia", async () => {
     await draftDir(clon, brain);
-    const svc = await readFile(join(brain, "_drafts/repo-envios/tecnologia/svc-envios.md"), "utf8");
+    const svc = await readFile(join(brain, "_drafts/repo-envios/technology/svc-envios.md"), "utf8");
     expect(svc).toContain("## Preguntas abiertas\n\n- `llama_a` `GET ${env:TRACKING_URL}/track`: base dinámica");
     expect(svc).toContain("`repo-envios:app/Services/Correo.php#L21`");
     expect(svc).toContain(`resumen: "${RESUMEN_PENDIENTE}"`);
   });
 
-  it("movido a tecnologia/, index + compile pasan y el grafo tiene las aristas", async () => {
+  it("movido a technology/, index + compile pasan y el grafo tiene las aristas", async () => {
     await draftDir(clon, brain);
-    const d = join(brain, "_drafts/repo-envios/tecnologia");
-    for (const f of await readdir(d)) await cp(join(d, f), join(brain, "tecnologia", f));
+    const d = join(brain, "_drafts/repo-envios/technology");
+    for (const f of await readdir(d)) await cp(join(d, f), join(brain, "technology", f));
     await escribirIndex(brain, await indexar(clon, brain));
     const { salidas } = await compileDir(brain);
     const aristas = salidas.graph.edges.filter((e) => e.desde === "svc-envios" && ["llama_a", "lee_de", "escribe_en"].includes(e.verbo)).map((e) => `${e.verbo} ${e.hasta}`);
@@ -97,16 +97,16 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
 
 describe("flowbrain draft sobre páginas existentes", () => {
   beforeEach(async () => {
-    await cp(F("envios-brain/tecnologia"), join(brain, "tecnologia"), { recursive: true });
+    await cp(F("envios-brain/technology"), join(brain, "technology"), { recursive: true });
   });
 
   it("agrega relaciones al frontmatter existente sin tocar el resto", async () => {
     await draftDir(clon, brain);
-    const original = await readFile(F("envios-brain/tecnologia/svc-envios.md"), "utf8");
-    const borrador = await readFile(join(brain, "_drafts/repo-envios/tecnologia/svc-envios.md"), "utf8");
+    const original = await readFile(F("envios-brain/technology/svc-envios.md"), "utf8");
+    const borrador = await readFile(join(brain, "_drafts/repo-envios/technology/svc-envios.md"), "utf8");
     const fm = original.split("---\n")[1]!;
     expect(borrador.startsWith(`---\n${fm}relaciones:\n  - {verbo: escribe_en, destino: tabla-envios, dato: Envio, evidencia: "repo-envios:app/Http/Controllers/EnvioController.php#L20", origen: parser}\n`)).toBe(true);
-    expect(await readdir(join(brain, "_drafts/repo-envios/tecnologia"))).toEqual(["svc-envios.md"]);
+    expect(await readdir(join(brain, "_drafts/repo-envios/technology"))).toEqual(["svc-envios.md"]);
   });
 
   it("conserva comentarios YAML, no duplica relaciones ya escritas y reemplaza la sección de preguntas", async () => {
@@ -132,8 +132,8 @@ describe("flowbrain draft sobre páginas existentes", () => {
       "texto",
       "",
     ].join("\n");
-    const b = generarBorradores(r, [{ ruta: "tecnologia/svc-envios.md", contenido: pagina }], "envios");
-    const t = b.archivos["_drafts/repo-envios/tecnologia/svc-envios.md"]!;
+    const b = generarBorradores(r, [{ ruta: "technology/svc-envios.md", contenido: pagina }], "envios");
+    const t = b.archivos["_drafts/repo-envios/technology/svc-envios.md"]!;
     expect(t).toContain("vive_en: [repo-envios] # comentario");
     expect(t.match(/destino: ext-correo/g)).toHaveLength(1);
     expect(t).not.toContain("- vieja");
@@ -153,7 +153,7 @@ describe("etiquetaHost", () => {
 
 describe("repo no identificado", () => {
   it("draft acepta un repo sin página; index no", async () => {
-    await writeFile(join(brain, "tecnologia/.keep"), "");
+    await writeFile(join(brain, "technology/.keep"), "");
     await expect(indexar(clon, brain)).rejects.toThrow(/no se pudo identificar/);
     expect((await draftDir(clon, brain)).repo).toBe("repo-envios");
   });
@@ -184,22 +184,22 @@ describe("flowbrain draft: funcionalidades", () => {
     const r = (repo: string, rutas: string[]) =>
       ({ repo, repoNuevo: false, aristas: [], pendientes: [], servicios: [], archivos: { repo, archivos: rutas.map((ruta) => ({ ruta, lenguaje: "ts", simbolos: [] })) } }) as never;
     const front = generarBorradores(r("repo-front", ["src/features/reservas/a.ts", "src/features/pagos/b.ts"]), [], "front");
-    expect(Object.keys(front.archivos).filter((k) => k.includes("producto"))).toEqual(["_drafts/producto/feat-pagos.md", "_drafts/producto/feat-reservas.md"]);
+    expect(Object.keys(front.archivos).filter((k) => k.includes("product"))).toEqual(["_drafts/product/feat-pagos.md", "_drafts/product/feat-reservas.md"]);
     expect(front.resumen.funcionalidades).toBe(2);
-    const previos = Object.entries(front.archivos).filter(([k]) => k.startsWith("_drafts/producto/")).map(([ruta, contenido]) => ({ ruta, contenido }));
+    const previos = Object.entries(front.archivos).filter(([k]) => k.startsWith("_drafts/product/")).map(([ruta, contenido]) => ({ ruta, contenido }));
     const back = generarBorradores(r("repo-back", ["modules/reservas/c.ts"]), [], "back", previos);
     expect(back.resumen.funcionalidades).toBe(0);
-    const reservas = back.archivos["_drafts/producto/feat-reservas.md"]!;
+    const reservas = back.archivos["_drafts/product/feat-reservas.md"]!;
     expect(reservas).toContain("  - repo-front:src/features/reservas\n  - repo-back:modules/reservas\n");
     // Una segunda corrida no duplica la ruta.
-    const otra = generarBorradores(r("repo-back", ["modules/reservas/c.ts"]), [], "back", [{ ruta: "_drafts/producto/feat-reservas.md", contenido: reservas }]);
-    expect(otra.archivos["_drafts/producto/feat-reservas.md"]).toBeUndefined();
+    const otra = generarBorradores(r("repo-back", ["modules/reservas/c.ts"]), [], "back", [{ ruta: "_drafts/product/feat-reservas.md", contenido: reservas }]);
+    expect(otra.archivos["_drafts/product/feat-reservas.md"]).toBeUndefined();
   });
 
   it("no propone una carpeta cuyas subcarpetas ya reparten otras funcionalidades", async () => {
     const { generarBorradores } = await import("../src/index.js");
     const repo = { repo: "repo-back", repoNuevo: false, aristas: [], pendientes: [], servicios: [], archivos: { repo: "repo-back", archivos: ["modules/pedidos/pedidos.module.ts", "modules/pedidos/list/a.ts", "modules/pedidos/info/b.ts"].map((ruta) => ({ ruta, lenguaje: "ts", simbolos: [] })) } } as never;
-    const pagina = (id: string, codigo: string) => ({ ruta: `producto/${id}.md`, contenido: `---\nid: ${id}\ntipo: feat\nnombre: ${id}\nresumen: x\ncodigo:\n  - ${codigo}\n---\n# ${id}\n` });
+    const pagina = (id: string, codigo: string) => ({ ruta: `product/${id}.md`, contenido: `---\nid: ${id}\ntipo: feat\nnombre: ${id}\nresumen: x\ncodigo:\n  - ${codigo}\n---\n# ${id}\n` });
     const una = generarBorradores(repo, [pagina("feat-lista", "repo-back:modules/pedidos/list")], "back");
     expect(una.resumen.funcionalidades).toBe(1);
     const ambas = generarBorradores(repo, [pagina("feat-lista", "repo-back:modules/pedidos/list"), pagina("feat-ficha", "repo-back:modules/pedidos/info")], "back");

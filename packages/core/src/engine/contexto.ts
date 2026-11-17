@@ -18,7 +18,7 @@ export interface Contexto {
   prosa: Map<string, string>;
   /** Funcionalidades, símbolos, invocaciones y accesos por método. `null` si el brain no tiene índice de código. */
   codigo: IndiceCodigo | null;
-  /** Notas pendientes de revisión (`_drafts/notas/<id>.md`), por nombre de archivo: lo que alguien vio que contradice al brain. */
+  /** Notas pendientes de revisión (`_drafts/notes/<id>.md`), por nombre de archivo: lo que alguien vio que contradice al brain. */
   notas: Map<string, string[]>;
 }
 
@@ -74,26 +74,26 @@ export async function cargarContexto(raiz: string): Promise<Contexto> {
   const contratos: Contrato[] = [];
   let nombres: string[] = [];
   try {
-    nombres = (await readdir(join(raiz, "_build/contratos"))).filter((n) => n.endsWith(".json")).sort(cmp);
+    nombres = (await readdir(join(raiz, "_build/contracts"))).filter((n) => n.endsWith(".json")).sort(cmp);
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }
-  for (const n of nombres) contratos.push(JSON.parse(await readFile(join(raiz, "_build/contratos", n), "utf8")) as Contrato);
+  for (const n of nombres) contratos.push(JSON.parse(await readFile(join(raiz, "_build/contracts", n), "utf8")) as Contrato);
   const prosa = new Map<string, string>();
   for (const n of graph.nodes) {
     if (n.pagina) prosa.set(n.id, extraerProsa(await readFile(join(raiz, n.pagina), "utf8")));
   }
   let fichas: Ficha[] = [];
   try {
-    fichas = (JSON.parse(await readFile(join(raiz, "_build/funcionalidades.json"), "utf8")) as { funcionalidades: Ficha[] }).funcionalidades;
+    fichas = (JSON.parse(await readFile(join(raiz, "_build/features.json"), "utf8")) as { funcionalidades: Ficha[] }).funcionalidades;
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }
-  const archivos = await jsonDe(join(raiz, "_build/archivos"));
-  const codigo = archivos.length ? crearIndiceCodigo(graph, fichas, archivos, await jsonDe(join(raiz, "_build/extraccion"))) : null;
+  const archivos = await jsonDe(join(raiz, "_build/files"));
+  const codigo = archivos.length ? crearIndiceCodigo(graph, fichas, archivos, await jsonDe(join(raiz, "_build/extraction"))) : null;
   if (codigo) await actualizarHeads(codigo, raiz);
   const notas = new Map<string, string[]>();
-  const dirNotas = join(raiz, "_drafts/notas");
+  const dirNotas = join(raiz, "_drafts/notes");
   for (const n of (await readdir(dirNotas).catch(() => [] as string[])).filter((x) => x.endsWith(".md")).sort(cmp)) {
     const lineas = (await readFile(join(dirNotas, n), "utf8")).split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim());
     if (lineas.length) notas.set(n.slice(0, -3), lineas);

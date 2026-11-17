@@ -8,7 +8,7 @@ import { init } from "./init.js";
 import { borradoresPromovibles, promover } from "./promover.js";
 
 /**
- * Varios cerebros: `proponer` explora una carpeta y deja un borrador de `cerebros.yaml` con lo que pudo detectar y
+ * Varios cerebros: `proponer` explora una carpeta y deja un borrador de `flowbrain.yaml` con lo que pudo detectar y
  * las preguntas que no puede responder sola; `aplicar` crea e indexa cada cerebro a partir del archivo ya revisado.
  */
 
@@ -96,8 +96,8 @@ export async function detectarRepo(ruta: string): Promise<RepoDetectado> {
 
 const y = (s: string) => JSON.stringify(s);
 
-/** Texto de `cerebros.yaml` propuesto: un solo cerebro con todo, lo detectado y las preguntas abiertas. */
-export function textoPropuesta(carpetaRegistro: string, nombre: string, repos: RepoDetectado[]): string {
+/** Texto de `flowbrain.yaml` propuesto: un solo cerebro con todo, lo detectado y las preguntas abiertas. */
+export function textoPropuesta(carpetaRegistro: string, nombre: string, repos: RepoDetectado[], grupos: Array<{ nombre: string; repos: RepoDetectado[] }> = [{ nombre, repos }]): string {
   // Relativa si el repo está cerca del registro (así el archivo sirve en otra máquina); si no, absoluta.
   const rel = (p: string) => {
     const r = relative(resolve(carpetaRegistro), p) || ".";
@@ -106,25 +106,23 @@ export function textoPropuesta(carpetaRegistro: string, nombre: string, repos: R
   // Solo se pregunta por las bases que parecen una variable de configuración y concentran llamadas; el resto queda en `detectado`.
   const preguntable = (b: { base: string; llamadas: number }) => b.llamadas >= 3 && /^\$\{[\w.:$>-]+\}$/.test(b.base);
   const preguntas = [
-    `¿Cómo se agrupan estos ${repos.length} repos en cerebros (hasta ${MAX_CEREBROS}) y cómo se llama cada uno? Hoy están todos en "${nombre}".`,
+    grupos.length > 1
+      ? `Hay un cerebro por repo (${grupos.length}). ¿Conviene juntar algunos? Un cerebro puede tener varios repos (hasta ${MAX_CEREBROS} cerebros).`
+      : `¿Cómo se agrupan estos ${repos.length} repos en cerebros (hasta ${MAX_CEREBROS}) y cómo se llama cada uno? Hoy están todos en "${nombre}".`,
     "¿Algún cerebro tiene información obsoleta o que no vas a curar? Ponele `curado: false`: se indexa sin revisión y cada respuesta lo avisa.",
     ...repos.flatMap((r) => r.bases.filter(preguntable).map((b) => `${r.nombre} llama por ${b.base} (${b.llamadas} llamadas): ¿a qué servicio apunta? Si está en otro cerebro, agregá una conexión con \`por: ${b.base.replace(/^\$\{|\}$/g, "")}\`.`)),
-    "¿Entre qué cerebros se activa la comunicación? Agregá un par en `comunicacion` por cada uno.",
+    grupos.length > 1 ? "La comunicación quedó activa entre todos los cerebros. Poné `activa: false` en los pares que no se hablan." : "¿Entre qué cerebros se activa la comunicación? Agregá un par en `comunicacion` por cada uno.",
   ];
+  const pares = grupos.flatMap((a, i) => grupos.slice(i + 1).map((b) => `  - { entre: [${a.nombre}, ${b.nombre}], activa: true }`));
   return [
-    "# Registro de cerebros. Lo escribió `flowbrain cerebros proponer`; revisalo y corré `flowbrain cerebros aplicar`.",
+    "# Registro de cerebros. Lo escribió `flowbrain brains propose`; revisalo y corré `flowbrain brains apply`.",
     "# Rutas relativas a esta carpeta. Cada cerebro queda en una subcarpeta con su nombre.",
     "version: 1",
     "cerebros:",
-    `  - nombre: ${nombre}`,
-    "    curado: true",
-    "    repos:",
-    ...repos.map((r) => `      - ruta: ${y(rel(r.ruta))}`),
+    ...grupos.flatMap((g) => [`  - nombre: ${g.nombre}`, "    curado: true", "    repos:", ...g.repos.map((r) => `      - ruta: ${y(rel(r.ruta))}`)]),
     "",
     "# Comunicación entre cerebros: sin un par activo, cada cerebro no sabe nada de los otros.",
-    "# comunicacion:",
-    "#   - entre: [uno, otro]",
-    "#     activa: true",
+    ...(pares.length ? ["comunicacion:", ...pares] : ["# comunicacion:", "#   - entre: [uno, otro]", "#     activa: true"]),
     "",
     "# Conexiones declaradas: qué servicio de un cerebro llama a qué servicio de otro, y cómo se distingue en el código.",
     "# conexiones:",
@@ -151,16 +149,37 @@ export function textoPropuesta(carpetaRegistro: string, nombre: string, repos: R
   ].join("\n");
 }
 
-/** `flowbrain cerebros proponer <carpeta…>`: escribe el borrador del registro. No pisa un registro existente. */
+/** `flowbrain brains propose <carpeta…>`: escribe el borrador del registro. No pisa un registro existente. */
 export async function proponer(carpetaRegistro: string, carpetas: string[], comoRepo = false): Promise<{ archivo: string; repos: RepoDetectado[] }> {
   // `comoRepo`: cada carpeta es un repo tal cual, sin buscar adentro.
   const rutas = comoRepo ? carpetas.map((c) => resolve(c)) : [...new Set((await Promise.all(carpetas.map((c) => encontrarRepos(c)))).flat())].sort(cmp);
   const repos: RepoDetectado[] = [];
   for (const r of rutas) repos.push(await detectarRepo(r));
   const nombre = slug(basename(resolve(carpetas[0] ?? carpetaRegistro))) || "principal";
-  const archivo = join(carpetaRegistro, (await esRegistro(carpetaRegistro)) ? "cerebros.propuesta.yaml" : ARCHIVO_REGISTRO);
+  const archivo = join(carpetaRegistro, (await esRegistro(carpetaRegistro)) ? "flowbrain.proposal.yaml" : ARCHIVO_REGISTRO);
   await writeFile(archivo, textoPropuesta(carpetaRegistro, nombre, repos), "utf8");
   return { archivo, repos };
+}
+
+/**
+ * Registro nuevo para `flowbrain install`: todos los repos en un cerebro, o un cerebro por repo con la comunicación
+ * activa entre todos. Devuelve los nombres de los cerebros.
+ */
+export async function crearRegistro(carpetaRegistro: string, proyecto: string, rutas: string[], dividir: boolean): Promise<{ archivo: string; repos: RepoDetectado[]; cerebros: string[] }> {
+  const repos: RepoDetectado[] = [];
+  for (const r of rutas) repos.push(await detectarRepo(r));
+  const nombre = slug(basename(resolve(proyecto))) || "principal";
+  const usados = new Set<string>();
+  const unico = (base: string) => {
+    let n = base || "repo";
+    for (let i = 2; usados.has(n); i++) n = `${base}-${i}`;
+    usados.add(n);
+    return n;
+  };
+  const grupos = dividir ? repos.map((r) => ({ nombre: unico(slug(r.nombre)), repos: [r] })) : [{ nombre, repos }];
+  const archivo = join(carpetaRegistro, ARCHIVO_REGISTRO);
+  await writeFile(archivo, textoPropuesta(carpetaRegistro, nombre, repos, grupos), "utf8");
+  return { archivo, repos, cerebros: grupos.map((g) => g.nombre) };
 }
 
 export interface ResultadoCerebro {
@@ -186,13 +205,13 @@ async function promoverSolos(raiz: string, curado: boolean): Promise<{ promovida
   let promovidas = 0;
   const excluidos = new Set<string>();
   for (let intento = 0; intento < 6; intento++) {
-    const ids = (await borradoresPromovibles(raiz)).filter((c) => c.estado === "nuevo" && !excluidos.has(c.destino) && (c.destino.startsWith("tecnologia/") || !curado)).map((c) => c.origen);
+    const ids = (await borradoresPromovibles(raiz)).filter((c) => c.estado === "nuevo" && !excluidos.has(c.destino) && (c.destino.startsWith("technology/") || !curado)).map((c) => c.origen);
     if (!ids.length) break;
     const r = await promover(raiz, { ids, escribir: true });
     promovidas += r.movidos.length;
     if (!r.errores.length) break;
     // Cada error empieza con el archivo de la página que no compila: esas vuelven a quedar como borrador.
-    const malos = new Set(r.errores.map((e) => /^((?:tecnologia|producto)\/[^:]+\.md)/.exec(e)?.[1]).filter((x): x is string => !!x));
+    const malos = new Set(r.errores.map((e) => /^((?:technology|product)\/[^:]+\.md)/.exec(e)?.[1]).filter((x): x is string => !!x));
     if (!malos.size) {
       errores.push(...r.errores);
       break;
@@ -247,19 +266,19 @@ export async function aplicarCerebro(c: Cerebro): Promise<ResultadoCerebro> {
   return res;
 }
 
-/** `flowbrain cerebros aplicar [nombre]`. */
+/** `flowbrain brains apply [nombre]`. */
 export async function aplicar(registro: Registro, solo?: string): Promise<ResultadoCerebro[]> {
   const out: ResultadoCerebro[] = [];
   for (const c of registro.cerebros) if (!solo || c.nombre === solo) out.push(await aplicarCerebro(c));
   return out;
 }
 
-/** `flowbrain cerebros`: qué hay en el registro y en qué estado está cada cerebro. */
+/** `flowbrain brains`: qué hay en el registro y en qué estado está cada cerebro. */
 export async function listar(carpeta: string): Promise<string> {
   const r = await leerRegistro(carpeta);
   const lineas: string[] = [];
   for (const c of r.cerebros) {
-    let grafo = "sin indexar (corré flowbrain cerebros aplicar)";
+    let grafo = "sin indexar (corré flowbrain brains apply)";
     try {
       const g = JSON.parse(await readFile(join(c.raiz, "_build/graph.json"), "utf8")) as { nodes: unknown[]; edges: unknown[] };
       grafo = `${g.nodes.length} nodos, ${g.edges.length} relaciones`;
@@ -273,7 +292,7 @@ export async function listar(carpeta: string): Promise<string> {
   return lineas.join("\n") + "\n";
 }
 
-export const ARCHIVO_VISOR = "cerebros.html";
+export const ARCHIVO_VISOR = "flowbrain.html";
 
 /**
  * Visor de todo el registro: un cerebro dibujado por cada cerebro compilado, y entre ellos las llamadas que cruzan
@@ -289,11 +308,11 @@ export async function escribirVisor(registro: Registro): Promise<string | null> 
     } catch {
       continue;
     }
-    const funcionalidades = await readFile(join(c.raiz, "_build/funcionalidades.json"), "utf8").then((t) => (JSON.parse(t) as { funcionalidades: Ficha[] }).funcionalidades, () => [] as Ficha[]);
-    const dir = join(c.raiz, "_build/extraccion");
+    const funcionalidades = await readFile(join(c.raiz, "_build/features.json"), "utf8").then((t) => (JSON.parse(t) as { funcionalidades: Ficha[] }).funcionalidades, () => [] as Ficha[]);
+    const dir = join(c.raiz, "_build/extraction");
     const extracciones = await Promise.all((await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp).map((n) => readFile(join(dir, n), "utf8")));
     visibles.push({ nombre: c.nombre, sinRevisar: !c.curado, graph, funcionalidades });
-    const dirA = join(c.raiz, "_build/archivos");
+    const dirA = join(c.raiz, "_build/files");
     const archivos = await Promise.all((await readdir(dirA).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp).map((n) => readFile(join(dirA, n), "utf8")));
     livianos.set(c.nombre, cerebroLiviano(c.nombre, graph, extracciones, archivos));
   }

@@ -13,10 +13,10 @@ beforeAll(async () => {
 /** feat-checkout con `codigo` en el BFF, una feat-carrito en la web y una extracción que conecta ambas. */
 function conFuncionalidades(codigoCheckout = "repo-tienda:apps/bff/src/routes"): Entradas {
   const paginas = base.paginas.map((p) =>
-    p.ruta === "producto/feat-checkout.md" ? { ...p, contenido: p.contenido.replace("verificado: 2026-11-15\n", `verificado: 2026-11-15\ncodigo:\n  - ${codigoCheckout}\n`) } : p,
+    p.ruta === "product/feat-checkout.md" ? { ...p, contenido: p.contenido.replace("verificado: 2026-11-15\n", `verificado: 2026-11-15\ncodigo:\n  - ${codigoCheckout}\n`) } : p,
   );
   paginas.push({
-    ruta: "producto/feat-carrito.md",
+    ruta: "product/feat-carrito.md",
     contenido: "---\nid: feat-carrito\ntipo: feat\nnombre: Carrito\nresumen: El cliente arma el pedido.\ncodigo: [\"repo-tienda:apps/web/src\"]\n---\n# Carrito\n\nArma el pedido.\n",
   });
   const extraccion = {
@@ -30,7 +30,7 @@ function conFuncionalidades(codigoCheckout = "repo-tienda:apps/bff/src/routes"):
     repo: "repo-tienda",
     servicios: [],
   };
-  return { ...base, paginas, extracciones: [{ ruta: "_build/extraccion/repo-tienda.json", contenido: JSON.stringify(extraccion) }] };
+  return { ...base, paginas, extracciones: [{ ruta: "_build/extraction/repo-tienda.json", contenido: JSON.stringify(extraccion) }] };
 }
 
 describe("funcionalidades", () => {
@@ -69,13 +69,13 @@ describe("funcionalidades", () => {
     expect(checkout.expone).toEqual(["svc-bff:POST:/checkout"]);
     expect(checkout.datos).toEqual([{ escribe: 1, evidencia: "repo-tienda:apps/bff/src/routes/checkout.ts#L30", lee: 0, tabla: "tabla-pagos" }]);
     expect(checkout.cuerpo).not.toContain("brain:backlinks");
-    expect(generados["_build/funcionalidades.json"]).toContain('"feat-carrito"');
+    expect(generados["_build/features.json"]).toContain('"feat-carrito"');
   });
 
   it("codigo con formato inválido o en una página que no es feat falla", () => {
     expect(() => compile(conFuncionalidades("repo-tienda:apps/bff#L3"))).toThrow(CompileError);
     expect(() => compile(conFuncionalidades("repo-noexiste:src"))).toThrow(/repo inexistente/);
-    const mal = { ...base, paginas: base.paginas.map((p) => (p.ruta === "tecnologia/svc-bff.md" ? { ...p, contenido: p.contenido.replace("vive_en:", "codigo: [\"repo-tienda:apps\"]\nvive_en:") } : p)) };
+    const mal = { ...base, paginas: base.paginas.map((p) => (p.ruta === "technology/svc-bff.md" ? { ...p, contenido: p.contenido.replace("vive_en:", "codigo: [\"repo-tienda:apps\"]\nvive_en:") } : p)) };
     expect(() => compile(mal)).toThrow(/codigo solo aplica a feat/);
   });
 
@@ -122,7 +122,7 @@ describe("funcionalidades", () => {
   it("la ficha muestra cómo está construida: recorrido de cada endpoint con lo que toca, y dominio", () => {
     const e = conFuncionalidades("repo-tienda:apps/bff/src");
     const extra = { aristas: [{ dato: null, desde: "svc-bff", endpoint: "svc-payments:POST:/payments", evidencia: "repo-tienda:apps/bff/src/clients/payments.ts#L11", hasta: "svc-payments", origen: "parser", verbo: "llama_a" }], pendientes: [], repo: "repo-tienda", servicios: [] };
-    const { funcionalidades } = compile({ ...e, extracciones: [...e.extracciones!, { ruta: "_build/extraccion/zz.json", contenido: JSON.stringify(extra) }] });
+    const { funcionalidades } = compile({ ...e, extracciones: [...e.extracciones!, { ruta: "_build/extraction/zz.json", contenido: JSON.stringify(extra) }] });
     const f = funcionalidades.find((x) => x.id === "feat-checkout")!;
     expect(f.recorridos).toEqual([
       {
@@ -198,12 +198,12 @@ describe("código compartido, decisiones y equipos", () => {
   const conLib = (): Entradas => {
     const e = conFuncionalidades();
     const paginas = e.paginas.map((p) =>
-      p.ruta === "tecnologia/tabla-pagos.md" ? { ...p, contenido: p.contenido.replace("\n---\n", "\npertenece_a: [team-cobros]\nrelaciones:\n  - { verbo: decidido_por, destino: decision-pagos-idempotentes }\n---\n") } : p,
+      p.ruta === "technology/tabla-pagos.md" ? { ...p, contenido: p.contenido.replace("\n---\n", "\npertenece_a: [team-cobros]\nrelaciones:\n  - { verbo: decidido_por, destino: decision-pagos-idempotentes }\n---\n") } : p,
     );
     paginas.push(
-      pagina("tecnologia/lib-clientes.md", ["id: lib-clientes", "tipo: lib", "nombre: Clientes HTTP", "resumen: Clientes de otros servicios.", 'codigo: ["repo-tienda:apps/bff/src/clients"]']),
-      pagina("producto/team-cobros.md", ["id: team-cobros", "tipo: team", "nombre: Cobros", "resumen: Equipo de cobros."]),
-      pagina("producto/decision-pagos-idempotentes.md", ["id: decision-pagos-idempotentes", "tipo: decision", "nombre: Pagos idempotentes", "resumen: Cada pago lleva una clave de idempotencia."]),
+      pagina("technology/lib-clientes.md", ["id: lib-clientes", "tipo: lib", "nombre: Clientes HTTP", "resumen: Clientes de otros servicios.", 'codigo: ["repo-tienda:apps/bff/src/clients"]']),
+      pagina("product/team-cobros.md", ["id: team-cobros", "tipo: team", "nombre: Cobros", "resumen: Equipo de cobros."]),
+      pagina("product/decision-pagos-idempotentes.md", ["id: decision-pagos-idempotentes", "tipo: decision", "nombre: Pagos idempotentes", "resumen: Cada pago lleva una clave de idempotencia."]),
     );
     return { ...e, paginas };
   };
@@ -228,7 +228,7 @@ describe("código compartido, decisiones y equipos", () => {
 
   it("codigo en una página que no es feat ni lib falla", () => {
     const e = conLib();
-    const paginas = e.paginas.map((p) => (p.ruta === "producto/team-cobros.md" ? { ...p, contenido: p.contenido.replace("resumen: Equipo de cobros.", 'resumen: Equipo de cobros.\ncodigo: ["repo-tienda:apps"]') } : p));
+    const paginas = e.paginas.map((p) => (p.ruta === "product/team-cobros.md" ? { ...p, contenido: p.contenido.replace("resumen: Equipo de cobros.", 'resumen: Equipo de cobros.\ncodigo: ["repo-tienda:apps"]') } : p));
     expect(() => compile({ ...e, paginas })).toThrow(CompileError);
   });
 });

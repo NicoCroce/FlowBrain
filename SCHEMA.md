@@ -23,20 +23,20 @@ Un ID duplicado hace fallar la compilación.
 
 | Tipo | Carpeta | Se escribe en | Campos propios (`atributos`) |
 |---|---|---|---|
-| `repo` | `tecnologia/` | página | — |
-| `svc` | `tecnologia/` | página | `puntos_de_entrada` |
-| `lib` | `tecnologia/` | página | — |
-| `db` | `tecnologia/` | página | — |
-| `queue` | `tecnologia/` | página | — |
-| `ext` | `tecnologia/` | página | — |
-| `tabla` | `tecnologia/` | página | — |
-| `feat` | `producto/` | página | — |
-| `team` | `producto/` | página | — |
-| `decision` | `producto/` | página | — |
-| `contrato` | — | `_build/contratos/<svc-id>.json` | `svc`, `fuente` |
-| `endpoint` | — | `_build/contratos/<svc-id>.json` | `metodo`, `ruta`, `request`, `response`, `evidencia` |
-| `archivo` | — | `_build/archivos/<repo-id>.json` | `repo`, `ruta`, `lenguaje` |
-| `pantalla` | — | `_build/archivos/<repo-id>.json` | `ruta`, `componentes`, `evidencia`, `envuelta`, `sale`, `desdeEnvolturas` |
+| `repo` | `technology/` | página | — |
+| `svc` | `technology/` | página | `puntos_de_entrada` |
+| `lib` | `technology/` | página | — |
+| `db` | `technology/` | página | — |
+| `queue` | `technology/` | página | — |
+| `ext` | `technology/` | página | — |
+| `tabla` | `technology/` | página | — |
+| `feat` | `product/` | página | — |
+| `team` | `product/` | página | — |
+| `decision` | `product/` | página | — |
+| `contrato` | — | `_build/contracts/<svc-id>.json` | `svc`, `fuente` |
+| `endpoint` | — | `_build/contracts/<svc-id>.json` | `metodo`, `ruta`, `request`, `response`, `evidencia` |
+| `archivo` | — | `_build/files/<repo-id>.json` | `repo`, `ruta`, `lenguaje` |
+| `pantalla` | — | `_build/files/<repo-id>.json` | `ruta`, `componentes`, `evidencia`, `envuelta`, `sale`, `desdeEnvolturas` |
 
 `svc` incluye todo proceso que se despliega: APIs, workers, crons y también frontends (SPA, app mobile). Un mismo repo puede tener varios `svc`, por ejemplo un monorepo o el mismo código desplegado con distintos roles.
 
@@ -64,7 +64,7 @@ Reglas:
 - `vive_en` y `pertenece_a` se escriben solo como campos de primer nivel, nunca dentro de `relaciones`.
 - `expone`, `contiene` y `navega_a` los genera el compilador a partir de los JSON. Si aparecen en una página, la compilación falla.
 - Se permite `desde == hasta`: un servicio que se llama a sí mismo por HTTP.
-- **Relaciones finas.** Además de las aristas entre servicios, `compile` genera las de endpoints, pantallas y funcionalidades a partir de la extracción (`_build/extraccion`) y de los recorridos del código. Cada una cita la línea del acceso o de la llamada y hereda su origen y su `dato` (una llamada `inferido` da una relación `inferido`):
+- **Relaciones finas.** Además de las aristas entre servicios, `compile` genera las de endpoints, pantallas y funcionalidades a partir de la extracción (`_build/extraction`) y de los recorridos del código. Cada una cita la línea del acceso o de la llamada y hereda su origen y su `dato` (una llamada `inferido` da una relación `inferido`):
   - endpoint → tabla (`lee_de`/`escribe_en`) y endpoint → servicio o externo (`llama_a`, con `endpoint` si se conoce): lo que toca el método que lo atiende y todo lo que llama dentro de su servicio, sin cruzar HTTP.
   - pantalla → servicio o externo (`llama_a`, con `endpoint`): las llamadas en el árbol de sus componentes.
   - endpoint → funcionalidad (`implementa`): el handler está en el `codigo` de la funcionalidad.
@@ -142,7 +142,7 @@ Los destinos sin resolver nunca llegan a una página compilada. Van como prosa e
 
 ## 7. JSON generado por los parsers
 
-**`_build/contratos/<svc-id>.json`**
+**`_build/contracts/<svc-id>.json`**
 
 ```json
 {
@@ -164,7 +164,7 @@ Un endpoint puede traer `query`: el tipo de sus parámetros de query (un DTO, o 
 
 `request` y `response` pueden ser `null` (no se pudo determinar: es un hueco, no "sin cuerpo"). Son el nombre de un tipo, `T[]`, un genérico con su texto (`Record<string, unknown>`) o varios unidos con ` | `. `tipos` es un mapa de nombre a forma, con tipos expresados como strings estilo TS; incluye interfaces, tipos y clases de datos (propiedades públicas). Si un handler devuelve un objeto literal sin tipo, su forma se guarda como `<Clase.metodo>:respuesta` (con varios `return` literales, la unión de sus claves: la que falta en alguno lleva `?`), con `unknown` en lo que no se sabe y la clave `…` si esparce otro objeto. Cuando hay `openapi-parser`, prevalece sobre cualquier tipo inferido.
 
-**`_build/archivos/<repo-id>.json`**
+**`_build/files/<repo-id>.json`**
 
 ```json
 {
@@ -197,7 +197,7 @@ Un endpoint puede traer `query`: el tipo de sus parámetros de query (un DTO, o 
 
 Los símbolos se quedan en este JSON y no pasan a `graph.json`. `flowbrain verify` los usa para comprobar que la línea citada por una evidencia todavía nombre al símbolo (en un método, su nombre sin la clase); `compile`, para la sección "cómo está construida" de cada funcionalidad.
 
-### `_build/verificacion.json` (escrito por `flowbrain verify`)
+### `_build/verification.json` (escrito por `flowbrain verify`)
 
 ```json
 {
@@ -210,9 +210,9 @@ Los símbolos se quedan en este JSON y no pasan a `graph.json`. `flowbrain verif
 
 `compile` marca `estado: dudoso` en cada arista cuya `(desde, verbo, hasta, endpoint, evidencia)` aparezca acá, salvo que esté `deprecado`. Si la evidencia de la página cambia, la arista deja de coincidir y vuelve a `vigente` hasta la próxima verificación.
 
-### `_build/funcionalidades.json` (escrito por `flowbrain compile`)
+### `_build/features.json` (escrito por `flowbrain compile`)
 
-Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build/extraccion/*.json`: su campo `accesos` conserva cada llamada y cada acceso con su evidencia (`aristas` deja uno por par, para los borradores), y `pendientes` los accesos a tablas sin página. Se escribe solo si hay alguna `feat`.
+Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build/extraction/*.json`: su campo `accesos` conserva cada llamada y cada acceso con su evidencia (`aristas` deja uno por par, para los borradores), y `pendientes` los accesos a tablas sin página. Se escribe solo si hay alguna `feat`.
 
 ```json
 {
@@ -242,12 +242,12 @@ Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build
 
 ### `_drafts/` (fuera de la compilación)
 
-- `_drafts/<repo-id>/tecnologia/*.md`: páginas propuestas por `flowbrain draft`, con el mismo formato que `tecnologia/` y `resumen: "Borrador: completar resumen."` donde falta. Lo no resuelto va en una sección `## Preguntas abiertas`.
-- `_drafts/producto/feat-*.md`: funcionalidades propuestas por `flowbrain draft`, una por cada hija de una carpeta `features/`, `modules/` o `domains/` (hasta 4 niveles, salvo debajo de `shared/`, `core/`, `common/` y similares). Si ya hay una página o un borrador con el mismo id, se le suma la ruta a `codigo`: la misma carpeta en dos repos queda en una sola funcionalidad.
+- `_drafts/<repo-id>/technology/*.md`: páginas propuestas por `flowbrain draft`, con el mismo formato que `technology/` y `resumen: "Borrador: completar resumen."` donde falta. Lo no resuelto va en una sección `## Preguntas abiertas`.
+- `_drafts/product/feat-*.md`: funcionalidades propuestas por `flowbrain draft`, una por cada hija de una carpeta `features/`, `modules/` o `domains/` (hasta 4 niveles, salvo debajo de `shared/`, `core/`, `common/` y similares). Si ya hay una página o un borrador con el mismo id, se le suma la ruta a `codigo`: la misma carpeta en dos repos queda en una sola funcionalidad.
 - `_drafts/<repo-id>/PROMPT.md`: instrucciones fijas para que un agente refine los borradores.
-- `_drafts/notas/<id>.md`: notas de contradicciones entre el código y el brain (`flowbrain nota` o el hook `SessionEnd`).
+- `_drafts/notes/<id>.md`: notas de contradicciones entre el código y el brain (`flowbrain note` o el hook `SessionEnd`).
 
-`compile` nunca lee `_drafts/`. Un humano mueve los borradores a `tecnologia/` y `producto/` tras revisarlos.
+`compile` nunca lee `_drafts/`. Un humano mueve los borradores a `technology/` y `product/` tras revisarlos.
 
 ## 8. `graph.json`
 
@@ -317,12 +317,12 @@ Consultas de código y producto (necesitan `flowbrain index` + `flowbrain compil
 
 ## 11. Varios cerebros
 
-Un registro (`cerebros.yaml` en una carpeta) agrupa hasta 8 cerebros. Cada cerebro es un brain como el descrito arriba, en su propia carpeta (por defecto, una subcarpeta con su nombre). Nada de lo que sigue se guarda en los grafos: se calcula al consultar.
+Un registro (`flowbrain.yaml` en una carpeta) agrupa hasta 8 cerebros. Cada cerebro es un brain como el descrito arriba, en su propia carpeta (por defecto, una subcarpeta con su nombre). Nada de lo que sigue se guarda en los grafos: se calcula al consultar.
 
 - **`cerebros`:** `nombre` (minúsculas, números y guiones), `repos` (cada uno con `ruta`, relativa al registro o absoluta, e `id` opcional), `carpeta` y `descripcion` opcionales, y `curado` (por defecto `true`; con `false` las respuestas de ese cerebro llevan `sinRevisar: true`).
 - **`comunicacion`:** pares `entre: [a, b]` con `activa`. Sin un par activo, dos cerebros no se ven.
 - **`conexiones`:** `desde` y `hacia` como `cerebro/svc-id`, y `por` opcional (texto que debe estar en la base de la URL de la llamada: una variable o un host).
 - **Respuestas con varios cerebros:** cada una lleva `cerebro`. Con vecinos comunicados puede sumar `otrosCerebros` (`cerebro`, `coincidencias`, `nodos`: algo que se llama exactamente igual que lo consultado) y `llamadoDesdeOtrosCerebros` (`total` y hasta 10 `llamadas` con `endpoint`, `cerebro`, `desde`, `ev` y, si las hay, hasta 3 `pantallas` que llegan a esa llamada: llamadas HTTP de otro cerebro a un endpoint nombrado en la respuesta).
-- **Cruce:** una llamada HTTP pendiente de un cerebro (no se pudo unir a un endpoint propio) se une al endpoint de un cerebro comunicado con el mismo método y la misma ruta, o cuya ruta termina igual. Si coincide con varios, no se une y se cuenta como ambigua. Si el servicio que llama tiene conexiones declaradas hacia ese cerebro, solo se intenta contra los servicios declarados y, con `por`, solo con las llamadas que van por esa base. Cada cruce dice desde qué pantallas se llega a la llamada (el árbol de componentes y hooks de la pantalla, según `_build/archivos`); si no es de ninguna, queda a nombre del servicio.
-- **Visor:** `cerebros.html` en la carpeta del registro une los datos de todos los cerebros compilados; cada id va como `cerebro/id` y cada nodo lleva `c` (índice de su cerebro). Las relaciones entre cerebros son los cruces, agregados por (servicio que llama, endpoint que atiende).
+- **Cruce:** una llamada HTTP pendiente de un cerebro (no se pudo unir a un endpoint propio) se une al endpoint de un cerebro comunicado con el mismo método y la misma ruta, o cuya ruta termina igual. Si coincide con varios, no se une y se cuenta como ambigua. Si el servicio que llama tiene conexiones declaradas hacia ese cerebro, solo se intenta contra los servicios declarados y, con `por`, solo con las llamadas que van por esa base. Cada cruce dice desde qué pantallas se llega a la llamada (el árbol de componentes y hooks de la pantalla, según `_build/files`); si no es de ninguna, queda a nombre del servicio.
+- **Visor:** `flowbrain.html` en la carpeta del registro une los datos de todos los cerebros compilados; cada id va como `cerebro/id` y cada nodo lleva `c` (índice de su cerebro). Las relaciones entre cerebros son los cruces, agregados por (servicio que llama, endpoint que atiende).
 - **`conexiones`** (herramienta): por par de servicios, `llamadas`, `endpoints`, `pantallas` (cuántas pantallas distintas originan esas llamadas), `declarada`, `por` y `ejemplos`; `avisos` con las declaradas sin respaldo, las detectadas sin declarar y las ambiguas.

@@ -7,7 +7,7 @@ import { escribirIndex, indexar } from "@flowbrain/parsers";
 
 /**
  * `sync`, `estado` y `doctor`: mantener el brain al día y saber qué le falta. El manifiesto de repos es lo que ya
- * escribe `flowbrain index` en `_build/archivos/<repo>.json`: el id, el commit indexado y la ruta del clon relativa al
+ * escribe `flowbrain index` en `_build/files/<repo>.json`: el id, el commit indexado y la ruta del clon relativa al
  * brain. Si el clon no está ahí (otra máquina), se busca por nombre de carpeta en `--repos` / `FLOWBRAIN_REPOS`.
  */
 
@@ -25,7 +25,7 @@ export interface RepoIndexado {
 const existe = (p: string) => stat(p).then((s) => s.isDirectory(), () => false);
 
 export async function reposIndexados(raiz: string, carpetas: string[] = []): Promise<RepoIndexado[]> {
-  const dir = join(raiz, "_build/archivos");
+  const dir = join(raiz, "_build/files");
   const nombres = (await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp);
   const out: RepoIndexado[] = [];
   for (const n of nombres) {
@@ -88,7 +88,7 @@ async function borradores(raiz: string): Promise<string[]> {
     for (const e of await readdir(join(raiz, rel), { withFileTypes: true }).catch(() => [])) {
       const r = `${rel}/${e.name}`;
       if (e.isDirectory()) await andar(r);
-      else if (e.name.endsWith(".md") && e.name !== "PROMPT.md" && !r.startsWith("_drafts/notas/")) out.push(r);
+      else if (e.name.endsWith(".md") && e.name !== "PROMPT.md" && !r.startsWith("_drafts/notes/")) out.push(r);
     }
   };
   await andar("_drafts");

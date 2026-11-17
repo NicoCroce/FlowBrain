@@ -5,11 +5,11 @@ import { dentroDe, type Graph } from "./schema.js";
 /**
  * Vista de producto de cada funcionalidad (`feat`), derivada de las rutas de su campo `codigo`:
  * qué expone, qué usa, qué datos toca y con qué otras funcionalidades se relaciona. Sale de la extracción de los
- * parsers (`_build/extraccion/*.json`), que conserva cada llamada y cada acceso con su evidencia; el grafo, en cambio,
+ * parsers (`_build/extraction/*.json`), que conserva cada llamada y cada acceso con su evidencia; el grafo, en cambio,
  * deduplica por (desde, verbo, hasta, endpoint) y se queda con una sola evidencia por par.
  */
 
-export const RUTA_FUNCIONALIDADES = "_build/funcionalidades.json";
+export const RUTA_FUNCIONALIDADES = "_build/features.json";
 
 export interface AristaExtraccion {
   desde: string;
@@ -100,7 +100,7 @@ export function capaDe(ruta: string): Capa {
   return "otros";
 }
 
-/** Lo que guarda `_build/archivos/*.json` de cada archivo, por `repo:ruta`. */
+/** Lo que guarda `_build/files/*.json` de cada archivo, por `repo:ruta`. */
 export interface EstructuraArchivo {
   simbolos: Array<{ nombre: string; tipo: string; linea: number; fin?: number | undefined }>;
   importa: string[];
@@ -296,7 +296,7 @@ export interface Recorredor {
   desdeSimbolo(archivo: string, simbolo: string): { pasos: Paso[]; truncado: boolean };
 }
 
-/** Recorridos sobre las invocaciones de `_build/archivos`, con los accesos y llamadas de la extracción atribuidos a cada método. */
+/** Recorridos sobre las invocaciones de `_build/files`, con los accesos y llamadas de la extracción atribuidos a cada método. */
 export function crearRecorredor(
   graph: Graph,
   estructura: Map<string, EstructuraArchivo>,

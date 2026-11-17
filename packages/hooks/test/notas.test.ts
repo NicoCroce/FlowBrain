@@ -48,19 +48,19 @@ describe("hook SessionEnd", () => {
     ]);
   });
 
-  it("escribe _drafts/notas/<id>.md y es idempotente", async () => {
+  it("escribe _drafts/notes/<id>.md y es idempotente", async () => {
     const t = join(dir, "t.jsonl");
     await writeFile(t, transcript);
     const brain = join(dir, "brain");
-    expect(await hookSessionEnd({ session_id: "abc", transcript_path: t }, brain)).toEqual(["_drafts/notas/svc-payments.md", "_drafts/notas/tabla-pagos.md"]);
-    expect(await readFile(join(brain, "_drafts/notas/svc-payments.md"), "utf8")).toBe("# Notas sobre `svc-payments`\n\n- usa una cola (sesión abc)\n");
+    expect(await hookSessionEnd({ session_id: "abc", transcript_path: t }, brain)).toEqual(["_drafts/notes/svc-payments.md", "_drafts/notes/tabla-pagos.md"]);
+    expect(await readFile(join(brain, "_drafts/notes/svc-payments.md"), "utf8")).toBe("# Notas sobre `svc-payments`\n\n- usa una cola (sesión abc)\n");
     expect(await hookSessionEnd({ session_id: "abc", transcript_path: t }, brain)).toEqual([]);
     await anotar(brain, [{ id: "svc-payments", texto: "otra cosa" }], "manual");
-    expect(await readFile(join(brain, "_drafts/notas/svc-payments.md"), "utf8")).toBe("# Notas sobre `svc-payments`\n\n- usa una cola (sesión abc)\n- otra cosa (manual)\n");
+    expect(await readFile(join(brain, "_drafts/notes/svc-payments.md"), "utf8")).toBe("# Notas sobre `svc-payments`\n\n- usa una cola (sesión abc)\n- otra cosa (manual)\n");
   });
 
   it("los ids generados se guardan con un nombre de archivo seguro", async () => {
-    expect(await anotar(dir, [{ id: "svc-bff:POST:/checkout", texto: "x" }], "manual")).toEqual(["_drafts/notas/svc-bff_POST_checkout.md"]);
+    expect(await anotar(dir, [{ id: "svc-bff:POST:/checkout", texto: "x" }], "manual")).toEqual(["_drafts/notes/svc-bff_POST_checkout.md"]);
   });
 
   it("el bloque de reglas enseña la marca", () => {

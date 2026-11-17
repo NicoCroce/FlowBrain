@@ -12,9 +12,9 @@ let sinIndice: Contexto;
 beforeAll(async () => {
   const base = await leerEntradas(FIXTURE);
   const paginas = base.paginas.map((p) =>
-    p.ruta === "producto/feat-checkout.md" ? { ...p, contenido: p.contenido.replace("verificado: 2026-11-15\n", "verificado: 2026-11-15\ncodigo:\n  - repo-tienda:apps/bff/src\n") } : p,
+    p.ruta === "product/feat-checkout.md" ? { ...p, contenido: p.contenido.replace("verificado: 2026-11-15\n", "verificado: 2026-11-15\ncodigo:\n  - repo-tienda:apps/bff/src\n") } : p,
   );
-  paginas.push({ ruta: "producto/feat-carrito.md", contenido: "---\nid: feat-carrito\ntipo: feat\nnombre: Carrito\nresumen: Arma el pedido.\ncodigo: [\"repo-tienda:apps/web/src\"]\n---\n# Carrito\n" });
+  paginas.push({ ruta: "product/feat-carrito.md", contenido: "---\nid: feat-carrito\ntipo: feat\nnombre: Carrito\nresumen: Arma el pedido.\ncodigo: [\"repo-tienda:apps/web/src\"]\n---\n# Carrito\n" });
   const extraccion = JSON.stringify({
     aristas: [
       { dato: null, desde: "svc-web", endpoint: "svc-bff:POST:/checkout", evidencia: "repo-tienda:apps/web/src/api/checkout.ts#L8", hasta: "svc-bff", origen: "parser", verbo: "llama_a" },
@@ -37,7 +37,7 @@ beforeAll(async () => {
     j.pantallas = [{ paquete: "apps/web", ruta: "/checkout", archivo: "apps/web/src/main.tsx", linea: 1, componente: { archivo: "apps/web/src/main.tsx", simbolo: "main" }, envuelta: [] }];
     return { ...a, contenido: JSON.stringify(j) };
   });
-  const entradas = { ...base, paginas, archivos, extracciones: [{ ruta: "_build/extraccion/repo-tienda.json", contenido: extraccion }] };
+  const entradas = { ...base, paginas, archivos, extracciones: [{ ruta: "_build/extraction/repo-tienda.json", contenido: extraccion }] };
   const contratos = base.contratos.map((c) => JSON.parse(c.contenido) as Contrato);
   const salidas = compile(entradas);
   ctx = contextoDeSalidas(salidas, contratos, { archivos: archivos.map((a) => a.contenido), extracciones: [extraccion] });

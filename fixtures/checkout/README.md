@@ -2,8 +2,8 @@
 
 Flujo sintético que sirve de oráculo para los tests: `web → bff → payments → pasarela (ext) + tabla-pagos + feat-checkout`.
 
-- **Entradas:** las páginas de `producto/` y `tecnologia/`, y los JSON de `_build/contratos/` y `_build/archivos/`, que simulan la salida de `flowbrain index`.
-- **Salida esperada:** `expected/graph.json`, con 23 nodos y 27 aristas. Las demás salidas (`backlinks.json`, `INDEX.md`, `mapa.mmd`) se fijan como golden en el paso 2, después de revisarlas.
+- **Entradas:** las páginas de `product/` y `technology/`, y los JSON de `_build/contracts/` y `_build/files/`, que simulan la salida de `flowbrain index`.
+- **Salida esperada:** `expected/graph.json`, con 23 nodos y 27 aristas. Las demás salidas (`backlinks.json`, `INDEX.md`, `map.mmd`) se fijan como golden en el paso 2, después de revisarlas.
 
 ## Qué patrones ejercita
 

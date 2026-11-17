@@ -53,7 +53,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 
 ### Paso 2 · Relaciones finas en el grafo
 
-**Problema.** `graph.json` está a nivel servicio. El detalle (qué endpoint toca qué tabla, qué pantalla llama a qué endpoint) vive en `funcionalidades.json` y en `_build/extraccion`, así que `recorrer_grafo` e `impacto` no lo ven y cada consulta lo recalcula por su lado.
+**Problema.** `graph.json` está a nivel servicio. El detalle (qué endpoint toca qué tabla, qué pantalla llama a qué endpoint) vive en `features.json` y en `_build/extraction`, así que `recorrer_grafo` e `impacto` no lo ven y cada consulta lo recalcula por su lado.
 
 **Qué se hace.** `compile` genera estas aristas, todas con origen `parser` y evidencia `repo:ruta#Ln`:
 
@@ -90,8 +90,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 **Problema.** Actualizar el brain exige encadenar `index` por repo y `compile` a mano. No hay forma de saber si el brain está al día respecto de los clones, ni de diagnosticar una instalación.
 
 **Qué se hace.**
-- `flowbrain sync`: lee un manifiesto de repos del brain (id, ruta o URL, rama), reindexa los que cambiaron de HEAD y compila. El manifiesto guarda rutas relativas o por variable, para que el brain sea portable entre máquinas (hoy `_build/archivos` guarda la ruta del clon de una máquina).
-- `flowbrain estado`: por repo, HEAD indexado contra HEAD actual; conteo de nodos y aristas por tipo; huecos conocidos (endpoints sin response, tablas sin `vive_en`, archivos fuera de toda feat, borradores sin promover). Sale con código distinto de cero si está desactualizado.
+- `flowbrain sync`: lee un manifiesto de repos del brain (id, ruta o URL, rama), reindexa los que cambiaron de HEAD y compila. El manifiesto guarda rutas relativas o por variable, para que el brain sea portable entre máquinas (hoy `_build/files` guarda la ruta del clon de una máquina).
+- `flowbrain status`: por repo, HEAD indexado contra HEAD actual; conteo de nodos y aristas por tipo; huecos conocidos (endpoints sin response, tablas sin `vive_en`, archivos fuera de toda feat, borradores sin promover). Sale con código distinto de cero si está desactualizado.
 - `flowbrain doctor`: verifica que el MCP y los hooks estén registrados, que el grafo cargue y que los clones existan.
 
 **Archivos.** `packages/cli/src/main.ts`, módulo nuevo para el manifiesto en `packages/core` o `packages/indexer`, `docs/INSTALACION.md`.
@@ -127,7 +127,7 @@ Hoy no se modela. Parsers para Dockerfile y compose, pipelines de CI, configurac
 ### Paso 9 · Código compartido, equipos y decisiones
 
 - Cerca del 28 % de los archivos del proyecto de referencia queda fuera de toda feat (código compartido, núcleo, sistema de diseño). Nodos `lib` para esos módulos y `feat depende_de lib`, para que `impacto` sobre código compartido llegue a las feats.
-- Nodos `team` y `decision` desde páginas curadas: `pertenece_a` y `decidido_por`. `flowbrain nota` puede anclar una nota a un nodo.
+- Nodos `team` y `decision` desde páginas curadas: `pertenece_a` y `decidido_por`. `flowbrain note` puede anclar una nota a un nodo.
 - Correr `flowbrain verify` por primera vez y arreglar lo que marque.
 
 ---

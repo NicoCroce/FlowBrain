@@ -97,7 +97,7 @@ const clavesDe = (n: NodoPagina) => new Set([n.id, sinPrefijo(n.id), n.nombre, .
 /** Nodos de página leídos de forma tolerante (las páginas inválidas se ignoran; `compile` las reporta). */
 export async function leerNodosPaginas(raizBrain: string): Promise<NodoPagina[]> {
   const out: NodoPagina[] = [];
-  for (const dir of ["producto", "tecnologia"]) {
+  for (const dir of ["product", "technology"]) {
     let nombres: string[] = [];
     try {
       nombres = (await readdir(join(raizBrain, dir))).filter((n) => n.endsWith(".md")).sort(cmp);
@@ -127,7 +127,7 @@ export async function leerNodosPaginas(raizBrain: string): Promise<NodoPagina[]>
 }
 
 async function leerContratos(raizBrain: string): Promise<Contrato[]> {
-  const dir = join(raizBrain, "_build/contratos");
+  const dir = join(raizBrain, "_build/contracts");
   let nombres: string[] = [];
   try {
     nombres = (await readdir(dir)).filter((n) => n.endsWith(".json")).sort(cmp);
@@ -468,9 +468,9 @@ export async function indexar(
 export { commitDe };
 
 export const rutasIndex = (repo: string) => ({
-  archivos: `_build/archivos/${repo}.json`,
-  extraccion: `_build/extraccion/${repo}.json`,
-  contrato: (svc: string) => `_build/contratos/${svc}.json`,
+  archivos: `_build/files/${repo}.json`,
+  extraccion: `_build/extraction/${repo}.json`,
+  contrato: (svc: string) => `_build/contracts/${svc}.json`,
 });
 
 /** Escribe los JSON del index en el brain. Solo toca archivos cuyo contenido cambió. */

@@ -70,13 +70,13 @@ export const PANTALLAS_JS = String.raw`
     if (!b) return '<details class="recorrido"><summary>' + titulo + '<br><small>No se encontró el método que lo atiende en el back.</small></summary></details>';
     return '<details class="recorrido"><summary>' + titulo + "<br><small>" + P().resumenRecorrido(b.r) + " · " + esc(nombre(b.f.id)) + "</small></summary>" +
       P().pasosHtml(b.r.pasos, sinRepo) +
-      (b.r.truncado ? '<p class="vacio">Recortado. Completo: <code>flowbrain recorrido "' + esc(nombre(ep)) + '"</code>.</p>' : "") + "</details>";
+      (b.r.truncado ? '<p class="vacio">Recortado. Completo: <code>flowbrain flow "' + esc(nombre(ep)) + '"</code>.</p>' : "") + "</details>";
   }
   function puntaAPunta(x) {
     if (!x.recorrido) return '<p class="vacio">Esta pantalla no está en ninguna funcionalidad: su recorrido no se calculó.</p>';
     var r = x.recorrido;
     var front = r.pasos.length > 1 || x.endpoints.length
-      ? P().pasosHtml(r.pasos, sinRepo) + (r.truncado ? '<p class="vacio">El árbol de componentes es grande y se recorrió hasta cierto punto. Completo: <code>flowbrain pantalla ' + esc(x.p.ruta) + "</code>.</p>" : "")
+      ? P().pasosHtml(r.pasos, sinRepo) + (r.truncado ? '<p class="vacio">El árbol de componentes es grande y se recorrió hasta cierto punto. Completo: <code>flowbrain screen ' + esc(x.p.ruta) + "</code>.</p>" : "")
       : '<p class="vacio">No se encontró ninguna llamada al back desde esta pantalla.</p>';
     return "<h4>En el front</h4><p><small>Desde el componente de la pantalla hasta la llamada a la API: los componentes, hooks y funciones del camino.</small></p>" + front +
       (x.endpoints.length ? "<h4>En el back (" + x.endpoints.length + ")</h4><p><small>Qué hace el back con cada pedido: el método que lo atiende y lo que toca.</small></p>" + x.endpoints.map(backDeEndpoint).join("") : "");

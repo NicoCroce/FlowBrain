@@ -14,10 +14,10 @@ beforeAll(async () => {
 /** feat-checkout con `codigo` en el BFF, una feat-carrito en la web y una extracción que conecta ambas. */
 function conFuncionalidades(codigoCheckout = "repo-tienda:apps/bff/src/routes"): Entradas {
   const paginas = base.paginas.map((p) =>
-    p.ruta === "producto/feat-checkout.md" ? { ...p, contenido: p.contenido.replace("verificado: 2026-11-15\n", `verificado: 2026-11-15\ncodigo:\n  - ${codigoCheckout}\n`) } : p,
+    p.ruta === "product/feat-checkout.md" ? { ...p, contenido: p.contenido.replace("verificado: 2026-11-15\n", `verificado: 2026-11-15\ncodigo:\n  - ${codigoCheckout}\n`) } : p,
   );
   paginas.push({
-    ruta: "producto/feat-carrito.md",
+    ruta: "product/feat-carrito.md",
     contenido: "---\nid: feat-carrito\ntipo: feat\nnombre: Carrito\nresumen: El cliente arma el pedido.\ncodigo: [\"repo-tienda:apps/web/src\"]\n---\n# Carrito\n\nArma el pedido.\n",
   });
   const extraccion = {
@@ -31,7 +31,7 @@ function conFuncionalidades(codigoCheckout = "repo-tienda:apps/bff/src/routes"):
     repo: "repo-tienda",
     servicios: [],
   };
-  return { ...base, paginas, extracciones: [{ ruta: "_build/extraccion/repo-tienda.json", contenido: JSON.stringify(extraccion) }] };
+  return { ...base, paginas, extracciones: [{ ruta: "_build/extraction/repo-tienda.json", contenido: JSON.stringify(extraccion) }] };
 }
 
 

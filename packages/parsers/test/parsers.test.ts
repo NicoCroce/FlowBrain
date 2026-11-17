@@ -40,10 +40,10 @@ describe("ts-parser sobre fixtures/repos/tienda (Express + Prisma)", () => {
 
   it("los contratos y el árbol de archivos coinciden byte a byte con los del fixture de checkout", async () => {
     for (const c of r.contratos) {
-      expect(stringifyCanonical(c)).toBe(await readFile(F(`checkout/_build/contratos/${c.svc}.json`), "utf8"));
+      expect(stringifyCanonical(c)).toBe(await readFile(F(`checkout/_build/contracts/${c.svc}.json`), "utf8"));
     }
     expect(r.contratos.map((c) => c.svc)).toEqual(["svc-bff", "svc-payments"]);
-    expect(stringifyCanonical(r.archivos)).toBe(await readFile(F("checkout/_build/archivos/repo-tienda.json"), "utf8"));
+    expect(stringifyCanonical(r.archivos)).toBe(await readFile(F("checkout/_build/files/repo-tienda.json"), "utf8"));
   });
 
   it("es determinístico", async () => {
@@ -56,7 +56,7 @@ describe("index → compile de punta a punta", () => {
   let dir: string;
   beforeAll(async () => {
     dir = await mkdtemp(join(tmpdir(), "brain-index-"));
-    for (const d of ["producto", "tecnologia"]) await cp(F(`checkout/${d}`), join(dir, d), { recursive: true });
+    for (const d of ["product", "technology"]) await cp(F(`checkout/${d}`), join(dir, d), { recursive: true });
   });
   afterAll(async () => {
     await rm(dir, { recursive: true, force: true });
@@ -65,7 +65,7 @@ describe("index → compile de punta a punta", () => {
   it("indexar el repo de muestra y compilar reproduce el graph.json escrito a mano", async () => {
     const r = await indexar(F("repos/tienda"), dir);
     const escritos = await escribirIndex(dir, r);
-    expect(escritos).toContain("_build/contratos/svc-bff.json");
+    expect(escritos).toContain("_build/contracts/svc-bff.json");
     await compileDir(dir);
     expect(await readFile(join(dir, "_build/graph.json"), "utf8")).toBe(await readFile(F("checkout/expected/graph.json"), "utf8"));
     expect(await escribirIndex(dir, await indexar(F("repos/tienda"), dir))).toEqual([]);
@@ -670,9 +670,9 @@ describe("eventos y colas: del código al contrato y al grafo", () => {
       await writeFile(join(base, ruta), lineas.join("\n") + "\n");
     };
     const pagina = (id: string, tipo: string, extra: string[] = []) => ["---", `id: ${id}`, `tipo: ${tipo}`, `nombre: ${id}`, `resumen: ${id}.`, ...extra, "---", `# ${id}`];
-    await w(brain, "tecnologia/repo-avisos.md", pagina("repo-avisos", "repo"));
-    await w(brain, "tecnologia/svc-avisos.md", pagina("svc-avisos", "svc", ["vive_en: [repo-avisos]"]));
-    await w(brain, "tecnologia/queue-turno-creado.md", pagina("queue-turno-creado", "queue", ['aliases: ["turno.creado"]']));
+    await w(brain, "technology/repo-avisos.md", pagina("repo-avisos", "repo"));
+    await w(brain, "technology/svc-avisos.md", pagina("svc-avisos", "svc", ["vive_en: [repo-avisos]"]));
+    await w(brain, "technology/queue-turno-creado.md", pagina("queue-turno-creado", "queue", ['aliases: ["turno.creado"]']));
     await w(repo, "package.json", ['{ "name": "avisos", "dependencies": { "@nestjs/common": "10" } }']);
     await w(repo, "src/turno.controller.ts", [
       'import { Controller, Post } from "@nestjs/common";',
@@ -740,9 +740,9 @@ describe("esquema-parser: tablas, columnas y claves foráneas desde DDL en cualq
       await writeFile(join(base, ruta), lineas.join("\n") + "\n");
     };
     const pagina = (id: string, tipo: string, extra: string[] = []) => ["---", `id: ${id}`, `tipo: ${tipo}`, `nombre: ${id}`, `resumen: ${id}.`, ...extra, "---", `# ${id}`];
-    await w(brain, "tecnologia/repo-agenda.md", pagina("repo-agenda", "repo"));
-    await w(brain, "tecnologia/tabla-turno.md", pagina("tabla-turno", "tabla", ["aliases: [turno]"]));
-    await w(brain, "tecnologia/tabla-paciente.md", pagina("tabla-paciente", "tabla", ["aliases: [paciente]"]));
+    await w(brain, "technology/repo-agenda.md", pagina("repo-agenda", "repo"));
+    await w(brain, "technology/tabla-turno.md", pagina("tabla-turno", "tabla", ["aliases: [turno]"]));
+    await w(brain, "technology/tabla-paciente.md", pagina("tabla-paciente", "tabla", ["aliases: [paciente]"]));
     await w(repo, "db/001_inicial.sql", [
       "CREATE TABLE paciente (",
       "  id INT NOT NULL AUTO_INCREMENT,",
@@ -810,9 +810,9 @@ describe("infra-parser: imágenes, compose, pipelines, variables y proxy", () =>
       await writeFile(join(base, ruta), lineas.join("\n") + "\n");
     };
     const pagina = (id: string, tipo: string, extra: string[] = []) => ["---", `id: ${id}`, `tipo: ${tipo}`, `nombre: ${id}`, `resumen: ${id}.`, ...extra, "---", `# ${id}`];
-    await w(brain, "tecnologia/repo-agenda.md", pagina("repo-agenda", "repo"));
-    await w(brain, "tecnologia/svc-agenda.md", pagina("svc-agenda", "svc", ["aliases: [api]", "vive_en: [repo-agenda]"]));
-    await w(brain, "tecnologia/db-agenda.md", pagina("db-agenda", "db", ["aliases: [db]"]));
+    await w(brain, "technology/repo-agenda.md", pagina("repo-agenda", "repo"));
+    await w(brain, "technology/svc-agenda.md", pagina("svc-agenda", "svc", ["aliases: [api]", "vive_en: [repo-agenda]"]));
+    await w(brain, "technology/db-agenda.md", pagina("db-agenda", "db", ["aliases: [db]"]));
     await w(repo, "package.json", ['{ "name": "agenda" }']);
     await w(repo, "Dockerfile", ["ARG BASE=node:22", "FROM ${BASE} AS build", "RUN npm ci", "FROM build AS pruebas", "FROM node:22-slim", "WORKDIR /app", "EXPOSE 3000", 'CMD ["node", "dist/main.js"]']);
     await w(repo, "docker-compose.yml", [
@@ -874,7 +874,7 @@ describe("infra-parser: imágenes, compose, pipelines, variables y proxy", () =>
   it("en el brain: la infraestructura queda en su nodo, compose aporta dependencias y la consulta infra filtra por texto", async () => {
     const r = await indexar(repo, brain);
     await escribirIndex(brain, r);
-    const json = await readFile(join(brain, "_build/archivos/repo-agenda.json"), "utf8");
+    const json = await readFile(join(brain, "_build/files/repo-agenda.json"), "utf8");
     // Ni el `.env` real ni los valores de compose o del ejemplo llegan al brain.
     for (const secreto of ["valor-real-que-no-debe-salir", "clave-de-compose", "cambiar", "postgres://"]) expect(json).not.toContain(secreto);
     await compileDir(brain);

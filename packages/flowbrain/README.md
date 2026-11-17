@@ -4,17 +4,17 @@ Grafo de conocimiento determinístico para agentes de código. Las páginas Mark
 
 ```bash
 npx flowbrain init mi-brain --claude-code   # crea el brain, lo compila y registra los hooks
-claude mcp add --scope user flowbrain -- npx -y flowbrain@0.1.0 serve --raiz "$PWD/mi-brain"
+claude mcp add --scope user flowbrain -- npx -y flowbrain@0.1.0 serve --root "$PWD/mi-brain"
 ```
 
 Después:
 
 ```bash
-npx flowbrain draft /ruta/a/un/repo --raiz mi-brain   # borradores en _drafts/ a partir del código
-npx flowbrain index /ruta/a/un/repo --raiz mi-brain   # contratos y archivos
-npx flowbrain compile --raiz mi-brain                 # graph.json y _build/viewer.html
-npx flowbrain verify --raiz mi-brain --repos /ruta/a/los/clones
-npx flowbrain gen claude --raiz mi-brain --repo /ruta/a/un/repo --escribir
+npx flowbrain draft /ruta/a/un/repo --root mi-brain   # borradores en _drafts/ a partir del código
+npx flowbrain index /ruta/a/un/repo --root mi-brain   # contratos y archivos
+npx flowbrain compile --root mi-brain                 # graph.json y _build/viewer.html
+npx flowbrain verify --root mi-brain --repos /ruta/a/los/clones
+npx flowbrain gen claude --root mi-brain --repo /ruta/a/un/repo --write
 ```
 
 Requiere Node ≥ 20. El contrato del grafo está en `SCHEMA.md`.

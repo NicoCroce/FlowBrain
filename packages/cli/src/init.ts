@@ -33,14 +33,14 @@ async function leerSchema(): Promise<string> {
 
 const README = (cmd: string) => `# FlowBrain
 
-Grafo de conocimiento del sistema: páginas Markdown escritas por humanos (\`producto/\`, \`tecnologia/\`) y JSON
+Grafo de conocimiento del sistema: páginas Markdown escritas por humanos (\`product/\`, \`technology/\`) y JSON
 generado por los parsers (\`_build/\`). El contrato está en \`SCHEMA.md\`.
 
 ## Flujo
 
 \`\`\`bash
-${cmd} draft /ruta/a/un/repo      # borradores en _drafts/<repo>/ y funcionalidades en _drafts/producto/
-# revisar, completar y mover _drafts/<repo>/tecnologia/*.md a tecnologia/ y _drafts/producto/*.md a producto/
+${cmd} draft /ruta/a/un/repo      # borradores en _drafts/<repo>/ y funcionalidades en _drafts/product/
+# revisar, completar y mover _drafts/<repo>/technology/*.md a technology/ y _drafts/product/*.md a product/
 ${cmd} index /ruta/a/un/repo      # contratos y archivos en _build/
 ${cmd} compile                    # graph.json, INDEX.md, backlinks y _build/viewer.html (funcionalidades y mapa)
 ${cmd} verify --repos /ruta/a/los/clones   # evidencias rotas → dudoso (para CI)
@@ -70,8 +70,8 @@ export async function init(
   const archivos: Record<string, string> = {
     "README.md": README(cmd.startsWith("npx") ? "npx flowbrain" : "flowbrain"),
     "SCHEMA.md": await leerSchema(),
-    "producto/.gitkeep": "",
-    "tecnologia/.gitkeep": "",
+    "product/.gitkeep": "",
+    "technology/.gitkeep": "",
   };
   const creados: string[] = [];
   for (const ruta of Object.keys(archivos).sort(cmp)) {
@@ -84,13 +84,13 @@ export async function init(
   const { escritos } = await compileDirConVisor(raiz);
   creados.push(...escritos);
 
-  const base = `${cmd} hook claude-code --raiz ${comillas(raiz)}`;
+  const base = `${cmd} hook claude-code --root ${comillas(raiz)}`;
   let hooks: ResultadoInit["hooks"] = null;
   if (opciones.claudeCode) {
     const settings = opciones.settings ?? join(homedir(), ".claude/settings.json");
     hooks = { settings, cambio: await instalarHooksClaudeCode(settings, base) };
   }
-  return { raiz, creados: [...new Set(creados)].sort(cmp), hooks, comando: cmd, mcp: `claude mcp add --scope user flowbrain -- ${cmd} serve --raiz ${comillas(raiz)}` };
+  return { raiz, creados: [...new Set(creados)].sort(cmp), hooks, comando: cmd, mcp: `claude mcp add --scope user flowbrain -- ${cmd} serve --root ${comillas(raiz)}` };
 }
 
 type Settings = { hooks?: Record<string, Array<{ matcher?: string; hooks?: Array<{ type?: string; command?: string }> }>> } & Record<string, unknown>;
@@ -140,7 +140,7 @@ export async function instalarComando(env: NodeJS.ProcessEnv = process.env, bin?
   dir ??= local;
   await mkdir(dir, { recursive: true });
   const archivo = join(dir, "flowbrain");
-  await writeFile(archivo, `#!/bin/sh\n# Lo escribió \`flowbrain instalar\`.\nexec ${comandoBrain(env)} "$@"\n`, "utf8");
+  await writeFile(archivo, `#!/bin/sh\n# Lo escribió \`flowbrain install\`.\nexec ${comandoBrain(env)} "$@"\n`, "utf8");
   await chmod(archivo, 0o755);
   return { archivo, enPath: enPath.includes(dir) };
 }

@@ -23,7 +23,7 @@ export interface CerebroLiviano {
 /**
  * Pantallas que llegan a cada llamada pendiente: se recorre el árbol de componentes de cada pantalla (componentes,
  * hooks, clientes de API) y la llamada es de la pantalla si cae dentro de un símbolo del recorrido. Sin `archivos`
- * (la estructura de `_build/archivos`) no se puede saber, y la llamada queda a nombre del servicio.
+ * (la estructura de `_build/files`) no se puede saber, y la llamada queda a nombre del servicio.
  */
 function pantallasPorPendiente(graph: Graph, archivos: string[], evidencias: string[]): string[][] {
   const out: string[][] = evidencias.map(() => []);
