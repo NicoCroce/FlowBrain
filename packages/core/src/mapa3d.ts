@@ -79,6 +79,8 @@ export function mapa3dDelGrafo(graph: Graph, fichas: Ficha[] = []): Mapa3D {
       }
     for (const p of f.pantallas ?? []) {
       if (!featDePantalla[p.id]) featDePantalla[p.id] = f.id;
+      // Como un endpoint: la pantalla es parte de la funcionalidad que dibuja su componente.
+      agregar(p.id, f.id, "implementa");
       for (const ep of p.endpoints) agregar(p.id, ep, "llama_a");
     }
     for (const c of f.codigo)
