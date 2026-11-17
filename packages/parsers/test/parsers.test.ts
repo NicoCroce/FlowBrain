@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buscarNodo, cargarContexto, compileDir, impactoDe, infra, stringifyCanonical } from "@brain/core";
+import { buscarNodo, cargarContexto, compileDir, impactoDe, infra, stringifyCanonical } from "@flowbrain/core";
 import { endpointsAlcanzables, esquemaParser, escribirIndex, infraParser, indexar, leerRepo, openapiParser, phpParser, tsParser, type Extraccion, type ResultadoIndex } from "../src/index.js";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");

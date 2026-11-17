@@ -1,4 +1,4 @@
-import { normalizarRuta } from "@brain/core";
+import { normalizarRuta } from "@flowbrain/core";
 import type { UrlAnalizada } from "./tipos.js";
 
 /** Pieza de una URL evaluada estáticamente: literal o dinámica (env, variable, llamada…). */

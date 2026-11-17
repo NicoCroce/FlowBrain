@@ -1,13 +1,13 @@
 {
-  "name": "@brain/indexer",
+  "name": "@flowbrain/indexer",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "scripts": { "test": "vitest run --passWithNoTests" },
   "dependencies": {
-    "@brain/core": "workspace:*",
-    "@brain/parsers": "workspace:*",
+    "@flowbrain/core": "workspace:*",
+    "@flowbrain/parsers": "workspace:*",
     "yaml": "^2.9.1"
   }
 }

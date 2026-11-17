@@ -1,5 +1,5 @@
 {
-  "name": "@brain/cli",
+  "name": "@flowbrain/cli",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,15 +8,15 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brain/core": "workspace:*",
-    "@brain/hooks": "workspace:*",
-    "@brain/indexer": "workspace:*",
-    "@brain/mcp": "workspace:*",
-    "@brain/parsers": "workspace:*",
-    "@brain/viewer": "workspace:*",
+    "@flowbrain/core": "workspace:*",
+    "@flowbrain/hooks": "workspace:*",
+    "@flowbrain/indexer": "workspace:*",
+    "@flowbrain/mcp": "workspace:*",
+    "@flowbrain/parsers": "workspace:*",
+    "@flowbrain/viewer": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2"
   },
   "bin": {
-    "brain": "src/main.ts"
+    "flowbrain": "src/main.ts"
   }
 }

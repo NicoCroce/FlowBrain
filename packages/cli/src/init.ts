@@ -1,21 +1,21 @@
-import { compileDirConVisor } from "@brain/viewer";
+import { compileDirConVisor } from "@flowbrain/viewer";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cmp } from "@brain/core";
+import { cmp } from "@flowbrain/core";
 
 /** Nombre del paquete publicado y versión (la inyecta el build; en desarrollo queda "dev"). */
-export const PAQUETE = "brain-graph";
-declare const __BRAIN_VERSION__: string | undefined;
-export const VERSION = typeof __BRAIN_VERSION__ === "string" ? __BRAIN_VERSION__ : "dev";
+export const PAQUETE = "flowbrain";
+declare const __FLOWBRAIN_VERSION__: string | undefined;
+export const VERSION = typeof __FLOWBRAIN_VERSION__ === "string" ? __FLOWBRAIN_VERSION__ : "dev";
 
 /** Comando con el que Claude Code invoca a brain: versión fija vía npx, o el repo en desarrollo. */
 export function comandoBrain(env: NodeJS.ProcessEnv = process.env): string {
-  if (env.BRAIN_COMANDO) return env.BRAIN_COMANDO;
+  if (env.FLOWBRAIN_COMANDO) return env.FLOWBRAIN_COMANDO;
   if (VERSION !== "dev") return `npx -y ${PAQUETE}@${VERSION}`;
   const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-  return `pnpm -s -C ${comillas(repo)} brain`;
+  return `pnpm -s -C ${comillas(repo)} flowbrain`;
 }
 
 export const comillas = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
@@ -30,7 +30,7 @@ async function leerSchema(): Promise<string> {
   throw new Error("no se encontró SCHEMA.md junto al paquete");
 }
 
-const README = (cmd: string) => `# Brain
+const README = (cmd: string) => `# FlowBrain
 
 Grafo de conocimiento del sistema: páginas Markdown escritas por humanos (\`producto/\`, \`tecnologia/\`) y JSON
 generado por los parsers (\`_build/\`). El contrato está en \`SCHEMA.md\`.
@@ -57,7 +57,7 @@ export interface ResultadoInit {
 }
 
 /**
- * `brain init [dir]`: crea la estructura del brain (sin pisar nada), compila, y opcionalmente registra los hooks
+ * `flowbrain init [dir]`: crea la estructura del brain (sin pisar nada), compila, y opcionalmente registra los hooks
  * de Claude Code en su settings.json. El servidor MCP se registra con una línea de `claude mcp add` que se imprime.
  */
 export async function init(
@@ -67,7 +67,7 @@ export async function init(
   const raiz = resolve(dir);
   const cmd = comandoBrain(opciones.env);
   const archivos: Record<string, string> = {
-    "README.md": README(cmd.startsWith("npx") ? "npx brain-graph" : "brain"),
+    "README.md": README(cmd.startsWith("npx") ? "npx flowbrain" : "flowbrain"),
     "SCHEMA.md": await leerSchema(),
     "producto/.gitkeep": "",
     "tecnologia/.gitkeep": "",
@@ -89,7 +89,7 @@ export async function init(
     const settings = opciones.settings ?? join(homedir(), ".claude/settings.json");
     hooks = { settings, cambio: await instalarHooksClaudeCode(settings, base) };
   }
-  return { raiz, creados: [...new Set(creados)].sort(cmp), hooks, comando: cmd, mcp: `claude mcp add --scope user brain -- ${cmd} serve --raiz ${comillas(raiz)}` };
+  return { raiz, creados: [...new Set(creados)].sort(cmp), hooks, comando: cmd, mcp: `claude mcp add --scope user flowbrain -- ${cmd} serve --raiz ${comillas(raiz)}` };
 }
 
 type Settings = { hooks?: Record<string, Array<{ matcher?: string; hooks?: Array<{ type?: string; command?: string }> }>> } & Record<string, unknown>;
@@ -98,7 +98,7 @@ const esDeBrain = (command: string | undefined) => !!command && / hook claude-co
 
 /**
  * Registra el mismo comando en UserPromptSubmit y SessionEnd. Reemplaza entradas previas de brain y conserva todo
- * lo demás. Si el archivo no es JSON válido, falla sin tocarlo. Deja un respaldo `.brain.bak` antes de escribir.
+ * lo demás. Si el archivo no es JSON válido, falla sin tocarlo. Deja un respaldo `.flowbrain.bak` antes de escribir.
  */
 export async function instalarHooksClaudeCode(settingsPath: string, comando: string): Promise<boolean> {
   const previo = await readFile(settingsPath, "utf8").catch(() => null);
@@ -120,7 +120,7 @@ export async function instalarHooksClaudeCode(settingsPath: string, comando: str
   const nuevo = JSON.stringify(s, null, 2) + "\n";
   if (nuevo === previo) return false;
   await mkdir(dirname(settingsPath), { recursive: true });
-  if (previo !== null) await writeFile(`${settingsPath}.brain.bak`, previo, "utf8");
+  if (previo !== null) await writeFile(`${settingsPath}.flowbrain.bak`, previo, "utf8");
   await writeFile(settingsPath, nuevo, "utf8");
   return true;
 }

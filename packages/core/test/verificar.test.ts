@@ -27,7 +27,7 @@ afterEach(async () => {
 const graph = async () => JSON.parse(await readFile(join(brain, "_build/graph.json"), "utf8")) as Graph;
 const estado = async (desde: string, hasta: string) => (await graph()).edges.find((e) => e.desde === desde && e.hasta === hasta)?.estado;
 
-describe("brain verify", () => {
+describe("flowbrain verify", () => {
   it("sobre el oráculo y su repo: todo vigente y graph.json sin cambios", async () => {
     const antes = await readFile(join(brain, "_build/graph.json"), "utf8");
     const r = await verifyDir(brain, { carpetas: [join(dir, "clones")], hoy: HOY });

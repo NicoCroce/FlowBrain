@@ -1,4 +1,4 @@
-# Plan de mejoras de Brain
+# Plan de mejoras de FlowBrain
 
 Fecha: 2026-11-17. Sale de la auditoría integral del 2026-11-16 (estructura, agnosticismo, relaciones, comandos y MCP, comparación con alternativas).
 
@@ -40,7 +40,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 19 | Decisiones y notas ancladas | Hecho (decisiones 126 y 133) |
 | 20 | Visor fuera de `core` | Hecho (decisión 135) |
 | 21 | Documentación al día | Hecho: el PRD queda como histórico y apunta a las fuentes vigentes |
-| 22 | Publicar `brain-graph` | Pendiente: publicar es una acción externa, requiere confirmación |
+| 22 | Publicar `flowbrain` | Pendiente: publicar es una acción externa, requiere confirmación |
 | 23 | Registro y alta de cerebros | Hecho (decisión 136) |
 | 24 | MCP y hooks con varios cerebros | Hecho (decisión 137) |
 | 25 | Pistas de otros cerebros | Hecho (decisión 138) |
@@ -90,9 +90,9 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 **Problema.** Actualizar el brain exige encadenar `index` por repo y `compile` a mano. No hay forma de saber si el brain está al día respecto de los clones, ni de diagnosticar una instalación.
 
 **Qué se hace.**
-- `brain sync`: lee un manifiesto de repos del brain (id, ruta o URL, rama), reindexa los que cambiaron de HEAD y compila. El manifiesto guarda rutas relativas o por variable, para que el brain sea portable entre máquinas (hoy `_build/archivos` guarda la ruta del clon de una máquina).
-- `brain estado`: por repo, HEAD indexado contra HEAD actual; conteo de nodos y aristas por tipo; huecos conocidos (endpoints sin response, tablas sin `vive_en`, archivos fuera de toda feat, borradores sin promover). Sale con código distinto de cero si está desactualizado.
-- `brain doctor`: verifica que el MCP y los hooks estén registrados, que el grafo cargue y que los clones existan.
+- `flowbrain sync`: lee un manifiesto de repos del brain (id, ruta o URL, rama), reindexa los que cambiaron de HEAD y compila. El manifiesto guarda rutas relativas o por variable, para que el brain sea portable entre máquinas (hoy `_build/archivos` guarda la ruta del clon de una máquina).
+- `flowbrain estado`: por repo, HEAD indexado contra HEAD actual; conteo de nodos y aristas por tipo; huecos conocidos (endpoints sin response, tablas sin `vive_en`, archivos fuera de toda feat, borradores sin promover). Sale con código distinto de cero si está desactualizado.
+- `flowbrain doctor`: verifica que el MCP y los hooks estén registrados, que el grafo cargue y que los clones existan.
 
 **Archivos.** `packages/cli/src/main.ts`, módulo nuevo para el manifiesto en `packages/core` o `packages/indexer`, `docs/INSTALACION.md`.
 
@@ -100,13 +100,13 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 
 ### Paso 5 · Registro del MCP y los hooks
 
-**Problema.** El MCP `brain` no está registrado en Claude Code y no hay hooks de brain en la configuración: hoy el agente no usa el brain en ninguna sesión. `brain-graph@0.1.0` no está publicado.
+**Problema.** El MCP `brain` no está registrado en Claude Code y no hay hooks de brain en la configuración: hoy el agente no usa el brain en ninguna sesión. `flowbrain@0.1.0` no está publicado.
 
 **Requiere decisión del usuario** antes de tocar nada, porque edita configuración fuera del repo:
 - Alcance: a nivel usuario, solo en el proyecto que se depura, o esperar.
 - A qué brain apunta. El de depuración no debe quedar como configuración permanente de la herramienta.
 
-**Qué se hace.** `brain init` (o `doctor --fix`) deja el registro hecho de forma reproducible y reversible; se documenta en `docs/INSTALACION.md`. Conviene hacerlo después del paso 3, para que el agente reciba respuestas compactas e instrucciones desde el primer uso.
+**Qué se hace.** `flowbrain init` (o `doctor --fix`) deja el registro hecho de forma reproducible y reversible; se documenta en `docs/INSTALACION.md`. Conviene hacerlo después del paso 3, para que el agente reciba respuestas compactas e instrucciones desde el primer uso.
 
 ---
 
@@ -127,8 +127,8 @@ Hoy no se modela. Parsers para Dockerfile y compose, pipelines de CI, configurac
 ### Paso 9 · Código compartido, equipos y decisiones
 
 - Cerca del 28 % de los archivos del proyecto de referencia queda fuera de toda feat (código compartido, núcleo, sistema de diseño). Nodos `lib` para esos módulos y `feat depende_de lib`, para que `impacto` sobre código compartido llegue a las feats.
-- Nodos `team` y `decision` desde páginas curadas: `pertenece_a` y `decidido_por`. `brain nota` puede anclar una nota a un nodo.
-- Correr `brain verify` por primera vez y arreglar lo que marque.
+- Nodos `team` y `decision` desde páginas curadas: `pertenece_a` y `decidido_por`. `flowbrain nota` puede anclar una nota a un nodo.
+- Correr `flowbrain verify` por primera vez y arreglar lo que marque.
 
 ---
 
@@ -196,7 +196,7 @@ Mover el visor a su propio paquete: `core` queda con esquema, compilación y mot
 
 `docs/PRD.es.md` quedó atrasado respecto del código. Actualizarlo o marcarlo como histórico y dejar `SCHEMA.md` y `docs/DECISIONS.md` como fuente.
 
-### Paso 22 · Publicar `brain-graph`
+### Paso 22 · Publicar `flowbrain`
 
 Publicar el paquete cuando las fases 1 y 2 estén cerradas (decisión 72 pendiente).
 
@@ -251,9 +251,9 @@ El mapa 3D dibuja un cerebro por cada cerebro del registro, con la misma estéti
 
 ## Decisiones abiertas
 
-1. **Paso 5:** si el MCP y los hooks se registran a nivel usuario, solo en un proyecto, o todavía no, y a qué brain apuntan. `brain doctor` dice qué falta; `brain init --claude-code` y la línea de `claude mcp add` que imprime lo hacen. Conviene registrar el servidor con `serve --sync`.
+1. **Paso 5:** si el MCP y los hooks se registran a nivel usuario, solo en un proyecto, o todavía no, y a qué brain apuntan. `flowbrain doctor` dice qué falta; `flowbrain init --claude-code` y la línea de `claude mcp add` que imprime lo hacen. Conviene registrar el servidor con `serve --sync`.
 2. **Paso 13:** qué proyecto de otra pila se usa como segundo banco de pruebas. De eso dependen los lenguajes nuevos del paso 14.
-3. **Paso 22:** publicar `brain-graph` en npm.
+3. **Paso 22:** publicar `flowbrain` en npm.
 4. Carpetas de ejemplo `afip` y `videoAnalysis` en `packages/indexer/test/borrador.test.ts`: renombrarlas si identifican al proyecto de referencia.
 
 ## Pendientes anotados en las decisiones

@@ -1,4 +1,4 @@
-import { IMPACTO_JS } from "@brain/core";
+import { IMPACTO_JS } from "@flowbrain/core";
 
 /**
  * Vistas del visor que responden preguntas: "Dependencias" (qué funcionalidades usan a cuáles y qué datos y

@@ -42,9 +42,9 @@ export interface Entradas {
   paginas: Fuente[];
   contratos: Fuente[];
   archivos: Fuente[];
-  /** `_build/verificacion.json` de `brain verify`: sus aristas salen con estado `dudoso`. */
+  /** `_build/verificacion.json` de `flowbrain verify`: sus aristas salen con estado `dudoso`. */
   verificacion?: Fuente | null;
-  /** `_build/extraccion/*.json` de `brain index`: alimentan las fichas de funcionalidades y las relaciones finas del grafo. */
+  /** `_build/extraccion/*.json` de `flowbrain index`: alimentan las fichas de funcionalidades y las relaciones finas del grafo. */
   extracciones?: Fuente[];
 }
 
@@ -393,7 +393,7 @@ export function compile(entradas: Entradas): Salidas {
   if (entradas.verificacion) {
     const v = VerificacionSchema.safeParse(parseJson(entradas.verificacion, errores));
     if (v.success) for (const d of v.data.dudosas) dudosas.add(claveDudosa(d));
-    else if (entradas.verificacion.contenido.trim() !== "") errores.push({ archivo: entradas.verificacion.ruta, linea: null, mensaje: "verificación con formato inválido; borrala y corré brain verify" });
+    else if (entradas.verificacion.contenido.trim() !== "") errores.push({ archivo: entradas.verificacion.ruta, linea: null, mensaje: "verificación con formato inválido; borrala y corré flowbrain verify" });
   }
 
   if (errores.length > 0) throw new CompileError(ordenarErrores(errores));

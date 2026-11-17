@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Cruce, Graph, GraphEdge, GraphNode } from "@brain/core";
+import type { Cruce, Graph, GraphEdge, GraphNode } from "@flowbrain/core";
 import { datosDeCerebros, GRAFO3D_JS, renderViewerCerebros } from "../src/index.js";
 
 const nodo = (id: string, tipo: GraphNode["tipo"], atributos: Record<string, unknown> = {}): GraphNode => ({ actualizado: null, aliases: [], atributos, estado: "vigente", id, nombre: id, origen: "parser", pagina: null, resumen: null, tecnologia: [], tipo, verificado: null });

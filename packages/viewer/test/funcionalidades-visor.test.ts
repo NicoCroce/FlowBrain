@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { compile, leerEntradas, type Entradas } from "@brain/core";
+import { compile, leerEntradas, type Entradas } from "@flowbrain/core";
 import { mapa3dDelGrafo, renderViewer } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");

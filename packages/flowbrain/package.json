@@ -1,12 +1,11 @@
 {
-  "name": "brain-graph",
+  "name": "flowbrain",
   "version": "0.1.0",
   "description": "Grafo de conocimiento determinístico para agentes de código: Markdown + JSON compilados, servidos por MCP, hooks y CLI.",
   "license": "Apache-2.0",
   "type": "module",
   "bin": {
-    "brain": "dist/brain.mjs",
-    "brain-graph": "dist/brain.mjs"
+    "flowbrain": "dist/flowbrain.mjs"
   },
   "files": [
     "dist",

@@ -1,17 +1,17 @@
 import { isMap, isScalar, isSeq, parseDocument, Document, Scalar, YAMLSeq } from "yaml";
-import { cmp, dentroDe, FrontmatterSchema, MARCA_INICIO, normalizarRuta, parsePagina, simboloDeLinea, type Fuente } from "@brain/core";
-import { slug, type AristaExtraida, type Pendiente, type ResultadoIndex } from "@brain/parsers";
+import { cmp, dentroDe, FrontmatterSchema, MARCA_INICIO, normalizarRuta, parsePagina, simboloDeLinea, type Fuente } from "@flowbrain/core";
+import { slug, type AristaExtraida, type Pendiente, type ResultadoIndex } from "@flowbrain/parsers";
 
 /**
- * Generador de borradores del indexador (`brain draft`). Determinístico y sin LLM: a partir de la extracción
+ * Generador de borradores del indexador (`flowbrain draft`). Determinístico y sin LLM: a partir de la extracción
  * propone páginas para `_drafts/<repo>/tecnologia/` y deja en "Preguntas abiertas" lo que no pudo resolver.
  * Un agente puede refinarlas con `PROMPT.md`; un humano las revisa y las mueve a `tecnologia/`.
  */
 
 export const RESUMEN_PENDIENTE = "Borrador: completar resumen.";
 export const TITULO_PREGUNTAS = "## Preguntas abiertas";
-const AVISO = "> Borrador generado por `brain draft`. Revisalo, completalo y movelo a `tecnologia/`.";
-const AVISO_PRODUCTO = "> Borrador generado por `brain draft` a partir de la estructura del código. Revisalo, completalo y movelo a `producto/`.";
+const AVISO = "> Borrador generado por `flowbrain draft`. Revisalo, completalo y movelo a `tecnologia/`.";
+const AVISO_PRODUCTO = "> Borrador generado por `flowbrain draft` a partir de la estructura del código. Revisalo, completalo y movelo a `producto/`.";
 export const QUE_ES_PENDIENTE = "_Completar: qué problema resuelve para quien la usa, quién la usa y cuál es el flujo principal._";
 
 /** Carpetas que agrupan funcionalidades por convención, en cualquier lenguaje o framework. */
@@ -406,7 +406,7 @@ export function promptAgente(repo: string, paginas: string[]): string {
   return [
     `# Revisión de borradores de \`${repo}\``,
     "",
-    "Estos borradores los generó `brain draft` a partir del código, sin LLM. Tu trabajo es refinarlos, no reescribirlos.",
+    "Estos borradores los generó `flowbrain draft` a partir del código, sin LLM. Tu trabajo es refinarlos, no reescribirlos.",
     "",
     "Reglas:",
     "",
@@ -415,7 +415,7 @@ export function promptAgente(repo: string, paginas: string[]): string {
     "3. Para cada ítem de \"Preguntas abiertas\": abrí la evidencia citada. Si podés resolverlo con certeza, agregá la relación con `evidencia: \"<repo>:<ruta>#L<n>\"` y `origen: inferido`, y borrá el ítem. Si no, dejalo como está.",
     "4. No agregues relaciones sin evidencia, no cambies ids ni borres relaciones con `origen: parser`.",
     `5. En \`_drafts/producto/\`, completá "Qué es" de cada funcionalidad leyendo las pantallas y textos de su \`codigo\`: qué le permite hacer a quien la usa, en lenguaje de producto, sin nombres de archivos ni de clases. Si no queda claro, dejá el texto pendiente.`,
-    "6. Al terminar, verificá que el borrador compile: copiá `tecnologia/` del borrador sobre una copia del brain, corré `brain index <repo>` y `brain compile`.",
+    "6. Al terminar, verificá que el borrador compile: copiá `tecnologia/` del borrador sobre una copia del brain, corré `flowbrain index <repo>` y `flowbrain compile`.",
     "",
     "Páginas:",
     "",

@@ -1,6 +1,6 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { contextoParaPrompt, type Contexto } from "@brain/core";
+import { contextoParaPrompt, type Contexto } from "@flowbrain/core";
 
 export const BUDGET_HOOK = 1500;
 
@@ -39,7 +39,7 @@ export async function hookUserPromptSubmit(
   const repoDir = entrada.cwd ? await nombreRepo(entrada.cwd) : null;
   const r = contextoParaPrompt(ctx, { prompt: entrada.prompt, repoDir, budget_tokens: budget });
   if (r.texto === "") return "";
-  const texto = r.texto.includes("</brain-context>") ? r.texto.replace("</brain-context>", `${INSTRUCCION_NOTA}\n</brain-context>`) : `${r.texto}\n${INSTRUCCION_NOTA}`;
+  const texto = r.texto.includes("</flowbrain-context>") ? r.texto.replace("</flowbrain-context>", `${INSTRUCCION_NOTA}\n</flowbrain-context>`) : `${r.texto}\n${INSTRUCCION_NOTA}`;
   return JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: texto } }) + "\n";
 }
 
@@ -55,7 +55,7 @@ export interface Nota {
   texto: string;
 }
 
-/** Líneas `brain-nota <id>: <texto>` en un texto (tolera viñetas, citas y backticks alrededor). */
+/** Líneas `flowbrain-nota <id>: <texto>` en un texto (tolera viñetas, citas y backticks alrededor). */
 export function extraerNotas(texto: string): Nota[] {
   const out: Nota[] = [];
   for (const cruda of texto.split("\n")) {

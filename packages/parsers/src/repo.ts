@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { cmp } from "@brain/core";
+import { cmp } from "@flowbrain/core";
 import type { RepoFuente } from "./tipos.js";
 
 const IGNORAR = new Set(["node_modules", ".git", "dist", "build", ".next", "out", "coverage", "vendor", ".turbo", ".cache", "var", "tmp"]);

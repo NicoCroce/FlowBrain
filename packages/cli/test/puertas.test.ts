@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { cargadorConCache, crearServidor } from "@brain/mcp";
-import { stringifyCanonical } from "@brain/core";
+import { cargadorConCache, crearServidor } from "@flowbrain/mcp";
+import { stringifyCanonical } from "@flowbrain/core";
 import { ejecutar } from "../src/main.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
@@ -148,6 +148,6 @@ describe("hook de Claude Code", () => {
       JSON.stringify({ prompt: "/checkout", cwd: raiz }),
     );
     expect(r).toMatchObject({ codigo: 0, stdout: "" });
-    expect(r.stderr).toContain("brain hook:");
+    expect(r.stderr).toContain("flowbrain hook:");
   });
 });

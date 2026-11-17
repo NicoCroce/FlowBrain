@@ -1,5 +1,5 @@
 {
-  "name": "@brain/parsers",
+  "name": "@flowbrain/parsers",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brain/core": "workspace:*",
+    "@flowbrain/core": "workspace:*",
     "tree-sitter-php": "0.24.2",
     "typescript": "^5.9.3",
     "web-tree-sitter": "0.25.10",

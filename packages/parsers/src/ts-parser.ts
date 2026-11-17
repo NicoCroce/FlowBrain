@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
-import { cmp, normalizarRuta } from "@brain/core";
+import { cmp, normalizarRuta } from "@flowbrain/core";
 import { analizarUrl, type Parte } from "./url.js";
 import {
   type RefSimbolo,

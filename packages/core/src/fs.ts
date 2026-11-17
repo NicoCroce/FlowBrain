@@ -55,7 +55,7 @@ export async function escribirSalidas(raiz: string, s: Salidas): Promise<string[
 }
 
 /**
- * `brain compile`: lee, compila y escribe. `extra` agrega salidas derivadas que no son del núcleo (el visor, que
+ * `flowbrain compile`: lee, compila y escribe. `extra` agrega salidas derivadas que no son del núcleo (el visor, que
  * vive en su propio paquete).
  */
 export async function compileDir(raiz: string, extra?: (s: Salidas) => Promise<Record<string, string>> | Record<string, string>): Promise<{ salidas: Salidas; escritos: string[] }> {

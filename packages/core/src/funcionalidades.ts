@@ -17,7 +17,7 @@ export interface AristaExtraccion {
   hasta: string;
   endpoint: string | null;
   evidencia: string;
-  /** Presentes en la extracción de `brain index`; ausentes en índices viejos. */
+  /** Presentes en la extracción de `flowbrain index`; ausentes en índices viejos. */
   origen?: string;
   dato?: string | null;
 }

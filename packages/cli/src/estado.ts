@@ -1,14 +1,14 @@
-import { compileDirConVisor } from "@brain/viewer";
+import { compileDirConVisor } from "@flowbrain/viewer";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { cargarContexto, cmp, commitDe, dentroDe, ES_TEST, type Contexto } from "@brain/core";
-import { escribirIndex, indexar } from "@brain/parsers";
+import { cargarContexto, cmp, commitDe, dentroDe, ES_TEST, type Contexto } from "@flowbrain/core";
+import { escribirIndex, indexar } from "@flowbrain/parsers";
 
 /**
  * `sync`, `estado` y `doctor`: mantener el brain al día y saber qué le falta. El manifiesto de repos es lo que ya
- * escribe `brain index` en `_build/archivos/<repo>.json`: el id, el commit indexado y la ruta del clon relativa al
- * brain. Si el clon no está ahí (otra máquina), se busca por nombre de carpeta en `--repos` / `BRAIN_REPOS`.
+ * escribe `flowbrain index` en `_build/archivos/<repo>.json`: el id, el commit indexado y la ruta del clon relativa al
+ * brain. Si el clon no está ahí (otra máquina), se busca por nombre de carpeta en `--repos` / `FLOWBRAIN_REPOS`.
  */
 
 export interface RepoIndexado {
@@ -132,7 +132,7 @@ export function textoEstado(e: Estado): string {
   const lista = (m: Record<string, number>) => Object.entries(m).map(([k, v]) => `${k} ${v}`).join(", ");
   return [
     "Repos indexados:",
-    ...(e.repos.length ? e.repos.map((r) => `  ${r.repo}: ${r.estado} (indexado ${corto(r.indexado)}, clon ${corto(r.actual)})`) : ["  ninguno (corré brain index <ruta-repo>)"]),
+    ...(e.repos.length ? e.repos.map((r) => `  ${r.repo}: ${r.estado} (indexado ${corto(r.indexado)}, clon ${corto(r.actual)})`) : ["  ninguno (corré flowbrain index <ruta-repo>)"]),
     `Nodos: ${total(e.nodos)} (${lista(e.nodos)})`,
     `Relaciones: ${total(e.aristas)} (${lista(e.aristas)})`,
     ...(e.huecos.length ? ["Huecos:", ...e.huecos.map((h) => `  ${h.que}: ${h.cuantos}${h.de !== h.cuantos ? ` de ${h.de}` : ""} — ${h.ejemplos.join(", ")}${h.cuantos > h.ejemplos.length ? ", …" : ""}`)] : ["Huecos: ninguno"]),
@@ -153,11 +153,11 @@ export async function doctor(raiz: string, opciones: { carpetas?: string[]; sett
     ctx = await cargarContexto(raiz);
     out.push({ que: "el grafo carga", ok: true, detalle: `${ctx.graph.nodes.length} nodos, ${ctx.graph.edges.length} relaciones` });
   } catch (e) {
-    out.push({ que: "el grafo carga", ok: false, detalle: `${(e as Error).message}; corré brain compile` });
+    out.push({ que: "el grafo carga", ok: false, detalle: `${(e as Error).message}; corré flowbrain compile` });
   }
-  out.push({ que: "hay índice de código", ok: !!ctx?.codigo, detalle: ctx?.codigo ? `${ctx.codigo.estructura.size} archivos` : "corré brain index <ruta-repo> y brain compile" });
+  out.push({ que: "hay índice de código", ok: !!ctx?.codigo, detalle: ctx?.codigo ? `${ctx.codigo.estructura.size} archivos` : "corré flowbrain index <ruta-repo> y flowbrain compile" });
   const repos = await reposIndexados(raiz, opciones.carpetas);
-  for (const r of repos) out.push({ que: `clon de ${r.repo}`, ok: r.estado === "al día", detalle: r.estado === "sin clon" ? "no se encontró; pasá --repos <carpeta de clones>" : r.estado === "desactualizado" ? "el clon avanzó; corré brain sync" : r.estado });
+  for (const r of repos) out.push({ que: `clon de ${r.repo}`, ok: r.estado === "al día", detalle: r.estado === "sin clon" ? "no se encontró; pasá --repos <carpeta de clones>" : r.estado === "desactualizado" ? "el clon avanzó; corré flowbrain sync" : r.estado });
 
   const leerJson = async (p: string) => {
     try {
@@ -170,17 +170,17 @@ export async function doctor(raiz: string, opciones: { carpetas?: string[]; sett
   const s = await leerJson(settings);
   const comandos = Object.values((s?.["hooks"] ?? {}) as Record<string, Array<{ hooks?: Array<{ command?: string }> }>>).flatMap((es) => es.flatMap((e) => (e.hooks ?? []).map((h) => h.command ?? "")));
   const hook = comandos.find((c) => / hook claude-code( |$)/.test(c));
-  out.push({ que: "hooks de Claude Code", ok: !!hook, detalle: hook ? `registrados en ${settings}` : `no están en ${settings}; brain init --claude-code los registra` });
+  out.push({ que: "hooks de Claude Code", ok: !!hook, detalle: hook ? `registrados en ${settings}` : `no están en ${settings}; flowbrain init --claude-code los registra` });
   const configs = opciones.mcpConfig ?? [join(homedir(), ".claude.json"), join(process.cwd(), ".mcp.json")];
   let mcp: string | null = null;
   for (const p of configs) {
     const j = await leerJson(p);
     const propios = (j?.["mcpServers"] ?? {}) as Record<string, { args?: string[]; command?: string }>;
     const deProyectos = Object.values((j?.["projects"] ?? {}) as Record<string, { mcpServers?: typeof propios }>).map((x) => x.mcpServers ?? {});
-    // El servidor de brain: registrado con ese nombre, o cualquier entrada cuyo comando sea `brain … serve`.
-    const esBrain = ([nombre, v]: [string, { args?: string[]; command?: string }]) => nombre === "brain" || /brain\b.*\bserve\b/.test([v.command ?? "", ...(v.args ?? [])].join(" "));
+    // El servidor de FlowBrain: registrado con ese nombre (o `brain`, el anterior), o cualquier entrada cuyo comando sea `flowbrain … serve`.
+    const esBrain = ([nombre, v]: [string, { args?: string[]; command?: string }]) => nombre === "flowbrain" || nombre === "brain" || /brain\b.*\bserve\b/.test([v.command ?? "", ...(v.args ?? [])].join(" "));
     if ([propios, ...deProyectos].some((m) => Object.entries(m).some(esBrain))) { mcp = p; break; }
   }
-  out.push({ que: "servidor MCP", ok: !!mcp, detalle: mcp ? `registrado en ${mcp}` : "no está registrado; brain init imprime la línea de claude mcp add" });
+  out.push({ que: "servidor MCP", ok: !!mcp, detalle: mcp ? `registrado en ${mcp}` : "no está registrado; flowbrain init imprime la línea de claude mcp add" });
   return out;
 }

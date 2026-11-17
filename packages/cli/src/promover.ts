@@ -1,10 +1,10 @@
-import { compileDirConVisor } from "@brain/viewer";
+import { compileDirConVisor } from "@flowbrain/viewer";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { cmp, CompileError, formatError } from "@brain/core";
+import { cmp, CompileError, formatError } from "@flowbrain/core";
 
 /**
- * `brain promover`: pasa borradores revisados de `_drafts/` a `tecnologia/` y `producto/`. Sin `--escribir` solo
+ * `flowbrain promover`: pasa borradores revisados de `_drafts/` a `tecnologia/` y `producto/`. Sin `--escribir` solo
  * lista. Nunca pisa una página existente distinta (salvo `--pisar`), y si el brain deja de compilar con las páginas
  * nuevas, deshace todo y devuelve los errores: un borrador a medio completar no rompe el brain.
  */

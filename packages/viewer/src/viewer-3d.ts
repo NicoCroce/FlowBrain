@@ -670,11 +670,11 @@ export const GRAFO3D_JS = String.raw`
     var asa = $("m3-asa"), app = document.getElementById("app");
     if (!asa) return;
     var poner = function (w) { app.style.setProperty("--der", Math.round(Math.max(260, Math.min(window.innerWidth * 0.6, w))) + "px"); };
-    try { var previo = Number(localStorage.getItem("brain-m3-der")); if (previo) poner(previo); } catch (e) { /* sin almacenamiento */ }
+    try { var previo = Number(localStorage.getItem("flowbrain-m3-der")); if (previo) poner(previo); } catch (e) { /* sin almacenamiento */ }
     var mover = function (ev) { poner(window.innerWidth - ev.clientX); ev.preventDefault(); };
     var soltar = function () {
       window.removeEventListener("pointermove", mover); window.removeEventListener("pointerup", soltar); asa.classList.remove("on");
-      try { localStorage.setItem("brain-m3-der", String(parseInt(app.style.getPropertyValue("--der"), 10) || 300)); } catch (e) { /* sin almacenamiento */ }
+      try { localStorage.setItem("flowbrain-m3-der", String(parseInt(app.style.getPropertyValue("--der"), 10) || 300)); } catch (e) { /* sin almacenamiento */ }
     };
     asa.addEventListener("pointerdown", function (ev) { asa.classList.add("on"); window.addEventListener("pointermove", mover); window.addEventListener("pointerup", soltar); ev.preventDefault(); });
     asa.addEventListener("dblclick", function () { poner(300); soltar(); });

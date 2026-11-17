@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { compileDir, parsePagina, stringifyCanonical } from "@brain/core";
-import { escribirIndex, indexar } from "@brain/parsers";
+import { compileDir, parsePagina, stringifyCanonical } from "@flowbrain/core";
+import { escribirIndex, indexar } from "@flowbrain/parsers";
 import { draftDir, etiquetaHost, generarBorradores, RESUMEN_PENDIENTE } from "../src/index.js";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -26,7 +26,7 @@ afterEach(async () => {
 
 const relaciones = async (ruta: string) => (parsePagina(ruta, await readFile(ruta, "utf8")).data as { relaciones?: unknown[] }).relaciones ?? [];
 
-describe("brain draft sobre un brain casi vacío", () => {
+describe("flowbrain draft sobre un brain casi vacío", () => {
   beforeEach(async () => {
     await cp(F("envios-brain/tecnologia/svc-notificaciones.md"), join(brain, "tecnologia/svc-notificaciones.md"));
   });
@@ -95,7 +95,7 @@ describe("brain draft sobre un brain casi vacío", () => {
   });
 });
 
-describe("brain draft sobre páginas existentes", () => {
+describe("flowbrain draft sobre páginas existentes", () => {
   beforeEach(async () => {
     await cp(F("envios-brain/tecnologia"), join(brain, "tecnologia"), { recursive: true });
   });
@@ -159,7 +159,7 @@ describe("repo no identificado", () => {
   });
 });
 
-describe("brain draft: funcionalidades", () => {
+describe("flowbrain draft: funcionalidades", () => {
   it("toma las hijas de features/, modules/ y domains/, salvo código compartido", async () => {
     const { carpetasDeFuncionalidad, nombreDeCarpeta } = await import("../src/index.js");
     expect(

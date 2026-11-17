@@ -1,9 +1,9 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, CompileError, crucesEntre, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, type Cerebro, type CerebroLiviano, type Cruce, type Ficha, type Graph, type Registro } from "@brain/core";
-import { draftDir } from "@brain/indexer";
-import { escribirIndex, fusionar, indexar, leerRepo, PARSERS, slug } from "@brain/parsers";
-import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@brain/viewer";
+import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, CompileError, crucesEntre, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, type Cerebro, type CerebroLiviano, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
+import { draftDir } from "@flowbrain/indexer";
+import { escribirIndex, fusionar, indexar, leerRepo, PARSERS, slug } from "@flowbrain/parsers";
+import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@flowbrain/viewer";
 import { init } from "./init.js";
 import { borradoresPromovibles, promover } from "./promover.js";
 
@@ -94,7 +94,7 @@ export function textoPropuesta(carpetaRegistro: string, nombre: string, repos: R
     "¿Entre qué cerebros se activa la comunicación? Agregá un par en `comunicacion` por cada uno.",
   ];
   return [
-    "# Registro de cerebros. Lo escribió `brain cerebros proponer`; revisalo y corré `brain cerebros aplicar`.",
+    "# Registro de cerebros. Lo escribió `flowbrain cerebros proponer`; revisalo y corré `flowbrain cerebros aplicar`.",
     "# Rutas relativas a esta carpeta. Cada cerebro queda en una subcarpeta con su nombre.",
     "version: 1",
     "cerebros:",
@@ -133,7 +133,7 @@ export function textoPropuesta(carpetaRegistro: string, nombre: string, repos: R
   ].join("\n");
 }
 
-/** `brain cerebros proponer <carpeta…>`: escribe el borrador del registro. No pisa un registro existente. */
+/** `flowbrain cerebros proponer <carpeta…>`: escribe el borrador del registro. No pisa un registro existente. */
 export async function proponer(carpetaRegistro: string, carpetas: string[]): Promise<{ archivo: string; repos: RepoDetectado[] }> {
   const rutas = [...new Set((await Promise.all(carpetas.map((c) => encontrarRepos(c)))).flat())].sort(cmp);
   const repos: RepoDetectado[] = [];
@@ -228,19 +228,19 @@ export async function aplicarCerebro(c: Cerebro): Promise<ResultadoCerebro> {
   return res;
 }
 
-/** `brain cerebros aplicar [nombre]`. */
+/** `flowbrain cerebros aplicar [nombre]`. */
 export async function aplicar(registro: Registro, solo?: string): Promise<ResultadoCerebro[]> {
   const out: ResultadoCerebro[] = [];
   for (const c of registro.cerebros) if (!solo || c.nombre === solo) out.push(await aplicarCerebro(c));
   return out;
 }
 
-/** `brain cerebros`: qué hay en el registro y en qué estado está cada cerebro. */
+/** `flowbrain cerebros`: qué hay en el registro y en qué estado está cada cerebro. */
 export async function listar(carpeta: string): Promise<string> {
   const r = await leerRegistro(carpeta);
   const lineas: string[] = [];
   for (const c of r.cerebros) {
-    let grafo = "sin indexar (corré brain cerebros aplicar)";
+    let grafo = "sin indexar (corré flowbrain cerebros aplicar)";
     try {
       const g = JSON.parse(await readFile(join(c.raiz, "_build/graph.json"), "utf8")) as { nodes: unknown[]; edges: unknown[] };
       grafo = `${g.nodes.length} nodos, ${g.edges.length} relaciones`;

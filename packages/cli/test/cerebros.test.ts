@@ -4,8 +4,8 @@ import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { interpretarRegistro, RegistroError } from "@brain/core";
-import { crearMulti, crearServidor } from "@brain/mcp";
+import { interpretarRegistro, RegistroError } from "@flowbrain/core";
+import { crearMulti, crearServidor } from "@flowbrain/mcp";
 import { ejecutar } from "../src/main.js";
 
 /**
@@ -199,10 +199,10 @@ describe("registrar en Claude Code", () => {
   it("deja los hooks apuntando al registro e imprime la línea del MCP", async () => {
     const settings = join(dir, "settings.json");
     await writeFile(settings, '{ "hooks": { "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "otro-hook" }] }] } }\n');
-    const r = await ejecutar(["cerebros", "registrar", "--raiz", reg, "--settings", settings], { BRAIN_COMANDO: "brain" }, dir);
-    expect(r.stdout).toContain(`claude mcp add --scope user brain -- brain serve --sync --raiz ${reg}`);
+    const r = await ejecutar(["cerebros", "registrar", "--raiz", reg, "--settings", settings], { FLOWBRAIN_COMANDO: "flowbrain" }, dir);
+    expect(r.stdout).toContain(`claude mcp add --scope user flowbrain -- flowbrain serve --sync --raiz ${reg}`);
     const s = JSON.parse(await readFile(settings, "utf8")) as { hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>> };
-    expect(s.hooks["UserPromptSubmit"]!.flatMap((e) => e.hooks.map((h) => h.command))).toEqual(["otro-hook", `brain hook claude-code --raiz ${reg}`]);
-    expect(s.hooks["SessionEnd"]!.flatMap((e) => e.hooks.map((h) => h.command))).toEqual([`brain hook claude-code --raiz ${reg}`]);
+    expect(s.hooks["UserPromptSubmit"]!.flatMap((e) => e.hooks.map((h) => h.command))).toEqual(["otro-hook", `flowbrain hook claude-code --raiz ${reg}`]);
+    expect(s.hooks["SessionEnd"]!.flatMap((e) => e.hooks.map((h) => h.command))).toEqual([`flowbrain hook claude-code --raiz ${reg}`]);
   });
 });

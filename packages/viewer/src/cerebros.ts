@@ -1,4 +1,4 @@
-import type { Cruce, Ficha, Graph, ResumenConexion } from "@brain/core";
+import type { Cruce, Ficha, Graph, ResumenConexion } from "@flowbrain/core";
 import { datosDelVisor, paginaDelVisor, type DatosVisor } from "./viewer.js";
 
 /**

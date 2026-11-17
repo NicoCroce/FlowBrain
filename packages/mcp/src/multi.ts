@@ -14,7 +14,7 @@ import {
   type Cruce,
   type Graph,
   type Registro,
-} from "@brain/core";
+} from "@flowbrain/core";
 import { cargadorConCache, type CerebroResuelto, type Multi } from "./server.js";
 
 const mtime = (p: string) => stat(p).then((s) => s.mtimeMs, () => 0);
@@ -102,7 +102,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
     async conexiones(nombre?: string) {
       const { r, c } = await elegir(nombre);
       const { propio, vecinos } = await vecindario(r, c.nombre, c.raiz);
-      if (!propio) throw new ConsultaError("parametro_invalido", `el cerebro ${c.nombre} no está compilado: corré brain cerebros aplicar`);
+      if (!propio) throw new ConsultaError("parametro_invalido", `el cerebro ${c.nombre} no está compilado: corré flowbrain cerebros aplicar`);
       const salen = vecinos.map((v) => crucesEntre(propio, v, r.conexiones));
       const entran = vecinos.map((v) => crucesEntre(v, propio, r.conexiones));
       const mios = (x: { desde: { cerebro: string }; hacia: { cerebro: string } }) => x.desde.cerebro === c.nombre || x.hacia.cerebro === c.nombre;

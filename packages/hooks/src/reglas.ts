@@ -1,15 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { cmp, repoPorDirectorio, type Contexto, type GraphNode } from "@brain/core";
+import { cmp, repoPorDirectorio, type Contexto, type GraphNode } from "@flowbrain/core";
 
 /**
- * Generadores de reglas (`brain gen claude|agents|cursor|windsurf`): el bloque que le dice al agente que existe el
+ * Generadores de reglas (`flowbrain gen claude|agents|cursor|windsurf`): el bloque que le dice al agente que existe el
  * brain, qué nodo es este repo y cómo consultarlo. Determinísticos: dependen solo del grafo y del repo.
  */
 
-export const PREFIJO_NOTA = "brain-nota";
-export const MARCA_REGLAS_INICIO = "<!-- brain:reglas:inicio -->";
-export const MARCA_REGLAS_FIN = "<!-- brain:reglas:fin -->";
+export const PREFIJO_NOTA = "flowbrain-nota";
+export const MARCA_REGLAS_INICIO = "<!-- flowbrain:reglas:inicio -->";
+export const MARCA_REGLAS_FIN = "<!-- flowbrain:reglas:fin -->";
 
 export const DESTINOS = ["claude", "agents", "cursor", "windsurf"] as const;
 export type Destino = (typeof DESTINOS)[number];
@@ -46,7 +46,7 @@ function seccionRepo(ctx: Contexto, repo: GraphNode): string[] {
 /** Bloque Markdown de reglas. Con `ctx` y `repo`, incluye el nodo del repo y sus servicios. */
 export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): string {
   return [
-    "## Brain",
+    "## FlowBrain",
     "",
     ...(ctx && repo ? [...seccionRepo(ctx, repo), ""] : []),
     "Antes de explorar el código con grep, consultá el grafo de conocimiento por MCP (servidor `brain`):",
@@ -63,7 +63,7 @@ export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): st
     "- `infra` para saber cómo se construye, despliega y configura un servicio: imagen, pipelines, variables de entorno y proxy.",
     "- `funcionalidad` para la ficha de una funcionalidad de producto: endpoints, consumo, datos y relaciones.",
     "Los `avisos` de cada respuesta son huecos conocidos (no hay dato, no \"no pasa nada\"): llamadas sin resolver o índice desactualizado; ahí sí conviene mirar el código. `indice` dice de qué commit salió.",
-    "Sin MCP, los mismos comandos por CLI: `brain buscar <texto>`, `brain recorrer <nodo>`, `brain contrato <nodo>`, `brain trazar --desde <ruta>`, `brain recorrido <endpoint|Clase.metodo>`, `brain pantalla </ruta>`, `brain quien-llama <Clase.metodo>`, `brain impacto <pieza>`, `brain funcionalidad <id>`.",
+    "Sin MCP, los mismos comandos por CLI: `flowbrain buscar <texto>`, `flowbrain recorrer <nodo>`, `flowbrain contrato <nodo>`, `flowbrain trazar --desde <ruta>`, `flowbrain recorrido <endpoint|Clase.metodo>`, `flowbrain pantalla </ruta>`, `flowbrain quien-llama <Clase.metodo>`, `flowbrain impacto <pieza>`, `flowbrain funcionalidad <id>`.",
     "Cada arista trae evidencia (`repo:ruta#Lnn`); abrí ese archivo antes de afirmar algo.",
     `Si el código contradice al brain, escribí en tu respuesta una línea \`${PREFIJO_NOTA} <id-del-nodo>: <qué cambió>\`. Al cerrar la sesión el hook la guarda en \`_drafts/notas/\` para revisión.`,
     "",
@@ -100,18 +100,20 @@ export function generarReglas(destino: Destino, ctx: Contexto | null, repo: Grap
     case "cursor":
       return {
         ...r,
-        ruta: ".cursor/rules/brain.mdc",
+        ruta: ".cursor/rules/flowbrain.mdc",
         modo: "archivo",
-        contenido: `---\ndescription: Grafo de conocimiento Brain: servicios, contratos y dependencias de este repo\nalwaysApply: true\n---\n\n${bloque}`,
+        contenido: `---\ndescription: Grafo de conocimiento FlowBrain: servicios, contratos y dependencias de este repo\nalwaysApply: true\n---\n\n${bloque}`,
       };
     case "windsurf":
-      return { ...r, ruta: ".windsurf/rules/brain.md", modo: "archivo", contenido: `---\ntrigger: always_on\n---\n\n${bloque}` };
+      return { ...r, ruta: ".windsurf/rules/flowbrain.md", modo: "archivo", contenido: `---\ntrigger: always_on\n---\n\n${bloque}` };
   }
 }
 
 /** Inserta o reemplaza el bloque entre marcadores; si no hay marcadores, lo agrega al final. */
 export function fusionarBloque(previo: string | null, envuelto: string): string {
   if (previo === null || previo.trim() === "") return envuelto;
+  // Bloques escritos antes del cambio de nombre (marcadores `brain:reglas`): se reemplazan igual, sin duplicar.
+  previo = previo.replace("<!-- brain:reglas:inicio -->", MARCA_REGLAS_INICIO).replace("<!-- brain:reglas:fin -->", MARCA_REGLAS_FIN);
   const i = previo.indexOf(MARCA_REGLAS_INICIO);
   const f = previo.indexOf(MARCA_REGLAS_FIN);
   if (i >= 0 && f > i) {

@@ -1,5 +1,5 @@
 {
-  "name": "@brain/mcp",
+  "name": "@flowbrain/mcp",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brain/core": "workspace:*",
+    "@flowbrain/core": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^3.25.76"
   }

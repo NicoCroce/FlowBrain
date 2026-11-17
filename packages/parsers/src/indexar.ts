@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, parsePagina, stringifyCanonical, type Contrato } from "@brain/core";
+import { cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
 import { leerRepo } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
 import { tsParser } from "./ts-parser.js";
@@ -221,7 +221,7 @@ export function endpointsAlcanzables<E extends { ruta: string; metodo: string }>
 }
 
 /**
- * `brain index <repo>`: corre los parsers, resuelve contra las páginas del brain y devuelve contratos,
+ * `flowbrain index <repo>`: corre los parsers, resuelve contra las páginas del brain y devuelve contratos,
  * árbol de archivos y aristas extraídas (más las pendientes, para el indexador del paso 7). Puro salvo lecturas.
  */
 export async function indexar(

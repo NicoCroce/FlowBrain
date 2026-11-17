@@ -1,4 +1,4 @@
-import { compileDirConVisor } from "@brain/viewer";
+import { compileDirConVisor } from "@flowbrain/viewer";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -33,15 +33,15 @@ import {
   verifyDir,
   type Contexto,
   type Proyeccion,
-} from "@brain/core";
-import { crearMulti } from "@brain/mcp";
-import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@brain/hooks";
-import { draftDir } from "@brain/indexer";
+} from "@flowbrain/core";
+import { crearMulti } from "@flowbrain/mcp";
+import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@flowbrain/hooks";
+import { draftDir } from "@flowbrain/indexer";
 import { aplicar, escribirVisor, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { comandoBrain, comillas, init, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
-import { escribirIndex, indexar } from "@brain/parsers";
+import { escribirIndex, indexar } from "@flowbrain/parsers";
 
 const AYUDA = `brain <comando> [opciones]
 
@@ -78,7 +78,7 @@ Comandos:
   pantalla </ruta|Componente>               pantalla del front de punta a punta: de dónde se llega, a dónde lleva, qué llama del back
   quien-llama <Clase.metodo|Clase> [--profundidad n]
   impacto <pieza>                           qué se ve afectado si cambia una tabla, endpoint, servicio, feat o símbolo
-  riesgo [archivo...] [--diff <archivo|->]  alcance de un cambio: desde un diff (git diff | brain riesgo --diff -) o archivos
+  riesgo [archivo...] [--diff <archivo|->]  alcance de un cambio: desde un diff (git diff | flowbrain riesgo --diff -) o archivos
          [--repo <repo-id>]                 tocados, qué funcionalidades, endpoints, pantallas, tablas y repos alcanza
   paridad <svc-viejo> <svc-nuevo>           qué falta migrar de un servicio a otro: endpoints, pantallas y tablas
   deriva [svc]                              llamadas que ningún endpoint atiende y endpoints que nadie llama
@@ -90,7 +90,7 @@ Comandos:
   serve [--sync]                            servidor MCP por stdio; con --sync reindexa solo cuando un clon avanzó
 
 Opciones comunes:
-  --raiz <dir>          raíz del brain, o carpeta con cerebros.yaml (por defecto $BRAIN_ROOT o el directorio actual)
+  --raiz <dir>          raíz del brain, o carpeta con cerebros.yaml (por defecto $FLOWBRAIN_ROOT o el directorio actual)
   --cerebro <nombre>    con varios cerebros, cuál usar (por defecto, el del repo donde estás parado)
   --proyeccion <p>      resumen | relaciones | contrato | completo
   --budget <n|none>     presupuesto de tokens (por defecto 2000)
@@ -158,7 +158,7 @@ export async function ejecutar(
   const [comando, arg] = positionals;
   if (o.version) return { codigo: 0, stdout: `${VERSION}\n`, stderr: "" };
   if (o.help || !comando) return { codigo: comando || o.help ? 0 : 2, stdout: AYUDA, stderr: "" };
-  let raiz = resolve(cwd, o.raiz ?? env.BRAIN_ROOT ?? ".");
+  let raiz = resolve(cwd, o.raiz ?? env.FLOWBRAIN_ROOT ?? ".");
 
   try {
     if (comando === "init") {
@@ -182,16 +182,16 @@ export async function ejecutar(
     if (comando === "cerebros") {
       if (arg === "proponer") {
         const carpetas = positionals.slice(2).map((c) => resolve(cwd, c));
-        if (!carpetas.length) throw new ConsultaError("parametro_invalido", "uso: brain cerebros proponer <carpeta...> --raiz <carpeta del registro>");
+        if (!carpetas.length) throw new ConsultaError("parametro_invalido", "uso: flowbrain cerebros proponer <carpeta...> --raiz <carpeta del registro>");
         const r = await proponer(raiz, carpetas);
         const lineas = [
           `propuesta en ${r.archivo}: ${r.repos.length} repos`,
           ...r.repos.map((x) => `  ${x.nombre}: ${[...x.pila, ...x.lenguajes].join(", ") || "sin código reconocido"}; ${x.endpoints} endpoints, ${x.pantallas} pantallas, ${x.tablas} tablas${x.bases.length ? `; llama por ${x.bases.map((b) => b.base).join(", ")}` : ""}`),
-          "revisá el archivo (agrupá los repos en cerebros y respondé las preguntas) y corré: brain cerebros aplicar",
+          "revisá el archivo (agrupá los repos en cerebros y respondé las preguntas) y corré: flowbrain cerebros aplicar",
         ];
         return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
       }
-      if (!(await esRegistro(raiz))) throw new ConsultaError("parametro_invalido", `no hay ${ARCHIVO_REGISTRO} en ${raiz}; creálo con: brain cerebros proponer <carpeta> --raiz ${raiz}`);
+      if (!(await esRegistro(raiz))) throw new ConsultaError("parametro_invalido", `no hay ${ARCHIVO_REGISTRO} en ${raiz}; creálo con: flowbrain cerebros proponer <carpeta> --raiz ${raiz}`);
       if (arg === "aplicar") {
         const registro = await leerRegistro(raiz);
         const solo = positionals[2];
@@ -208,7 +208,7 @@ export async function ejecutar(
       }
       if (arg === "visor") {
         const visor = await escribirVisor(await leerRegistro(raiz));
-        return { codigo: visor ? 0 : 1, stdout: visor ? `${visor}\n` : "ningún cerebro está compilado: corré brain cerebros aplicar\n", stderr: "" };
+        return { codigo: visor ? 0 : 1, stdout: visor ? `${visor}\n` : "ningún cerebro está compilado: corré flowbrain cerebros aplicar\n", stderr: "" };
       }
       if (arg === "registrar") {
         // Hooks de Claude Code apuntando al registro (cada prompt usa el cerebro del repo actual) y la línea del MCP.
@@ -218,8 +218,8 @@ export async function ejecutar(
         const lineas = [
           `Hooks de Claude Code ${cambio ? "registrados" : "ya estaban registrados"} en ${settings} (UserPromptSubmit y SessionEnd).`,
           "",
-          "Servidor MCP (una línea, una sola vez; si ya había uno llamado brain, quitálo antes con: claude mcp remove --scope user brain):",
-          `  claude mcp add --scope user brain -- ${cmd} serve --sync --raiz ${comillas(raiz)}`,
+          "Servidor MCP (una línea, una sola vez; si ya había uno, quitálo antes con: claude mcp remove --scope user flowbrain; el de antes del cambio de nombre se llamaba brain):",
+          `  claude mcp add --scope user flowbrain -- ${cmd} serve --sync --raiz ${comillas(raiz)}`,
         ];
         return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
       }
@@ -261,12 +261,12 @@ export async function ejecutar(
     }
 
     if (comando === "sync" || comando === "estado" || comando === "doctor") {
-      const carpetas = (o.repos ?? env.BRAIN_REPOS ?? "").split(":").filter(Boolean).map((d) => resolve(cwd, d));
+      const carpetas = (o.repos ?? env.FLOWBRAIN_REPOS ?? "").split(":").filter(Boolean).map((d) => resolve(cwd, d));
       if (comando === "sync") {
         const r = await sync(raiz, { carpetas, forzar: o.forzar === true });
         const lineas = [
           ...r.repos.map((x) => `${x.repo}: ${x.reindexado ? "reindexado" : x.estado === "sin clon" ? "sin clon (no se reindexó)" : "al día"}`),
-          r.repos.length ? (r.compilados ? `compilado: ${r.compilados.length} archivos cambiaron` : "sin cambios: no hizo falta compilar") : "no hay repos indexados (corré brain index <ruta-repo>)",
+          r.repos.length ? (r.compilados ? `compilado: ${r.compilados.length} archivos cambiaron` : "sin cambios: no hizo falta compilar") : "no hay repos indexados (corré flowbrain index <ruta-repo>)",
         ];
         return { codigo: r.repos.some((x) => x.estado === "sin clon") ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
       }
@@ -289,7 +289,7 @@ export async function ejecutar(
             ...(!r.movidos.length && !r.salteados.length && !r.errores.length ? ["nada para promover (pasá ids o --todos)"] : []),
           ]
         : [
-            ...(r.candidatos.length ? [`borradores (${r.candidatos.length}):`, ...r.candidatos.map(fila), "promové con: brain promover <id...> --escribir (o --todos --escribir)"] : ["no hay borradores en _drafts/"]),
+            ...(r.candidatos.length ? [`borradores (${r.candidatos.length}):`, ...r.candidatos.map(fila), "promové con: flowbrain promover <id...> --escribir (o --todos --escribir)"] : ["no hay borradores en _drafts/"]),
             ...r.errores,
           ];
       return { codigo: r.errores.length ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
@@ -302,7 +302,7 @@ export async function ejecutar(
       const lineas = [
         `borradores de ${r.repo}: ${paginas} páginas (${funcionalidades} funcionalidades, ${tablas} tablas y ${externos} externos propuestos), ${relaciones} relaciones nuevas, ${preguntas} preguntas abiertas; ${r.escritos.length} archivos escritos`,
         ...r.escritos.map((e) => `  ${e}`),
-        `revisá _drafts/${r.repo}/ y _drafts/producto/ (o pasale PROMPT.md a un agente), movelos a tecnologia/ y producto/ y corré brain index + brain compile`,
+        `revisá _drafts/${r.repo}/ y _drafts/producto/ (o pasale PROMPT.md a un agente), movelos a tecnologia/ y producto/ y corré flowbrain index + flowbrain compile`,
       ];
       return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
     }
@@ -314,8 +314,8 @@ export async function ejecutar(
         if (i <= 0) throw new ConsultaError("parametro_invalido", `--clon espera <repo-id>=<ruta>, llegó "${c}"`);
         clones[c.slice(0, i)] = resolve(cwd, c.slice(i + 1));
       }
-      const carpetas = (o.repos ?? env.BRAIN_REPOS ?? "").split(":").filter(Boolean).map((d) => resolve(cwd, d));
-      // Sin `--clon` para un repo, vale el clon que registró `brain index`.
+      const carpetas = (o.repos ?? env.FLOWBRAIN_REPOS ?? "").split(":").filter(Boolean).map((d) => resolve(cwd, d));
+      // Sin `--clon` para un repo, vale el clon que registró `flowbrain index`.
       for (const r of await reposIndexados(raiz, carpetas)) if (r.clon && !clones[r.repo]) clones[r.repo] = r.clon;
       const hoy = o.hoy ?? new Date().toISOString().slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(hoy)) throw new ConsultaError("parametro_invalido", "--hoy debe ser AAAA-MM-DD");
@@ -344,14 +344,14 @@ export async function ejecutar(
       const dir = resolve(cwd, o.repo !== undefined && !ctx.nodo.has(o.repo) ? o.repo : ".");
       const repo = repoDe(ctx, o.repo !== undefined && ctx.nodo.has(o.repo) ? o.repo : await nombreRepo(dir));
       const r = generarReglas(arg as Destino, ctx, repo);
-      if (!o.escribir) return { codigo: 0, stdout: r.contenido, stderr: repo ? "" : "brain gen: el repo no está en el brain; se genera el bloque genérico\n" };
+      if (!o.escribir) return { codigo: 0, stdout: r.contenido, stderr: repo ? "" : "flowbrain gen: el repo no está en el brain; se genera el bloque genérico\n" };
       const cambio = await escribirReglas(dir, r);
       return { codigo: 0, stdout: `${cambio ? "escrito" : "sin cambios"}: ${r.ruta}${repo ? ` (${repo.id})` : " (sin nodo de repo)"}\n`, stderr: "" };
     }
 
     if (comando === "nota") {
       const texto = positionals.slice(2).join(" ").trim();
-      if (!arg || !texto) throw new ConsultaError("parametro_invalido", "uso: brain nota <nodo> <texto>");
+      if (!arg || !texto) throw new ConsultaError("parametro_invalido", "uso: flowbrain nota <nodo> <texto>");
       const escritos = await anotar(raiz, [{ id: arg, texto }], "manual");
       return { codigo: 0, stdout: escritos.length ? `nota agregada: ${escritos.join(", ")}\n` : "la nota ya existía\n", stderr: "" };
     }
@@ -374,7 +374,7 @@ export async function ejecutar(
         return { codigo: 0, stdout: await hookUserPromptSubmit(entrada, () => cargarContexto(raiz), budget), stderr: "" };
       } catch (e) {
         // Un hook roto nunca debe bloquear el prompt del usuario.
-        return { codigo: 0, stdout: "", stderr: `brain hook: ${(e as Error).message}\n` };
+        return { codigo: 0, stdout: "", stderr: `flowbrain hook: ${(e as Error).message}\n` };
       }
     }
 
@@ -437,7 +437,7 @@ export async function ejecutar(
         break;
       }
       case "paridad":
-        if (!arg || !positionals[2]) throw new ConsultaError("parametro_invalido", "uso: brain paridad <svc-viejo> <svc-nuevo>");
+        if (!arg || !positionals[2]) throw new ConsultaError("parametro_invalido", "uso: flowbrain paridad <svc-viejo> <svc-nuevo>");
         resultado = paridad(ctx, { viejo: arg, nuevo: positionals[2], ...opt("budget_tokens", comunes.budget_tokens) });
         break;
       case "deriva":
@@ -497,8 +497,8 @@ const real = (p: string) => {
 };
 const esMain = process.argv[1] !== undefined && real(fileURLToPath(import.meta.url)) === real(process.argv[1]);
 if (esMain && process.argv[2] === "serve") {
-  const { servir } = await import("@brain/mcp");
-  await servir(process.argv.slice(3), process.env, (raiz) => sync(raiz, { carpetas: (process.env.BRAIN_REPOS ?? "").split(":").filter(Boolean) }));
+  const { servir } = await import("@flowbrain/mcp");
+  await servir(process.argv.slice(3), process.env, (raiz) => sync(raiz, { carpetas: (process.env.FLOWBRAIN_REPOS ?? "").split(":").filter(Boolean) }));
 } else if (esMain) {
   const r = await ejecutar(process.argv.slice(2), process.env, process.cwd(), leerStdin);
   process.stdout.write(r.stdout);

@@ -1,4 +1,4 @@
-# SCHEMA — Brain v0.1
+# SCHEMA — FlowBrain v0.1
 
 Contrato del grafo. El compilador lo hace cumplir y el motor responde según él. Si algo no está acá, es inválido.
 
@@ -77,7 +77,7 @@ Reglas:
 
 ## 4. Estados, orígenes y confianza
 
-**Estados:** `vigente` (por defecto), `dudoso` (lo asigna `brain verify` cuando falta la evidencia) y `deprecado` (lo marca un humano).
+**Estados:** `vigente` (por defecto), `dudoso` (lo asigna `flowbrain verify` cuando falta la evidencia) y `deprecado` (lo marca un humano).
 
 **Orígenes y su confianza:**
 
@@ -97,7 +97,7 @@ Formato: `<repo-id>:<ruta/relativa>[#L<n>[-L<m>]]`, con la expresión regular `^
 
 - El `repo-id` tiene que existir como nodo.
 - No se aceptan rutas absolutas, `..`, `./` ni barras iniciales.
-- El compilador solo valida el formato. Que el archivo exista lo comprueba `brain verify`.
+- El compilador solo valida el formato. Que el archivo exista lo comprueba `flowbrain verify`.
 
 ## 6. Frontmatter de página
 
@@ -195,9 +195,9 @@ Un endpoint puede traer `query`: el tipo de sus parámetros de query (un DTO, o 
 
 `compile` crea un nodo `pantalla` por ruta y servicio. Una pantalla `navega_a` otra si su componente, o algo que llama o dibuja (hasta 8 niveles), navega a esa ruta; los datos sueltos cuentan si su archivo es parte del recorrido o lo importa. Lo que navegan los layouts y las guardas queda en `envuelta[].sale` y, del lado del destino, en `desdeEnvolturas`.
 
-Los símbolos se quedan en este JSON y no pasan a `graph.json`. `brain verify` los usa para comprobar que la línea citada por una evidencia todavía nombre al símbolo (en un método, su nombre sin la clase); `compile`, para la sección "cómo está construida" de cada funcionalidad.
+Los símbolos se quedan en este JSON y no pasan a `graph.json`. `flowbrain verify` los usa para comprobar que la línea citada por una evidencia todavía nombre al símbolo (en un método, su nombre sin la clase); `compile`, para la sección "cómo está construida" de cada funcionalidad.
 
-### `_build/verificacion.json` (escrito por `brain verify`)
+### `_build/verificacion.json` (escrito por `flowbrain verify`)
 
 ```json
 {
@@ -210,7 +210,7 @@ Los símbolos se quedan en este JSON y no pasan a `graph.json`. `brain verify` l
 
 `compile` marca `estado: dudoso` en cada arista cuya `(desde, verbo, hasta, endpoint, evidencia)` aparezca acá, salvo que esté `deprecado`. Si la evidencia de la página cambia, la arista deja de coincidir y vuelve a `vigente` hasta la próxima verificación.
 
-### `_build/funcionalidades.json` (escrito por `brain compile`)
+### `_build/funcionalidades.json` (escrito por `flowbrain compile`)
 
 Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build/extraccion/*.json`: su campo `accesos` conserva cada llamada y cada acceso con su evidencia (`aristas` deja uno por par, para los borradores), y `pendientes` los accesos a tablas sin página. Se escribe solo si hay alguna `feat`.
 
@@ -242,10 +242,10 @@ Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build
 
 ### `_drafts/` (fuera de la compilación)
 
-- `_drafts/<repo-id>/tecnologia/*.md`: páginas propuestas por `brain draft`, con el mismo formato que `tecnologia/` y `resumen: "Borrador: completar resumen."` donde falta. Lo no resuelto va en una sección `## Preguntas abiertas`.
-- `_drafts/producto/feat-*.md`: funcionalidades propuestas por `brain draft`, una por cada hija de una carpeta `features/`, `modules/` o `domains/` (hasta 4 niveles, salvo debajo de `shared/`, `core/`, `common/` y similares). Si ya hay una página o un borrador con el mismo id, se le suma la ruta a `codigo`: la misma carpeta en dos repos queda en una sola funcionalidad.
+- `_drafts/<repo-id>/tecnologia/*.md`: páginas propuestas por `flowbrain draft`, con el mismo formato que `tecnologia/` y `resumen: "Borrador: completar resumen."` donde falta. Lo no resuelto va en una sección `## Preguntas abiertas`.
+- `_drafts/producto/feat-*.md`: funcionalidades propuestas por `flowbrain draft`, una por cada hija de una carpeta `features/`, `modules/` o `domains/` (hasta 4 niveles, salvo debajo de `shared/`, `core/`, `common/` y similares). Si ya hay una página o un borrador con el mismo id, se le suma la ruta a `codigo`: la misma carpeta en dos repos queda en una sola funcionalidad.
 - `_drafts/<repo-id>/PROMPT.md`: instrucciones fijas para que un agente refine los borradores.
-- `_drafts/notas/<id>.md`: notas de contradicciones entre el código y el brain (`brain nota` o el hook `SessionEnd`).
+- `_drafts/notas/<id>.md`: notas de contradicciones entre el código y el brain (`flowbrain nota` o el hook `SessionEnd`).
 
 `compile` nunca lee `_drafts/`. Un humano mueve los borradores a `tecnologia/` y `producto/` tras revisarlos.
 
@@ -304,7 +304,7 @@ Todas las herramientas ordenan sus resultados por confianza descendente y despu�
   5. Cada salto informa `desde`, `hasta`, `verbo`, `endpoint`, `dato` (`request → response` si hay endpoint, o el `dato` de la arista), `evidencia`, `confianza` y `nivel`.
   6. Con `hasta`, se devuelven solo los saltos de los caminos más cortos.
 
-Consultas de código y producto (necesitan `brain index` + `brain compile`; sin índice, error `parametro_invalido`). Todas devuelven `avisos` (huecos conocidos: falta de dato, no "no pasa nada") e `indice` (repo → commit de HEAD al indexar, 12 caracteres). Con presupuesto excedido recortan listas desde el final y agregan `truncado: true` y `omitidos: n`.
+Consultas de código y producto (necesitan `flowbrain index` + `flowbrain compile`; sin índice, error `parametro_invalido`). Todas devuelven `avisos` (huecos conocidos: falta de dato, no "no pasa nada") e `indice` (repo → commit de HEAD al indexar, 12 caracteres). Con presupuesto excedido recortan listas desde el final y agregan `truncado: true` y `omitidos: n`.
 
 - **`funcionalidad`:** por id, sufijo (`billing` → `feat-billing`) o nombre. Endpoints que expone con el método que atiende cada uno, lo que consume (y de qué funcionalidad), tablas con su evidencia, relaciones y el dominio compartido con otras.
 - **`recorrido`:** desde un endpoint (id, `MÉTODO /ruta` o `/ruta`; hasta 3 si coinciden varios) o un símbolo (`Clase.metodo`, `funcion`, `ruta#Simbolo`). Pasos `{n, simbolo, ev, toca?, aviso?}` en orden de llamada; `toca` es `verbo destino`, con `(tabla sin página en el brain)` si la tabla existe en el código pero no tiene página.

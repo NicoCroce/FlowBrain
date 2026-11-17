@@ -1,5 +1,5 @@
 {
-  "name": "brain",
+  "name": "flowbrain",
   "version": "0.0.0",
   "private": true,
   "license": "Apache-2.0",
@@ -11,6 +11,7 @@
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "flowbrain": "tsx packages/cli/src/main.ts",
     "brain": "tsx packages/cli/src/main.ts",
     "build": "node scripts/build.mjs"
   },

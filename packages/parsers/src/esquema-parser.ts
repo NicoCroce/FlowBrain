@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cmp } from "@brain/core";
+import { cmp } from "@flowbrain/core";
 import { extraccionVacia, paqueteDe, type ColumnaCruda, type Extraccion, type Parser, type RepoFuente, type TablaEsquema } from "./tipos.js";
 
 /**

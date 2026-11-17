@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { cmp } from "@brain/core";
+import { cmp } from "@flowbrain/core";
 import { extraccionVacia, paqueteDe, type Extraccion, type InfraCruda, type Parser, type RepoFuente } from "./tipos.js";
 
 /**

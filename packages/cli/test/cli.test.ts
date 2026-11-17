@@ -56,7 +56,7 @@ describe("brain CLI produce el mismo JSON que el motor", () => {
   });
 });
 
-describe("brain verify, draft, nota y hook SessionEnd por CLI", () => {
+describe("flowbrain verify, draft, nota y hook SessionEnd por CLI", () => {
   const REPOS = resolve(FIXTURE, "../repos");
 
   it("verify sale con 1 si aparecen dudosas nuevas y con 0 en la siguiente corrida", async () => {
@@ -96,7 +96,7 @@ describe("brain verify, draft, nota y hook SessionEnd por CLI", () => {
     expect(n).toEqual({ codigo: 0, stdout: "nota agregada: _drafts/notas/svc-bff.md\n", stderr: "" });
     const t = join(raiz, "t.jsonl");
     const { writeFile } = await import("node:fs/promises");
-    await writeFile(t, JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "brain-nota svc-bff: devuelve 202" }] } }) + "\n");
+    await writeFile(t, JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "flowbrain-nota svc-bff: devuelve 202" }] } }) + "\n");
     const h = await ejecutar(["hook", "claude-code", "--raiz", raiz], {}, raiz, async () => JSON.stringify({ hook_event_name: "SessionEnd", session_id: "s1", transcript_path: t }));
     expect(h.codigo).toBe(0);
     expect(h.stdout).toBe("");
@@ -110,7 +110,7 @@ describe("brain verify, draft, nota y hook SessionEnd por CLI", () => {
   });
 });
 
-describe("brain gen por CLI", () => {
+describe("flowbrain gen por CLI", () => {
   it("imprime por stdout y rechaza destinos desconocidos", async () => {
     const r = await ejecutar(["gen", "agents", "--raiz", raiz, "--repo", "repo-tienda"]);
     expect(r.codigo).toBe(0);
@@ -122,6 +122,6 @@ describe("brain gen por CLI", () => {
 
   it("compile escribe el visor", async () => {
     const html = await readFile(join(raiz, "_build/viewer.html"), "utf8");
-    expect(html).toContain("<title>Brain · visor</title>");
+    expect(html).toContain("<title>FlowBrain · visor</title>");
   });
 });

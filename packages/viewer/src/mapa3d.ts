@@ -1,4 +1,4 @@
-import type { Ficha, Graph } from "@brain/core";
+import type { Ficha, Graph } from "@flowbrain/core";
 
 /**
  * Datos del "Mapa 3D" del visor: aristas agregadas (con cuántas veces aparece cada relación en el código), el uso de

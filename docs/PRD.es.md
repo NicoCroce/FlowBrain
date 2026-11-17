@@ -1,5 +1,7 @@
 # Brain — PRD v0.1
 
+> Desde el 2026-11-17 el producto se llama **FlowBrain** y el comando es `flowbrain` (decisión 144). Este documento es histórico y conserva el nombre original.
+
 > **Documento histórico.** Es el diseño original (v0.1) y se conserva para entender de dónde salen las decisiones. No describe el estado actual. Las fuentes vigentes son:
 >
 > - [`SCHEMA.md`](../SCHEMA.md): el contrato del grafo, de los JSON y de las consultas.

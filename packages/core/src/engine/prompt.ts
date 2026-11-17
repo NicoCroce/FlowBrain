@@ -129,11 +129,11 @@ export function contextoParaPrompt(ctx: Contexto, p: ContextoPromptParams): Cont
   if (!repo && pendientes.length === 0) return { repo: null, secciones: [], omitidas: 0, texto: "" };
 
   const cabecera = [
-    "<brain-context>",
+    "<flowbrain-context>",
     "Grafo de conocimiento del sistema (determinístico, con evidencia). Herramientas MCP: buscar_nodo, recorrer_grafo, contrato_de, trazar, recorrido, pantalla, quien_llama, impacto, funcionalidad.",
   ];
   if (repo) cabecera.push(`Repo actual: ${repo.id} — ${repo.nombre}${repo.resumen ? `: ${repo.resumen}` : ""}`);
-  const cierre = "</brain-context>";
+  const cierre = "</flowbrain-context>";
 
   const lineas = [...cabecera];
   const secciones: Seccion[] = [];

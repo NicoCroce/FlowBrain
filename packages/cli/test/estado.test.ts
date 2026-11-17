@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { avisosIndice } from "@brain/core";
-import { cargadorConCache } from "@brain/mcp";
+import { avisosIndice } from "@flowbrain/core";
+import { cargadorConCache } from "@flowbrain/mcp";
 import { sync } from "../src/estado.js";
 import { ejecutar } from "../src/main.js";
 
@@ -30,7 +30,7 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe("brain sync, estado y doctor", () => {
+describe("flowbrain sync, estado y doctor", () => {
   it("estado: repo al día, conteos y huecos; sync no hace nada si el clon no avanzó", async () => {
     const e = await brain("estado");
     expect(e.codigo).toBe(0);

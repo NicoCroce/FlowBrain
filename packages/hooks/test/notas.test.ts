@@ -6,7 +6,7 @@ import { anotar, bloqueReglas, extraerNotas, hookSessionEnd, notasDeTranscript }
 
 let dir: string;
 beforeEach(async () => {
-  dir = await mkdtemp(join(tmpdir(), "brain-notas-"));
+  dir = await mkdtemp(join(tmpdir(), "flowbrain-notas-"));
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
@@ -16,10 +16,10 @@ describe("extraerNotas", () => {
   it("reconoce la marca con ids de página y generados, viñetas y backticks", () => {
     const t = [
       "Listo, cambié el cliente.",
-      "brain-nota svc-payments: ya no llama a la pasarela directo, usa una cola",
-      "- `brain-nota svc-bff:POST:/checkout: ahora devuelve 202`",
-      "> brain-nota ext-pasarela: cambió el host a api2",
-      "texto con brain-nota en el medio: no cuenta",
+      "flowbrain-nota svc-payments: ya no llama a la pasarela directo, usa una cola",
+      "- `flowbrain-nota svc-bff:POST:/checkout: ahora devuelve 202`",
+      "> flowbrain-nota ext-pasarela: cambió el host a api2",
+      "texto con flowbrain-nota en el medio: no cuenta",
     ].join("\n");
     expect(extraerNotas(t)).toEqual([
       { id: "svc-payments", texto: "ya no llama a la pasarela directo, usa una cola" },
@@ -31,11 +31,11 @@ describe("extraerNotas", () => {
 
 describe("hook SessionEnd", () => {
   const transcript = [
-    { type: "user", message: { content: "brain-nota svc-x: esto lo escribió el usuario, no cuenta" } },
-    { type: "assistant", message: { content: [{ type: "text", text: "brain-nota svc-payments: usa una cola" }, { type: "tool_use", name: "Bash" }] } },
-    { type: "assistant", message: { content: [{ type: "text", text: "brain-nota svc-payments: usa una cola" }] } },
+    { type: "user", message: { content: "flowbrain-nota svc-x: esto lo escribió el usuario, no cuenta" } },
+    { type: "assistant", message: { content: [{ type: "text", text: "flowbrain-nota svc-payments: usa una cola" }, { type: "tool_use", name: "Bash" }] } },
+    { type: "assistant", message: { content: [{ type: "text", text: "flowbrain-nota svc-payments: usa una cola" }] } },
     "línea rota {",
-    { type: "assistant", message: { content: [{ type: "text", text: "brain-nota tabla-pagos: tiene columna nueva `moneda`" }] } },
+    { type: "assistant", message: { content: [{ type: "text", text: "flowbrain-nota tabla-pagos: tiene columna nueva `moneda`" }] } },
   ]
     .map((x) => (typeof x === "string" ? x : JSON.stringify(x)))
     .join("\n");
@@ -64,6 +64,6 @@ describe("hook SessionEnd", () => {
   });
 
   it("el bloque de reglas enseña la marca", () => {
-    expect(bloqueReglas()).toContain("brain-nota <id-del-nodo>: <qué cambió>");
+    expect(bloqueReglas()).toContain("flowbrain-nota <id-del-nodo>: <qué cambió>");
   });
 });

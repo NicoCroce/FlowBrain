@@ -1,5 +1,5 @@
 {
-  "name": "@brain/hooks",
+  "name": "@flowbrain/hooks",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -8,6 +8,6 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@brain/core": "workspace:*"
+    "@flowbrain/core": "workspace:*"
   }
 }

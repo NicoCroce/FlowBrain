@@ -207,7 +207,7 @@ describe("consultas de código", () => {
     await writeFile(join(git, "refs/heads/main"), `${"b".repeat(40)}\n`);
     await actualizarHeads(ix, brain);
     expect(recorrido(c, { desde: "POST /checkout" }).avisos).toEqual([
-      "índice desactualizado: repo-tienda se indexó en aaaaaaaaaaaa y el clon está en bbbbbbbbbbbb; las líneas pueden no coincidir (corré `brain index` y `brain compile`)",
+      "índice desactualizado: repo-tienda se indexó en aaaaaaaaaaaa y el clon está en bbbbbbbbbbbb; las líneas pueden no coincidir (corré `flowbrain index` y `flowbrain compile`)",
     ]);
   });
   it("evaluar cuenta aciertos por herramienta: textos esperados, prohibidos y errores esperados", () => {

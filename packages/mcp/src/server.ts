@@ -25,11 +25,11 @@ import {
   trazar,
   VERBOS,
   type Contexto,
-} from "@brain/core";
+} from "@flowbrain/core";
 import { z } from "zod";
 
-/** Versión del paquete, la inyecta el build de brain-graph; "dev" corriendo desde el repo. */
-declare const __BRAIN_VERSION__: string | undefined;
+/** Versión del paquete, la inyecta el build de flowbrain; "dev" corriendo desde el repo. */
+declare const __FLOWBRAIN_VERSION__: string | undefined;
 
 /**
  * Carga el contexto y lo recarga si `_build/graph.json` cambió (por mtime). Con `alDesfase`, si algún clon avanzó
@@ -136,7 +136,7 @@ export interface Multi {
 }
 
 export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): McpServer {
-  const server = new McpServer({ name: "brain", version: typeof __BRAIN_VERSION__ === "string" ? __BRAIN_VERSION__ : "dev" }, { instructions: multi ? `${INSTRUCCIONES}\n${multi.descripcion}` : INSTRUCCIONES });
+  const server = new McpServer({ name: "flowbrain", version: typeof __FLOWBRAIN_VERSION__ === "string" ? __FLOWBRAIN_VERSION__ : "dev" }, { instructions: multi ? `${INSTRUCCIONES}\n${multi.descripcion}` : INSTRUCCIONES });
   // Siempre declarado; con un solo brain no cambia nada.
   const deCerebro = { cerebro: z.string().min(1).optional().describe("con varios cerebros, cuál consultar; por defecto, el del repo actual") };
 

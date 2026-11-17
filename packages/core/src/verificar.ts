@@ -6,7 +6,7 @@ import { compileDir, leerEntradas, escribirSalidas } from "./fs.js";
 import { claveDudosa, EVIDENCIA, RUTA_VERIFICACION, VerificacionSchema, type Dudosa, type Graph, type GraphEdge } from "./schema.js";
 
 /**
- * Verificador (`brain verify`). Para cada arista con evidencia comprueba que el archivo exista en el clon local
+ * Verificador (`flowbrain verify`). Para cada arista con evidencia comprueba que el archivo exista en el clon local
  * del repo, que la línea exista y, si `_build/archivos/<repo>.json` registra un símbolo en esa línea, que la línea
  * todavía lo nombre. Las que fallan quedan en `_build/verificacion.json` y `compile` las marca `dudoso`.
  */
@@ -138,7 +138,7 @@ export async function leerVerificacion(raiz: string): Promise<Dudosa[]> {
 }
 
 /**
- * `brain verify`: compila en memoria, verifica, escribe `_build/verificacion.json` y recompila para que
+ * `flowbrain verify`: compila en memoria, verifica, escribe `_build/verificacion.json` y recompila para que
  * `graph.json` refleje los `dudoso`. Lecturas acotadas a los clones locales.
  */
 export async function verifyDir(

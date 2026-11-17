@@ -141,13 +141,13 @@ export function avisosIndice(ix: IndiceCodigo): string[] {
   return Object.keys(ix.commits)
     .sort(cmp)
     .filter((r) => ix.actuales[r] && ix.actuales[r] !== ix.commits[r])
-    .map((r) => `índice desactualizado: ${r} se indexó en ${corto(ix.commits[r]!)} y el clon está en ${corto(ix.actuales[r]!)}; las líneas pueden no coincidir (corré \`brain index\` y \`brain compile\`)`);
+    .map((r) => `índice desactualizado: ${r} se indexó en ${corto(ix.commits[r]!)} y el clon está en ${corto(ix.actuales[r]!)}; las líneas pueden no coincidir (corré \`flowbrain index\` y \`flowbrain compile\`)`);
 }
 
 // ------------------------------------------------------------------ utilidades
 
 function indice(ctx: Contexto): IndiceCodigo {
-  if (!ctx.codigo) throw new ConsultaError("parametro_invalido", "no hay índice de código: corré `brain index <repo>` y `brain compile`");
+  if (!ctx.codigo) throw new ConsultaError("parametro_invalido", "no hay índice de código: corré `flowbrain index <repo>` y `flowbrain compile`");
   return ctx.codigo;
 }
 const corto = (c: string) => c.slice(0, 12);
@@ -576,7 +576,7 @@ export function infra(ctx: Contexto, p: InfraParams) {
     ...(p.texto ? { texto: p.texto } : {}),
     total: items.length,
     items,
-    avisos: items.length ? [] : [ctx.graph.nodes.some((n) => n.atributos["infra"]) ? "nada coincide: no hay infraestructura declarada para eso en los repos indexados" : "el brain no tiene infraestructura indexada (corré brain index y brain compile)"],
+    avisos: items.length ? [] : [ctx.graph.nodes.some((n) => n.atributos["infra"]) ? "nada coincide: no hay infraestructura declarada para eso en los repos indexados" : "el brain no tiene infraestructura indexada (corré flowbrain index y flowbrain compile)"],
   };
   return ajustarLista(res, "items", p.budget_tokens);
 }

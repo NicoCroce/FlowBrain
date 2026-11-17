@@ -1,11 +1,11 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
-import { cmp, leerEntradas } from "@brain/core";
-import { indexar } from "@brain/parsers";
+import { cmp, leerEntradas } from "@flowbrain/core";
+import { indexar } from "@flowbrain/parsers";
 import { generarBorradores, type Borradores } from "./borrador.js";
 
 /**
- * `brain draft <repo>`: corre los parsers y escribe borradores en `_drafts/<repo>/`. No toca `_build/`,
+ * `flowbrain draft <repo>`: corre los parsers y escribe borradores en `_drafts/<repo>/`. No toca `_build/`,
  * `tecnologia/` ni `producto/`. Solo escribe archivos cuyo contenido cambió.
  */
 export async function draftDir(rutaRepo: string, raizBrain: string, opciones: { repo?: string } = {}): Promise<Borradores & { repo: string; escritos: string[] }> {

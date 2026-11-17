@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { join } from "node:path";
 import { Language, Parser as TSParser, type Node } from "web-tree-sitter";
-import { normalizarRuta } from "@brain/core";
+import { normalizarRuta } from "@flowbrain/core";
 import { analizarUrl, type Parte } from "./url.js";
 import { extraccionVacia, paqueteDe, type Extraccion, type Forma, type Parser, type RepoFuente, type Simbolo } from "./tipos.js";
 

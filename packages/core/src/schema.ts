@@ -340,7 +340,7 @@ export interface Graph {
   version: 1;
 }
 
-// ---------- Verificación (`brain verify`) ----------
+// ---------- Verificación (`flowbrain verify`) ----------
 
 export const RUTA_VERIFICACION = "_build/verificacion.json";
 

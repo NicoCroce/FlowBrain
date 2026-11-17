@@ -38,7 +38,7 @@ describe("notas ancladas a un nodo", () => {
   });
 });
 
-describe("brain promover", () => {
+describe("flowbrain promover", () => {
   it("sin --escribir lista los borradores y su estado, sin tocar nada", async () => {
     const r = await brain("promover");
     expect(r.stdout.split("\n").slice(0, 5)).toEqual([

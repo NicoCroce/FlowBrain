@@ -24,7 +24,40 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@22.20.5)(tsx@4.23.15)(yaml@2.9.1)
 
-  packages/brain-graph:
+  packages/cli:
+    dependencies:
+      '@flowbrain/core':
+        specifier: workspace:*
+        version: link:../core
+      '@flowbrain/hooks':
+        specifier: workspace:*
+        version: link:../hooks
+      '@flowbrain/indexer':
+        specifier: workspace:*
+        version: link:../indexer
+      '@flowbrain/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@flowbrain/parsers':
+        specifier: workspace:*
+        version: link:../parsers
+      '@flowbrain/viewer':
+        specifier: workspace:*
+        version: link:../viewer
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.32.2
+        version: 1.32.2(zod@3.25.76)
+
+  packages/core:
+    dependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
+  packages/flowbrain:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
@@ -48,51 +81,18 @@ importers:
         specifier: 3.25.76
         version: 3.25.76
 
-  packages/cli:
-    dependencies:
-      '@brain/core':
-        specifier: workspace:*
-        version: link:../core
-      '@brain/hooks':
-        specifier: workspace:*
-        version: link:../hooks
-      '@brain/indexer':
-        specifier: workspace:*
-        version: link:../indexer
-      '@brain/mcp':
-        specifier: workspace:*
-        version: link:../mcp
-      '@brain/parsers':
-        specifier: workspace:*
-        version: link:../parsers
-      '@brain/viewer':
-        specifier: workspace:*
-        version: link:../viewer
-      '@modelcontextprotocol/sdk':
-        specifier: ^1.32.2
-        version: 1.32.2(zod@3.25.76)
-
-  packages/core:
-    dependencies:
-      yaml:
-        specifier: ^2.9.1
-        version: 2.9.1
-      zod:
-        specifier: ^3.25.76
-        version: 3.25.76
-
   packages/hooks:
     dependencies:
-      '@brain/core':
+      '@flowbrain/core':
         specifier: workspace:*
         version: link:../core
 
   packages/indexer:
     dependencies:
-      '@brain/core':
+      '@flowbrain/core':
         specifier: workspace:*
         version: link:../core
-      '@brain/parsers':
+      '@flowbrain/parsers':
         specifier: workspace:*
         version: link:../parsers
       yaml:
@@ -101,7 +101,7 @@ importers:
 
   packages/mcp:
     dependencies:
-      '@brain/core':
+      '@flowbrain/core':
         specifier: workspace:*
         version: link:../core
       '@modelcontextprotocol/sdk':
@@ -113,7 +113,7 @@ importers:
 
   packages/parsers:
     dependencies:
-      '@brain/core':
+      '@flowbrain/core':
         specifier: workspace:*
         version: link:../core
       tree-sitter-php:
@@ -131,7 +131,7 @@ importers:
 
   packages/viewer:
     dependencies:
-      '@brain/core':
+      '@flowbrain/core':
         specifier: workspace:*
         version: link:../core
       cytoscape:

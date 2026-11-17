@@ -1,4 +1,4 @@
-import { dependenciasDelGrafo, type Ficha, type Graph } from "@brain/core";
+import { dependenciasDelGrafo, type Ficha, type Graph } from "@flowbrain/core";
 import { mapa3dDelGrafo } from "./mapa3d.js";
 import { GRAFO3D_JS } from "./viewer-3d.js";
 import { MAPA_JS } from "./viewer-mapa.js";
@@ -64,7 +64,7 @@ export function paginaDelVisor(datos: unknown, cytoscapeJs: string): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Brain · visor</title>
+<title>FlowBrain · visor</title>
 <style>
 :root {
   color-scheme: dark;
@@ -260,7 +260,7 @@ a.nb { text-decoration: none; }
 </head>
 <body>
 <header id="cabecera">
-  <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>Brain</div>
+  <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>FlowBrain</div>
   <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/mapa" data-vista="deps">Dependencias</a></nav>
   <div id="presets" class="oculto"></div>
 </header>
