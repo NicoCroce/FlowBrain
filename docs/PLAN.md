@@ -45,7 +45,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 24 | MCP y hooks con varios cerebros | Hecho (decisión 137) |
 | 25 | Pistas de otros cerebros | Hecho (decisión 138) |
 | 26 | Relaciones entre cerebros | Hecho (decisión 139) |
-| 27 | Visor con varios cerebros | Pendiente |
+| 27 | Visor con varios cerebros | Hecho (decisión 140); falta revisarlo a ojo en un navegador |
 
 ---
 

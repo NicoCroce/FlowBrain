@@ -111,6 +111,8 @@ pnpm -s -C "$BRAIN_TOOL" brain cerebros proponer /ruta/a/los/repos --raiz ~/cere
 # editar cerebros.yaml: agrupar los repos en cerebros, responder las preguntas, activar la comunicación
 pnpm -s -C "$BRAIN_TOOL" brain cerebros aplicar --raiz ~/cerebros                      # crea e indexa cada cerebro
 pnpm -s -C "$BRAIN_TOOL" brain cerebros --raiz ~/cerebros                              # qué hay y con quién se comunica cada uno
+pnpm -s -C "$BRAIN_TOOL" brain conexiones --raiz ~/cerebros --cerebro vigente          # qué llamadas viajan a otros cerebros
+open ~/cerebros/cerebros.html                                                          # visor: un cerebro dibujado por cada uno
 ```
 
 ```yaml

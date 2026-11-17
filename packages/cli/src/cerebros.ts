@@ -1,9 +1,9 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { ARCHIVO_REGISTRO, cmp, CompileError, esRegistro, leerRegistro, MAX_CEREBROS, type Cerebro, type Registro } from "@brain/core";
+import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, CompileError, crucesEntre, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, type Cerebro, type CerebroLiviano, type Cruce, type Ficha, type Graph, type Registro } from "@brain/core";
 import { draftDir } from "@brain/indexer";
 import { escribirIndex, fusionar, indexar, leerRepo, PARSERS, slug } from "@brain/parsers";
-import { compileDirConVisor } from "@brain/viewer";
+import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@brain/viewer";
 import { init } from "./init.js";
 import { borradoresPromovibles, promover } from "./promover.js";
 
@@ -252,4 +252,35 @@ export async function listar(carpeta: string): Promise<string> {
   }
   if (r.conexiones.length) lineas.push("conexiones declaradas:", ...r.conexiones.map((x) => `  ${x.desde.cerebro}/${x.desde.svc} → ${x.hacia.cerebro}/${x.hacia.svc}${x.por ? ` (por ${x.por})` : ""}`));
   return lineas.join("\n") + "\n";
+}
+
+export const ARCHIVO_VISOR = "cerebros.html";
+
+/**
+ * Visor de todo el registro: un cerebro dibujado por cada cerebro compilado, y entre ellos las llamadas que cruzan
+ * (solo entre los que tienen la comunicación activa). Devuelve la ruta escrita, o `null` si no hay nada compilado.
+ */
+export async function escribirVisor(registro: Registro): Promise<string | null> {
+  const visibles: CerebroVisor[] = [];
+  const livianos = new Map<string, CerebroLiviano>();
+  for (const c of registro.cerebros) {
+    let graph: Graph;
+    try {
+      graph = JSON.parse(await readFile(join(c.raiz, "_build/graph.json"), "utf8")) as Graph;
+    } catch {
+      continue;
+    }
+    const funcionalidades = await readFile(join(c.raiz, "_build/funcionalidades.json"), "utf8").then((t) => (JSON.parse(t) as { funcionalidades: Ficha[] }).funcionalidades, () => [] as Ficha[]);
+    const dir = join(c.raiz, "_build/extraccion");
+    const extracciones = await Promise.all((await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp).map((n) => readFile(join(dir, n), "utf8")));
+    visibles.push({ nombre: c.nombre, sinRevisar: !c.curado, graph, funcionalidades });
+    livianos.set(c.nombre, cerebroLiviano(c.nombre, graph, extracciones));
+  }
+  if (!visibles.length) return null;
+  const cruces: Cruce[] = [];
+  for (const a of livianos.values()) for (const b of livianos.values()) if (registro.comunicados(a.nombre, b.nombre)) cruces.push(...crucesEntre(a, b, registro.conexiones).cruces);
+  const conexiones = resumenConexiones(cruces, registro.conexiones.filter((x) => registro.comunicados(x.desde.cerebro, x.hacia.cerebro)));
+  const archivo = join(registro.carpeta, ARCHIVO_VISOR);
+  await writeFile(archivo, await visorDeCerebros(visibles, cruces, conexiones), "utf8");
+  return archivo;
 }

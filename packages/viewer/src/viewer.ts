@@ -16,8 +16,9 @@ const TIPOS_INICIALES = ["feat", "pantalla", "endpoint", "tabla", "svc", "repo",
 
 const seguroEnScript = (s: string) => s.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
 
-export function renderViewer(graph: Graph, cytoscapeJs: string, funcionalidades: Ficha[] = []): string {
-  const datos = {
+/** Lo que el visor embebe de un brain. */
+export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = []) {
+  return {
     dependencias: dependenciasDelGrafo(graph, funcionalidades),
     funcionalidades,
     // Pantallas del front con su envoltura y a dónde llevan; el recorrido de cada una viene en su funcionalidad.
@@ -48,6 +49,16 @@ export function renderViewer(graph: Graph, cytoscapeJs: string, funcionalidades:
     })),
     tiposIniciales: TIPOS_INICIALES,
   };
+}
+
+export type DatosVisor = ReturnType<typeof datosDelVisor>;
+
+export function renderViewer(graph: Graph, cytoscapeJs: string, funcionalidades: Ficha[] = []): string {
+  return paginaDelVisor(datosDelVisor(graph, funcionalidades), cytoscapeJs);
+}
+
+/** La página autocontenida, a partir de los datos (de un brain, o de varios cerebros ya unidos). */
+export function paginaDelVisor(datos: unknown, cytoscapeJs: string): string {
   return `<!doctype html>
 <html lang="es">
 <head>
@@ -178,7 +189,13 @@ a.nb { text-decoration: none; }
 .tg:hover { background: var(--hover); }
 .tg.off { color: #6B7489; } .tg.off .sw { opacity: .25; }
 .ct { margin-left: auto; font: 500 12px var(--sans); color: var(--suave); font-variant-numeric: tabular-nums; }
-#m3-tipos { display: flex; flex-direction: column; gap: 2px; }
+#m3-tipos, #m3-cerebros { display: flex; flex-direction: column; gap: 2px; }
+#m3-cerebros:not(:empty) { padding-bottom: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--borde); }
+#m3-todo { display: flex; gap: 6px; padding: 0 4px 6px; }
+.m3-cer { border: 1px solid var(--borde); border-radius: 10px; padding: 10px; margin-top: 8px; }
+.m3-cer h3 { margin: 0 0 4px; font: 600 14px var(--display); color: var(--texto); }
+.m3-cer p { margin: 2px 0 8px; font-size: 12px; color: var(--suave); }
+.m3-cer .m3-acciones { margin-top: 8px; }
 #m3-verbos { display: flex; flex-wrap: wrap; gap: 6px; }
 .seg { display: flex; padding: 3px; background: #0E1118; border: 1px solid #232838; border-radius: 10px; gap: 2px; }
 .sb { flex: 1; min-height: 32px; border: 0; border-radius: 7px; background: transparent; color: var(--medio); font: 500 12px var(--sans); cursor: pointer; padding: 0 6px; }
@@ -263,6 +280,8 @@ a.nb { text-decoration: none; }
     </div>
     <section>
       <div class="m3-titulo"><h2 class="lbl">Qué se ve</h2><span id="m3-vis"></span></div>
+      <div id="m3-cerebros"></div>
+      <div id="m3-todo"></div>
       <div id="m3-tipos"></div>
       <div id="m3-ocultos"></div>
     </section>

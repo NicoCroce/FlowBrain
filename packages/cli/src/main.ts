@@ -37,7 +37,7 @@ import {
 import { crearMulti } from "@brain/mcp";
 import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@brain/hooks";
 import { draftDir } from "@brain/indexer";
-import { aplicar, listar, proponer } from "./cerebros.js";
+import { aplicar, escribirVisor, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { comandoBrain, comillas, init, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
@@ -55,6 +55,7 @@ Comandos:
   cerebros                                  lista los cerebros del registro (cerebros.yaml en --raiz) y su estado
   cerebros proponer <carpeta...>            explora carpetas y escribe un borrador de cerebros.yaml con preguntas abiertas
   cerebros aplicar [nombre]                 crea e indexa los cerebros del registro (o uno solo)
+  cerebros visor                            regenera cerebros.html (tras cambiar comunicacion o conexiones)
   cerebros registrar                        registra en Claude Code los hooks del registro e imprime la línea del MCP
   conexiones [--cerebro <nombre>]           qué llamadas viajan entre un cerebro y los que tiene comunicados
   sync [--repos <dir>] [--forzar]           reindexa los repos cuyo clon avanzó desde el último index y recompila
@@ -196,13 +197,18 @@ export async function ejecutar(
         const solo = positionals[2];
         if (solo && !registro.cerebro(solo)) throw new ConsultaError("nodo_inexistente", `no existe el cerebro: ${solo}`);
         const rs = await aplicar(registro, solo);
-        const lineas = rs.flatMap((r) => [
+        const visor = await escribirVisor(registro);
+        const lineas = [...rs.flatMap((r) => [
           `${r.nombre}${r.curado ? "" : " (sin curar)"}: ${r.nodos} nodos, ${r.relaciones} relaciones; ${r.promovidas} páginas creadas, ${r.borradores} borradores para revisar`,
           ...r.repos.map((x) => `  ${x.repo ?? "(sin indexar)"} ← ${x.ruta}${x.error ? `: ${x.error}` : ""}`),
           ...r.errores.slice(0, 10).map((e) => `  no compiló y quedó como borrador: ${e}`),
           ...(r.errores.length > 10 ? [`  … y ${r.errores.length - 10} más`] : []),
-        ]);
+        ]), ...(visor ? [`visor de todos los cerebros: ${visor}`] : [])];
         return { codigo: rs.some((r) => r.repos.some((x) => x.error) || r.nodos === 0) ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+      }
+      if (arg === "visor") {
+        const visor = await escribirVisor(await leerRegistro(raiz));
+        return { codigo: visor ? 0 : 1, stdout: visor ? `${visor}\n` : "ningún cerebro está compilado: corré brain cerebros aplicar\n", stderr: "" };
       }
       if (arg === "registrar") {
         // Hooks de Claude Code apuntando al registro (cada prompt usa el cerebro del repo actual) y la línea del MCP.

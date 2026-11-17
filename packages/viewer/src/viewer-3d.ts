@@ -27,10 +27,13 @@ export const GRAFO3D_JS = String.raw`
   var col = function (t) { return colores[t] || (colores[t] = color(t)); };
 
   // ---------- Modelo ----------
+  // Varios cerebros: cada uno se dibuja como un cerebro aparte, uno al lado del otro. Con uno solo, todo queda en el origen.
+  var CEREBROS = D.cerebros || [], MULTI = CEREBROS.length > 1, SEP = 1500;
+  var OX = MULTI ? CEREBROS.map(function (_, i) { return (i - (CEREBROS.length - 1) / 2) * SEP; }) : [0];
   var N = [], by = {};
   D.nodes.forEach(function (n) {
     if (!TIPO[n.t]) return;
-    var x = { id: n.id, tipo: n.t, nombre: n.n, uso: M.uso[n.id] || 0, deg: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, pin: false, adj: [], kids: [], parent: null, puesto: false, fire: 0, fase: 0 };
+    var x = { id: n.id, tipo: n.t, nombre: n.n, uso: M.uso[n.id] || 0, c: MULTI ? (n.c || 0) : 0, deg: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, pin: false, adj: [], kids: [], parent: null, puesto: false, fire: 0, fase: 0 };
     N.push(x); by[n.id] = x;
   });
   var E = [];
@@ -50,14 +53,14 @@ export const GRAFO3D_JS = String.raw`
   var rnd = azar(7);
   N.forEach(function (n) {
     var u = rnd() * Math.PI * 2, v = Math.acos(2 * rnd() - 1), R = 160 + rnd() * 280;
-    n.x = R * Math.sin(v) * Math.cos(u); n.y = R * Math.sin(v) * Math.sin(u) * 0.8; n.z = R * Math.cos(v);
+    n.x = OX[n.c] + R * Math.sin(v) * Math.cos(u); n.y = R * Math.sin(v) * Math.sin(u) * 0.8; n.z = R * Math.cos(v);
     n.fase = rnd() * Math.PI * 2;
   });
 
   var ocultosIniciales = {};
   TIPOS.forEach(function (t) { if (D.tiposIniciales.indexOf(t[0]) < 0) ocultosIniciales[t[0]] = true; });
   var S = { hiddenTypes: ocultosIniciales, hiddenVerbs: {}, sizeMode: "uso", scale: 1, group: "feat", labels: "grandes", selId: null, query: "",
-    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, intensidad: 1,
+    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, hiddenBrains: {}, intensidad: 1,
     pulsos: !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) };
 
   function setParents(mode) {
@@ -71,7 +74,9 @@ export const GRAFO3D_JS = String.raw`
     });
   }
   function desc(n) { var out = [], st = n.kids.slice(); while (st.length) { var c = st.pop(); out.push(c); for (var i = 0; i < c.kids.length; i++) st.push(c.kids[i]); } return out; }
-  function base(n) { return !S.hiddenTypes[n.tipo] && !S.hiddenIds[n.id]; }
+  function base(n) { return !S.hiddenTypes[n.tipo] && !S.hiddenIds[n.id] && !S.hiddenBrains[n.c]; }
+  // Una relación entre dos cerebros: lo que viaja de uno a otro.
+  function cruza(e) { return e.a.c !== e.b.c; }
   var isoSet = null;
   function visible(n) { return base(n) && (!S.isolate || !isoSet || isoSet.has(n)); }
   function computeIso(id) {
@@ -105,7 +110,8 @@ export const GRAFO3D_JS = String.raw`
   function armarResortes() {
     var cuenta = new Map(), L = [];
     var suma = function (n) { cuenta.set(n, (cuenta.get(n) || 0) + 1); };
-    E.forEach(function (e) { if (base(e.a) && base(e.b) && !S.hiddenVerbs[e.verbo]) { L.push({ a: e.a, b: e.b, len: 170, k: 0.03 }); suma(e.a); suma(e.b); } });
+    // Una relación entre cerebros no tira: si no, los cerebros se irían uno encima del otro.
+    E.forEach(function (e) { if (base(e.a) && base(e.b) && !cruza(e) && !S.hiddenVerbs[e.verbo]) { L.push({ a: e.a, b: e.b, len: 170, k: 0.03 }); suma(e.a); suma(e.b); } });
     activos.forEach(function (n) { if (n.parent && base(n.parent)) { L.push({ a: n, b: n.parent, len: n.tipo === "archivo" ? 45 : 75, k: 0.25 }); suma(n); suma(n.parent); } });
     L.forEach(function (r) { var ca = cuenta.get(r.a), cb = cuenta.get(r.b); r.k = r.k / Math.min(ca, cb); r.bias = ca / (ca + cb); });
     resortes = L;
@@ -146,8 +152,8 @@ export const GRAFO3D_JS = String.raw`
     }
     // Forma de cerebro: más largo de adelante hacia atrás que alto, y una fisura que separa los dos hemisferios.
     for (i = 0; i < A.length; i++) {
-      n = A[i]; n.vx -= n.x * 0.004; n.vy -= n.y * 0.0056; n.vz -= n.z * 0.0031;
-      if (n.x > -FISURA && n.x < FISURA) n.vx += (n.x >= 0 ? 1 : -1) * (FISURA - Math.abs(n.x)) * 0.03;
+      n = A[i]; var rx = n.x - OX[n.c]; n.vx -= rx * 0.004; n.vy -= n.y * 0.0056; n.vz -= n.z * 0.0031;
+      if (rx > -FISURA && rx < FISURA) n.vx += (rx >= 0 ? 1 : -1) * (FISURA - Math.abs(rx)) * 0.03;
     }
     for (i = 0; i < resortes.length; i++) {
       var r = resortes[i], p = r.a, q = r.b, ex = q.x - p.x, ey = q.y - p.y, ez = q.z - p.z, dd = Math.sqrt(ex * ex + ey * ey + ez * ez) + 0.01, ff = (dd - r.len) * r.k / dd;
@@ -241,11 +247,16 @@ export const GRAFO3D_JS = String.raw`
       CORTEZA.push([dx * 0.95 * (1 - 0.1 * dz) * w, dy * (dy < 0 ? 0.6 : 0.82) * w, dz * 1.2 * w]);
     }
   })();
-  var BR = 0, T = 0;
-  function radioCerebro() {
+  var BR = 0, BRS = OX.map(function () { return 0; }), T = 0;
+  function radioCerebro(c) {
     var r = 0, k = 0;
-    for (var i = 0; i < activos.length; i++) { var n = activos[i]; if (n.pin) continue; r += Math.sqrt(n.x * n.x + n.y * n.y + n.z * n.z); k++; }
+    for (var i = 0; i < activos.length; i++) { var n = activos[i]; if (n.pin || n.c !== c) continue; var rx = n.x - OX[c]; r += Math.sqrt(rx * rx + n.y * n.y + n.z * n.z); k++; }
     return k ? Math.max(260, 1.5 * r / k) : 260;
+  }
+  // Radio de cada corteza; BR es el ancho de todo el conjunto, para alejar la cámara lo justo.
+  function medirCerebros(suave) {
+    for (var c = 0; c < OX.length; c++) { var r = radioCerebro(c); BRS[c] = BRS[c] && suave ? BRS[c] + (r - BRS[c]) * 0.25 : r; }
+    BR = Math.max.apply(null, BRS) + (OX[OX.length - 1] - OX[0]) / 2;
   }
   // Impulsos: viajan por una arista de origen a destino; al llegar encienden la neurona y pueden seguir por sus salidas.
   var pulsos = [];
@@ -290,7 +301,7 @@ export const GRAFO3D_JS = String.raw`
   function step() {
     var c = cam;
     T++;
-    if (!BR) { BR = radioCerebro(); c.dist = Math.max(c.dist, BR * 2.9); } else if (T % 20 === 0) BR += (radioCerebro() - BR) * 0.25;
+    if (!BR) { medirCerebros(false); c.dist = Math.max(c.dist, BR * 2.9); } else if (T % 20 === 0) medirCerebros(true);
     if (S.rotating && !ptr) c.yaw += 0.0016;
     if (alpha > 0.01) { simStep(alpha); if (activos.length <= 900) simStep(alpha); alpha *= 0.975; }
     for (var i = anims.length - 1; i >= 0; i--) {
@@ -310,12 +321,21 @@ export const GRAFO3D_JS = String.raw`
     luz.addColorStop(0, "rgba(64,88,190,.17)"); luz.addColorStop(0.55, "rgba(40,52,120,.06)"); luz.addColorStop(1, "rgba(10,12,17,0)");
     ctx.fillStyle = luz; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = "#8FA6FF";
-    for (var ci = 0; ci < CORTEZA.length; ci++) {
-      var cp = CORTEZA[ci], cq = project(cp[0] * BR, cp[1] * BR, cp[2] * BR);
-      if (!cq) continue;
-      ctx.globalAlpha = Math.max(0.07, Math.min(0.55, 0.95 - (cq.z / cam.dist) * 0.66));
-      var cs = Math.max(1.2, 3 * cq.s);
-      ctx.fillRect(cq.sx - cs / 2, cq.sy - cs / 2, cs, cs);
+    for (var cb = 0; cb < OX.length; cb++) {
+      if (S.hiddenBrains[cb]) continue;
+      var rb = BRS[cb] || 260;
+      for (var ci = 0; ci < CORTEZA.length; ci++) {
+        var cp = CORTEZA[ci], cq = project(OX[cb] + cp[0] * rb, cp[1] * rb, cp[2] * rb);
+        if (!cq) continue;
+        ctx.globalAlpha = Math.max(0.07, Math.min(0.55, 0.95 - (cq.z / cam.dist) * 0.66));
+        var cs = Math.max(1.2, 3 * cq.s);
+        ctx.fillRect(cq.sx - cs / 2, cq.sy - cs / 2, cs, cs);
+      }
+      // El nombre de cada cerebro, sobre su corteza.
+      if (MULTI) {
+        var ct = project(OX[cb], rb * 0.98, 0);
+        if (ct) { ctx.globalAlpha = 0.85; ctx.font = "600 " + Math.max(12, Math.min(22, 26000 * ct.s / 100)) + "px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#D5DAE4"; ctx.fillText(CEREBROS[cb].nombre + (CEREBROS[cb].sinRevisar ? " · sin revisar" : ""), ct.sx, ct.sy - 10); ctx.textAlign = "start"; ctx.fillStyle = "#8FA6FF"; }
+      }
     }
     ctx.globalAlpha = 1;
     var sel = S.selId ? by[S.selId] : null, hov = hover;
@@ -340,17 +360,19 @@ export const GRAFO3D_JS = String.raw`
     }
     proj = P;
     ctx.lineCap = "round"; ctx.globalCompositeOperation = "lighter";
-    var vis = [];
+    var vis = [], visCruce = [];
     for (var j = 0; j < E.length; j++) {
       var e = E[j];
       if (S.hiddenVerbs[e.verbo]) continue;
       var pa = pm.get(e.a), pb = pm.get(e.b);
       if (!pa || !pb) continue;
       vis.push(e);
+      var xc = cruza(e);
+      if (xc) visCruce.push(e);
       var hl = (sel && (e.a === sel || e.b === sel)) || (hov && (e.a === hov || e.b === hov));
-      var al = Math.min(pa.a, pb.a) * (hl ? 0.85 : 0.13);
-      ctx.strokeStyle = hl ? rgba(col((e.a === sel || e.a === hov) ? e.b.tipo : e.a.tipo), al) : "rgba(120,146,255," + al + ")";
-      ctx.lineWidth = hl ? 1.6 : 1;
+      var al = Math.min(pa.a, pb.a) * (hl ? 0.85 : xc ? 0.42 : 0.13);
+      ctx.strokeStyle = hl ? rgba(col((e.a === sel || e.a === hov) ? e.b.tipo : e.a.tipo), al) : xc ? "rgba(255,214,140," + al + ")" : "rgba(120,146,255," + al + ")";
+      ctx.lineWidth = hl ? 1.6 : xc ? 1.3 : 1;
       ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy);
       ctx.quadraticCurveTo((pa.sx + pb.sx) / 2 - (pb.sy - pa.sy) * e.c, (pa.sy + pb.sy) / 2 + (pb.sx - pa.sx) * e.c, pb.sx, pb.sy); ctx.stroke();
     }
@@ -361,6 +383,8 @@ export const GRAFO3D_JS = String.raw`
       for (var s0 = 0; s0 < 3 && pulsos.length < tope; s0++) {
         if (Math.random() > 0.55 * I) continue;
         var cand = vis[Math.floor(Math.random() * vis.length)];
+        // Lo que viaja entre cerebros se ve seguido, aunque sean pocas relaciones entre miles.
+        if (visCruce.length && Math.random() < 0.35) cand = visCruce[Math.floor(Math.random() * visCruce.length)];
         if (foco && Math.random() < 0.6) { var fa = foco.adj[Math.floor(Math.random() * foco.adj.length)]; if (fa && pm.get(fa.n) && !S.hiddenVerbs[fa.e.verbo]) cand = fa.e; }
         lanzar(cand, 0);
       }
@@ -507,6 +531,12 @@ export const GRAFO3D_JS = String.raw`
     var actual = presetActual();
     $("presets").innerHTML = '<span class="lbl">Vista</span>' + PRESETS.map(function (p) { return '<button type="button" class="chip' + on(actual === p[0]) + '" aria-pressed="' + (actual === p[0]) + '" data-preset="' + p[0] + '">' + p[1] + "</button>"; }).join("");
     $("m3-vis").textContent = N.filter(visible).length + " nodos";
+    $("m3-cerebros").innerHTML = MULTI ? CEREBROS.map(function (c, i) {
+      var v = !S.hiddenBrains[i];
+      return '<button type="button" class="tg' + (v ? "" : " off") + '" aria-pressed="' + v + '" data-cerebro="' + i + '">' + esc(c.nombre) + (c.sinRevisar ? " · sin revisar" : "") + '<span class="ct">' + c.nodos + "</span></button>";
+    }).join("") : "";
+    var hayTipos = TIPOS_PRESENTES.some(function (t) { return !S.hiddenTypes[t[0]]; });
+    $("m3-todo").innerHTML = '<button type="button" class="chip" data-tipos="todos">Prender todo</button><button type="button" class="chip' + on(!hayTipos) + '" data-tipos="ninguno">Apagar todo</button>';
     $("m3-tipos").innerHTML = TIPOS_PRESENTES.map(function (t) {
       var v = !S.hiddenTypes[t[0]];
       return '<button type="button" class="tg' + (v ? "" : " off") + '" aria-pressed="' + v + '" data-tipo="' + t[0] + '">' + sw(t[0]) + esc(t[1]) + '<span class="ct">' + cuentas[t[0]] + "</span></button>";
@@ -527,6 +557,23 @@ export const GRAFO3D_JS = String.raw`
   }
   function detalle() {
     var sel = S.selId ? by[S.selId] : null, raiz = $("m3-detalle");
+    if (!sel && MULTI) {
+      // Un bloque por cerebro: qué tiene, con su interruptor, y lo que viaja entre ellos.
+      var bloques = CEREBROS.map(function (c, i) {
+        var porTipo = {};
+        N.forEach(function (n) { if (n.c === i) porTipo[n.tipo] = (porTipo[n.tipo] || 0) + 1; });
+        var v = !S.hiddenBrains[i];
+        return '<div class="m3-cer"><h3>' + esc(c.nombre) + "</h3><p>" + c.nodos + " nodos" + (c.sinRevisar ? " · indexado sin revisión" : "") + "</p>" +
+          TIPOS.filter(function (t) { return porTipo[t[0]]; }).map(function (t) { return '<div class="nb">' + sw(t[0]) + '<span class="corta">' + esc(t[1]) + '</span><span class="vb">' + porTipo[t[0]] + "</span></div>"; }).join("") +
+          '<div class="m3-acciones"><button type="button" class="btn' + on(v) + '" aria-pressed="' + v + '" data-cerebro="' + i + '">' + (v ? "Apagar" : "Prender") + '</button><button type="button" class="btn" data-foco-cerebro="' + i + '">Enfocar</button></div></div>';
+      }).join("");
+      var viaja = (D.conexiones || []).map(function (x) {
+        return '<div class="nb"><span class="corta">' + esc(x.desde) + " → " + esc(x.hacia) + '</span><span class="vb">' + (x.llamadas ? x.llamadas + " llamadas" : "sin llamadas") + (x.declarada ? "" : " · sin declarar") + "</span></div>";
+      }).join("");
+      raiz.innerHTML = '<div class="m3-vacio"><h2 class="lbl">Cerebros</h2><p>Cada cerebro es un grupo de repos. Las líneas doradas son llamadas de un cerebro a otro.</p>' + bloques +
+        '<div class="m3-caja"><span class="lbl">Qué viaja entre cerebros</span>' + (viaja || '<p class="vacio">Nada: no hay comunicación activa o no se detectaron llamadas.</p>') + "</div></div>";
+      return;
+    }
     if (!sel) {
       var top = N.filter(function (n) { return n.tipo === "tabla" || n.tipo === "endpoint" || n.tipo === "feat"; }).sort(function (a, b) { return b.uso - a.uso || (a.id < b.id ? -1 : 1); }).slice(0, 6);
       raiz.innerHTML = '<div class="m3-vacio"><h2 class="lbl">Detalle</h2><p>Hacé clic en un punto para ver qué es, cuánto se usa en el código y con qué se conecta.</p>' +
@@ -541,7 +588,7 @@ export const GRAFO3D_JS = String.raw`
     if (n.p) enlaces.push('<a href="../' + esc(n.p) + '">Página</a>');
     raiz.innerHTML =
       '<div class="m3-cab"><div class="m3-tipo">' + sw(sel.tipo) + '<span class="lbl">' + esc(TIPO[sel.tipo].uno) + "</span>" + (sel.pin ? '<span class="m3-fijado">Fijado</span>' : "") + "</div>" +
-      '<h2 class="m3-nombre">' + esc(sel.nombre) + "</h2><code>" + esc(sel.id) + "</code>" + (n.r && !/^Borrador:/.test(n.r) ? '<p class="m3-resumen">' + esc(n.r) + "</p>" : "") + "</div>" +
+      '<h2 class="m3-nombre">' + esc(sel.nombre) + "</h2><code>" + esc(sel.id) + "</code>" + (MULTI ? '<p class="m3-resumen">Cerebro: ' + esc(CEREBROS[sel.c].nombre) + "</p>" : "") + (n.r && !/^Borrador:/.test(n.r) ? '<p class="m3-resumen">' + esc(n.r) + "</p>" : "") + "</div>" +
       '<div class="m3-stats"><div><b>' + sel.uso + "</b><span>usos en código</span></div><div><b>" + sel.deg + "</b><span>conexiones</span></div><div><b>" + desc(sel).length + "</b><span>hijos</span></div></div>" +
       '<div class="m3-acciones"><button type="button" class="btn pri" data-acc="sep">Separar del resto</button><button type="button" class="btn" data-acc="focus">Enfocar</button>' +
       '<button type="button" class="btn' + on(S.isolate) + '" aria-pressed="' + S.isolate + '" data-acc="iso">Aislar</button><button type="button" class="btn" data-acc="hide">Ocultar</button>' +
@@ -563,7 +610,10 @@ export const GRAFO3D_JS = String.raw`
     if (!b || b.tagName === "A") return;
     var d = b.dataset, sel = S.selId ? by[S.selId] : null;
     if (d.pick) { irA(d.pick); if (b.closest("#m3-res")) { S.query = ""; $("m3-buscar").value = ""; resultados(); } return; }
-    if (d.tipo) { S.hiddenTypes[d.tipo] = !S.hiddenTypes[d.tipo]; actualizarActivos(); reacomodar(0.3); }
+    if (d.cerebro) { S.hiddenBrains[d.cerebro] = !S.hiddenBrains[d.cerebro]; actualizarActivos(); reacomodar(0.3); }
+    else if (d.focoCerebro) { var fc = Number(d.focoCerebro); cam.goal = { x: OX[fc], y: 0, z: 0, dist: Math.max(600, (BRS[fc] || 260) * 3.1) }; }
+    else if (d.tipos) { TIPOS.forEach(function (t) { S.hiddenTypes[t[0]] = d.tipos === "ninguno"; }); actualizarActivos(); reacomodar(0.3); }
+    else if (d.tipo) { S.hiddenTypes[d.tipo] = !S.hiddenTypes[d.tipo]; actualizarActivos(); reacomodar(0.3); }
     else if (d.verbo) { S.hiddenVerbs[d.verbo] = !S.hiddenVerbs[d.verbo]; armarResortes(); }
     else if (d.mostrarOcultos) { S.hiddenIds = {}; actualizarActivos(); }
     else if (d.tam) S.sizeMode = d.tam;
