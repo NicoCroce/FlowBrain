@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, buscarNodo, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, archivosDeDiff, buscarNodo, riesgo, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -41,6 +41,20 @@ beforeAll(async () => {
   sinIndice = contextoDeSalidas(salidas, contratos);
 });
 
+const RIESGO_CLIENTE = {
+  avisos: [],
+  cambia: ["crearPago @ repo-tienda:apps/bff/src/clients/payments.ts#L10"],
+  endpoints: ["svc-bff:POST:/checkout"],
+  funcionalidades: ["feat-carrito", "feat-checkout"],
+  indice: {},
+  llamadores: ["postCheckout @ repo-tienda:apps/bff/src/routes/checkout.ts#L14"],
+  motivos: ["alcanza 1 endpoint", "alcanza 1 pantalla", "alcanza 2 funcionalidades"],
+  nivel: "medio",
+  otrosRepos: [],
+  pantallas: ["svc-web:pantalla:/checkout"],
+  tablas: [],
+};
+
 const SIMBOLOS_CHECKOUT = [
   "CheckoutRequest repo-tienda:apps/bff/src/routes/checkout.ts#L4 prefijo",
   "CheckoutRequest repo-tienda:apps/web/src/api/checkout.ts#L1 prefijo",
@@ -62,6 +76,19 @@ const FINAS_ESPERADAS = [
 ];
 
 describe("consultas de código", () => {
+  it("riesgo: de un diff a los métodos que cambian, quién los llama y lo que queda alcanzado", () => {
+    const diff = ["diff --git a/apps/bff/src/clients/payments.ts b/apps/bff/src/clients/payments.ts", "--- a/apps/bff/src/clients/payments.ts", "+++ b/apps/bff/src/clients/payments.ts", "@@ -11,2 +11,3 @@ export async function crearPago", "-  viejo", "+  nuevo", "+  otro"].join("\n");
+    expect(archivosDeDiff(diff)).toEqual([{ ruta: "apps/bff/src/clients/payments.ts", rangos: [[11, 13]] }]);
+    expect(riesgo(ctx, { diff })).toEqual(RIESGO_CLIENTE);
+    // Tocar el método que escribe en una tabla sube el nivel; un archivo que no está en el índice se avisa.
+    const r = riesgo(ctx, { archivos: ["apps/bff/src/routes/checkout.ts", "docs/LEEME.md"], repo: "repo-tienda" }) as { nivel: string; motivos: string[]; tablas: string[]; avisos: string[] };
+    expect(r.nivel).toBe("alto");
+    expect(r.motivos[0]).toBe("cambia código que escribe en tabla-pagos");
+    expect(r.tablas).toEqual(["escribe_en tabla-pagos"]);
+    expect(r.avisos).toContain("archivos fuera del índice (no se pudo medir su alcance): docs/LEEME.md");
+    expect(() => riesgo(ctx, {})).toThrow(ConsultaError);
+  });
+
   it("buscar_nodo encuentra símbolos de código, con archivo y línea, y texto dentro de nombres y páginas", () => {
     const sim = (texto: string, extra: Record<string, unknown> = {}) => (buscarNodo(ctx, { texto, ...extra }) as { simbolos?: Array<{ simbolo: string; ev: string; coincidencia: string }> }).simbolos?.map((x) => `${x.simbolo} ${x.ev} ${x.coincidencia}`);
     expect(sim("postCheckout")).toEqual(["postCheckout repo-tienda:apps/bff/src/routes/checkout.ts#L14 exacta"]);
@@ -179,7 +206,7 @@ describe("consultas de código", () => {
     const r = evaluar(ctx, preguntas);
     expect(r).toMatchObject({ total: 4, aciertos: 3, porcentaje: 75, cobertura: 80, porHerramienta: { quien_llama: { total: 2, aciertos: 2 }, recorrido: { total: 2, aciertos: 1 } } });
     // Lo que la evaluación no mide queda a la vista.
-    expect(r.sinPreguntas).toEqual(["buscar_nodo", "contrato_de", "funcionalidad", "impacto", "infra", "pantalla", "recorrer_grafo", "trazar"]);
+    expect(r.sinPreguntas).toEqual(["buscar_nodo", "contrato_de", "funcionalidad", "impacto", "infra", "pantalla", "recorrer_grafo", "riesgo", "trazar"]);
     expect(r.falladas).toEqual([{ id: "c", pregunta: "c", herramienta: "recorrido", ok: false, faltan: ["tabla-inexistente"], sobran: [] }]);
     expect(() => leerPreguntas('[{"id":"x","herramienta":"otra","args":{}}]')).toThrow(/herramienta desconocida/);
   });

@@ -13,6 +13,7 @@ import {
   funcionalidad,
   impactoDe,
   infra,
+  riesgo,
   quienLlama,
   recorrido,
   pantalla,
@@ -60,6 +61,8 @@ Comandos:
   pantalla </ruta|Componente>               pantalla del front de punta a punta: de dónde se llega, a dónde lleva, qué llama del back
   quien-llama <Clase.metodo|Clase> [--profundidad n]
   impacto <pieza>                           qué se ve afectado si cambia una tabla, endpoint, servicio, feat o símbolo
+  riesgo [archivo...] [--diff <archivo|->]  alcance de un cambio: desde un diff (git diff | brain riesgo --diff -) o archivos
+         [--repo <repo-id>]                 tocados, qué funcionalidades, endpoints, pantallas, tablas y repos alcanza
   infra [nodo] [--texto <t>]                imágenes, compose, pipelines, variables de entorno y proxy, con su archivo
   evaluar [archivo] [--minimo pct]          corre preguntas con respuesta conocida (por defecto evals/preguntas.json)
                                             y da el porcentaje de aciertos; sale con 1 si queda debajo de --minimo
@@ -115,6 +118,7 @@ export async function ejecutar(
         hoy: { type: "string" },
         minimo: { type: "string" },
         texto: { type: "string" },
+        diff: { type: "string" },
         escribir: { type: "boolean" },
         forzar: { type: "boolean" },
         json: { type: "boolean" },
@@ -318,6 +322,12 @@ export async function ejecutar(
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <pieza>");
         resultado = impactoDe(ctx, { pieza: arg, ...opt("budget_tokens", comunes.budget_tokens) });
         break;
+      case "riesgo": {
+        const diff = o.diff === undefined ? undefined : o.diff === "-" ? await stdin() : await readFile(resolve(cwd, o.diff), "utf8");
+        const archivos = positionals.slice(1);
+        resultado = riesgo(ctx, { ...opt("diff", diff), ...(archivos.length ? { archivos } : {}), ...opt("repo", o.repo), ...opt("profundidad", entero(o.profundidad, "--profundidad")), ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
+      }
       case "infra":
         resultado = infra(ctx, { ...opt("nodo", arg), ...opt("texto", o.texto), ...opt("budget_tokens", comunes.budget_tokens) });
         break;

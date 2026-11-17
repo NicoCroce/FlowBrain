@@ -573,7 +573,7 @@ function contextoHumano(ctx: Contexto, id: string, afectados: string[]) {
   const hacia = (desde: string, verbo: string) => (ctx.salientes.get(desde) ?? []).filter((e) => e.verbo === verbo && e.estado !== "deprecado").map((e) => e.hasta);
   const decisiones = hacia(id, "decidido_por").sort(cmp).map((d) => ({ id: d, nombre: ctx.nodo.get(d)?.nombre ?? d, resumen: ctx.nodo.get(d)?.resumen ?? null }));
   const porEquipo = new Map<string, string[]>();
-  for (const x of [id, ...afectados]) for (const t of hacia(x, "pertenece_a")) porEquipo.set(t, [...(porEquipo.get(t) ?? []), x]);
+  for (const x of [...(id ? [id] : []), ...new Set(afectados)]) for (const t of hacia(x, "pertenece_a")) porEquipo.set(t, [...(porEquipo.get(t) ?? []), x]);
   const equipos = [...porEquipo.entries()].sort((a, b) => cmp(a[0], b[0])).map(([equipo, por]) => ({ equipo, nombre: ctx.nodo.get(equipo)?.nombre ?? equipo, por: por.sort(cmp) }));
   return { ...(decisiones.length ? { decisiones } : {}), ...(equipos.length ? { equipos } : {}) };
 }
@@ -621,4 +621,138 @@ export function impactoDe(ctx: Contexto, p: ImpactoParams) {
     indice: versiones(ix),
   };
   return ajustarLista(res, ["tecnicas", "tocadaPor", "columnas", "funcionalidades"], p.budget_tokens);
+}
+
+// ------------------------------------------------------------------ riesgo de un cambio
+
+export interface RiesgoParams {
+  /** Diff unificado (`git diff`): de ahí salen los archivos y las líneas tocadas. */
+  diff?: string;
+  /** Archivos tocados, sin diff: `ruta` o `repo:ruta` (cuenta el archivo entero). */
+  archivos?: string[];
+  /** Repo al que pertenecen las rutas del diff; sin esto se busca la ruta en todos los repos indexados. */
+  repo?: string;
+  profundidad?: number;
+  budget_tokens?: number | null;
+}
+
+/** Archivos y rangos de líneas nuevas de un diff unificado. Un archivo borrado cuenta entero (rango vacío = todo). */
+export function archivosDeDiff(diff: string): Array<{ ruta: string; rangos: Array<[number, number]> }> {
+  const out: Array<{ ruta: string; rangos: Array<[number, number]> }> = [];
+  let actual: { ruta: string; rangos: Array<[number, number]> } | null = null;
+  let vieja: string | null = null;
+  for (const l of diff.split("\n")) {
+    const a = /^--- (?:a\/)?(.+?)\s*$/.exec(l);
+    if (a) {
+      vieja = a[1] === "/dev/null" ? null : a[1]!;
+      continue;
+    }
+    const b = /^\+\+\+ (?:b\/)?(.+?)\s*$/.exec(l);
+    if (b) {
+      const ruta = b[1] === "/dev/null" ? vieja : b[1]!;
+      actual = ruta ? { ruta, rangos: [] } : null;
+      if (actual) out.push(actual);
+      continue;
+    }
+    const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(l);
+    if (h && actual) {
+      const desde = Number(h[1]), n = h[2] === undefined ? 1 : Number(h[2]);
+      // Un bloque que solo borra (n = 0) toca el punto donde estaba.
+      actual.rangos.push([Math.max(1, desde), Math.max(1, desde + Math.max(n, 1) - 1)]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Riesgo de un cambio: de las líneas tocadas a los símbolos, de ahí hacia arriba a quién los llama, y de ahí a los
+ * endpoints, pantallas, funcionalidades, tablas, otros repos y equipos alcanzados. `nivel` mide alcance (cuánto se
+ * ve afectado y cuán lejos), no la probabilidad de que el cambio esté mal; `motivos` dice de dónde sale.
+ */
+export function riesgo(ctx: Contexto, p: RiesgoParams) {
+  const ix = indice(ctx);
+  const prof = p.profundidad ?? 4;
+  if (!Number.isInteger(prof) || prof < 1 || prof > 6) throw new ConsultaError("parametro_invalido", "profundidad debe estar entre 1 y 6");
+  const entradas = [...(p.diff ? archivosDeDiff(p.diff) : []), ...(p.archivos ?? []).map((ruta) => ({ ruta, rangos: [] as Array<[number, number]> }))];
+  if (!entradas.length) throw new ConsultaError("parametro_invalido", "riesgo necesita un diff o una lista de archivos");
+  if (p.repo !== undefined && ctx.nodo.get(p.repo)?.tipo !== "repo") throw new ConsultaError("nodo_inexistente", `no existe el repo: ${p.repo}`);
+
+  const todos = [...ix.estructura.keys()];
+  const fuera: string[] = [], ambiguos: string[] = [];
+  const tocados = new Set<string>(), archivos = new Set<string>(), sinSimbolo: string[] = [];
+  for (const e of entradas) {
+    const exacto = ix.estructura.has(e.ruta) ? [e.ruta] : p.repo ? (ix.estructura.has(`${p.repo}:${e.ruta}`) ? [`${p.repo}:${e.ruta}`] : []) : todos.filter((k) => k.endsWith(`:${e.ruta}`));
+    if (!exacto.length) { fuera.push(e.ruta); continue; }
+    if (exacto.length > 1) ambiguos.push(e.ruta);
+    for (const archivo of exacto) {
+      archivos.add(archivo);
+      const simbolos = ix.estructura.get(archivo)!.simbolos.filter((s) => s.tipo === "metodo" || s.tipo === "funcion");
+      const dentro = e.rangos.length ? simbolos.filter((s) => e.rangos.some(([a, b]) => s.linea <= b && a <= (s.fin ?? s.linea))) : simbolos;
+      if (!dentro.length) sinSimbolo.push(archivo);
+      for (const s of dentro) tocados.add(clave(archivo, s.nombre));
+    }
+  }
+
+  // Hacia arriba: quién llama a lo tocado.
+  const vistos = new Set(tocados);
+  let frente = [...tocados], cortado = false;
+  for (let nivel = 1; frente.length; nivel++) {
+    if (nivel > prof) { cortado = true; break; }
+    const sig: string[] = [];
+    for (const k of frente) for (const l of ix.llamadores.get(k) ?? []) if (!vistos.has(l.clave)) { vistos.add(l.clave); sig.push(l.clave); }
+    frente = sig;
+  }
+  const alcanzados = [...vistos].sort(cmp);
+  const endpoints = [...new Set(alcanzados.flatMap((k) => ix.atiende.get(k) ?? []))].sort(cmp);
+  // Pantallas: las que dibujan un componente alcanzado y las que llaman a un endpoint alcanzado.
+  const pantallas = new Set<string>();
+  for (const n of ctx.graph.nodes) {
+    if (n.tipo !== "pantalla") continue;
+    if (((n.atributos as { componentes?: string[] }).componentes ?? []).some((c) => vistos.has(c))) pantallas.add(n.id);
+  }
+  for (const e of ctx.graph.edges) if (e.verbo === "llama_a" && e.endpoint && endpoints.includes(e.endpoint) && ctx.nodo.get(e.desde)?.tipo === "pantalla") pantallas.add(e.desde);
+  const feats = new Set<string>();
+  for (const a of archivos) for (const f of dueñas(ix, a)) feats.add(f);
+  for (const k of alcanzados) for (const f of dueñas(ix, partes(k).archivo)) feats.add(f);
+  for (const e of ctx.graph.edges) if (e.verbo === "implementa" && (endpoints.includes(e.desde) || pantallas.has(e.desde)) && ctx.nodo.get(e.hasta)?.tipo === "feat") feats.add(e.hasta);
+  // Tablas: las que tocan directamente los símbolos cambiados.
+  const tablas = new Map<string, Set<string>>();
+  for (const [tabla, quienes] of ix.tocanTabla) for (const q of quienes) if (tocados.has(q.clave)) tablas.set(tabla, (tablas.get(tabla) ?? new Set()).add(q.verbo));
+  const repoDe = (k: string) => k.slice(0, k.indexOf(":"));
+  const propios = new Set([...archivos].map(repoDe));
+  const otrosRepos = [...new Set(endpoints.flatMap((ep) => (ix.llamanEndpoint.get(ep) ?? []).map((l) => repoDe(l.clave))))].filter((r) => !propios.has(r)).sort(cmp);
+  const humano = contextoHumano(ctx, "", [...feats, ...endpoints, ...tablas.keys(), ...[...feats].flatMap((f) => (ctx.entrantes.get(f) ?? []).filter((e) => e.verbo === "implementa" && ctx.nodo.get(e.desde)?.tipo === "svc").map((e) => e.desde))]);
+
+  const escribe = [...tablas.entries()].filter(([, v]) => v.has("escribe_en")).map(([t]) => t).sort(cmp);
+  const motivos = [
+    ...(otrosRepos.length ? [`lo consumen por HTTP otros repos: ${otrosRepos.join(", ")}`] : []),
+    ...(feats.size >= 3 ? [`alcanza ${feats.size} funcionalidades`] : []),
+    ...(escribe.length ? [`cambia código que escribe en ${escribe.join(", ")}`] : []),
+    ...(endpoints.length ? [`alcanza ${endpoints.length} endpoint${endpoints.length > 1 ? "s" : ""}`] : []),
+    ...(pantallas.size ? [`alcanza ${pantallas.size} pantalla${pantallas.size > 1 ? "s" : ""}`] : []),
+    ...(feats.size > 0 && feats.size < 3 ? [`alcanza ${feats.size} funcionalidad${feats.size > 1 ? "es" : ""}`] : []),
+  ];
+  const nivel = otrosRepos.length || feats.size >= 3 || escribe.length ? "alto" : endpoints.length || pantallas.size || feats.size === 2 ? "medio" : "bajo";
+  const res = {
+    nivel,
+    motivos,
+    cambia: [...tocados].sort(cmp).map((k) => cita(ix, k)),
+    funcionalidades: [...feats].sort(cmp),
+    endpoints,
+    pantallas: [...pantallas].sort(cmp),
+    tablas: [...tablas.entries()].sort((a, b) => cmp(a[0], b[0])).map(([t, v]) => `${[...v].sort(cmp).join(" y ")} ${t}`),
+    otrosRepos,
+    ...humano,
+    llamadores: alcanzados.filter((k) => !tocados.has(k)).map((k) => cita(ix, k)),
+    avisos: [
+      ...(fuera.length ? [`archivos fuera del índice (no se pudo medir su alcance): ${fuera.join(", ")}`] : []),
+      ...(ambiguos.length ? [`ruta en varios repos, se tomaron todos (pasá repo): ${ambiguos.join(", ")}`] : []),
+      ...(sinSimbolo.length ? [`cambios fuera de funciones y métodos (tipos, constantes, configuración): ${[...new Set(sinSimbolo)].sort(cmp).join(", ")}`] : []),
+      ...(cortado ? [`hay más llamadores por encima de la profundidad ${prof}`] : []),
+      ...sinResolverConNombre(ix, [...tocados]),
+      ...avisosIndice(ix),
+    ],
+    indice: versiones(ix),
+  };
+  return ajustarLista(res, ["llamadores", "cambia", "pantallas", "endpoints"], p.budget_tokens);
 }

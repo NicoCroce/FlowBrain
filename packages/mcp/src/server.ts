@@ -18,6 +18,7 @@ import {
   pantalla,
   PROYECCIONES,
   recorrerGrafo,
+  riesgo,
   stringifyCompact,
   trazar,
   VERBOS,
@@ -96,6 +97,7 @@ export const INSTRUCCIONES = [
   "- Qué ejecuta un endpoint o un método, paso a paso: recorrido.",
   "- Qué recibe y devuelve un endpoint: contrato_de.",
   "- Qué se rompe si cambio una tabla, endpoint, servicio o funcionalidad: impacto. Si es un método o una clase: quien_llama.",
+  "- Qué tan riesgoso es un cambio concreto (un diff o unos archivos): riesgo.",
   "- Por dónde viaja un dato entre servicios: trazar.",
   "- Cómo se construye, despliega y configura un servicio (imagen, pipeline, variables de entorno, proxy): infra.",
   "- Vecinos de un nodo por tipo de relación: recorrer_grafo.",
@@ -268,6 +270,25 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     async (a) => {
       const ctx = await obtener();
       return responder(() => infra(ctx, limpio(a)));
+    },
+  );
+
+  server.registerTool(
+    "riesgo",
+    {
+      description:
+        "Riesgo de un cambio antes de hacerlo o de mergearlo: con un diff (`git diff`) o una lista de archivos, dice qué métodos cambian, quién los llama y qué queda alcanzado (funcionalidades, endpoints, pantallas, tablas, otros repos que lo consumen por HTTP, equipos y decisiones), con un `nivel` de alcance (bajo, medio, alto) y sus `motivos`. Los `avisos` listan lo que no se pudo medir.",
+      inputSchema: {
+        diff: z.string().min(1).optional().describe("diff unificado, tal como lo da git diff"),
+        archivos: z.array(z.string().min(1)).optional().describe("archivos tocados (ruta o repo:ruta), si no hay diff"),
+        repo: z.string().min(1).optional().describe("id del repo al que pertenecen las rutas"),
+        profundidad: z.number().int().min(1).max(6).optional().describe("niveles de llamadores hacia arriba (por defecto 4)"),
+        ...presupuesto,
+      },
+    },
+    async (a) => {
+      const ctx = await obtener();
+      return responder(() => riesgo(ctx, limpio(a)));
     },
   );
 

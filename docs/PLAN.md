@@ -29,7 +29,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 8 | Infraestructura | Hecho (decisión 125) |
 | 9 | Código compartido, equipos y decisiones | Hecho (decisión 126) |
 | 10 | Índice al día | Hecho de otra forma (decisión 127) |
-| 11–12 | Impacto desde un diff y borradores | Pendiente |
+| 11 | Impacto desde un diff | Hecho (decisión 128, junto con el paso 16) |
+| 12 | Promover borradores | Pendiente |
 | 13–15 | Agnosticismo | Pendiente |
 | 16–19 | Diferenciación | Pendiente |
 | 20–22 | Higiene | Pendiente |
