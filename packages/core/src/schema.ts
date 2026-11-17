@@ -197,6 +197,8 @@ export const ContratoSchema = z
           ruta: z.string().min(1),
           request: z.string().nullable(),
           response: z.string().nullable(),
+          /** Tipo de los parámetros de query; ausente si no se determinó. */
+          query: z.string().optional(),
           evidencia: z.string(),
         })
         .strict(),

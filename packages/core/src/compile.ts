@@ -210,6 +210,7 @@ export function compile(entradas: Entradas): Salidas {
           request: ep.request,
           response: ep.response,
           ruta,
+          ...(ep.query ? { query: ep.query } : {}),
         }),
         f.ruta,
         null,

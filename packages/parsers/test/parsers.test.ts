@@ -520,7 +520,7 @@ describe("ts-parser: tipos de request y response en Nest", () => {
       "}",
     ]);
     await w("src/turno.controller.ts", [
-      'import { Body, Controller, Get, Post } from "@nestjs/common";',
+      'import { Body, Controller, Get, Post, Query } from "@nestjs/common";',
       'import { CrearTurnoDto, FormBody } from "./turno";',
       'import { TurnoService } from "./turno.service";',
       '@Controller("turnos")',
@@ -538,6 +538,10 @@ describe("ts-parser: tipos de request y response en Nest", () => {
       "  estado() { return this.svc.estado(true); }",
       '  @Get("salud")',
       "  salud() { return { ok: true, version: 2 }; }",
+      '  @Get("ramas")',
+      "  ramas(@Query(\"desde\") desde: string, @Query(\"limite\") limite?: number) { if (!desde) return { ok: false, motivo: \"falta\" }; return { ok: true, total: 3 }; }",
+      '  @Get("filtrar")',
+      "  filtrar(@Query() filtro: CrearTurnoDto) { return this.svc.listar(); }",
       '  @Get("mixto")',
       "  mixto() { return this.svc.mixto(true); }",
       "}",
@@ -547,10 +551,12 @@ describe("ts-parser: tipos de request y response en Nest", () => {
 
   it("sin tipo de retorno anotado sigue la delegación; el cuerpo también llega por un decorador propio", async () => {
     const x = await tsParser.extract(leerRepo(dir));
-    expect(x.endpoints.map((e) => `${e.metodo} ${e.ruta}: ${e.request} → ${e.response}`).sort()).toEqual([
+    expect(x.endpoints.map((e) => `${e.metodo} ${e.ruta}: ${e.request} → ${e.response}${e.query ? ` ?${e.query}` : ""}`).sort()).toEqual([
       "GET /turnos/estado: null → TurnoService.estado:respuesta",
+      "GET /turnos/filtrar: null → Turno[] ?CrearTurnoDto",
       "GET /turnos/mapa: null → Record<string, unknown>",
       "GET /turnos/mixto: null → null",
+      "GET /turnos/ramas: null → TurnoController.ramas:respuesta ?TurnoController.ramas:query",
       "GET /turnos/salud: null → TurnoController.salud:respuesta",
       "GET /turnos: null → Turno[]",
       "POST /turnos/form: CrearTurnoDto → Turno",
@@ -559,6 +565,9 @@ describe("ts-parser: tipos de request y response en Nest", () => {
     const formas = x.formas[""]!;
     expect(formas["CrearTurnoDto"]).toEqual({ dia: "string", nota: "string | undefined" });
     expect(formas["TurnoController.salud:respuesta"]).toEqual({ ok: "boolean", version: "number" });
+    // Dos `return` con objetos literales: una sola forma; lo que no está en los dos lleva `?`.
+    expect(formas["TurnoController.ramas:respuesta"]).toEqual({ ok: "boolean", "motivo?": "string", "total?": "number" });
+    expect(formas["TurnoController.ramas:query"]).toEqual({ desde: "string", "limite?": "number" });
     expect(formas["TurnoService.estado:respuesta"]).toEqual({ activo: "boolean", mensaje: "string", ok: "boolean" });
   });
 });

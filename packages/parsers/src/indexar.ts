@@ -293,7 +293,7 @@ export async function indexar(
     const fuente = x.autoritativo.includes(paquete) ? "openapi-parser" : eps.some((e) => e.archivo.endsWith(".php")) ? "php-parser" : "ts-parser";
     contratos.push({
       endpoints: eps
-        .map((e) => ({ evidencia: ev(e.archivo, e.linea), metodo: e.metodo as Contrato["endpoints"][number]["metodo"], request: e.request, response: e.response, ruta: e.ruta }))
+        .map((e) => ({ evidencia: ev(e.archivo, e.linea), metodo: e.metodo as Contrato["endpoints"][number]["metodo"], request: e.request, response: e.response, ruta: e.ruta, ...(e.query ? { query: e.query } : {}) }))
         .sort((a, b) => cmpTuple([a.ruta, a.metodo], [b.ruta, b.metodo])),
       eventos: eventosPorSvc.get(svc)!,
       fuente,
@@ -403,7 +403,7 @@ export async function indexar(
     const paquete = servicios.find((s) => s.svc === c.svc)!.paquete;
     const formas = x.formas[paquete] ?? {};
     const nombres = new Set<string>();
-    for (const e of c.endpoints) for (const n of [e.request, e.response]) for (const parte of (n ?? "").split(" | ")) if (parte) nombres.add(parte.replace(/\[\]$/, ""));
+    for (const e of c.endpoints) for (const n of [e.request, e.response, e.query]) for (const parte of (n ?? "").split(" | ")) if (parte) nombres.add(parte.replace(/\[\]$/, ""));
     for (const a of aristasFinales) if (a.desde === c.svc && a.dato) nombres.add(a.dato);
     for (const n of [...nombres].sort(cmp)) if (formas[n]) c.tipos[n] = formas[n]!;
   }

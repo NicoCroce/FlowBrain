@@ -314,6 +314,7 @@ function extraer(repo: RepoFuente): Extraccion {
       ts.forEachChild(cuerpo, ver);
     }
     const nombres = new Set<string>();
+    const literales: Forma[] = [];
     for (let e of retornos) {
       while (ts.isAwaitExpression(e) || ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e) || (ts.isAsExpression(e) && e.type.getText() === "const")) e = e.expression;
       let n: string | null = null;
@@ -327,21 +328,52 @@ function extraer(repo: RepoFuente): Extraccion {
         if (d && ts.isFunctionLike(d) && delRepo(d.getSourceFile())) n = tipoDeRetorno(d, formas, prof + 1);
       } else if (ts.isObjectLiteralExpression(e)) {
         const dueño = nombreDeFuncion(fn);
-        if (dueño && retornos.length === 1) {
+        if (dueño) {
           const forma: Forma = {};
           for (const p of e.properties) {
             if (ts.isPropertyAssignment(p)) forma[p.name.getText().replace(/["']/g, "")] = tipoDeValor(p.initializer);
             else if (ts.isShorthandPropertyAssignment(p)) forma[p.name.text] = tipoDeValor(p.name);
             else forma["…"] = "unknown";
           }
+          literales.push(forma);
           n = `${dueño}:respuesta`;
-          if (!(n in formas)) formas[n] = forma;
         }
       } else n = nombreTipoDeExpr(e);
       if (n === null) return null;
       nombres.add(n);
     }
+    // Varios `return` con objetos literales dan una sola forma: la unión de sus claves; la que falta en alguno lleva `?`,
+    // y si el tipo difiere se listan todos.
+    if (literales.length) {
+      const n = `${nombreDeFuncion(fn)}:respuesta`;
+      if (!(n in formas)) {
+        const forma: Forma = {};
+        for (const k of [...new Set(literales.flatMap((l) => Object.keys(l)))]) {
+          const tipos = [...new Set(literales.flatMap((l) => (k in l ? [l[k]!] : [])))].sort(cmp);
+          forma[literales.every((l) => k in l) || k === "…" ? k : `${k}?`] = tipos.join(" | ");
+        }
+        formas[n] = forma;
+      }
+    }
     return nombres.size ? [...nombres].sort(cmp).join(" | ") : null;
+  };
+
+  /** Parámetros de query de un handler: `@Query() q: Dto` → el tipo; `@Query("a") a: string` → una forma con cada uno. */
+  const tipoDeQuery = (m: ts.MethodDeclaration, formas: Record<string, Forma>): string | null => {
+    const sueltos: Forma = {};
+    let entero: string | null = null;
+    for (const p of m.parameters) {
+      const d = (ts.getDecorators(p) ?? []).find((x) => /^Query/.test(nombreDecorador(x)));
+      if (!d) continue;
+      const arg = ts.isCallExpression(d.expression) ? d.expression.arguments[0] : undefined;
+      if (arg && ts.isStringLiteralLike(arg)) sueltos[`${arg.text}${p.questionToken ? "?" : ""}`] = p.type ? limpiar(p.type.getText()) : "unknown";
+      else entero ??= nombreTipo(p.type);
+    }
+    if (entero) return entero;
+    const dueño = nombreDeFuncion(m);
+    if (!Object.keys(sueltos).length || !dueño) return null;
+    formas[`${dueño}:query`] ??= sueltos;
+    return `${dueño}:query`;
   };
 
   // ---------- Evaluación estática de URLs ----------
@@ -1027,6 +1059,7 @@ function extraer(repo: RepoFuente): Extraccion {
             ruta: normalizarRuta(`/${prefijo}/${ruta ?? ""}`),
             request: nombreTipo(body?.type),
             response: tipoDeRetorno(m, formas),
+            query: tipoDeQuery(m, formas),
             archivo,
             linea: linea(m),
           });

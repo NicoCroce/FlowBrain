@@ -31,7 +31,9 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 10 | Índice al día | Hecho de otra forma (decisión 127) |
 | 11 | Impacto desde un diff | Hecho (decisión 128, junto con el paso 16) |
 | 12 | Promover borradores | Hecho (decisión 129) |
-| 13–15 | Agnosticismo | Pendiente |
+| 13 | Segundo proyecto de otra pila | Pendiente: falta elegir el proyecto (prueba de humo en decisión 131) |
+| 14 | Interfaz de parsers | Hecho: `docs/PARSERS.md`; lenguajes nuevos esperan al paso 13 |
+| 15 | Huecos de contratos | Hecho en parte (decisión 130) |
 | 16–19 | Diferenciación | Pendiente |
 | 20–22 | Higiene | Pendiente |
 

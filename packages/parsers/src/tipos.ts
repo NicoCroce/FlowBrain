@@ -51,6 +51,8 @@ export interface EndpointCrudo {
   ruta: string;
   request: string | null;
   response: string | null;
+  /** Tipo de los parámetros de query, si el parser lo determina. */
+  query?: string | null;
   archivo: string;
   linea: number;
 }
