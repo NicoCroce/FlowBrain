@@ -32,6 +32,7 @@ import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessi
 import { draftDir } from "@brain/indexer";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { init, VERSION } from "./init.js";
+import { promover } from "./promover.js";
 import { escribirIndex, indexar } from "@brain/parsers";
 
 const AYUDA = `brain <comando> [opciones]
@@ -47,6 +48,8 @@ Comandos:
   estado [--repos <dir>] [--json]           repos al día o no, conteos del grafo y huecos conocidos;
                                             sale con 1 si algún repo quedó desactualizado
   doctor [--repos <dir>]                    diagnóstico: grafo, índice, clones, hooks y MCP registrados (solo lee)
+  promover [id...] [--todos] [--escribir]   pasa borradores revisados de _drafts/ a tecnologia/ y producto/ y compila;
+           [--pisar]                        sin --escribir solo lista; si el brain deja de compilar, deshace todo
   verify [--repos <dir>] [--clon id=ruta]   verifica evidencias contra los clones locales; marca dudosas
          [--dias n] [--hoy AAAA-MM-DD]      sale con 1 si aparecen dudosas nuevas (apto para CI)
   nota <nodo> <texto>                       agrega una nota a _drafts/notas/<nodo>.md
@@ -121,6 +124,8 @@ export async function ejecutar(
         diff: { type: "string" },
         escribir: { type: "boolean" },
         forzar: { type: "boolean" },
+        todos: { type: "boolean" },
+        pisar: { type: "boolean" },
         json: { type: "boolean" },
         "claude-code": { type: "boolean" },
         settings: { type: "string" },
@@ -191,6 +196,23 @@ export async function ejecutar(
       }
       const cs = await doctor(raiz, { carpetas, ...(o.settings !== undefined ? { settings: resolve(cwd, o.settings) } : {}) });
       return { codigo: cs.every((c) => c.ok) ? 0 : 1, stdout: cs.map((c) => `${c.ok ? "ok   " : "falta"} ${c.que}: ${c.detalle}`).join("\n") + "\n", stderr: "" };
+    }
+
+    if (comando === "promover") {
+      const r = await promover(raiz, { ids: positionals.slice(1), todos: o.todos === true, escribir: o.escribir === true, pisar: o.pisar === true });
+      const fila = (c: { origen: string; destino: string; estado: string }) => `  ${c.origen} → ${c.destino} (${c.estado})`;
+      const lineas = o.escribir
+        ? [
+            ...(r.movidos.length ? [`promovidos ${r.movidos.length}:`, ...r.movidos.map(fila)] : []),
+            ...(r.salteados.length ? ["sin mover:", ...r.salteados.map((c) => `${fila(c)}: ${c.motivo}`)] : []),
+            ...(r.errores.length ? ["no se promovió nada; errores:", ...r.errores.map((e) => `  ${e}`)] : []),
+            ...(!r.movidos.length && !r.salteados.length && !r.errores.length ? ["nada para promover (pasá ids o --todos)"] : []),
+          ]
+        : [
+            ...(r.candidatos.length ? [`borradores (${r.candidatos.length}):`, ...r.candidatos.map(fila), "promové con: brain promover <id...> --escribir (o --todos --escribir)"] : ["no hay borradores en _drafts/"]),
+            ...r.errores,
+          ];
+      return { codigo: r.errores.length ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
     }
 
     if (comando === "draft") {
