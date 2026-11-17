@@ -1,7 +1,8 @@
+import { compileDirConVisor } from "@brain/viewer";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { cargarContexto, cmp, commitDe, compileDir, dentroDe, ES_TEST, type Contexto } from "@brain/core";
+import { cargarContexto, cmp, commitDe, dentroDe, ES_TEST, type Contexto } from "@brain/core";
 import { escribirIndex, indexar } from "@brain/parsers";
 
 /**
@@ -66,7 +67,7 @@ export async function sync(raiz: string, opciones: { carpetas?: string[]; forzar
     }
     out.push({ ...r, reindexado: toca });
   }
-  const compilados = cambios || opciones.forzar ? (await compileDir(raiz)).escritos : null;
+  const compilados = cambios || opciones.forzar ? (await compileDirConVisor(raiz)).escritos : null;
   return { repos: out, compilados };
 }
 

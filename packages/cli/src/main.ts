@@ -1,3 +1,4 @@
+import { compileDirConVisor } from "@brain/viewer";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -7,7 +8,6 @@ import {
   buscarNodo,
   cargarContexto,
   CompileError,
-  compileDir,
   ConsultaError,
   contratoDe,
   deriva,
@@ -166,7 +166,7 @@ export async function ejecutar(
     }
 
     if (comando === "compile") {
-      const { salidas, escritos } = await compileDir(raiz);
+      const { salidas, escritos } = await compileDirConVisor(raiz);
       const resumen = `compilado: ${salidas.graph.nodes.length} nodos, ${salidas.graph.edges.length} aristas; ${escritos.length} archivos escritos\n`;
       return { codigo: 0, stdout: resumen + escritos.map((e) => `  ${e}\n`).join(""), stderr: "" };
     }

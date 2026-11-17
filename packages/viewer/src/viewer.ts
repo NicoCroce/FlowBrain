@@ -1,11 +1,9 @@
-import type { Ficha } from "./funcionalidades.js";
-import { dependenciasDelGrafo } from "./impacto.js";
+import { dependenciasDelGrafo, type Ficha, type Graph } from "@brain/core";
 import { mapa3dDelGrafo } from "./mapa3d.js";
 import { GRAFO3D_JS } from "./viewer-3d.js";
 import { MAPA_JS } from "./viewer-mapa.js";
 import { PANTALLAS_JS } from "./viewer-pantallas.js";
 import { PRODUCTO_JS } from "./viewer-producto.js";
-import type { Graph } from "./schema.js";
 
 /**
  * Visor estático (`_build/viewer.html`): un único HTML con el grafo embebido, sin servidor ni red. Vistas:

@@ -1,8 +1,9 @@
+import { compileDirConVisor } from "@brain/viewer";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cmp, compileDir } from "@brain/core";
+import { cmp } from "@brain/core";
 
 /** Nombre del paquete publicado y versión (la inyecta el build; en desarrollo queda "dev"). */
 export const PAQUETE = "brain-graph";
@@ -79,7 +80,7 @@ export async function init(
     await writeFile(destino, archivos[ruta]!, "utf8");
     creados.push(ruta);
   }
-  const { escritos } = await compileDir(raiz);
+  const { escritos } = await compileDirConVisor(raiz);
   creados.push(...escritos);
 
   const base = `${cmd} hook claude-code --raiz ${comillas(raiz)}`;

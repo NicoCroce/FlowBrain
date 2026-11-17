@@ -1,6 +1,7 @@
+import { compileDirConVisor } from "@brain/viewer";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { cmp, compileDir, CompileError, formatError } from "@brain/core";
+import { cmp, CompileError, formatError } from "@brain/core";
 
 /**
  * `brain promover`: pasa borradores revisados de `_drafts/` a `tecnologia/` y `producto/`. Sin `--escribir` solo
@@ -67,7 +68,7 @@ export async function promover(raiz: string, opciones: { ids?: string[]; todos?:
   }
   if (!res.movidos.length) return res;
   try {
-    await compileDir(raiz);
+    await compileDirConVisor(raiz);
   } catch (e) {
     if (!(e instanceof CompileError)) throw e;
     for (const [ruta, contenido] of respaldo) {

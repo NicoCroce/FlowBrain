@@ -65,15 +65,15 @@ importers:
       '@brain/parsers':
         specifier: workspace:*
         version: link:../parsers
+      '@brain/viewer':
+        specifier: workspace:*
+        version: link:../viewer
       '@modelcontextprotocol/sdk':
         specifier: ^1.32.2
         version: 1.32.2(zod@3.25.76)
 
   packages/core:
     dependencies:
-      cytoscape:
-        specifier: 3.34.4
-        version: 3.34.4
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
@@ -128,6 +128,15 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
+
+  packages/viewer:
+    dependencies:
+      '@brain/core':
+        specifier: workspace:*
+        version: link:../core
+      cytoscape:
+        specifier: 3.34.4
+        version: 3.34.4
 
 packages:
 

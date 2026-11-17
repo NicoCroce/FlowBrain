@@ -1,5 +1,4 @@
-import type { Ficha } from "./funcionalidades.js";
-import type { Graph } from "./schema.js";
+import type { Ficha, Graph } from "@brain/core";
 
 /**
  * Datos del "Mapa 3D" del visor: aristas agregadas (con cuántas veces aparece cada relación en el código), el uso de

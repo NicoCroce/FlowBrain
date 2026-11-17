@@ -13,6 +13,7 @@
     "@brain/indexer": "workspace:*",
     "@brain/mcp": "workspace:*",
     "@brain/parsers": "workspace:*",
+    "@brain/viewer": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2"
   },
   "bin": {

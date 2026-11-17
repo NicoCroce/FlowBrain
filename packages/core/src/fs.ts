@@ -1,16 +1,8 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { cmp } from "./canonical.js";
 import { compile, type Entradas, type Fuente, type Salidas } from "./compile.js";
 import { RUTA_VERIFICACION } from "./schema.js";
-import { renderViewer } from "./viewer.js";
-
-export const RUTA_VIEWER = "_build/viewer.html";
-
-let cytoscape: Promise<string> | null = null;
-/** Cytoscape minificado, embebido tal cual en el visor (versión fija en package.json). */
-const cytoscapeJs = () => (cytoscape ??= readFile(createRequire(import.meta.url).resolve("cytoscape/dist/cytoscape.min.js"), "utf8"));
 
 async function listar(raiz: string, dir: string, ext: string): Promise<Fuente[]> {
   let nombres: string[];
@@ -62,9 +54,12 @@ export async function escribirSalidas(raiz: string, s: Salidas): Promise<string[
   return escritos;
 }
 
-/** `brain compile`: lee, compila y escribe. */
-export async function compileDir(raiz: string): Promise<{ salidas: Salidas; escritos: string[] }> {
+/**
+ * `brain compile`: lee, compila y escribe. `extra` agrega salidas derivadas que no son del núcleo (el visor, que
+ * vive en su propio paquete).
+ */
+export async function compileDir(raiz: string, extra?: (s: Salidas) => Promise<Record<string, string>> | Record<string, string>): Promise<{ salidas: Salidas; escritos: string[] }> {
   const salidas = compile(await leerEntradas(raiz));
-  salidas.generados[RUTA_VIEWER] = renderViewer(salidas.graph, await cytoscapeJs(), salidas.funcionalidades);
+  if (extra) Object.assign(salidas.generados, await extra(salidas));
   return { salidas, escritos: await escribirSalidas(raiz, salidas) };
 }
