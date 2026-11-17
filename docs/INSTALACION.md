@@ -89,6 +89,16 @@ pnpm -s -C "$BRAIN_TOOL" brain verify --raiz "$BRAIN_ROOT" --repos /ruta/a/los/c
 
 Busca el clon de cada repo como `<carpeta>/<id>`, `<carpeta>/<id sin repo->` o `<carpeta>/<alias>` (o `--clon repo-x=/ruta`). Sale con 1 si aparecen aristas dudosas nuevas. Las aristas de repos sin clon local no se verifican y conservan su estado anterior.
 
+### Mantener el brain al día
+
+```bash
+pnpm -s -C "$BRAIN_TOOL" brain sync --raiz "$BRAIN_ROOT"      # reindexa los repos cuyo clon avanzó y recompila
+pnpm -s -C "$BRAIN_TOOL" brain estado --raiz "$BRAIN_ROOT"    # repos al día o no, conteos y huecos; sale con 1 si hay desfase
+pnpm -s -C "$BRAIN_TOOL" brain doctor --raiz "$BRAIN_ROOT"    # diagnóstico de la instalación (solo lee)
+```
+
+`sync` usa la ruta del clon que guardó `brain index` (relativa al brain); si el clon está en otro lado, `--repos <carpeta>` lo busca por nombre. No hace `git pull`.
+
 ## 6. Reglas para el agente
 
 ```bash

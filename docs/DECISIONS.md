@@ -244,3 +244,12 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **No cambia qué se muestra.** Mismos nodos, aristas, colores por tipo, filtros, selección y arrastre. Los impulsos son al azar: no representan tráfico ni uso; solo respetan el sentido de la arista y se concentran en el nodo seleccionado o bajo el cursor.
    - **Sigue sin librerías.** Todo en el `<canvas>` 2D, con imágenes prerenderizadas por color; con más de 1.500 nodos visibles los más chicos se dibujan sin halo.
    - **Se puede apagar.** Botón "Impulsos"; arrancan apagados si el sistema pide reducir movimiento.
+
+## 2026-11-17 · Auditoría: comandos de mantenimiento
+
+122. **`sync`, `estado` y `doctor`.** Mantener el brain exigía encadenar `index` por repo y `compile` a mano, y no había forma de saber si estaba al día.
+   - **Sin manifiesto nuevo.** El plan pedía un manifiesto de repos; ya existe: `_build/archivos/<repo>.json` guarda el id, el commit indexado y la ruta del clon relativa al brain. `sync` y `estado` leen eso. Si el clon no está en esa ruta (otra máquina), se busca por nombre de carpeta en `--repos` / `BRAIN_REPOS`, igual que `verify`.
+   - **`sync`** reindexa solo los repos cuyo HEAD cambió desde el último `index` (todos con `--forzar`) y recompila si algo se escribió. Sale con 1 si falta algún clon. No clona ni hace `git pull`: trabaja sobre el clon como está.
+   - **`estado`** lista por repo si está al día, los conteos de nodos por tipo y de relaciones por verbo, y los huecos conocidos con ejemplos: endpoints sin tipo de respuesta o sin funcionalidad, pantallas sin funcionalidad, tablas sin base o que nadie toca, funcionalidades sin código, archivos fuera de toda funcionalidad (sin tests), relaciones dudosas y borradores sin promover. Sale con 1 si algún repo quedó desactualizado; `--json` para consumirlo.
+   - **`doctor`** solo lee: verifica que el grafo cargue, que haya índice de código, que los clones estén y al día, y que los hooks y el servidor MCP estén registrados en Claude Code. No modifica ninguna configuración; dice qué comando lo arregla.
+   - En el proyecto de referencia, `estado` mostró que los dos clones avanzaron desde el último índice, 108 tablas sin base, 699 de 2.432 archivos fuera de toda funcionalidad y 42 borradores sin promover.

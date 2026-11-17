@@ -22,7 +22,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 1 | Tipos en contratos de Nest | Hecho (`66e23b2`, decisión 119) |
 | 2 | Relaciones finas en el grafo | Hecho (decisión 120) |
 | 3 | MCP: respuestas compactas, búsqueda e instrucciones | Hecho (decisión 121) |
-| 4 | Comandos `sync`, `estado` y `doctor` | Pendiente |
+| 4 | Comandos `sync`, `estado` y `doctor` | Hecho (decisión 122) |
 | 5 | Registro del MCP y los hooks | Pendiente, requiere decisión |
 | 6–9 | Cobertura del modelo | Pendiente |
 | 10–12 | Frescura | Pendiente |

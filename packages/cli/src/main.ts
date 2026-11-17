@@ -28,6 +28,7 @@ import {
 } from "@brain/core";
 import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@brain/hooks";
 import { draftDir } from "@brain/indexer";
+import { doctor, estado, sync, textoEstado } from "./estado.js";
 import { init, VERSION } from "./init.js";
 import { escribirIndex, indexar } from "@brain/parsers";
 
@@ -40,6 +41,10 @@ Comandos:
   index <ruta-repo> [--repo <repo-id>]      corre los parsers y escribe contratos, archivos y extracción en _build/
   draft <ruta-repo> [--repo <repo-id>]      borradores en _drafts/<repo>/ y funcionalidades en _drafts/producto/
                                             (no toca tecnologia/, producto/ ni _build/)
+  sync [--repos <dir>] [--forzar]           reindexa los repos cuyo clon avanzó desde el último index y recompila
+  estado [--repos <dir>] [--json]           repos al día o no, conteos del grafo y huecos conocidos;
+                                            sale con 1 si algún repo quedó desactualizado
+  doctor [--repos <dir>]                    diagnóstico: grafo, índice, clones, hooks y MCP registrados (solo lee)
   verify [--repos <dir>] [--clon id=ruta]   verifica evidencias contra los clones locales; marca dudosas
          [--dias n] [--hoy AAAA-MM-DD]      sale con 1 si aparecen dudosas nuevas (apto para CI)
   nota <nodo> <texto>                       agrega una nota a _drafts/notas/<nodo>.md
@@ -108,6 +113,8 @@ export async function ejecutar(
         hoy: { type: "string" },
         minimo: { type: "string" },
         escribir: { type: "boolean" },
+        forzar: { type: "boolean" },
+        json: { type: "boolean" },
         "claude-code": { type: "boolean" },
         settings: { type: "string" },
         version: { type: "boolean", short: "v" },
@@ -159,6 +166,24 @@ export async function ejecutar(
         ...(nuevos.length ? [`servicios sin página (los propone el indexador): ${nuevos.join(", ")}`] : []),
       ];
       return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+    }
+
+    if (comando === "sync" || comando === "estado" || comando === "doctor") {
+      const carpetas = (o.repos ?? env.BRAIN_REPOS ?? "").split(":").filter(Boolean).map((d) => resolve(cwd, d));
+      if (comando === "sync") {
+        const r = await sync(raiz, { carpetas, forzar: o.forzar === true });
+        const lineas = [
+          ...r.repos.map((x) => `${x.repo}: ${x.reindexado ? "reindexado" : x.estado === "sin clon" ? "sin clon (no se reindexó)" : "al día"}`),
+          r.repos.length ? (r.compilados ? `compilado: ${r.compilados.length} archivos cambiaron` : "sin cambios: no hizo falta compilar") : "no hay repos indexados (corré brain index <ruta-repo>)",
+        ];
+        return { codigo: r.repos.some((x) => x.estado === "sin clon") ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+      }
+      if (comando === "estado") {
+        const e = await estado(raiz, carpetas);
+        return { codigo: e.desactualizado ? 1 : 0, stdout: o.json ? stringifyCanonical(e) : textoEstado(e), stderr: "" };
+      }
+      const cs = await doctor(raiz, { carpetas, ...(o.settings !== undefined ? { settings: resolve(cwd, o.settings) } : {}) });
+      return { codigo: cs.every((c) => c.ok) ? 0 : 1, stdout: cs.map((c) => `${c.ok ? "ok   " : "falta"} ${c.que}: ${c.detalle}`).join("\n") + "\n", stderr: "" };
     }
 
     if (comando === "draft") {
