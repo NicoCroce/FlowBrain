@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { AVISO_SIN_TABLA, capaDe, crearRecorredor, compile, podar, soloCamino, CompileError, dentroDe, dependenciasDelGrafo, impacto, leerEntradas, raizDeServicio, renderViewer, mapa3dDelGrafo, type Entradas } from "../src/index.js";
+import { AVISO_SIN_TABLA, capaDe, crearRecorredor, compile, podar, soloCamino, CompileError, contextoDeSalidas, dentroDe, dependenciasDelGrafo, impacto, impactoDe, leerEntradas, raizDeServicio, renderViewer, mapa3dDelGrafo, type Contrato, type Entradas } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -226,5 +226,45 @@ describe("funcionalidades", () => {
     ]);
     const { pasos } = crearRecorredor(graph, est, []).desdeSimbolo("r:a.ts", "A.pedir");
     expect(pasos.map((p) => `${p.nivel} ${p.simbolo} ${p.via ?? ""}`)).toEqual(["0 A.pedir ", "1 A.mandar AVISO_JOB"]);
+  });
+});
+
+describe("código compartido, decisiones y equipos", () => {
+  const pagina = (ruta: string, lineas: string[]) => ({ ruta, contenido: ["---", ...lineas, "---", "# x", ""].join("\n") });
+  const conLib = (): Entradas => {
+    const e = conFuncionalidades();
+    const paginas = e.paginas.map((p) =>
+      p.ruta === "tecnologia/tabla-pagos.md" ? { ...p, contenido: p.contenido.replace("\n---\n", "\npertenece_a: [team-cobros]\nrelaciones:\n  - { verbo: decidido_por, destino: decision-pagos-idempotentes }\n---\n") } : p,
+    );
+    paginas.push(
+      pagina("tecnologia/lib-clientes.md", ["id: lib-clientes", "tipo: lib", "nombre: Clientes HTTP", "resumen: Clientes de otros servicios.", 'codigo: ["repo-tienda:apps/bff/src/clients"]']),
+      pagina("producto/team-cobros.md", ["id: team-cobros", "tipo: team", "nombre: Cobros", "resumen: Equipo de cobros."]),
+      pagina("producto/decision-pagos-idempotentes.md", ["id: decision-pagos-idempotentes", "tipo: decision", "nombre: Pagos idempotentes", "resumen: Cada pago lleva una clave de idempotencia."]),
+    );
+    return { ...e, paginas };
+  };
+
+  it("una funcionalidad depende de la librería cuyo código importa; el impacto de la librería llega a la funcionalidad", () => {
+    const { graph, funcionalidades } = compile(conLib());
+    expect(graph.edges.filter((x) => x.hasta === "lib-clientes").map((x) => `${x.desde} ${x.verbo} · ${x.evidencia}`)).toEqual(["feat-checkout depende_de · repo-tienda:apps/bff/src/routes/checkout.ts"]);
+    expect((graph.nodes.find((n) => n.id === "lib-clientes")!.atributos as { codigo: string[] }).codigo).toEqual(["repo-tienda:apps/bff/src/clients"]);
+    const niveles = impacto(dependenciasDelGrafo(graph, funcionalidades), "lib-clientes");
+    expect(niveles[0]!.map((x) => `${x.id}<${x.verbo}`)).toEqual(["feat-checkout<depende_de"]);
+  });
+
+  it("impacto trae las decisiones que explican la pieza y los equipos dueños", () => {
+    const e = conLib();
+    const ctx = contextoDeSalidas(compile(e), e.contratos.map((c) => JSON.parse(c.contenido) as Contrato), { archivos: e.archivos.map((a) => a.contenido), extracciones: (e.extracciones ?? []).map((x) => x.contenido) });
+    const r = impactoDe(ctx, { pieza: "tabla-pagos" }) as { decisiones: unknown; equipos: unknown };
+    expect(r.decisiones).toEqual([{ id: "decision-pagos-idempotentes", nombre: "Pagos idempotentes", resumen: "Cada pago lleva una clave de idempotencia." }]);
+    expect(r.equipos).toEqual([{ equipo: "team-cobros", nombre: "Cobros", por: ["tabla-pagos"] }]);
+    // Sin nada curado, los campos no aparecen.
+    expect(impactoDe(ctx, { pieza: "svc-bff" })).not.toHaveProperty("decisiones");
+  });
+
+  it("codigo en una página que no es feat ni lib falla", () => {
+    const e = conLib();
+    const paginas = e.paginas.map((p) => (p.ruta === "producto/team-cobros.md" ? { ...p, contenido: p.contenido.replace("resumen: Equipo de cobros.", 'resumen: Equipo de cobros.\ncodigo: ["repo-tienda:apps"]') } : p));
+    expect(() => compile({ ...e, paginas })).toThrow(CompileError);
   });
 });

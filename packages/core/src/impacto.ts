@@ -28,7 +28,8 @@ export function dependenciasDelGrafo(graph: Graph, fichas: Ficha[]): Dependencia
   for (const e of graph.edges) {
     if (e.estado === "deprecado") continue;
     // Lo que sale de una funcionalidad lo suman las fichas más abajo, con sus cantidades.
-    if (VERBOS_DEPENDENCIA.has(e.verbo) && tipo.get(e.desde) !== "feat") {
+    // (salvo hacia una librería: eso no está en las fichas).
+    if (VERBOS_DEPENDENCIA.has(e.verbo) && (tipo.get(e.desde) !== "feat" || tipo.get(e.hasta) === "lib")) {
       sumar(e.desde, e.hasta, e.verbo);
       if (e.endpoint) sumar(e.desde, e.endpoint, "llama_a");
     }

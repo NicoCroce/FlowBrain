@@ -33,7 +33,7 @@ describe("brain sync, estado y doctor", () => {
     expect(e.codigo).toBe(0);
     expect(e.stdout).toContain("repo-tienda: al día (indexado aaaaaaaaaaaa, clon aaaaaaaaaaaa)");
     expect(e.stdout).toContain("Nodos: ");
-    expect(e.stdout).toContain("archivos fuera de toda funcionalidad");
+    expect(e.stdout).toContain("archivos fuera de toda funcionalidad o librería");
     const j = JSON.parse((await brain("estado", "--json")).stdout) as { nodos: Record<string, number>; desactualizado: boolean };
     expect(j.nodos["svc"]).toBe(3);
     expect(j.desactualizado).toBe(false);

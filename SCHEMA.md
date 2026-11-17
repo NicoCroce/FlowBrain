@@ -55,7 +55,7 @@ Toda arista va de `desde` a `hasta`.
 | `implementa` | svc, lib, repo; pantalla, endpoint | feat | `relaciones` (pantalla y endpoint: lo genera el compilador) | no |
 | `decidido_por` | cualquiera salvo generados | decision | `relaciones` | no |
 | `vive_en` | svc, lib → repo · tabla → db | | campo `vive_en` | no |
-| `pertenece_a` | repo, svc, lib, db, queue, ext, feat | team | campo `pertenece_a` | no |
+| `pertenece_a` | repo, svc, lib, db, queue, ext, feat, tabla | team | campo `pertenece_a` | no |
 | `expone` | svc | contrato | solo el compilador | no |
 | `contiene` | repo → archivo · svc → endpoint · svc, repo → pantalla | | solo el compilador | no |
 | `navega_a` | pantalla | pantalla | solo el compilador | no |
@@ -116,7 +116,7 @@ vive_en: [repo-tienda]            # opcional
 pertenece_a: [team-plataforma]    # opcional
 puntos_de_entrada:                # solo para svc; rutas relativas al único repo de vive_en
   arranque: apps/payments/src/main.ts
-codigo:                           # solo para feat: carpetas (o archivos) que la componen, en uno o varios repos
+codigo:                           # para feat y lib: carpetas (o archivos) que la componen, en uno o varios repos
   - repo-tienda:apps/web/src/features/checkout
 relaciones:                       # opcional
   - verbo: llama_a                # obligatorio
@@ -132,7 +132,9 @@ Un campo desconocido, un enum fuera de rango, un destino inexistente o un verbo 
 
 Si una página tiene `puntos_de_entrada`, su `vive_en` tiene que tener exactamente un repo.
 
-**`codigo` (solo `feat`):** cada entrada es `<repo-id>:<ruta>`, sin línea, con el repo existente. El compilador genera `implementa` (origen `parser`, evidencia = la entrada) desde cada servicio de ese repo hacia la funcionalidad. En un monorepo, solo desde los servicios cuya raíz (la carpeta común de sus `puntos_de_entrada`) contiene la ruta o está dentro de ella; si ninguno, desde todos los del repo; si el repo no tiene servicios, desde el repo. También genera `implementa` desde cada `pantalla` hacia la funcionalidad cuyo `codigo` contiene el archivo de su componente (evidencia = ese archivo).
+**`codigo` en una `lib`:** las carpetas o archivos que son de la librería (código compartido, núcleo, sistema de diseño). No genera `implementa`. `compile` genera `depende_de` desde cada funcionalidad (u otra librería) que tenga un archivo que importa o llama a uno de la librería, con ese archivo como evidencia; así `impacto` sobre la librería alcanza a las funcionalidades que la usan. Queda en el atributo `codigo` del nodo.
+
+**`codigo` (en `feat`):** cada entrada es `<repo-id>:<ruta>`, sin línea, con el repo existente. El compilador genera `implementa` (origen `parser`, evidencia = la entrada) desde cada servicio de ese repo hacia la funcionalidad. En un monorepo, solo desde los servicios cuya raíz (la carpeta común de sus `puntos_de_entrada`) contiene la ruta o está dentro de ella; si ninguno, desde todos los del repo; si el repo no tiene servicios, desde el repo. También genera `implementa` desde cada `pantalla` hacia la funcionalidad cuyo `codigo` contiene el archivo de su componente (evidencia = ese archivo).
 
 Los destinos sin resolver nunca llegan a una página compilada. Van como prosa en la sección `## Preguntas abiertas`.
 
@@ -306,4 +308,4 @@ Consultas de código y producto (necesitan `brain index` + `brain compile`; sin 
 - **`recorrido`:** desde un endpoint (id, `MÉTODO /ruta` o `/ruta`; hasta 3 si coinciden varios) o un símbolo (`Clase.metodo`, `funcion`, `ruta#Simbolo`). Pasos `{n, simbolo, ev, toca?, aviso?}` en orden de llamada; `toca` es `verbo destino`, con `(tabla sin página en el brain)` si la tabla existe en el código pero no tiene página.
 - **`quien_llama`:** BFS inverso sobre `invoca` (profundidad 1–6, por defecto 3); una clase incluye sus métodos. Devuelve las llamadas con la línea de cada una, los endpoints alcanzados (por el método que los atiende), las funcionalidades dueñas del código alcanzado y las que consumen esos endpoints.
 - **`infra`:** infraestructura de un nodo (`nodo`, opcional) filtrada por `texto` (opcional): `items` con `de`, `clase`, `nombre`, `detalle` y `ev`. Para un servicio suma lo del repo donde vive; para un repo, lo de sus servicios; sin nodo, todo el brain. Con `texto`, `detalle` trae solo las líneas que coinciden. No necesita índice de código. Para una tabla, `impacto` trae además `columnas`.
-- **`impacto`:** recorrido inverso del modelo de dependencias (ver el visor) desde una tabla, endpoint, servicio, externo o funcionalidad, con el porqué de cada afectado; para una tabla, además, `tocadaPor` (métodos que la leen o escriben). Con un símbolo de código responde como `quien_llama`.
+- **`impacto`:** recorrido inverso del modelo de dependencias (ver el visor) desde una tabla, endpoint, servicio, externo o funcionalidad, con el porqué de cada afectado; para una tabla, además, `tocadaPor` (métodos que la leen o escriben). Si la pieza tiene decisiones (`decidido_por`) las trae en `decisiones`; `equipos` lista los equipos dueños (`pertenece_a`) de la pieza y de lo afectado. Con un símbolo de código responde como `quien_llama`.

@@ -29,7 +29,7 @@ import {
 } from "@brain/core";
 import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@brain/hooks";
 import { draftDir } from "@brain/indexer";
-import { doctor, estado, sync, textoEstado } from "./estado.js";
+import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { init, VERSION } from "./init.js";
 import { escribirIndex, indexar } from "@brain/parsers";
 
@@ -209,6 +209,8 @@ export async function ejecutar(
         clones[c.slice(0, i)] = resolve(cwd, c.slice(i + 1));
       }
       const carpetas = (o.repos ?? env.BRAIN_REPOS ?? "").split(":").filter(Boolean).map((d) => resolve(cwd, d));
+      // Sin `--clon` para un repo, vale el clon que registró `brain index`.
+      for (const r of await reposIndexados(raiz, carpetas)) if (r.clon && !clones[r.repo]) clones[r.repo] = r.clon;
       const hoy = o.hoy ?? new Date().toISOString().slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(hoy)) throw new ConsultaError("parametro_invalido", "--hoy debe ser AAAA-MM-DD");
       const r = await verifyDir(raiz, { repos: clones, carpetas, hoy, dias: entero(o.dias, "--dias") ?? 90 });

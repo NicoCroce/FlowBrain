@@ -78,7 +78,7 @@ export const DOMINIO: Record<Verbo, ReadonlyArray<readonly [readonly Tipo[], rea
   ],
   depende_de: [
     [["repo", "svc", "lib"], ["repo", "svc", "lib", "db", "queue", "ext"]],
-    [["feat"], ["feat"]],
+    [["feat"], ["feat", "lib"]],
     [["tabla"], ["tabla"]],
   ],
   implementa: [
@@ -90,7 +90,7 @@ export const DOMINIO: Record<Verbo, ReadonlyArray<readonly [readonly Tipo[], rea
     [["svc", "lib"], ["repo"]],
     [["tabla"], ["db"]],
   ],
-  pertenece_a: [[["repo", "svc", "lib", "db", "queue", "ext", "feat"], ["team"]]],
+  pertenece_a: [[["repo", "svc", "lib", "db", "queue", "ext", "feat", "tabla"], ["team"]]],
   expone: [[["svc"], ["contrato"]]],
   contiene: [
     [["repo"], ["archivo"]],

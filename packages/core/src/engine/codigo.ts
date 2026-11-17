@@ -568,6 +568,16 @@ export function infra(ctx: Contexto, p: InfraParams) {
   return ajustarLista(res, "items", p.budget_tokens);
 }
 
+/** Lo que la gente dejó escrito sobre una pieza: decisiones que la explican y equipos dueños de ella y de lo afectado. */
+function contextoHumano(ctx: Contexto, id: string, afectados: string[]) {
+  const hacia = (desde: string, verbo: string) => (ctx.salientes.get(desde) ?? []).filter((e) => e.verbo === verbo && e.estado !== "deprecado").map((e) => e.hasta);
+  const decisiones = hacia(id, "decidido_por").sort(cmp).map((d) => ({ id: d, nombre: ctx.nodo.get(d)?.nombre ?? d, resumen: ctx.nodo.get(d)?.resumen ?? null }));
+  const porEquipo = new Map<string, string[]>();
+  for (const x of [id, ...afectados]) for (const t of hacia(x, "pertenece_a")) porEquipo.set(t, [...(porEquipo.get(t) ?? []), x]);
+  const equipos = [...porEquipo.entries()].sort((a, b) => cmp(a[0], b[0])).map(([equipo, por]) => ({ equipo, nombre: ctx.nodo.get(equipo)?.nombre ?? equipo, por: por.sort(cmp) }));
+  return { ...(decisiones.length ? { decisiones } : {}), ...(equipos.length ? { equipos } : {}) };
+}
+
 /** Columnas de una tabla como texto: `nombre tipo`, con `pk` y `null` cuando aplica. */
 function columnasDe(ctx: Contexto, id: string): string[] | null {
   const cols = ctx.nodo.get(id)?.atributos["columnas"] as Array<{ nombre: string; tipo: string; nulo: boolean; pk: boolean }> | undefined;
@@ -604,6 +614,7 @@ export function impactoDe(ctx: Contexto, p: ImpactoParams) {
     tipo: ctx.nodo.get(id)?.tipo ?? "",
     funcionalidades: afectados.filter((a) => a.tipo === "feat"),
     ...(columnasDe(ctx, id) ? { columnas: columnasDe(ctx, id) } : {}),
+    ...contextoHumano(ctx, id, afectados.map((a) => a.id)),
     ...(ix.tocanTabla.has(id) ? { tocadaPor: ix.tocanTabla.get(id)!.map((t) => ({ verbo: t.verbo, quien: t.clave.includes("#") && !/#L\d/.test(t.clave) ? cita(ix, t.clave) : t.clave, ev: t.evidencia })) } : {}),
     tecnicas: afectados.filter((a) => a.tipo !== "feat"),
     avisos: [...(afectados.length ? [] : ["nada depende de esta pieza en el grafo"]), ...avisosIndice(ix)],

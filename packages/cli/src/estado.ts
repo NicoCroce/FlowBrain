@@ -102,7 +102,8 @@ export async function estado(raiz: string, carpetas: string[] = [], ctx?: Contex
   const hueco = (que: string, casos: string[], total: number) => ({ que, cuantos: casos.length, de: total, ejemplos: casos.slice(0, 5) });
   const conArista = (verbo: string, lado: "desde" | "hasta") => new Set(g.edges.filter((e) => e.verbo === verbo).map((e) => e[lado]));
   const feats = de("feat");
-  const codigos = [...(c.codigo?.fichas.values() ?? [])].flatMap((f) => f.codigo);
+  // Lo que una librería declara como suyo (`codigo`) tampoco está suelto.
+  const codigos = [...[...(c.codigo?.fichas.values() ?? [])].flatMap((f) => f.codigo), ...de("lib").flatMap((n) => (n.atributos["codigo"] as string[] | undefined) ?? [])];
   const endpoints = de("endpoint"), tablas = de("tabla"), pantallas = de("pantalla");
   const archivos = de("archivo").filter((n) => !ES_TEST.test(n.id.slice(n.id.indexOf(":") + 1)));
   const viveEn = conArista("vive_en", "desde"), implementa = conArista("implementa", "desde"), implementada = conArista("implementa", "hasta");
@@ -115,7 +116,7 @@ export async function estado(raiz: string, carpetas: string[] = [], ctx?: Contex
     hueco("tablas sin base de datos (vive_en)", tablas.filter((n) => !viveEn.has(n.id)).map((n) => n.id), tablas.length),
     hueco("tablas que nadie lee ni escribe", tablas.filter((n) => !tocan.has(n.id)).map((n) => n.id), tablas.length),
     hueco("funcionalidades sin código que las implemente", feats.filter((n) => !implementada.has(n.id)).map((n) => n.id), feats.length),
-    hueco("archivos fuera de toda funcionalidad", feats.length ? archivos.filter((n) => !codigos.some((k) => dentroDe(n.id, k))).map((n) => n.id) : [], archivos.length),
+    hueco("archivos fuera de toda funcionalidad o librería", feats.length ? archivos.filter((n) => !codigos.some((k) => dentroDe(n.id, k))).map((n) => n.id) : [], archivos.length),
     hueco("relaciones dudosas", g.edges.filter((e) => e.estado === "dudoso").map((e) => `${e.desde} ${e.verbo} ${e.hasta}`), g.edges.length),
     hueco("borradores sin promover", drafts, drafts.length),
   ].filter((h) => h.cuantos > 0);

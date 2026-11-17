@@ -12,6 +12,7 @@ import { CONFIANZA, dentroDe, ORIGENES, verboAdmite, type Graph, type GraphEdge,
  * - funcionalidad → tabla, servicio, externo o cola: accesos, llamadas y mensajes dentro de su `codigo`.
  * - endpoint → cola (`publica_en`/`consume_de`): los mensajes que publica o consume su recorrido.
  * - funcionalidad → funcionalidad (`depende_de`): llama a un endpoint que implementa la otra.
+ * - funcionalidad → librería (`depende_de`): un archivo suyo importa o llama a uno del `codigo` de la librería.
  *
  * Cada arista hereda el origen y el dato del acceso o la llamada de la extracción de la que sale: una llamada
  * inferida da una relación inferida.
@@ -27,6 +28,7 @@ export function aristasFinas(
   aristas: AristaExtraccion[],
   estructura: Map<string, EstructuraArchivo>,
   sinPagina: Array<{ verbo: string; tabla: string; evidencia: string }>,
+  libs: Array<{ id: string; codigo: string[] }> = [],
 ): GraphEdge[] {
   const nodo = new Map(graph.nodes.map((n) => [n.id, n]));
   const out: GraphEdge[] = [];
@@ -96,6 +98,27 @@ export function aristasFinas(
         for (const otra of a.endpoint ? (dueñasDe.get(a.endpoint) ?? []) : []) agregar(f.id, "depende_de", otra, { evidencia: a.evidencia, origen: a.origen });
       }
     }
+  }
+  // Código compartido: una funcionalidad (u otra librería) depende de una librería si un archivo suyo importa o llama
+  // a uno de la librería. La evidencia es el archivo que importa, el primero en orden.
+  if (libs.length) {
+    const usan = new Map<string, string>();
+    for (const [archivo, e] of [...estructura.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+      if (ES_TEST.test(archivo.slice(archivo.indexOf(":") + 1))) continue;
+      const repo = archivo.slice(0, archivo.indexOf(":"));
+      const destinos = new Set([...e.importa, ...e.invoca.map((i) => i.archivo)].map((r) => `${repo}:${r}`));
+      const dueños = [...feats, ...libs].filter((d) => enCodigo(archivo, d.codigo));
+      for (const destino of destinos) {
+        for (const lib of libs) {
+          if (!enCodigo(destino, lib.codigo)) continue;
+          for (const d of dueños) {
+            const k = `${d.id}\u0000${lib.id}`;
+            if (d.id !== lib.id && !enCodigo(destino, d.codigo) && !usan.has(k)) usan.set(k, archivo);
+          }
+        }
+      }
+    }
+    for (const [k, archivo] of usan) agregar(k.slice(0, k.indexOf("\u0000")), "depende_de", k.slice(k.indexOf("\u0000") + 1), { evidencia: archivo });
   }
   return out;
 }

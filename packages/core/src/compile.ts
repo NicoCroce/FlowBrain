@@ -138,8 +138,8 @@ export function compile(entradas: Entradas): Salidas {
     if (fm.puntos_de_entrada && fm.tipo !== "svc") {
       errores.push({ archivo: f.ruta, linea: L(["puntos_de_entrada"]), mensaje: "puntos_de_entrada solo aplica a svc" });
     }
-    if (fm.codigo && fm.tipo !== "feat") {
-      errores.push({ archivo: f.ruta, linea: L(["codigo"]), mensaje: "codigo solo aplica a feat" });
+    if (fm.codigo && fm.tipo !== "feat" && fm.tipo !== "lib") {
+      errores.push({ archivo: f.ruta, linea: L(["codigo"]), mensaje: "codigo solo aplica a feat y lib" });
     }
     if (fm.puntos_de_entrada && (fm.vive_en?.length ?? 0) !== 1) {
       errores.push({
@@ -153,7 +153,7 @@ export function compile(entradas: Entradas): Salidas {
       {
         actualizado: fm.actualizado ?? null,
         aliases: fm.aliases ?? [],
-        atributos: fm.puntos_de_entrada ? { puntos_de_entrada: fm.puntos_de_entrada } : {},
+        atributos: fm.puntos_de_entrada ? { puntos_de_entrada: fm.puntos_de_entrada } : fm.tipo === "lib" && fm.codigo?.length ? { codigo: [...fm.codigo].sort(cmp) } : {},
         estado: fm.estado ?? "vigente",
         id: fm.id,
         nombre: fm.nombre,
@@ -321,11 +321,13 @@ export function compile(entradas: Entradas): Salidas {
     campo("pertenece_a", fm.pertenece_a);
 
     // codigo de una feat: cada servicio que vive en ese repo la implementa (o el repo, si no tiene servicios).
-    (fm.tipo === "feat" ? (fm.codigo ?? []) : []).forEach((c, i) => {
+    (fm.tipo === "feat" || fm.tipo === "lib" ? (fm.codigo ?? []) : []).forEach((c, i) => {
       const m = CODIGO.exec(c);
       if (!m) return void errores.push({ archivo: ruta, linea: L(["codigo", i]), mensaje: `codigo con formato inválido: "${c}" (se espera "repo-x:ruta/a/carpeta")` });
       const repo = m[1]!;
       if (!esRepo(repo)) return rotos.has(repo) ? undefined : void errores.push({ archivo: ruta, linea: L(["codigo", i]), mensaje: `codigo: repo inexistente: ${repo}` });
+      // El `codigo` de una librería solo delimita qué archivos son suyos: nadie la "implementa".
+      if (fm.tipo === "lib") return;
       const enRepo = paginas.filter((q) => q.fm.tipo === "svc" && (q.fm.vive_en ?? []).includes(repo));
       // En un monorepo, solo los servicios cuya raíz (por puntos_de_entrada) contiene la ruta o está dentro de ella.
       const precisos = enRepo.filter((q) => {
@@ -403,7 +405,8 @@ export function compile(entradas: Entradas): Salidas {
   const nodes = [...nodos.values()].sort((a, b) => cmp(a.id, b.id));
   const base = dedupe(aristas);
   // Si una página ya declara la misma relación, gana la curada (dedupe por confianza).
-  const finas = aristasFinas({ edges: base, nodes, version: 1 }, featsPagina, accesos, estructura, sinPagina);
+  const libsPagina = paginas.filter((p) => p.fm.tipo === "lib" && p.fm.codigo?.length).map((p) => ({ id: p.fm.id, codigo: p.fm.codigo ?? [] }));
+  const finas = aristasFinas({ edges: base, nodes, version: 1 }, featsPagina, accesos, estructura, sinPagina, libsPagina);
   const graph: Graph = {
     edges: dedupe([...base, ...finas])
       .map((e) => (e.estado === "vigente" && e.evidencia !== null && dudosas.has(claveDudosa({ ...e, evidencia: e.evidencia })) ? { ...e, estado: "dudoso" as const } : e))
