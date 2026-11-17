@@ -33,13 +33,17 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
     return { ...d, nodes: d.nodes.map((n) => ({ ...n, c: i })) };
   });
   const svcDe = (ep: string) => ep.slice(0, ep.indexOf(":"));
-  // Lo que viaja entre cerebros: una arista por (servicio que llama, endpoint que atiende), con cuántas llamadas.
+  // Lo que viaja entre cerebros: una arista por (quién llama, endpoint que atiende), con cuántas llamadas. Quién llama
+  // es cada pantalla que llega a la llamada; si no es de ninguna pantalla (un job, un back), el servicio.
   const viajan = new Map<string, { a: string; b: string; ev: string; veces: number }>();
   for (const x of cruces) {
-    const a = `${x.desde.cerebro}/${x.desde.svc}`, b = `${x.hacia.cerebro}/${x.hacia.endpoint}`;
-    const v = viajan.get(`${a}\u0000${b}`);
-    if (v) v.veces++;
-    else viajan.set(`${a}\u0000${b}`, { a, b, ev: x.desde.evidencia, veces: 1 });
+    const b = `${x.hacia.cerebro}/${x.hacia.endpoint}`;
+    for (const origen of x.desde.pantallas.length ? x.desde.pantallas : [x.desde.svc]) {
+      const a = `${x.desde.cerebro}/${origen}`;
+      const v = viajan.get(`${a}\u0000${b}`);
+      if (v) v.veces++;
+      else viajan.set(`${a}\u0000${b}`, { a, b, ev: x.desde.evidencia, veces: 1 });
+    }
   }
   const cruzan = [...viajan.values()].sort((x, y) => (x.a + x.b < y.a + y.b ? -1 : 1));
   return {

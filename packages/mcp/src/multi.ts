@@ -45,7 +45,9 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
     const graph = JSON.parse(await readFile(join(raiz, "_build/graph.json"), "utf8")) as Graph;
     const dir = join(raiz, "_build/extraccion");
     const extracciones = await Promise.all((await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp).map((n) => readFile(join(dir, n), "utf8")));
-    const c = cerebroLiviano(nombre, graph, extracciones);
+    const dirA = join(raiz, "_build/archivos");
+    const archivos = await Promise.all((await readdir(dirA).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp).map((n) => readFile(join(dirA, n), "utf8")));
+    const c = cerebroLiviano(nombre, graph, extracciones, archivos);
     livianos.set(raiz, { m, c });
     return c;
   };
@@ -71,7 +73,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
     descripcion: [
       "Este servidor tiene varios cerebros, cada uno con sus repos. Por defecto se consulta el del repo donde estás; pasá `cerebro` para consultar otro. Cada respuesta dice de qué `cerebro` salió.",
       "Si la respuesta trae `otrosCerebros`, hay algo con el mismo nombre en otro cerebro: decíselo al usuario en una línea (qué cerebro y qué encontraste) y consultalo solo si la tarea lo necesita o si te lo pide.",
-      "`llamadoDesdeOtrosCerebros` son llamadas HTTP reales desde otro cerebro a un endpoint de la respuesta: contalas como afectadas por un cambio. `sinRevisar: true` marca un cerebro indexado sin revisión humana: decilo al citar sus datos.",
+      "`llamadoDesdeOtrosCerebros` son llamadas HTTP reales desde otro cerebro a un endpoint de la respuesta: contalas como afectadas por un cambio; si traen `pantallas`, son las pantallas del otro cerebro que dependen de ese endpoint. `sinRevisar: true` marca un cerebro indexado sin revisión humana: decilo al citar sus datos.",
       "`conexiones` resume qué servicios de un cerebro llaman a servicios de otro.",
     ].join("\n"),
     async resolver(nombre?: string): Promise<CerebroResuelto> {
@@ -91,7 +93,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
           const texto = JSON.stringify(resultado);
           const entrantes: Cruce[] = vecinos.flatMap((v) => crucesEntre(v, propio, r.conexiones).cruces).filter((x) => texto.includes(JSON.stringify(x.hacia.endpoint)));
           if (entrantes.length) {
-            extra["llamadoDesdeOtrosCerebros"] = { total: entrantes.length, llamadas: entrantes.slice(0, 10).map((x) => ({ endpoint: x.hacia.endpoint, cerebro: x.desde.cerebro, desde: x.desde.svc, ev: x.desde.evidencia })) };
+            extra["llamadoDesdeOtrosCerebros"] = { total: entrantes.length, llamadas: entrantes.slice(0, 10).map((x) => ({ endpoint: x.hacia.endpoint, cerebro: x.desde.cerebro, desde: x.desde.svc, ev: x.desde.evidencia, ...(x.desde.pantallas.length ? { pantallas: x.desde.pantallas.slice(0, 3) } : {}) })) };
           }
           return extra;
         },

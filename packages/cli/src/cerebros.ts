@@ -274,7 +274,9 @@ export async function escribirVisor(registro: Registro): Promise<string | null> 
     const dir = join(c.raiz, "_build/extraccion");
     const extracciones = await Promise.all((await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp).map((n) => readFile(join(dir, n), "utf8")));
     visibles.push({ nombre: c.nombre, sinRevisar: !c.curado, graph, funcionalidades });
-    livianos.set(c.nombre, cerebroLiviano(c.nombre, graph, extracciones));
+    const dirA = join(c.raiz, "_build/archivos");
+    const archivos = await Promise.all((await readdir(dirA).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp).map((n) => readFile(join(dirA, n), "utf8")));
+    livianos.set(c.nombre, cerebroLiviano(c.nombre, graph, extracciones, archivos));
   }
   if (!visibles.length) return null;
   const cruces: Cruce[] = [];

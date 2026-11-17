@@ -4,7 +4,7 @@ import { datosDeCerebros, GRAFO3D_JS, renderViewerCerebros } from "../src/index.
 
 const nodo = (id: string, tipo: GraphNode["tipo"], atributos: Record<string, unknown> = {}): GraphNode => ({ actualizado: null, aliases: [], atributos, estado: "vigente", id, nombre: id, origen: "parser", pagina: null, resumen: null, tecnologia: [], tipo, verificado: null });
 const arista = (desde: string, verbo: GraphEdge["verbo"], hasta: string): GraphEdge => ({ confianza: 0.9, dato: null, desde, endpoint: null, estado: "vigente", evidencia: null, hasta, origen: "parser", verbo });
-const front: Graph = { version: 1, nodes: [nodo("repo-tienda", "repo"), nodo("svc-web", "svc")], edges: [arista("svc-web", "vive_en", "repo-tienda")] };
+const front: Graph = { version: 1, nodes: [nodo("repo-tienda", "repo"), nodo("svc-web", "svc"), nodo("svc-web:/pedidos", "pantalla", { ruta: "/pedidos" })], edges: [arista("svc-web", "vive_en", "repo-tienda")] };
 const back: Graph = {
   version: 1,
   // Mismo id de repo que en el otro cerebro, a propósito.
@@ -12,8 +12,10 @@ const back: Graph = {
   edges: [arista("svc-api", "vive_en", "repo-tienda"), arista("svc-api", "contiene", "svc-api:GET:/pedidos")],
 };
 const cruces: Cruce[] = [
-  { desde: { cerebro: "front", svc: "svc-web", evidencia: "repo-tienda:src/api.ts#L3" }, hacia: { cerebro: "back", endpoint: "svc-api:GET:/pedidos" }, declarada: false },
-  { desde: { cerebro: "front", svc: "svc-web", evidencia: "repo-tienda:src/api.ts#L9" }, hacia: { cerebro: "back", endpoint: "svc-api:GET:/pedidos" }, declarada: false },
+  { desde: { cerebro: "front", svc: "svc-web", evidencia: "repo-tienda:src/api.ts#L3", pantallas: [] }, hacia: { cerebro: "back", endpoint: "svc-api:GET:/pedidos" }, declarada: false },
+  { desde: { cerebro: "front", svc: "svc-web", evidencia: "repo-tienda:src/api.ts#L9", pantallas: [] }, hacia: { cerebro: "back", endpoint: "svc-api:GET:/pedidos" }, declarada: false },
+  // Esta sale de un hook que usa una pantalla: la relación es de la pantalla, no del servicio.
+  { desde: { cerebro: "front", svc: "svc-web", evidencia: "repo-tienda:src/hooks/usePedidos.ts#L4", pantallas: ["svc-web:/pedidos"] }, hacia: { cerebro: "back", endpoint: "svc-api:GET:/pedidos" }, declarada: false },
 ];
 const cerebros = [
   { nombre: "front", sinRevisar: false, graph: front, funcionalidades: [] },
@@ -23,10 +25,10 @@ const cerebros = [
 describe("visor de varios cerebros", () => {
   it("une los cerebros sin mezclar ids repetidos, marca de cuál es cada nodo y agrega lo que cruza", () => {
     const d = datosDeCerebros(cerebros, cruces, []);
-    expect(d.cerebros).toEqual([{ nombre: "front", sinRevisar: false, nodos: 2 }, { nombre: "back", sinRevisar: true, nodos: 3 }]);
-    expect(d.nodes.map((n) => `${n.c} ${n.id}`)).toEqual(["0 front/repo-tienda", "0 front/svc-web", "1 back/repo-tienda", "1 back/svc-api", "1 back/svc-api:GET:/pedidos"]);
+    expect(d.cerebros).toEqual([{ nombre: "front", sinRevisar: false, nodos: 3 }, { nombre: "back", sinRevisar: true, nodos: 3 }]);
+    expect(d.nodes.map((n) => `${n.c} ${n.id}`)).toEqual(["0 front/repo-tienda", "0 front/svc-web", "0 front/svc-web:/pedidos", "1 back/repo-tienda", "1 back/svc-api", "1 back/svc-api:GET:/pedidos"]);
     // Dos llamadas al mismo endpoint son una relación entre cerebros, con sus veces.
-    expect(d.mapa3d.aristas.filter((a) => a[0].startsWith("front/") && a[1].startsWith("back/"))).toEqual([["front/svc-web", "back/svc-api:GET:/pedidos", "llama_a", 2]]);
+    expect(d.mapa3d.aristas.filter((a) => a[0].startsWith("front/") && a[1].startsWith("back/"))).toEqual([["front/svc-web:/pedidos", "back/svc-api:GET:/pedidos", "llama_a", 1], ["front/svc-web", "back/svc-api:GET:/pedidos", "llama_a", 2]]);
     expect(d.edges.filter((e) => e.s === "front/svc-web" && e.h === "back/svc-api").map((e) => e.p)).toEqual(["back/svc-api:GET:/pedidos"]);
     // Sin cruces (comunicación apagada) no hay relaciones entre cerebros.
     expect(datosDeCerebros(cerebros, [], []).mapa3d.aristas.filter((a) => a[0].startsWith("front/") && a[1].startsWith("back/"))).toEqual([]);
