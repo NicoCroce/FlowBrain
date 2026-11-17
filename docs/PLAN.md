@@ -206,6 +206,8 @@ Pedido del 2026-11-17. Hasta 5 cerebros, cada uno con su nombre y sus repos o ca
 
 Un archivo de registro con los cerebros (nombre, carpeta, repos o carpetas que contiene) y qué pares tienen la comunicación activada. Un comando de alta que pregunte el nombre y los repos de cada uno, lo cree y lo indexe; lo mismo por parámetros, para que se pueda probar y automatizar. El tope de 5 es un valor de configuración. A resolver: si un mismo repo puede estar en dos cerebros (por ejemplo en commits distintos).
 
+**Conexiones declaradas.** El registro también guarda, por cada par comunicado, qué servicio llama a cuál: por ejemplo, que la web nueva llama a la API nueva y también a la API vieja. El alta lo pregunta. Es un dato curado, como las páginas: manda sobre lo que detecte el parser. Cada conexión puede indicar por dónde se distingue el destino (el host o la variable de la URL base), que es lo único que permite saber a cuál de dos APIs con las mismas rutas va una llamada.
+
 **Hecho cuando.** Con un registro de dos cerebros sintéticos, `estado` y `sync` trabajan sobre cada uno por nombre.
 
 ### Paso 24 · MCP y hooks con varios cerebros
@@ -223,6 +225,8 @@ Al compilar, cada cerebro escribe un índice chico de nombres (ids, nombres, ali
 ### Paso 26 · Relaciones entre cerebros
 
 Lo que hace que una pista diga "el front de este cerebro llama a este endpoint de aquel" y no solo "allá hay algo con el mismo nombre". Hoy una llamada se une a su endpoint al indexar, contra los contratos del mismo cerebro. Para poder prenderlo y apagarlo sin reindexar, las llamadas que quedaron sin unir se resuelven al consultar contra los contratos de los cerebros comunicados. `impacto`, `riesgo`, `deriva` y `paridad` siguen ese cruce cuando la comunicación está activada. Es el paso más grande de la fase. Habilita `paridad` entre un cerebro viejo y uno nuevo, que hoy no se pudo probar con un caso real.
+
+Las conexiones declaradas en el registro (paso 23) dicen contra qué servicios de otros cerebros se intenta unir cada llamada; lo detectado se contrasta con lo declarado: una conexión declarada sin ninguna llamada que la respalde, o llamadas hacia un cerebro sin conexión declarada, salen como aviso. Por cada conexión se informa cuántas llamadas van a cada destino, que en una migración es cuánto queda todavía contra el servicio viejo.
 
 **Hecho cuando.** Con dos cerebros sintéticos (un front y un back), `impacto` sobre un endpoint del segundo alcanza a la pantalla del primero solo con la comunicación activada.
 
