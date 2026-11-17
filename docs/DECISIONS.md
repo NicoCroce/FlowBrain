@@ -243,7 +243,7 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
 122. **El Mapa 3D se dibuja como un cerebro; es solo estética.** Cada nodo es una neurona (soma, halo que late y dendritas), cada arista un axón curvo, y por los axones corren impulsos en el sentido de la relación: al llegar encienden la neurona destino y pueden seguir por sus salidas. Una nube de puntos marca la corteza, y la gravedad del layout es más fuerte en vertical y tiene una fisura al medio, así el grafo queda en dos hemisferios.
    - **No cambia qué se muestra.** Mismos nodos, aristas, colores por tipo, filtros, selección y arrastre. Los impulsos son al azar: no representan tráfico ni uso; solo respetan el sentido de la arista y se concentran en el nodo seleccionado o bajo el cursor.
    - **Sigue sin librerías.** Todo en el `<canvas>` 2D, con imágenes prerenderizadas por color; con más de 1.500 nodos visibles los más chicos se dibujan sin halo.
-   - **Se puede apagar.** Botón "Impulsos"; arrancan apagados si el sistema pide reducir movimiento.
+   - **Se puede apagar.** Botón "Impulsos"; arrancan apagados si el sistema pide reducir movimiento. Un control de intensidad (0 a 100 %) regula cuántos corren y cuánto brillan.
 
 ## 2026-11-17 · Auditoría: comandos de mantenimiento
 
