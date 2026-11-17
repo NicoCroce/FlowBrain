@@ -15,7 +15,10 @@ import { borradoresPromovibles, promover } from "./promover.js";
 const existe = (p: string) => stat(p).then(() => true, () => false);
 const IGNORAR = new Set(["node_modules", ".git", "dist", "build", "vendor", ".next", "coverage", ".cache", "tmp"]);
 
-/** Repos bajo una carpeta: los directorios con `.git`, o con manifiesto si nada por encima es un repo. No entra en un repo. */
+/**
+ * Repos bajo una carpeta: los directorios con `.git`, o con manifiesto si nada por encima es un repo. No entra en un
+ * repo, salvo en la carpeta de partida cuando tiene otros repos (`.git`) adentro.
+ */
 export async function encontrarRepos(carpeta: string, profundidad = 3): Promise<string[]> {
   const out: string[] = [];
   const andar = async (dir: string, nivel: number) => {
@@ -28,7 +31,22 @@ export async function encontrarRepos(carpeta: string, profundidad = 3): Promise<
       if (e.isDirectory() && !IGNORAR.has(e.name) && !e.name.startsWith(".")) await andar(join(dir, e.name), nivel + 1);
     }
   };
-  await andar(resolve(carpeta), 0);
+  const raiz = resolve(carpeta);
+  // Una carpeta que es un repo y además guarda otros repos adentro (un repo que orquesta clones): valen los de adentro.
+  if (await existe(join(raiz, ".git"))) {
+    const anidados: string[] = [];
+    const buscar = async (dir: string, nivel: number) => {
+      for (const e of (await readdir(dir, { withFileTypes: true }).catch(() => [])).sort((a, b) => cmp(a.name, b.name))) {
+        if (!e.isDirectory() || IGNORAR.has(e.name) || e.name.startsWith(".")) continue;
+        const d = join(dir, e.name);
+        if (await existe(join(d, ".git"))) anidados.push(d);
+        else if (nivel < profundidad) await buscar(d, nivel + 1);
+      }
+    };
+    await buscar(raiz, 1);
+    if (anidados.length) return anidados.sort(cmp);
+  }
+  await andar(raiz, 0);
   return out.sort(cmp);
 }
 

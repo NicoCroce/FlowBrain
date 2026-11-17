@@ -6,6 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { interpretarRegistro, RegistroError } from "@flowbrain/core";
 import { crearMulti, crearServidor } from "@flowbrain/mcp";
+import { encontrarRepos } from "../src/cerebros.js";
 import { ejecutar } from "../src/main.js";
 
 /**
@@ -224,6 +225,15 @@ describe("dentro de un proyecto", () => {
     // Volver a correrlo actualiza, sin pisar el registro.
     expect((await ejecutar(["iniciar"], {}, proyecto)).stdout).toContain("registro existente");
   }, 120_000);
+
+  it("un repo que guarda otros repos adentro: se indexan los de adentro, no la carpeta entera como un solo repo", async () => {
+    const orq = join(dir, "orquestador");
+    for (const d of [".git", "clones/uno/.git", "clones/dos/.git", "docs"]) await mkdir(join(orq, d), { recursive: true });
+    expect(await encontrarRepos(orq)).toEqual([join(orq, "clones/dos"), join(orq, "clones/uno")]);
+    // Sin repos adentro, el repo es la carpeta misma.
+    await mkdir(join(dir, "solo/.git"), { recursive: true });
+    expect(await encontrarRepos(join(dir, "solo"))).toEqual([join(dir, "solo")]);
+  });
 
   it("instalar deja el comando en el PATH y los hooks sin atarlos a una carpeta", async () => {
     const settings = join(dir, "global/settings.json"), bin = join(dir, "global/bin");
