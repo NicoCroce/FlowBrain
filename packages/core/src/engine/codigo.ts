@@ -49,7 +49,7 @@ export interface IndiceCodigo {
   /** Tabla → métodos que la leen o escriben, con su evidencia. */
   tocanTabla: Map<string, Array<{ clave: string; verbo: string; evidencia: string }>>;
   /** Llamadas HTTP que el índice no pudo unir a un endpoint (`pendientes` de la extracción). */
-  llamadasPendientes: Array<{ desde: string; referencia: string; motivo: string; evidencia: string; candidatos: number }>;
+  llamadasPendientes: Array<{ desde: string; referencia: string; motivo: string; evidencia: string; candidatos: number; llamada?: { metodo: string; ruta: string | null; base: string } }>;
 }
 
 const clave = (archivo: string, simbolo: string) => `${archivo}#${simbolo}`;
@@ -116,8 +116,8 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
   const llamadasPendientes: IndiceCodigo["llamadasPendientes"] = [];
   for (const c of extracciones) {
     try {
-      const j = JSON.parse(c) as { pendientes?: Array<{ verbo: string; desde: string; referencia: string; motivo: string; evidencia: string; candidatos?: unknown[] }> };
-      for (const p of j.pendientes ?? []) if (p.verbo === "llama_a") llamadasPendientes.push({ desde: p.desde, referencia: p.referencia, motivo: p.motivo, evidencia: p.evidencia, candidatos: p.candidatos?.length ?? 0 });
+      const j = JSON.parse(c) as { pendientes?: Array<{ verbo: string; desde: string; referencia: string; motivo: string; evidencia: string; candidatos?: unknown[]; llamada?: { metodo: string; ruta: string | null; base: string } }> };
+      for (const p of j.pendientes ?? []) if (p.verbo === "llama_a") llamadasPendientes.push({ desde: p.desde, referencia: p.referencia, motivo: p.motivo, evidencia: p.evidencia, candidatos: p.candidatos?.length ?? 0, ...(p.llamada ? { llamada: p.llamada } : {}) });
     } catch {
       /* ignorado */
     }

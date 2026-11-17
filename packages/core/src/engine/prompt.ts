@@ -68,16 +68,21 @@ function indiceNombres(ctx: Contexto): Map<string, string[]> {
 
 const palabras = (s: string) => normalizar(s).split(/[^\p{L}\p{N}_-]+/u).filter(Boolean);
 
-/** Menciones exactas (n-gramas de hasta 4 palabras), en orden de aparición. */
-function nodosMencionados(ctx: Contexto, prompt: string): string[] {
+/**
+ * Menciones exactas (n-gramas de hasta 4 palabras), en orden de aparición. Con `soloIds` cuentan solo los ids
+ * escritos tal cual (`tabla-user`): fuera de un repo del brain, una palabra común del pedido ("documentos",
+ * "configuración") no alcanza para inyectar el contexto de un nodo que se llama así.
+ */
+function nodosMencionados(ctx: Contexto, prompt: string, soloIds = false): string[] {
   const idx = indiceNombres(ctx);
   const ws = palabras(prompt);
   const vistos: string[] = [];
   for (let i = 0; i < ws.length; i++) {
     for (let n = 4; n >= 1; n--) {
       if (i + n > ws.length) continue;
-      const ids = idx.get(ws.slice(i, i + n).join(" "));
-      if (!ids) continue;
+      const frase = ws.slice(i, i + n).join(" ");
+      const ids = idx.get(frase)?.filter((id) => !soloIds || normalizar(id) === frase);
+      if (!ids?.length) continue;
       for (const id of [...ids].sort(cmp)) if (!vistos.includes(id)) vistos.push(id);
       break;
     }
@@ -114,7 +119,7 @@ export function contextoParaPrompt(ctx: Contexto, p: ContextoPromptParams): Cont
     }
     pendientes.push({ titulo: `trazar ${c}`, correr: (b) => trazar(ctx, { desde: c, budget_tokens: b }) });
   }
-  for (const id of nodosMencionados(ctx, p.prompt).slice(0, MAX_NODOS)) {
+  for (const id of nodosMencionados(ctx, p.prompt, !repo).slice(0, MAX_NODOS)) {
     pendientes.push({
       titulo: `recorrer_grafo ${id}`,
       correr: (b) => recorrerGrafo(ctx, { nodo: id, direccion: "both", budget_tokens: b }),

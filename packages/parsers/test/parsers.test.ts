@@ -721,8 +721,11 @@ describe("eventos y colas: del código al contrato y al grafo", () => {
     await escribirIndex(brain, r);
     await compileDir(brain);
     const g = JSON.parse(await readFile(join(brain, "_build/graph.json"), "utf8")) as { edges: Array<{ desde: string; verbo: string; hasta: string }> };
-    // Las relaciones entre servicios entran al grafo por las páginas (las propone `brain draft`); la del endpoint, directo.
-    expect(g.edges.filter((e) => e.hasta === "queue-turno-creado").map((e) => `${e.desde} ${e.verbo}`)).toEqual(["svc-avisos:POST:/turnos publica_en"]);
+    expect(g.edges.filter((e) => e.hasta === "queue-turno-creado").map((e) => `${e.desde} ${e.verbo}`)).toEqual([
+      "svc-avisos consume_de",
+      "svc-avisos publica_en",
+      "svc-avisos:POST:/turnos publica_en",
+    ]);
   });
 });
 

@@ -116,8 +116,49 @@ function limpio<T extends Record<string, unknown>>(o: T): SinUndefined<T> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as SinUndefined<T>;
 }
 
-export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
-  const server = new McpServer({ name: "brain", version: typeof __BRAIN_VERSION__ === "string" ? __BRAIN_VERSION__ : "dev" }, { instructions: INSTRUCCIONES });
+/** Un cerebro ya resuelto para una consulta: su contexto y lo que hay que agregarle a la respuesta. */
+export interface CerebroResuelto {
+  ctx: Contexto;
+  nombre: string;
+  /** El cerebro se indexó sin revisión humana (`curado: false`). */
+  sinRevisar: boolean;
+  /** Campos extra para la respuesta: pistas de otros cerebros y relaciones que cruzan. */
+  anotar(herramienta: string, args: Record<string, unknown>, resultado: unknown): Promise<Record<string, unknown>>;
+}
+
+/** Varios cerebros detrás de un solo servidor. */
+export interface Multi {
+  /** Texto para las instrucciones: qué cerebros hay y cómo elegir. */
+  descripcion: string;
+  resolver(cerebro?: string): Promise<CerebroResuelto>;
+  /** Resumen de las llamadas entre el cerebro y sus vecinos. */
+  conexiones(cerebro?: string): Promise<unknown>;
+}
+
+export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): McpServer {
+  const server = new McpServer({ name: "brain", version: typeof __BRAIN_VERSION__ === "string" ? __BRAIN_VERSION__ : "dev" }, { instructions: multi ? `${INSTRUCCIONES}\n${multi.descripcion}` : INSTRUCCIONES });
+  // Siempre declarado; con un solo brain no cambia nada.
+  const deCerebro = { cerebro: z.string().min(1).optional().describe("con varios cerebros, cuál consultar; por defecto, el del repo actual") };
+
+  /** Corre una herramienta sobre el cerebro que corresponde y, con varios cerebros, rotula la respuesta. */
+  async function correr<A extends Record<string, unknown>>(herramienta: string, a: A, fn: (ctx: Contexto, args: SinUndefined<A>) => unknown): Promise<Texto> {
+    const { cerebro, ...resto } = a as A & { cerebro?: string };
+    const args = limpio(resto) as unknown as SinUndefined<A>;
+    if (!multi) {
+      const ctx = await obtener();
+      return responder(() => fn(ctx, args));
+    }
+    try {
+      const c = await multi.resolver(cerebro);
+      const r = fn(c.ctx, args);
+      const extra = await c.anotar(herramienta, args as Record<string, unknown>, r);
+      return responder(() => (typeof r === "object" && r !== null && !Array.isArray(r) ? { ...r, cerebro: c.nombre, ...(c.sinRevisar ? { sinRevisar: true } : {}), ...extra } : r));
+    } catch (e) {
+      return responder(() => {
+        throw e;
+      });
+    }
+  }
 
   server.registerTool(
     "buscar_nodo",
@@ -129,12 +170,10 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
         tipos: z.array(z.string()).optional().describe("filtra por tipo de nodo, p. ej. [\"svc\", \"endpoint\"]; \"simbolo\" para solo símbolos de código"),
         limite: z.number().int().positive().optional(),
         ...comunes,
+        ...deCerebro,
       },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => buscarNodo(ctx, limpio(a)));
-    },
+    async (a) => correr("buscar_nodo", a, (ctx, args) => buscarNodo(ctx, args)),
   );
 
   server.registerTool(
@@ -148,12 +187,10 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
         direccion: z.enum(["out", "in", "both"]).optional(),
         profundidad: z.number().int().min(1).max(PROFUNDIDAD_MAX).optional(),
         ...comunes,
+        ...deCerebro,
       },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => recorrerGrafo(ctx, limpio(a)));
-    },
+    async (a) => correr("recorrer_grafo", a, (ctx, args) => recorrerGrafo(ctx, args)),
   );
 
   server.registerTool(
@@ -164,12 +201,10 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
         nodo: z.string().min(1).describe("id de un svc o de un endpoint"),
         endpoint: z.string().optional().describe("filtra un endpoint: \"MÉTODO /ruta\""),
         ...comunes,
+        ...deCerebro,
       },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => contratoDe(ctx, limpio(a)));
-    },
+    async (a) => correr("contrato_de", a, (ctx, args) => contratoDe(ctx, args)),
   );
 
   server.registerTool(
@@ -181,12 +216,10 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
         desde: z.string().min(1).describe("id de nodo, ruta (/checkout), \"MÉTODO /ruta\", URL o archivo"),
         hasta: z.string().optional().describe("id de nodo destino: devuelve solo los caminos más cortos"),
         ...comunes,
+        ...deCerebro,
       },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => trazar(ctx, limpio(a)));
-    },
+    async (a) => correr("trazar", a, (ctx, args) => trazar(ctx, args)),
   );
 
   const presupuesto = { budget_tokens: comunes.budget_tokens };
@@ -196,12 +229,9 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     {
       description:
         "Ficha de una funcionalidad de producto (feat) por id o nombre: qué endpoints expone y qué método atiende cada uno, qué consume y de qué funcionalidad, qué tablas toca, con qué funcionalidades se relaciona y qué dominio comparte. Cada dato con repo:ruta#Ln.",
-      inputSchema: { id: z.string().min(1).describe("id (feat-billing), sufijo (billing) o nombre"), ...presupuesto },
+      inputSchema: { id: z.string().min(1).describe("id (feat-billing), sufijo (billing) o nombre"), ...presupuesto, ...deCerebro },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => funcionalidad(ctx, limpio(a)));
-    },
+    async (a) => correr("funcionalidad", a, (ctx, args) => funcionalidad(ctx, args)),
   );
 
   server.registerTool(
@@ -209,12 +239,9 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     {
       description:
         "Qué ejecuta el código desde un endpoint, un método, un hook/función del front o una pantalla (`pantalla /ruta`): pasos en orden de llamada (front → endpoint → controller → servicio → repositorio) con repo:ruta#Ln y lo que toca cada paso (lee_de/escribe_en tabla, llama_a endpoint). `via` marca saltos por HTTP, eventos o colas; `repite`, un método ya recorrido; `aviso`, un hueco conocido.",
-      inputSchema: { desde: z.string().min(1).describe("endpoint (\"MÉTODO /ruta\", /ruta o id) o símbolo (Clase.metodo, funcion, ruta#Clase.metodo) o pantalla (\"pantalla /login\")"), ...presupuesto },
+      inputSchema: { desde: z.string().min(1).describe("endpoint (\"MÉTODO /ruta\", /ruta o id) o símbolo (Clase.metodo, funcion, ruta#Clase.metodo) o pantalla (\"pantalla /login\")"), ...presupuesto, ...deCerebro },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => recorrido(ctx, limpio(a)));
-    },
+    async (a) => correr("recorrido", a, (ctx, args) => recorrido(ctx, args)),
   );
 
   server.registerTool(
@@ -222,12 +249,9 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     {
       description:
         "Una pantalla del front de punta a punta: su componente y funcionalidad, qué la envuelve (layouts, guardas y a dónde redirigen), desde qué pantallas o menús se llega, a cuáles lleva, qué endpoints del back llama y el recorrido completo (pantalla → componentes → hooks → API → endpoint → controller → servicio → tabla) con repo:ruta#Ln.",
-      inputSchema: { ruta: z.string().min(1).describe("ruta del front (/login, /pedidos/{id}), id de la pantalla o nombre de su componente (LoginScreen)"), ...presupuesto },
+      inputSchema: { ruta: z.string().min(1).describe("ruta del front (/login, /pedidos/{id}), id de la pantalla o nombre de su componente (LoginScreen)"), ...presupuesto, ...deCerebro },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => pantalla(ctx, limpio(a)));
-    },
+    async (a) => correr("pantalla", a, (ctx, args) => pantalla(ctx, args)),
   );
 
   server.registerTool(
@@ -239,12 +263,10 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
         simbolo: z.string().min(1).describe("Clase.metodo, funcion, Clase o ruta#Simbolo"),
         profundidad: z.number().int().min(1).max(6).optional().describe("niveles hacia arriba (por defecto 3)"),
         ...presupuesto,
+        ...deCerebro,
       },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => quienLlama(ctx, limpio(a)));
-    },
+    async (a) => correr("quien_llama", a, (ctx, args) => quienLlama(ctx, args)),
   );
 
   server.registerTool(
@@ -252,12 +274,9 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     {
       description:
         "Si cambia una pieza (tabla, endpoint, servicio, externo, funcionalidad o símbolo de código), qué se ve afectado: funcionalidades y piezas técnicas por niveles con el porqué; para una tabla, además, qué métodos la leen o escriben.",
-      inputSchema: { pieza: z.string().min(1).describe("id de nodo, nombre, \"MÉTODO /ruta\" o símbolo"), ...presupuesto },
+      inputSchema: { pieza: z.string().min(1).describe("id de nodo, nombre, \"MÉTODO /ruta\" o símbolo"), ...presupuesto, ...deCerebro },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => impactoDe(ctx, limpio(a)));
-    },
+    async (a) => correr("impacto", a, (ctx, args) => impactoDe(ctx, args)),
   );
 
   server.registerTool(
@@ -269,12 +288,10 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
         nodo: z.string().min(1).optional().describe("id de un servicio, repo, base, cola o externo; sin nodo, todo el brain"),
         texto: z.string().min(1).optional().describe("filtra: nombre de variable, puerto, imagen, paso (DATABASE_URL, 5432, deploy)"),
         ...presupuesto,
+        ...deCerebro,
       },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => infra(ctx, limpio(a)));
-    },
+    async (a) => correr("infra", a, (ctx, args) => infra(ctx, args)),
   );
 
   server.registerTool(
@@ -288,12 +305,10 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
         repo: z.string().min(1).optional().describe("id del repo al que pertenecen las rutas"),
         profundidad: z.number().int().min(1).max(6).optional().describe("niveles de llamadores hacia arriba (por defecto 4)"),
         ...presupuesto,
+        ...deCerebro,
       },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => riesgo(ctx, limpio(a)));
-    },
+    async (a) => correr("riesgo", a, (ctx, args) => riesgo(ctx, args)),
   );
 
   server.registerTool(
@@ -301,12 +316,9 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     {
       description:
         "Deriva de contratos entre servicios: llamadas a rutas que ningún endpoint atiende (y si existen con otro método), llamadas que coinciden con varios endpoints, y endpoints que ningún consumidor indexado llama. Sirve antes de borrar un endpoint o para encontrar integraciones rotas.",
-      inputSchema: { nodo: z.string().min(1).optional().describe("id de un servicio; sin esto, todos"), ...presupuesto },
+      inputSchema: { nodo: z.string().min(1).optional().describe("id de un servicio; sin esto, todos"), ...presupuesto, ...deCerebro },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => deriva(ctx, limpio(a)));
-    },
+    async (a) => correr("deriva", a, (ctx, args) => deriva(ctx, args)),
   );
 
   server.registerTool(
@@ -314,13 +326,31 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     {
       description:
         "Paridad de una migración entre dos servicios (el que se reemplaza y el que lo reemplaza): qué endpoints o pantallas ya están del otro lado, cuáles faltan, cuáles son nuevos, en cuáles difieren las tablas que tocan, y qué tablas del viejo todavía no usa el nuevo.",
-      inputSchema: { viejo: z.string().min(1).describe("id del servicio de origen"), nuevo: z.string().min(1).describe("id del servicio que lo reemplaza"), ...presupuesto },
+      inputSchema: { viejo: z.string().min(1).describe("id del servicio de origen"), nuevo: z.string().min(1).describe("id del servicio que lo reemplaza"), ...presupuesto, ...deCerebro },
     },
-    async (a) => {
-      const ctx = await obtener();
-      return responder(() => paridad(ctx, limpio(a)));
-    },
+    async (a) => correr("paridad", a, (ctx, args) => paridad(ctx, args)),
   );
+
+  if (multi) {
+    server.registerTool(
+      "conexiones",
+      {
+        description:
+          "Qué viaja entre cerebros: por cada par de servicios (uno de este cerebro, otro de un cerebro comunicado), cuántas llamadas HTTP hay, a cuántos endpoints, si la conexión está declarada en el registro y ejemplos con su línea. Los `avisos` listan conexiones declaradas sin respaldo y llamadas sin declarar.",
+        inputSchema: { ...deCerebro },
+      },
+      async (a) => {
+        try {
+          const r = await multi.conexiones(a.cerebro);
+          return responder(() => r);
+        } catch (e) {
+          return responder(() => {
+            throw e;
+          });
+        }
+      },
+    );
+  }
 
   return server;
 }

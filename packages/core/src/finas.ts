@@ -19,6 +19,7 @@ import { CONFIANZA, dentroDe, ORIGENES, verboAdmite, type Graph, type GraphEdge,
  */
 
 const EV = /^([^:]+:[^#]+)(?:#L(\d+))?/;
+const ES_VERBO_SERVICIO = new Set(["llama_a", "lee_de", "escribe_en", "publica_en", "consume_de"]);
 /** Recorrido de un endpoint dentro de su servicio: completo, sin saltar a otros por HTTP. */
 const LIMITES_ENDPOINT = { pasos: 200, nivel: 12 };
 
@@ -87,6 +88,13 @@ export function aristasFinas(
         }
       }
     }
+  }
+
+  // Entre servicios: lo que el índice resolvió vale aunque la página del servicio no lo declare. Si la página lo
+  // declara, gana la curada; así un brain recién indexado ya tiene sus relaciones sin editar páginas a mano.
+  for (const a of aristas) {
+    if (!ES_VERBO_SERVICIO.has(a.verbo) || nodo.get(a.desde)?.tipo !== "svc" || ES_TEST.test(a.evidencia.replace(/#L.*$/, ""))) continue;
+    agregar(a.desde, a.verbo as Verbo, a.hasta, a, a.endpoint);
   }
 
   for (const f of feats) {

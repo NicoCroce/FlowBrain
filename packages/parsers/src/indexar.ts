@@ -50,6 +50,8 @@ export interface InfraDeNodo {
 
 export interface Pendiente {
   candidatos: Array<{ endpoint: string | null; hasta: string }>;
+  /** Solo en llamadas HTTP: método, ruta analizada y de dónde sale la base (el host, o la variable `${…}` de la URL). */
+  llamada?: { metodo: string; ruta: string | null; base: string };
   desde: string;
   evidencia: string;
   motivo: string;
@@ -328,7 +330,7 @@ export async function indexar(
     for (const desde of svcsDe.get(l.paquete) ?? []) {
       const evidencia = ev(l.archivo, l.linea);
       const pendiente = (motivo: string, candidatos: Pendiente["candidatos"], objetivo: string | null = null) =>
-        pendientes.push({ candidatos, desde, evidencia, motivo, objetivo, referencia: `${l.metodo} ${l.url.texto}`, verbo: "llama_a" });
+        pendientes.push({ candidatos, desde, evidencia, motivo, objetivo, referencia: `${l.metodo} ${l.url.texto}`, verbo: "llama_a", llamada: { metodo: l.metodo, ruta: l.url.ruta, base: l.url.base === "literal" ? (l.url.host ?? "") : baseDe(l) } });
       if (l.url.base === "literal" && l.url.host) {
         const etiquetas = [l.url.host, ...l.url.host.split(/[.]/)].map(normalizar);
         const hits = [...new Set(etiquetas.flatMap((e) => destinosPorClave(e, ["svc", "ext"]).map((n) => n.id)))].sort(cmp);

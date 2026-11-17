@@ -101,6 +101,40 @@ Para que el agente consulte siempre sobre el código actual, registrá el servid
 
 `sync` usa la ruta del clon que guardó `brain index` (relativa al brain); si el clon está en otro lado, `--repos <carpeta>` lo busca por nombre. No hace `git pull`.
 
+## Varios cerebros
+
+Para separar grupos de repos (por ejemplo, lo vigente de lo viejo) en hasta 5 cerebros, con la comunicación entre ellos activable:
+
+```bash
+mkdir ~/cerebros
+pnpm -s -C "$BRAIN_TOOL" brain cerebros proponer /ruta/a/los/repos --raiz ~/cerebros   # escribe ~/cerebros/cerebros.yaml
+# editar cerebros.yaml: agrupar los repos en cerebros, responder las preguntas, activar la comunicación
+pnpm -s -C "$BRAIN_TOOL" brain cerebros aplicar --raiz ~/cerebros                      # crea e indexa cada cerebro
+pnpm -s -C "$BRAIN_TOOL" brain cerebros --raiz ~/cerebros                              # qué hay y con quién se comunica cada uno
+```
+
+```yaml
+version: 1
+cerebros:
+  - nombre: vigente
+    repos:
+      - ruta: /ruta/a/web
+      - ruta: /ruta/a/api
+  - nombre: historico
+    curado: false            # sin revisión humana: cada respuesta lo avisa
+    repos:
+      - ruta: /ruta/a/api-vieja
+comunicacion:
+  - entre: [vigente, historico]
+    activa: true             # false: no hay pistas ni relaciones entre los dos
+conexiones:                  # opcional: qué servicio llama a cuál y por dónde se distingue
+  - desde: vigente/svc-web
+    hacia: historico/svc-api-vieja
+    por: LEGACY_API_URL      # variable de la URL base o host
+```
+
+El servidor MCP y los hooks apuntan a la carpeta del registro en vez de a un brain: `brain serve --sync --raiz ~/cerebros` y `brain init ~/cerebros --claude-code` no aplica acá; registrá los hooks con `brain hook claude-code --raiz ~/cerebros` como comando. Cada consulta usa el cerebro del repo donde estás; `cerebro` (o `--cerebro` en la CLI) elige otro. Volver a correr `aplicar` actualiza; cambiar `comunicacion` o `conexiones` tiene efecto en la siguiente consulta, sin reindexar.
+
 ## 6. Reglas para el agente
 
 ```bash

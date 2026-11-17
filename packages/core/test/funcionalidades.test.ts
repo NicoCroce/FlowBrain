@@ -96,9 +96,9 @@ describe("funcionalidades", () => {
     const deps = dependenciasDelGrafo(graph, funcionalidades);
     const niveles = (id: string) => impacto(deps, id).map((nv) => nv.map((x) => `${x.id}<${x.verbo}<${x.via}`));
     expect(niveles("tabla-pagos")).toEqual([
-      ["feat-checkout<escribe_en<tabla-pagos", "svc-payments<escribe_en<tabla-pagos"],
-      ["ext-pasarela<llama_a<svc-payments", "feat-carrito<usa<feat-checkout", "svc-bff<llama_a<svc-payments"],
-      ["svc-web<llama_a<svc-bff"],
+      // La extracción de este test dice que el BFF también escribe en la tabla: entra al grafo aunque su página no lo declare.
+      ["feat-checkout<escribe_en<tabla-pagos", "svc-bff<escribe_en<tabla-pagos", "svc-payments<escribe_en<tabla-pagos"],
+      ["ext-pasarela<llama_a<svc-payments", "feat-carrito<usa<feat-checkout", "svc-web<llama_a<svc-bff"],
     ]);
     // implementa solo se sigue desde el origen: llegar a svc-web por propagación no arrastra a sus funcionalidades.
     expect(niveles("svc-bff")).toEqual([["feat-checkout<implementa<svc-bff", "svc-web<llama_a<svc-bff"], ["feat-carrito<usa<feat-checkout"]]);

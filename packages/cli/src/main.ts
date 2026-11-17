@@ -6,7 +6,10 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
   buscarNodo,
+  ARCHIVO_REGISTRO,
   cargarContexto,
+  esRegistro,
+  leerRegistro,
   CompileError,
   ConsultaError,
   contratoDe,
@@ -30,8 +33,10 @@ import {
   type Contexto,
   type Proyeccion,
 } from "@brain/core";
+import { crearMulti } from "@brain/mcp";
 import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@brain/hooks";
 import { draftDir } from "@brain/indexer";
+import { aplicar, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { init, VERSION } from "./init.js";
 import { promover } from "./promover.js";
@@ -46,6 +51,10 @@ Comandos:
   index <ruta-repo> [--repo <repo-id>]      corre los parsers y escribe contratos, archivos y extracción en _build/
   draft <ruta-repo> [--repo <repo-id>]      borradores en _drafts/<repo>/ y funcionalidades en _drafts/producto/
                                             (no toca tecnologia/, producto/ ni _build/)
+  cerebros                                  lista los cerebros del registro (cerebros.yaml en --raiz) y su estado
+  cerebros proponer <carpeta...>            explora carpetas y escribe un borrador de cerebros.yaml con preguntas abiertas
+  cerebros aplicar [nombre]                 crea e indexa los cerebros del registro (o uno solo)
+  conexiones [--cerebro <nombre>]           qué llamadas viajan entre un cerebro y los que tiene comunicados
   sync [--repos <dir>] [--forzar]           reindexa los repos cuyo clon avanzó desde el último index y recompila
   estado [--repos <dir>] [--json]           repos al día o no, conteos del grafo y huecos conocidos;
                                             sale con 1 si algún repo quedó desactualizado
@@ -78,7 +87,8 @@ Comandos:
   serve [--sync]                            servidor MCP por stdio; con --sync reindexa solo cuando un clon avanzó
 
 Opciones comunes:
-  --raiz <dir>          raíz del brain (por defecto $BRAIN_ROOT o el directorio actual)
+  --raiz <dir>          raíz del brain, o carpeta con cerebros.yaml (por defecto $BRAIN_ROOT o el directorio actual)
+  --cerebro <nombre>    con varios cerebros, cuál usar (por defecto, el del repo donde estás parado)
   --proyeccion <p>      resumen | relaciones | contrato | completo
   --budget <n|none>     presupuesto de tokens (por defecto 2000)
 `;
@@ -107,6 +117,7 @@ export async function ejecutar(
       allowPositionals: true,
       options: {
         raiz: { type: "string" },
+        cerebro: { type: "string" },
         proyeccion: { type: "string" },
         budget: { type: "string" },
         tipos: { type: "string" },
@@ -144,7 +155,7 @@ export async function ejecutar(
   const [comando, arg] = positionals;
   if (o.version) return { codigo: 0, stdout: `${VERSION}\n`, stderr: "" };
   if (o.help || !comando) return { codigo: comando || o.help ? 0 : 2, stdout: AYUDA, stderr: "" };
-  const raiz = resolve(cwd, o.raiz ?? env.BRAIN_ROOT ?? ".");
+  let raiz = resolve(cwd, o.raiz ?? env.BRAIN_ROOT ?? ".");
 
   try {
     if (comando === "init") {
@@ -164,6 +175,50 @@ export async function ejecutar(
       ];
       return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
     }
+
+    if (comando === "cerebros") {
+      if (arg === "proponer") {
+        const carpetas = positionals.slice(2).map((c) => resolve(cwd, c));
+        if (!carpetas.length) throw new ConsultaError("parametro_invalido", "uso: brain cerebros proponer <carpeta...> --raiz <carpeta del registro>");
+        const r = await proponer(raiz, carpetas);
+        const lineas = [
+          `propuesta en ${r.archivo}: ${r.repos.length} repos`,
+          ...r.repos.map((x) => `  ${x.nombre}: ${[...x.pila, ...x.lenguajes].join(", ") || "sin código reconocido"}; ${x.endpoints} endpoints, ${x.pantallas} pantallas, ${x.tablas} tablas${x.bases.length ? `; llama por ${x.bases.map((b) => b.base).join(", ")}` : ""}`),
+          "revisá el archivo (agrupá los repos en cerebros y respondé las preguntas) y corré: brain cerebros aplicar",
+        ];
+        return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+      }
+      if (!(await esRegistro(raiz))) throw new ConsultaError("parametro_invalido", `no hay ${ARCHIVO_REGISTRO} en ${raiz}; creálo con: brain cerebros proponer <carpeta> --raiz ${raiz}`);
+      if (arg === "aplicar") {
+        const registro = await leerRegistro(raiz);
+        const solo = positionals[2];
+        if (solo && !registro.cerebro(solo)) throw new ConsultaError("nodo_inexistente", `no existe el cerebro: ${solo}`);
+        const rs = await aplicar(registro, solo);
+        const lineas = rs.flatMap((r) => [
+          `${r.nombre}${r.curado ? "" : " (sin curar)"}: ${r.nodos} nodos, ${r.relaciones} relaciones; ${r.promovidas} páginas creadas, ${r.borradores} borradores para revisar`,
+          ...r.repos.map((x) => `  ${x.repo ?? "(sin indexar)"} ← ${x.ruta}${x.error ? `: ${x.error}` : ""}`),
+          ...r.errores.slice(0, 10).map((e) => `  no compiló y quedó como borrador: ${e}`),
+          ...(r.errores.length > 10 ? [`  … y ${r.errores.length - 10} más`] : []),
+        ]);
+        return { codigo: rs.some((r) => r.repos.some((x) => x.error) || r.nodos === 0) ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+      }
+      if (arg) throw new ConsultaError("parametro_invalido", `subcomando desconocido: cerebros ${arg}`);
+      return { codigo: 0, stdout: await listar(raiz), stderr: "" };
+    }
+
+    // Con un registro de cerebros, el resto de los comandos trabaja sobre uno: el pedido, o el del repo actual.
+    // El hook elige el suyo más abajo, por el directorio que le manda Claude Code, y nunca falla.
+    const raizRegistro = (await esRegistro(raiz)) ? raiz : null;
+    if (comando === "conexiones") {
+      if (!raizRegistro) throw new ConsultaError("parametro_invalido", `conexiones necesita un registro: no hay ${ARCHIVO_REGISTRO} en ${raiz}`);
+      return { codigo: 0, stdout: stringifyCanonical(await crearMulti(raizRegistro, { cwd }).conexiones(o.cerebro)), stderr: "" };
+    }
+    if (raizRegistro && comando !== "hook") {
+      const registro = await leerRegistro(raiz);
+      const c = o.cerebro ? registro.cerebro(o.cerebro) : (registro.deDirectorio(cwd) ?? (registro.cerebros.length === 1 ? registro.cerebros[0]! : null));
+      if (!c) throw new ConsultaError("parametro_invalido", o.cerebro ? `no existe el cerebro: ${o.cerebro}` : `hay varios cerebros (${registro.cerebros.map((x) => x.nombre).join(", ")}); elegí uno con --cerebro`);
+      raiz = c.raiz;
+    } else if (o.cerebro) throw new ConsultaError("parametro_invalido", `--cerebro necesita un registro: no hay ${ARCHIVO_REGISTRO} en ${raiz}`);
 
     if (comando === "compile") {
       const { salidas, escritos } = await compileDirConVisor(raiz);
@@ -284,6 +339,12 @@ export async function ejecutar(
       if (arg !== "claude-code") return { codigo: 2, stdout: "", stderr: `hook desconocido: ${arg ?? ""}\n` };
       try {
         const entrada = JSON.parse((await stdin()) || "{}") as { prompt?: string; cwd?: string; hook_event_name?: string; session_id?: string; transcript_path?: string };
+        if (raizRegistro) {
+          // Solo el cerebro del repo donde se está trabajando; fuera de todo repo conocido, nada.
+          const c = entrada.cwd ? (await leerRegistro(raizRegistro)).deDirectorio(entrada.cwd) : null;
+          if (!c) return { codigo: 0, stdout: "", stderr: "" };
+          raiz = c.raiz;
+        }
         if (entrada.hook_event_name === "SessionEnd") {
           const escritos = await hookSessionEnd(entrada, raiz);
           return { codigo: 0, stdout: "", stderr: escritos.length ? `brain: notas guardadas en ${escritos.join(", ")}\n` : "" };

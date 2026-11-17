@@ -41,7 +41,11 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 20 | Visor fuera de `core` | Hecho (decisión 135) |
 | 21 | Documentación al día | Hecho: el PRD queda como histórico y apunta a las fuentes vigentes |
 | 22 | Publicar `brain-graph` | Pendiente: publicar es una acción externa, requiere confirmación |
-| 23–27 | Varios cerebros: registro, MCP y hooks, pistas, relaciones entre cerebros, visor | Pendiente |
+| 23 | Registro y alta de cerebros | Hecho (decisión 136) |
+| 24 | MCP y hooks con varios cerebros | Hecho (decisión 137) |
+| 25 | Pistas de otros cerebros | Hecho (decisión 138) |
+| 26 | Relaciones entre cerebros | Hecho (decisión 139) |
+| 27 | Visor con varios cerebros | Pendiente |
 
 ---
 
