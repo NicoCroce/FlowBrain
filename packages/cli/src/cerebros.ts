@@ -1,6 +1,6 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, CompileError, crucesEntre, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, type Cerebro, type CerebroLiviano, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
+import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, CompileError, crucesDelRegistro, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, type Cerebro, type CerebroLiviano, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
 import { draftDir } from "@flowbrain/indexer";
 import { escribirIndex, fusionar, indexar, leerRepo, PARSERS, slug } from "@flowbrain/parsers";
 import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@flowbrain/viewer";
@@ -317,8 +317,7 @@ export async function escribirVisor(registro: Registro): Promise<string | null> 
     livianos.set(c.nombre, cerebroLiviano(c.nombre, graph, extracciones, archivos));
   }
   if (!visibles.length) return null;
-  const cruces: Cruce[] = [];
-  for (const a of livianos.values()) for (const b of livianos.values()) if (registro.comunicados(a.nombre, b.nombre)) cruces.push(...crucesEntre(a, b, registro.conexiones).cruces);
+  const cruces: Cruce[] = crucesDelRegistro([...livianos.values()], registro.comunicados, registro.conexiones).cruces;
   const conexiones = resumenConexiones(cruces, registro.conexiones.filter((x) => registro.comunicados(x.desde.cerebro, x.hacia.cerebro)));
   const archivo = join(registro.carpeta, ARCHIVO_VISOR);
   await writeFile(archivo, await visorDeCerebros(visibles, cruces, conexiones), "utf8");

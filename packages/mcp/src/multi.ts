@@ -5,7 +5,7 @@ import {
   cerebroLiviano,
   cmp,
   ConsultaError,
-  crucesEntre,
+  crucesDelRegistro,
   leerRegistro,
   pistas,
   resumenConexiones,
@@ -68,6 +68,16 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
     return { propio, vecinos };
   };
 
+  /** Todos los cruces del registro, con los cerebros que estén compilados. Una llamada se cruza contra todos los vecinos de su cerebro a la vez. */
+  const crucesDe = async (r: Registro) => {
+    const ls: CerebroLiviano[] = [];
+    for (const x of r.cerebros) {
+      const l = await liviano(x.nombre, x.raiz);
+      if (l) ls.push(l);
+    }
+    return crucesDelRegistro(ls, r.comunicados, r.conexiones);
+  };
+
   return {
     registro,
     descripcion: [
@@ -91,7 +101,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
           if (ps.length) extra["otrosCerebros"] = ps;
           // Llamadas desde otros cerebros a endpoints que aparecen en esta respuesta.
           const texto = JSON.stringify(resultado);
-          const entrantes: Cruce[] = vecinos.flatMap((v) => crucesEntre(v, propio, r.conexiones).cruces).filter((x) => texto.includes(JSON.stringify(x.hacia.endpoint)));
+          const entrantes: Cruce[] = (await crucesDe(r)).cruces.filter((x) => x.hacia.cerebro === c.nombre && texto.includes(JSON.stringify(x.hacia.endpoint)));
           if (entrantes.length) {
             extra["llamadoDesdeOtrosCerebros"] = { total: entrantes.length, llamadas: entrantes.slice(0, 10).map((x) => ({ endpoint: x.hacia.endpoint, cerebro: x.desde.cerebro, desde: x.desde.svc, ev: x.desde.evidencia, ...(x.desde.pantallas.length ? { pantallas: x.desde.pantallas.slice(0, 3) } : {}) })) };
           }
@@ -103,10 +113,12 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       const { r, c } = await elegir(nombre);
       const { propio, vecinos } = await vecindario(r, c.nombre, c.raiz);
       if (!propio) throw new ConsultaError("parametro_invalido", `el cerebro ${c.nombre} no está compilado: corré flowbrain brains apply`);
-      const salen = vecinos.map((v) => crucesEntre(propio, v, r.conexiones));
-      const entran = vecinos.map((v) => crucesEntre(v, propio, r.conexiones));
       const mios = (x: { desde: { cerebro: string }; hacia: { cerebro: string } }) => x.desde.cerebro === c.nombre || x.hacia.cerebro === c.nombre;
-      const todos = [...salen, ...entran].flatMap((x) => x.cruces);
+      const global = await crucesDe(r);
+      const todos = global.cruces.filter(mios);
+      // Disputadas que tocan a este cerebro: las que salen de él y las que lo tienen entre sus destinos posibles.
+      const disputadas = global.entreCerebros.filter((d) => d.cerebro === c.nombre || d.candidatos.some((k) => k.startsWith(`${c.nombre}/`)));
+      const ambiguas = crucesDelRegistro([propio, ...vecinos], (a, b) => (a === c.nombre || b === c.nombre) && r.comunicados(a, b), r.conexiones).ambiguas;
       const resumen = resumenConexiones(todos, r.conexiones.filter(mios).filter((x) => r.comunicados(x.desde.cerebro, x.hacia.cerebro)));
       const apagados = r.cerebros.filter((x) => x.nombre !== c.nombre && !r.comunicados(c.nombre, x.nombre)).map((x) => x.nombre);
       return {
@@ -116,7 +128,8 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
         avisos: [
           ...resumen.filter((x) => x.declarada && x.llamadas === 0).map((x) => `conexión declarada sin llamadas que la respalden: ${x.desde} → ${x.hacia}`),
           ...resumen.filter((x) => !x.declarada).map((x) => `llamadas detectadas sin conexión declarada: ${x.desde} → ${x.hacia} (${x.llamadas})`),
-          ...([...salen, ...entran].reduce((n, x) => n + x.ambiguas, 0) ? [`${[...salen, ...entran].reduce((n, x) => n + x.ambiguas, 0)} llamadas coinciden con varios endpoints del otro cerebro: declarar la conexión con \`por\` las desambigua`] : []),
+          ...(ambiguas ? [`${ambiguas} llamadas coinciden con varios endpoints de un mismo cerebro: no se unen a ninguno`] : []),
+          ...(disputadas.length ? [`${disputadas.length} llamadas coinciden con endpoints de más de un cerebro y no se unieron a ninguno: falta declarar a qué servicio va cada base de URL (flowbrain evidence las lista)`] : []),
           ...(apagados.length ? [`comunicación desactivada con: ${apagados.join(", ")}`] : []),
         ],
       };

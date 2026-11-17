@@ -629,7 +629,7 @@ export const GRAFO3D_JS = String.raw`
           '<div class="m3-acciones"><button type="button" class="btn' + on(v) + '" aria-pressed="' + v + '" data-cerebro="' + i + '">' + (v ? "Apagar" : "Prender") + '</button><button type="button" class="btn" data-foco-cerebro="' + i + '">Enfocar</button></div></div>';
       }).join("");
       var viaja = (D.conexiones || []).map(function (x) {
-        return '<div class="nb"><span class="corta">' + esc(x.desde) + " → " + esc(x.hacia) + '</span><span class="vb">' + (x.llamadas ? x.llamadas + " llamadas" : "sin llamadas") + (x.declarada ? "" : " · sin declarar") + "</span></div>";
+        return '<div class="nb"><span class="corta">' + esc(x.desde) + " → " + esc(x.hacia) + '</span><span class="vb">' + (x.llamadas ? x.llamadas + " llamadas" : "sin llamadas") + (x.declarada ? (x.origen === "modelo" ? " · lo declaró un modelo" : "") : " · sin declarar") + "</span></div>";
       }).join("");
       raiz.innerHTML = '<div class="m3-vacio"><h2 class="lbl">Cerebros</h2><p>Cada cerebro es un grupo de repos. Las líneas doradas son llamadas de un cerebro a otro.</p>' + bloques +
         '<div class="m3-caja"><span class="lbl">Qué viaja entre cerebros</span>' + (viaja || '<p class="vacio">Nada: no hay comunicación activa o no se detectaron llamadas.</p>') + "</div></div>";

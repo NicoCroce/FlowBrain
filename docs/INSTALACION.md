@@ -20,6 +20,14 @@ flowbrain install
 
 Volver a correrlo actualiza. Para reagrupar repos o apagar la comunicación se edita `.flowbrain/flowbrain.yaml` (ver "Varios cerebros"). Los hooks y el servidor MCP usan el `.flowbrain` de la carpeta donde se abrió Claude Code, o de cualquier carpeta por encima; fuera de un proyecto no hacen nada. `.flowbrain/.gitignore` deja fuera lo derivado (`_build/` y el visor).
 
+### Que un modelo analice la comunicación real
+
+La consola une llamadas con endpoints por método y ruta. Eso no alcanza para saber a qué servidor va una llamada: dos APIs pueden exponer las mismas rutas. Cuando una llamada coincide en más de un cerebro, no se une a ninguno y queda como disputada, hasta que una conexión declarada en `.flowbrain/flowbrain.yaml` diga a qué servicio va cada base de URL.
+
+Ese análisis lo hace un modelo. `flowbrain install` deja el comando `/flowbrain-index` en Claude Code: abrí Claude Code en la carpeta del proyecto y escribí `/flowbrain-index` (o pedile "indexá este proyecto con FlowBrain"). El modelo reindexa, corre `flowbrain evidence`, sigue cada variable de URL hasta su valor en archivos de ejemplo, configuración e infraestructura, escribe las conexiones que pudo confirmar (`origen: modelo`, con su `evidencia`) y te devuelve lo confirmado, las dudas y las oportunidades de mejora. No abre archivos `.env` reales: si un valor solo está ahí, te lo pregunta.
+
+Con otro agente, las mismas instrucciones salen de `flowbrain evidence --guide`.
+
 El resto de este documento describe la instalación a mano, con la carpeta del brain donde se quiera.
 
 ## Con el paquete publicado (`flowbrain`)

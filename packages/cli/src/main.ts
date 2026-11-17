@@ -43,6 +43,8 @@ import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessi
 import { draftDir } from "@flowbrain/indexer";
 import { aplicar, ARCHIVO_VISOR, crearRegistro, encontrarRepos, escribirVisor, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
+import { evidencia } from "./evidencia.js";
+import { GUIA_ANALISIS, NOMBRE_COMANDO } from "./guia.js";
 import { comandoBrain, comillas, init, instalarComando, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
 import { escribirIndex, indexar } from "@flowbrain/parsers";
@@ -64,6 +66,8 @@ Comandos:
   brains aplicar [nombre]                 crea e indexa los cerebros del registro (o uno solo)
   brains visor                            regenera flowbrain.html (tras cambiar comunicacion o conexiones)
   brains registrar                        registra en Claude Code los hooks del registro e imprime la línea del MCP
+  evidence [--brain <nombre>] [--guide]     para decidir a qué servicio va cada llamada: por base de URL, dónde se
+                                            define y con qué coincide; --guide imprime las instrucciones para el modelo
   connections [--brain <nombre>]           qué llamadas viajan entre un cerebro y los que tiene comunicados
   sync [--repos <dir>] [--force]           reindexa los repos cuyo clon avanzó desde el último index y recompila
   status [--repos <dir>] [--json]           repos al día o no, conteos del grafo y huecos conocidos;
@@ -151,6 +155,7 @@ export async function ejecutar(
         text: { type: "string" },
         diff: { type: "string" },
         write: { type: "boolean" },
+        guide: { type: "boolean" },
         force: { type: "boolean" },
         all: { type: "boolean" },
         overwrite: { type: "boolean" },
@@ -209,9 +214,14 @@ export async function ejecutar(
       const settings = o.settings !== undefined ? resolve(cwd, o.settings) : join(homedir(), ".claude/settings.json");
       const bin = VERSION === "dev" || o.bin !== undefined ? await instalarComando(env, o.bin !== undefined ? resolve(cwd, o.bin) : undefined) : null;
       const cambio = await instalarHooksClaudeCode(settings, `${cmd} hook claude-code`);
+      // El comando de Claude Code para que un modelo indexe y analice la comunicación real: va junto a los settings.
+      const comandoCC = join(dirname(settings), "commands", `${NOMBRE_COMANDO}.md`);
+      await mkdir(dirname(comandoCC), { recursive: true });
+      await writeFile(comandoCC, GUIA_ANALISIS, "utf8");
       const lineas = [
         ...(bin ? [`Comando flowbrain en ${bin.archivo}${bin.enPath ? "" : ` (esa carpeta no está en tu PATH: agregá export PATH="${dirname(bin.archivo)}:$PATH" a tu ~/.zshrc)`}.`] : []),
         `Hooks de Claude Code ${cambio ? "registrados" : "ya estaban registrados"} en ${settings} (UserPromptSubmit y SessionEnd).`,
+        `Comando /${NOMBRE_COMANDO} para Claude Code en ${comandoCC}: indexa el proyecto y analiza la comunicación real entre servicios.`,
         "",
       ];
       const reg = join(proyecto, CARPETA_PROYECTO);
@@ -297,6 +307,14 @@ export async function ejecutar(
     // Con un registro de cerebros, el resto de los comandos trabaja sobre uno: el pedido, o el del repo actual.
     // El hook elige el suyo más abajo, por el directorio que le manda Claude Code, y nunca falla.
     const raizRegistro = (await esRegistro(raiz)) ? raiz : null;
+    if (comando === "evidence") {
+      // Con --guide, las instrucciones para el modelo que va a analizar; sin él, el informe.
+      if (o.guide) return { codigo: 0, stdout: GUIA_ANALISIS, stderr: "" };
+      if (!raizRegistro) throw new ConsultaError("parametro_invalido", `evidence necesita un registro: no hay ${ARCHIVO_REGISTRO} en ${raiz}`);
+      const registro = await leerRegistro(raizRegistro);
+      if (o.brain && !registro.cerebro(o.brain)) throw new ConsultaError("nodo_inexistente", `no existe el cerebro: ${o.brain}`);
+      return { codigo: 0, stdout: stringifyCanonical(await evidencia(registro, o.brain)), stderr: "" };
+    }
     if (comando === "connections") {
       if (!raizRegistro) throw new ConsultaError("parametro_invalido", `conexiones necesita un registro: no hay ${ARCHIVO_REGISTRO} en ${raiz}`);
       return { codigo: 0, stdout: stringifyCanonical(await crearMulti(raizRegistro, { cwd }).conexiones(o.brain)), stderr: "" };

@@ -42,6 +42,11 @@ export const RegistroSchema = z
             hacia: z.string().regex(REF_SERVICIO, "se espera cerebro/svc-id"),
             /** Cómo se distingue este destino en el código que llama: una variable de la URL base o un host. */
             por: z.string().min(1).optional(),
+            /** Quién lo decidió: una persona (por defecto) o un modelo que analizó el código. */
+            origen: z.enum(["persona", "modelo"]).optional(),
+            /** En qué se apoya: archivos con su línea (`repo:ruta#Ln`) o una frase. */
+            evidencia: z.array(z.string().min(1)).optional(),
+            nota: z.string().min(1).optional(),
           })
           .strict(),
       )
@@ -69,6 +74,9 @@ export interface Conexion {
   desde: { cerebro: string; svc: string };
   hacia: { cerebro: string; svc: string };
   por: string | null;
+  origen: "persona" | "modelo";
+  evidencia: string[];
+  nota: string | null;
 }
 
 export interface Registro {
@@ -124,7 +132,7 @@ export function interpretarRegistro(texto: string, carpeta: string): Registro {
     if (!nombres.has(m[1]!)) throw new RegistroError(`${ARCHIVO_REGISTRO}: conexiones nombra un cerebro inexistente: ${m[1]}`);
     return { cerebro: m[1]!, svc: m[2]! };
   };
-  const conexiones = (r.data.conexiones ?? []).map((c) => ({ desde: ref(c.desde), hacia: ref(c.hacia), por: c.por ?? null }));
+  const conexiones = (r.data.conexiones ?? []).map((c) => ({ desde: ref(c.desde), hacia: ref(c.hacia), por: c.por ?? null, origen: c.origen ?? ("persona" as const), evidencia: c.evidencia ?? [], nota: c.nota ?? null }));
   const comunicados = (a: string, b: string) => a !== b && pares.get(clave(a, b)) === true;
   return {
     carpeta: base,

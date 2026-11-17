@@ -117,10 +117,24 @@ export interface Cruce {
   declarada: boolean;
 }
 
+/** Una llamada que podría ser para más de un cerebro: coincide con un endpoint en cada uno y nada dice a cuál va. */
+export interface Disputada {
+  cerebro: string;
+  svc: string;
+  evidencia: string;
+  metodo: string;
+  ruta: string;
+  base: string;
+  /** `cerebro/endpoint` de cada destino posible. */
+  candidatos: string[];
+}
+
 export interface Cruces {
   cruces: Cruce[];
-  /** Llamadas que coinciden con varios endpoints del otro cerebro: no se unen a ninguno. */
+  /** Llamadas que coinciden con varios endpoints de un mismo cerebro: no se unen a ninguno. */
   ambiguas: number;
+  /** Llamadas que coinciden con un endpoint en más de un cerebro: tampoco se unen, hasta que una conexión diga a cuál van. */
+  entreCerebros: Disputada[];
 }
 
 const segmentos = (r: string) => r.split("/").filter(Boolean);
@@ -138,30 +152,64 @@ function candidatos(destino: CerebroLiviano, metodo: string, ruta: string, svcs:
 }
 
 /**
- * Llamadas pendientes de `origen` que atiende algún endpoint de `destino`. Si el registro declara conexiones desde el
- * servicio que llama hacia ese cerebro, solo se intenta contra los servicios declarados, y con `por` solo las llamadas
- * cuya base (variable u host) lo contiene. Sin conexiones declaradas se intenta contra todos, y el cruce queda como no declarado.
+ * Llamadas pendientes de `origen` que atiende algún endpoint de sus `destinos` (los cerebros con los que se comunica).
+ *
+ * - Si el servicio que llama tiene conexiones declaradas que aplican a la llamada (sin `por`, o con un `por` contenido
+ *   en la base de la URL), solo se busca en los servicios declarados.
+ * - Si tiene conexiones declaradas hacia un cerebro pero ninguna aplica a esta llamada, no es para ese cerebro.
+ * - Sin nada declarado se busca en todos. Método y ruta no alcanzan para saber a qué servidor va una llamada: si
+ *   coincide con un endpoint en más de un cerebro, no se une a ninguno y queda en `entreCerebros`.
  */
-export function crucesEntre(origen: CerebroLiviano, destino: CerebroLiviano, conexiones: Conexion[]): Cruces {
+/** Endpoints de un cerebro que atienden `método ruta`, para quien necesita la coincidencia sin las reglas de comunicación. */
+export const endpointsQueAtienden = candidatos;
+
+export function crucesDesde(origen: CerebroLiviano, destinos: CerebroLiviano[], conexiones: Conexion[]): Cruces {
   const out: Cruce[] = [];
+  const entreCerebros: Disputada[] = [];
   let ambiguas = 0;
-  const declaradas = conexiones.filter((c) => c.desde.cerebro === origen.nombre && c.hacia.cerebro === destino.nombre);
+  const nombres = new Set(destinos.map((d) => d.nombre));
+  const declaradas = conexiones.filter((c) => c.desde.cerebro === origen.nombre && nombres.has(c.hacia.cerebro));
   for (const p of origen.pendientes) {
     const propias = declaradas.filter((c) => c.desde.svc === p.desde);
     const aplicables = propias.filter((c) => c.por === null || p.base.includes(c.por));
-    // El servicio declaró a quién llama en ese cerebro y esta llamada no va por ninguna de esas bases: no es para allá.
-    if (propias.length && !aplicables.length) continue;
-    const cs = candidatos(destino, p.metodo, p.ruta, aplicables.length ? new Set(aplicables.map((c) => c.hacia.svc)) : null);
-    if (cs.length === 1) out.push({ desde: { cerebro: origen.nombre, svc: p.desde, evidencia: p.evidencia, pantallas: p.pantallas }, hacia: { cerebro: destino.nombre, endpoint: cs[0]!.id }, declarada: aplicables.length > 0 });
-    else if (cs.length > 1) ambiguas++;
+    const unicos: Array<{ destino: string; endpoint: string }> = [];
+    let varios = false;
+    for (const d of destinos) {
+      const aca = aplicables.filter((c) => c.hacia.cerebro === d.nombre);
+      // Con algo declarado que aplica, solo esos destinos; si este cerebro tiene declaradas y ninguna aplica, no es para acá.
+      if (aplicables.length ? !aca.length : propias.some((c) => c.hacia.cerebro === d.nombre)) continue;
+      const cs = candidatos(d, p.metodo, p.ruta, aca.length ? new Set(aca.map((c) => c.hacia.svc)) : null);
+      if (cs.length === 1) unicos.push({ destino: d.nombre, endpoint: cs[0]!.id });
+      else if (cs.length > 1) varios = true;
+    }
+    if (varios) ambiguas++;
+    else if (unicos.length === 1) out.push({ desde: { cerebro: origen.nombre, svc: p.desde, evidencia: p.evidencia, pantallas: p.pantallas }, hacia: { cerebro: unicos[0]!.destino, endpoint: unicos[0]!.endpoint }, declarada: aplicables.length > 0 });
+    else if (unicos.length > 1) entreCerebros.push({ cerebro: origen.nombre, svc: p.desde, evidencia: p.evidencia, metodo: p.metodo, ruta: p.ruta, base: p.base, candidatos: unicos.map((u) => `${u.destino}/${u.endpoint}`) });
   }
-  return { cruces: out, ambiguas };
+  return { cruces: out, ambiguas, entreCerebros };
+}
+
+/** Lo mismo contra un solo cerebro. */
+export const crucesEntre = (origen: CerebroLiviano, destino: CerebroLiviano, conexiones: Conexion[]): Cruces => crucesDesde(origen, [destino], conexiones);
+
+/** Todos los cruces de un registro: cada cerebro contra los que tiene comunicados. */
+export function crucesDelRegistro(cerebros: CerebroLiviano[], comunicados: (a: string, b: string) => boolean, conexiones: Conexion[]): Cruces {
+  const total: Cruces = { cruces: [], ambiguas: 0, entreCerebros: [] };
+  for (const o of cerebros) {
+    const r = crucesDesde(o, cerebros.filter((d) => comunicados(o.nombre, d.nombre)), conexiones);
+    total.cruces.push(...r.cruces);
+    total.ambiguas += r.ambiguas;
+    total.entreCerebros.push(...r.entreCerebros);
+  }
+  return total;
 }
 
 export interface ResumenConexion {
   desde: string;
   hacia: string;
   declarada: boolean;
+  /** Quién declaró la conexión: `persona` o `modelo`; `null` si no está declarada. */
+  origen: "persona" | "modelo" | null;
   por: string | null;
   llamadas: number;
   endpoints: number;
@@ -183,11 +231,11 @@ export function resumenConexiones(cruces: Cruce[], conexiones: Conexion[]): Resu
   const out: ResumenConexion[] = [...grupos.entries()].map(([k, cs]) => {
     const [desde, hacia] = k.split("\u0000") as [string, string];
     const decl = conexiones.find((x) => `${x.desde.cerebro}/${x.desde.svc}` === desde && `${x.hacia.cerebro}/${x.hacia.svc}` === hacia);
-    return { desde, hacia, declarada: !!decl, por: decl?.por ?? null, llamadas: cs.length, endpoints: new Set(cs.map((c) => c.hacia.endpoint)).size, pantallas: new Set(cs.flatMap((c) => c.desde.pantallas)).size, ejemplos: cs.slice(0, 3).map((c) => ({ evidencia: c.desde.evidencia, endpoint: c.hacia.endpoint })) };
+    return { desde, hacia, declarada: !!decl, origen: decl?.origen ?? null, por: decl?.por ?? null, llamadas: cs.length, endpoints: new Set(cs.map((c) => c.hacia.endpoint)).size, pantallas: new Set(cs.flatMap((c) => c.desde.pantallas)).size, ejemplos: cs.slice(0, 3).map((c) => ({ evidencia: c.desde.evidencia, endpoint: c.hacia.endpoint })) };
   });
   for (const x of conexiones) {
     const desde = `${x.desde.cerebro}/${x.desde.svc}`, hacia = `${x.hacia.cerebro}/${x.hacia.svc}`;
-    if (!out.some((o) => o.desde === desde && o.hacia === hacia)) out.push({ desde, hacia, declarada: true, por: x.por, llamadas: 0, endpoints: 0, pantallas: 0, ejemplos: [] });
+    if (!out.some((o) => o.desde === desde && o.hacia === hacia)) out.push({ desde, hacia, declarada: true, origen: x.origen, por: x.por, llamadas: 0, endpoints: 0, pantallas: 0, ejemplos: [] });
   }
   return out.sort((a, b) => cmp(a.desde, b.desde) || cmp(a.hacia, b.hacia));
 }

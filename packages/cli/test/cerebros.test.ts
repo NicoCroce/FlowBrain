@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { interpretarRegistro, RegistroError } from "@flowbrain/core";
 import { crearMulti, crearServidor } from "@flowbrain/mcp";
 import { encontrarRepos } from "../src/cerebros.js";
+import type { Evidencia } from "../src/evidencia.js";
 import { ejecutar } from "../src/main.js";
 
 /**
@@ -240,6 +241,35 @@ describe("dentro de un proyecto", () => {
     // Volver a correrlo actualiza, sin preguntar ni pisar el registro.
     expect((await ejecutar(["install", ...global()], env, proyecto, undefined, responder)).stdout).toContain("registro existente");
     expect(preguntas.length).toBe(2);
+  }, 120_000);
+
+  it("evidence junta por base de URL dónde se define y con qué coincide; una conexión declarada por el modelo resuelve las disputadas", async () => {
+    const proyecto = join(dir, "repos");
+    await w("repos/tienda-web/.env.example", ["VITE_API_URL=http://localhost:3000"]);
+    await w("repos/tienda-web/.env", ["VITE_API_URL=http://solo-en-el-env-real"]);
+    const ev = async () => JSON.parse((await ejecutar(["evidence"], {}, proyecto)).stdout) as Evidencia;
+    const antes = await ev();
+    // Las dos APIs atienden las mismas rutas: método y ruta no dicen a cuál va el front, así que no se une a ninguna.
+    expect(antes.disputadas).toEqual([{ base: "${env:VITE_API_URL}", desde: "tienda-web/svc-tienda-web", entre: ["tienda-api", "tienda-vieja"], llamadas: 2 }]);
+    const base = antes.bases[0]!;
+    expect([base.desde, base.base, base.llamadas, base.sinDestino]).toEqual(["tienda-web/svc-tienda-web", "${env:VITE_API_URL}", 2, 0]);
+    expect(base.coincide).toEqual([{ destino: "tienda-api/svc-tienda-api", llamadas: 2, soloAhi: 0 }, { destino: "tienda-vieja/svc-tienda-vieja", llamadas: 2, soloAhi: 0 }]);
+    // La definición sale del archivo de ejemplo; el .env real no se abre.
+    expect(base.definiciones).toEqual([{ archivo: "tienda-web/.env.example#L1", nombre: "VITE_API_URL", texto: "VITE_API_URL=http://localhost:3000" }]);
+    const conn = async () => JSON.parse((await ejecutar(["connections", "--brain", "tienda-web"], {}, proyecto)).stdout) as { conexiones: Array<Record<string, unknown>>; avisos: string[] };
+    expect((await conn()).conexiones).toEqual([]);
+    expect((await conn()).avisos.join(" ")).toContain("2 llamadas coinciden con endpoints de más de un cerebro");
+    // El modelo analiza y deja escrito a dónde va esa base, con su evidencia.
+    const archivo = join(proyecto, ".flowbrain/flowbrain.yaml");
+    await writeFile(archivo, (await readFile(archivo, "utf8")) + ["", "conexiones:", "  - desde: tienda-web/svc-tienda-web", "    hacia: tienda-api/svc-tienda-api", "    por: VITE_API_URL", "    origen: modelo", '    evidencia: ["tienda-web/.env.example#L1"]', '    nota: "el puerto 3000 es el de tienda-api"', ""].join("\n"));
+    const despues = await ev();
+    expect(despues.disputadas).toEqual([]);
+    expect(despues.bases[0]!.declaradas).toEqual([{ hacia: "tienda-api/svc-tienda-api", origen: "modelo", por: "VITE_API_URL" }]);
+    expect((await conn()).conexiones.map((x) => [x["desde"], x["hacia"], x["llamadas"], x["declarada"], x["origen"]])).toEqual([["tienda-web/svc-tienda-web", "tienda-api/svc-tienda-api", 2, true, "modelo"]]);
+    // Las instrucciones para el modelo: por consola y como comando de Claude Code, que deja `install`.
+    const guia = (await ejecutar(["evidence", "--guide"], {}, dir)).stdout;
+    expect(guia).toContain("Nunca abras archivos de entorno reales");
+    expect(await readFile(join(dir, "global/commands/flowbrain-index.md"), "utf8")).toBe(guia);
   }, 120_000);
 
   it("install sin nadie a quién preguntar: --repos elige la carpeta (un monorepo) y --single junta todo en un cerebro", async () => {
