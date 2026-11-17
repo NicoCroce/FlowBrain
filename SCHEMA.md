@@ -147,7 +147,7 @@ Los destinos sin resolver nunca llegan a una página compilada. Van como prosa e
 }
 ```
 
-`request` y `response` pueden ser `null`. `tipos` es un mapa de nombre a forma, con tipos expresados como strings estilo TS. Cuando hay `openapi-parser`, prevalece sobre cualquier tipo inferido.
+`request` y `response` pueden ser `null` (no se pudo determinar: es un hueco, no "sin cuerpo"). Son el nombre de un tipo, `T[]`, un genérico con su texto (`Record<string, unknown>`) o varios unidos con ` | `. `tipos` es un mapa de nombre a forma, con tipos expresados como strings estilo TS; incluye interfaces, tipos y clases de datos (propiedades públicas). Si un handler devuelve un objeto literal sin tipo, su forma se guarda como `<Clase.metodo>:respuesta`, con `unknown` en lo que no se sabe y la clave `…` si esparce otro objeto. Cuando hay `openapi-parser`, prevalece sobre cualquier tipo inferido.
 
 **`_build/archivos/<repo-id>.json`**
 

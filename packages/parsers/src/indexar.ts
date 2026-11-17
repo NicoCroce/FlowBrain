@@ -362,7 +362,7 @@ export async function indexar(
     const paquete = servicios.find((s) => s.svc === c.svc)!.paquete;
     const formas = x.formas[paquete] ?? {};
     const nombres = new Set<string>();
-    for (const e of c.endpoints) for (const n of [e.request, e.response]) if (n) nombres.add(n.replace(/\[\]$/, ""));
+    for (const e of c.endpoints) for (const n of [e.request, e.response]) for (const parte of (n ?? "").split(" | ")) if (parte) nombres.add(parte.replace(/\[\]$/, ""));
     for (const a of aristasFinales) if (a.desde === c.svc && a.dato) nombres.add(a.dato);
     for (const n of [...nombres].sort(cmp)) if (formas[n]) c.tipos[n] = formas[n]!;
   }

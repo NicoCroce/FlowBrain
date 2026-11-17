@@ -240,12 +240,23 @@ function extraer(repo: RepoFuente): Extraccion {
     return null;
   };
 
+  /** Nombre de un tipo anotado: sin `Promise`/`Observable`, `Array<T>` como `T[]` y los genéricos con su texto. */
   const nombreTipo = (t: ts.TypeNode | undefined): string | null => {
     if (!t) return null;
+    if (ts.isParenthesizedTypeNode(t)) return nombreTipo(t.type);
+    if (ts.isArrayTypeNode(t)) {
+      const e = nombreTipo(t.elementType);
+      return e ? `${e}[]` : null;
+    }
     if (ts.isTypeReferenceNode(t)) {
       const n = t.typeName.getText();
-      if ((n === "Promise" || n === "Observable") && t.typeArguments?.[0]) return nombreTipo(t.typeArguments[0]);
-      return n;
+      const [a] = t.typeArguments ?? [];
+      if ((n === "Promise" || n === "Observable") && a) return nombreTipo(a);
+      if ((n === "Array" || n === "ReadonlyArray") && a) {
+        const e = nombreTipo(a);
+        return e ? `${e}[]` : null;
+      }
+      return a ? limpiar(t.getText()) : n;
     }
     return null;
   };
@@ -257,6 +268,80 @@ function extraer(repo: RepoFuente): Extraccion {
     const s = t.aliasSymbol ?? t.getSymbol();
     if (!s || s.name.startsWith("__")) return null;
     return s.name;
+  };
+
+  const nombreDecorador = (d: ts.Decorator): string => {
+    const e = ts.isCallExpression(d.expression) ? d.expression.expression : d.expression;
+    return ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : "";
+  };
+
+  /** `Clase.metodo` o `funcion` de una declaración, para nombrar la forma de lo que devuelve. */
+  const nombreDeFuncion = (fn: ts.Node): string | null => {
+    if (ts.isMethodDeclaration(fn) && ts.isIdentifier(fn.name)) return ts.isClassDeclaration(fn.parent) && fn.parent.name ? `${fn.parent.name.text}.${fn.name.text}` : fn.name.text;
+    if (ts.isFunctionDeclaration(fn) && fn.name) return fn.name.text;
+    if ((ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) && ts.isVariableDeclaration(fn.parent) && ts.isIdentifier(fn.parent.name)) return fn.parent.name.text;
+    return null;
+  };
+
+  /** Tipo de un valor de un objeto literal, sin inventar: lo que no se sabe es `unknown`. */
+  const tipoDeValor = (x: ts.Expression): string => {
+    if (ts.isStringLiteralLike(x) || ts.isTemplateExpression(x)) return "string";
+    if (ts.isNumericLiteral(x)) return "number";
+    if (x.kind === ts.SyntaxKind.TrueKeyword || x.kind === ts.SyntaxKind.FalseKeyword) return "boolean";
+    if (x.kind === ts.SyntaxKind.NullKeyword) return "null";
+    if (ts.isArrayLiteralExpression(x)) return "unknown[]";
+    if (ts.isObjectLiteralExpression(x)) return "object";
+    const t = limpiar(checker.typeToString(checker.getTypeAtLocation(x)));
+    return /\bany\b/.test(t) || t.length > 80 ? "unknown" : t;
+  };
+
+  /**
+   * Lo que devuelve un handler sin tipo de retorno anotado: sigue cada `return` hasta una anotación (la del método
+   * del servicio al que delega, hasta 4 niveles) o un objeto literal, cuya forma se guarda como `<Clase.metodo>:respuesta`.
+   */
+  const tipoDeRetorno = (fn: ts.SignatureDeclaration, formas: Record<string, Forma>, prof = 0): string | null => {
+    if (fn.type) return nombreTipo(fn.type);
+    const cuerpo = (fn as ts.FunctionLikeDeclaration).body;
+    if (!cuerpo || prof >= 4) return null;
+    const retornos: ts.Expression[] = [];
+    if (!ts.isBlock(cuerpo)) retornos.push(cuerpo);
+    else {
+      const ver = (n: ts.Node): void => {
+        if (ts.isFunctionLike(n)) return;
+        if (ts.isReturnStatement(n) && n.expression) retornos.push(n.expression);
+        ts.forEachChild(n, ver);
+      };
+      ts.forEachChild(cuerpo, ver);
+    }
+    const nombres = new Set<string>();
+    for (let e of retornos) {
+      while (ts.isAwaitExpression(e) || ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e) || (ts.isAsExpression(e) && e.type.getText() === "const")) e = e.expression;
+      let n: string | null = null;
+      if (ts.isAsExpression(e) || ts.isSatisfiesExpression(e)) n = nombreTipo(e.type);
+      else if (ts.isCallExpression(e)) {
+        const c = e.expression;
+        const id = ts.isPropertyAccessExpression(c) ? c.name : ts.isIdentifier(c) ? c : null;
+        let d: ts.Node | undefined = id ? real(checker.getSymbolAtLocation(id))?.declarations?.[0] : undefined;
+        if (d && ts.isVariableDeclaration(d) && d.initializer) d = d.initializer;
+        if (d && ts.isPropertyDeclaration(d) && d.initializer) d = d.initializer;
+        if (d && ts.isFunctionLike(d) && delRepo(d.getSourceFile())) n = tipoDeRetorno(d, formas, prof + 1);
+      } else if (ts.isObjectLiteralExpression(e)) {
+        const dueño = nombreDeFuncion(fn);
+        if (dueño && retornos.length === 1) {
+          const forma: Forma = {};
+          for (const p of e.properties) {
+            if (ts.isPropertyAssignment(p)) forma[p.name.getText().replace(/["']/g, "")] = tipoDeValor(p.initializer);
+            else if (ts.isShorthandPropertyAssignment(p)) forma[p.name.text] = tipoDeValor(p.name);
+            else forma["…"] = "unknown";
+          }
+          n = `${dueño}:respuesta`;
+          if (!(n in formas)) formas[n] = forma;
+        }
+      } else n = nombreTipoDeExpr(e);
+      if (n === null) return null;
+      nombres.add(n);
+    }
+    return nombres.size ? [...nombres].sort(cmp).join(" | ") : null;
   };
 
   // ---------- Evaluación estática de URLs ----------
@@ -920,13 +1005,14 @@ function extraer(repo: RepoFuente): Extraccion {
           if (r) rutas.push(r);
         }
         for (const { metodo, ruta } of rutas) {
-          const body = m.parameters.find((p) => decorador(p, "Body"));
+          // El cuerpo llega por `@Body()` o por un decorador propio que lo envuelve (`@FormBody()`, `@JsonBody()`).
+          const body = m.parameters.find((p) => (ts.getDecorators(p) ?? []).some((d) => /Body$/.test(nombreDecorador(d))));
           out.endpoints.push({
             paquete,
             metodo,
             ruta: normalizarRuta(`/${prefijo}/${ruta ?? ""}`),
             request: nombreTipo(body?.type),
-            response: nombreTipo(m.type),
+            response: tipoDeRetorno(m, formas),
             archivo,
             linea: linea(m),
           });
@@ -1142,6 +1228,17 @@ function formaDe(st: ts.Statement): { nombre: string; forma: Forma } | null {
   } else if (ts.isTypeAliasDeclaration(st) && ts.isTypeLiteralNode(st.type)) {
     nombre = st.name.text;
     miembros = st.type.members;
+  } else if (ts.isClassDeclaration(st) && st.name) {
+    // Clases de datos (DTO): sus propiedades públicas con tipo. Las clases sin ninguna no tienen forma.
+    const oculto = (m: ts.PropertyDeclaration) =>
+      (ts.getModifiers(m) ?? []).some((x) => [ts.SyntaxKind.StaticKeyword, ts.SyntaxKind.PrivateKeyword, ts.SyntaxKind.ProtectedKeyword].includes(x.kind));
+    const forma: Forma = {};
+    for (const m of st.members) {
+      if (!ts.isPropertyDeclaration(m) || !m.type || !ts.isIdentifier(m.name) || oculto(m)) continue;
+      const t = limpiar(m.type.getText());
+      forma[m.name.text] = m.questionToken ? `${t} | undefined` : t;
+    }
+    return Object.keys(forma).length ? { nombre: st.name.text, forma } : null;
   } else return null;
   const forma: Forma = {};
   for (const m of miembros) {

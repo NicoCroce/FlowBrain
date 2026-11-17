@@ -490,6 +490,79 @@ describe("ts-parser: llamadas indirectas (eventos, colas, inyección por token) 
   });
 });
 
+describe("ts-parser: tipos de request y response en Nest", () => {
+  let dir: string;
+  beforeAll(async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    dir = await mkdtemp(join(tmpdir(), "brain-tipos-"));
+    const w = async (p: string, t: string[]) => {
+      await mkdir(dirname(join(dir, p)), { recursive: true });
+      await writeFile(join(dir, p), t.join("\n") + "\n");
+    };
+    await w("package.json", [JSON.stringify({ name: "x", dependencies: { "@nestjs/common": "10" } })]);
+    await w("src/turno.ts", [
+      "export interface Turno { id: string; dia: string }",
+      "export class CrearTurnoDto {",
+      "  dia: string;",
+      "  nota?: string;",
+      "  private interno: number;",
+      "}",
+      "export declare const FormBody: () => ParameterDecorator;",
+    ]);
+    await w("src/turno.service.ts", [
+      'import type { Turno } from "./turno";',
+      "export class TurnoService {",
+      "  async crear(): Promise<Turno> { return { id: '1', dia: 'lunes' }; }",
+      "  listar(): Array<Turno> { return []; }",
+      "  mapa(): Promise<Record<string, unknown>> { return Promise.resolve({}); }",
+      "  estado(activo: boolean) { return { ok: true, mensaje: 'listo', activo }; }",
+      "  mixto(x: boolean) { if (x) return 1; return this.listar(); }",
+      "}",
+    ]);
+    await w("src/turno.controller.ts", [
+      'import { Body, Controller, Get, Post } from "@nestjs/common";',
+      'import { CrearTurnoDto, FormBody } from "./turno";',
+      'import { TurnoService } from "./turno.service";',
+      '@Controller("turnos")',
+      "export class TurnoController {",
+      "  constructor(private readonly svc: TurnoService) {}",
+      "  @Post()",
+      "  crear(@Body() dto: CrearTurnoDto) { return this.svc.crear(); }",
+      '  @Post("form")',
+      "  porFormulario(@FormBody() dto: CrearTurnoDto) { return this.svc.crear(); }",
+      "  @Get()",
+      "  async listar() { return await this.svc.listar(); }",
+      '  @Get("mapa")',
+      "  mapa() { return this.svc.mapa(); }",
+      '  @Get("estado")',
+      "  estado() { return this.svc.estado(true); }",
+      '  @Get("salud")',
+      "  salud() { return { ok: true, version: 2 }; }",
+      '  @Get("mixto")',
+      "  mixto() { return this.svc.mixto(true); }",
+      "}",
+    ]);
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("sin tipo de retorno anotado sigue la delegación; el cuerpo también llega por un decorador propio", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    expect(x.endpoints.map((e) => `${e.metodo} ${e.ruta}: ${e.request} → ${e.response}`).sort()).toEqual([
+      "GET /turnos/estado: null → TurnoService.estado:respuesta",
+      "GET /turnos/mapa: null → Record<string, unknown>",
+      "GET /turnos/mixto: null → null",
+      "GET /turnos/salud: null → TurnoController.salud:respuesta",
+      "GET /turnos: null → Turno[]",
+      "POST /turnos/form: CrearTurnoDto → Turno",
+      "POST /turnos: CrearTurnoDto → Turno",
+    ]);
+    const formas = x.formas[""]!;
+    expect(formas["CrearTurnoDto"]).toEqual({ dia: "string", nota: "string | undefined" });
+    expect(formas["TurnoController.salud:respuesta"]).toEqual({ ok: "boolean", version: "number" });
+    expect(formas["TurnoService.estado:respuesta"]).toEqual({ activo: "boolean", mensaje: "string", ok: "boolean" });
+  });
+});
+
 describe("tablasDeSql (Kysely sql`…`)", () => {
   it("escrituras, lecturas, comillas y esquema; ignora CTE y FROM de funciones", async () => {
     const { tablasDeSql } = await import("../src/ts-parser.js");
