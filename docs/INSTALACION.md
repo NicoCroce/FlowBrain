@@ -133,7 +133,7 @@ conexiones:                  # opcional: qué servicio llama a cuál y por dónd
     por: LEGACY_API_URL      # variable de la URL base o host
 ```
 
-El servidor MCP y los hooks apuntan a la carpeta del registro en vez de a un brain: `brain serve --sync --raiz ~/cerebros` y `brain init ~/cerebros --claude-code` no aplica acá; registrá los hooks con `brain hook claude-code --raiz ~/cerebros` como comando. Cada consulta usa el cerebro del repo donde estás; `cerebro` (o `--cerebro` en la CLI) elige otro. Volver a correr `aplicar` actualiza; cambiar `comunicacion` o `conexiones` tiene efecto en la siguiente consulta, sin reindexar.
+El servidor MCP y los hooks apuntan a la carpeta del registro en vez de a un brain. `brain cerebros registrar --raiz ~/cerebros` registra los hooks en Claude Code (reemplaza los de un brain anterior) e imprime la línea de `claude mcp add` para el servidor. Cada consulta usa el cerebro del repo donde estás; `cerebro` (o `--cerebro` en la CLI) elige otro. Volver a correr `aplicar` actualiza; cambiar `comunicacion` o `conexiones` tiene efecto en la siguiente consulta, sin reindexar.
 
 ## 6. Reglas para el agente
 

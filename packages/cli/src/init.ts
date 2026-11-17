@@ -18,7 +18,7 @@ export function comandoBrain(env: NodeJS.ProcessEnv = process.env): string {
   return `pnpm -s -C ${comillas(repo)} brain`;
 }
 
-const comillas = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
+export const comillas = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
 
 /** SCHEMA.md que acompaña al paquete (dist/../SCHEMA.md) o al repo en desarrollo. */
 async function leerSchema(): Promise<string> {

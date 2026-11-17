@@ -1,7 +1,8 @@
 import { compileDirConVisor } from "@brain/viewer";
 import { realpathSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
@@ -38,7 +39,7 @@ import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessi
 import { draftDir } from "@brain/indexer";
 import { aplicar, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
-import { init, VERSION } from "./init.js";
+import { comandoBrain, comillas, init, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
 import { escribirIndex, indexar } from "@brain/parsers";
 
@@ -54,6 +55,7 @@ Comandos:
   cerebros                                  lista los cerebros del registro (cerebros.yaml en --raiz) y su estado
   cerebros proponer <carpeta...>            explora carpetas y escribe un borrador de cerebros.yaml con preguntas abiertas
   cerebros aplicar [nombre]                 crea e indexa los cerebros del registro (o uno solo)
+  cerebros registrar                        registra en Claude Code los hooks del registro e imprime la línea del MCP
   conexiones [--cerebro <nombre>]           qué llamadas viajan entre un cerebro y los que tiene comunicados
   sync [--repos <dir>] [--forzar]           reindexa los repos cuyo clon avanzó desde el último index y recompila
   estado [--repos <dir>] [--json]           repos al día o no, conteos del grafo y huecos conocidos;
@@ -201,6 +203,19 @@ export async function ejecutar(
           ...(r.errores.length > 10 ? [`  … y ${r.errores.length - 10} más`] : []),
         ]);
         return { codigo: rs.some((r) => r.repos.some((x) => x.error) || r.nodos === 0) ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+      }
+      if (arg === "registrar") {
+        // Hooks de Claude Code apuntando al registro (cada prompt usa el cerebro del repo actual) y la línea del MCP.
+        const cmd = comandoBrain(env);
+        const settings = o.settings !== undefined ? resolve(cwd, o.settings) : join(homedir(), ".claude/settings.json");
+        const cambio = await instalarHooksClaudeCode(settings, `${cmd} hook claude-code --raiz ${comillas(raiz)}`);
+        const lineas = [
+          `Hooks de Claude Code ${cambio ? "registrados" : "ya estaban registrados"} en ${settings} (UserPromptSubmit y SessionEnd).`,
+          "",
+          "Servidor MCP (una línea, una sola vez; si ya había uno llamado brain, quitálo antes con: claude mcp remove --scope user brain):",
+          `  claude mcp add --scope user brain -- ${cmd} serve --sync --raiz ${comillas(raiz)}`,
+        ];
+        return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
       }
       if (arg) throw new ConsultaError("parametro_invalido", `subcomando desconocido: cerebros ${arg}`);
       return { codigo: 0, stdout: await listar(raiz), stderr: "" };
