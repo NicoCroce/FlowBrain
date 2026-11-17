@@ -20,4 +20,5 @@ Sistema de terceros. La arista hacia pagos es el webhook de confirmación, y su 
 ## Backlinks
 
 - [[svc-payments]] · llama_a
+- [[svc-payments:POST:/payments]] · llama_a
 <!-- brain:backlinks:fin -->

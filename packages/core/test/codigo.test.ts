@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, commitDe, compile, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -41,7 +41,30 @@ beforeAll(async () => {
   sinIndice = contextoDeSalidas(salidas, contratos);
 });
 
+const FINAS_ESPERADAS = [
+  "feat-carrito depende_de feat-checkout · parser repo-tienda:apps/web/src/api/checkout.ts#L8",
+  "feat-carrito llama_a svc-bff:POST:/checkout · parser repo-tienda:apps/web/src/api/checkout.ts#L8",
+  "feat-checkout escribe_en tabla-pagos · parser repo-tienda:apps/bff/src/routes/checkout.ts#L16",
+  "feat-checkout llama_a svc-payments:POST:/payments · parser repo-tienda:apps/bff/src/clients/payments.ts#L11",
+  "svc-bff:POST:/checkout escribe_en tabla-pagos · parser repo-tienda:apps/bff/src/routes/checkout.ts#L16",
+  "svc-bff:POST:/checkout implementa feat-checkout · parser repo-tienda:apps/bff/src/routes/checkout.ts#L14",
+  "svc-bff:POST:/checkout llama_a svc-payments:POST:/payments · parser repo-tienda:apps/bff/src/clients/payments.ts#L11",
+  "svc-web:pantalla:/checkout implementa feat-carrito · parser repo-tienda:apps/web/src/main.tsx",
+  "svc-web:pantalla:/checkout llama_a svc-bff:POST:/checkout · parser repo-tienda:apps/web/src/api/checkout.ts#L8",
+];
+
 describe("consultas de código", () => {
+  it("relaciones finas en el grafo: endpoint, pantalla y funcionalidad con lo que tocan y llaman", () => {
+    const FINOS = new Set(["endpoint", "pantalla", "feat"]);
+    const finas = ctx.graph.edges
+      .filter((e) => FINOS.has(ctx.nodo.get(e.desde)!.tipo) && e.verbo !== "navega_a")
+      .map((e) => `${e.desde} ${e.verbo} ${e.endpoint ?? e.hasta} · ${e.origen} ${e.evidencia}`);
+    expect(finas).toEqual(FINAS_ESPERADAS);
+    // Desde la tabla hacia atrás se llega al endpoint que la escribe, a la pantalla que lo llama y a las funcionalidades.
+    const r = recorrerGrafo(ctx, { nodo: "tabla-pagos", verbos: ["depende_de"], direccion: "in", profundidad: 3 });
+    expect(r.nodos.map((n) => n.id)).toEqual(expect.arrayContaining(["svc-bff:POST:/checkout", "svc-web:pantalla:/checkout", "feat-checkout", "feat-carrito"]));
+  });
+
   it("recorrido desde un endpoint: método que lo atiende y lo que toca cada paso", () => {
     const r = recorrido(ctx, { desde: "POST /checkout" }) as { atiende: string; pasos: Array<{ n: number; simbolo: string; ev: string; toca?: string[] }> };
     expect(r.atiende).toBe("postCheckout @ repo-tienda:apps/bff/src/routes/checkout.ts#L14");

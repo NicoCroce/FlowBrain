@@ -202,6 +202,15 @@
           "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
           "nodo": "svc-bff",
           "verbo": "llama_a"
+        },
+        {
+          "confianza": 0.9,
+          "direccion": "in",
+          "endpoint": "svc-payments:POST:/payments",
+          "estado": "vigente",
+          "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+          "nodo": "svc-bff:POST:/checkout",
+          "verbo": "llama_a"
         }
       ],
       "estado": "vigente",

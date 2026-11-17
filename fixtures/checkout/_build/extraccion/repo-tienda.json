@@ -1,0 +1,97 @@
+{
+  "accesos": [
+    {
+      "dato": null,
+      "desde": "svc-bff",
+      "endpoint": "svc-payments:POST:/payments",
+      "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+      "hasta": "svc-payments",
+      "origen": "parser",
+      "verbo": "llama_a"
+    },
+    {
+      "dato": "CargoPasarela",
+      "desde": "svc-payments",
+      "endpoint": null,
+      "evidencia": "repo-tienda:apps/payments/src/clients/pasarela.ts#L8",
+      "hasta": "ext-pasarela",
+      "origen": "parser",
+      "verbo": "llama_a"
+    },
+    {
+      "dato": "Pago",
+      "desde": "svc-payments",
+      "endpoint": null,
+      "evidencia": "repo-tienda:apps/payments/src/routes/payments.ts#L21",
+      "hasta": "tabla-pagos",
+      "origen": "parser",
+      "verbo": "escribe_en"
+    },
+    {
+      "dato": null,
+      "desde": "svc-web",
+      "endpoint": "svc-bff:POST:/checkout",
+      "evidencia": "repo-tienda:apps/web/src/api/checkout.ts#L9",
+      "hasta": "svc-bff",
+      "origen": "inferido",
+      "verbo": "llama_a"
+    }
+  ],
+  "aristas": [
+    {
+      "dato": null,
+      "desde": "svc-bff",
+      "endpoint": "svc-payments:POST:/payments",
+      "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+      "hasta": "svc-payments",
+      "origen": "parser",
+      "verbo": "llama_a"
+    },
+    {
+      "dato": "Pago",
+      "desde": "svc-payments",
+      "endpoint": null,
+      "evidencia": "repo-tienda:apps/payments/src/routes/payments.ts#L21",
+      "hasta": "tabla-pagos",
+      "origen": "parser",
+      "verbo": "escribe_en"
+    },
+    {
+      "dato": "CargoPasarela",
+      "desde": "svc-payments",
+      "endpoint": null,
+      "evidencia": "repo-tienda:apps/payments/src/clients/pasarela.ts#L8",
+      "hasta": "ext-pasarela",
+      "origen": "parser",
+      "verbo": "llama_a"
+    },
+    {
+      "dato": null,
+      "desde": "svc-web",
+      "endpoint": "svc-bff:POST:/checkout",
+      "evidencia": "repo-tienda:apps/web/src/api/checkout.ts#L9",
+      "hasta": "svc-bff",
+      "origen": "inferido",
+      "verbo": "llama_a"
+    }
+  ],
+  "pendientes": [],
+  "repo": "repo-tienda",
+  "servicios": [
+    {
+      "nuevo": false,
+      "paquete": "apps/bff",
+      "svc": "svc-bff"
+    },
+    {
+      "nuevo": false,
+      "paquete": "apps/payments",
+      "svc": "svc-payments"
+    },
+    {
+      "nuevo": false,
+      "paquete": "apps/web",
+      "svc": "svc-web"
+    }
+  ]
+}

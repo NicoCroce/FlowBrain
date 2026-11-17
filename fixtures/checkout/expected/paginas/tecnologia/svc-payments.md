@@ -29,4 +29,5 @@ Crea el cargo en la pasarela y guarda el pago como `pendiente`. La pasarela conf
 
 - [[ext-pasarela]] · llama_a · POST /webhooks/pasarela
 - [[svc-bff]] · llama_a · POST /payments
+- [[svc-bff:POST:/checkout]] · llama_a · POST /payments
 <!-- brain:backlinks:fin -->

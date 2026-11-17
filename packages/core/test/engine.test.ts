@@ -78,7 +78,7 @@ describe("criterios de aceptación", () => {
   it("recorrer_grafo svc-payments depende_de in: mismo conjunto ordenado en 10 ejecuciones", () => {
     const corrida = () => recorrerGrafo(ctx, { nodo: "svc-payments", verbos: ["depende_de"], direccion: "in" });
     const base = stringifyCanonical(corrida());
-    expect(corrida().nodos.map((n) => n.id)).toEqual(["svc-payments", "ext-pasarela", "svc-bff"]);
+    expect(corrida().nodos.map((n) => n.id)).toEqual(["svc-payments", "ext-pasarela", "svc-bff", "svc-bff:POST:/checkout"]);
     for (let i = 0; i < 10; i++) expect(stringifyCanonical(corrida())).toBe(base);
   });
 

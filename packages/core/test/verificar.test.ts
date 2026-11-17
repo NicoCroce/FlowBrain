@@ -42,16 +42,20 @@ describe("brain verify", () => {
     const original = await readFile(archivo, "utf8");
     await rm(archivo);
     const r1 = await verifyDir(brain, { repos: { "repo-tienda": clon }, hoy: HOY });
-    expect(r1.nuevas.map((d) => [d.desde, d.verbo, d.hasta, d.motivo])).toEqual([["svc-payments", "llama_a", "ext-pasarela", "archivo inexistente"]]);
+    expect(r1.nuevas.map((d) => [d.desde, d.verbo, d.hasta, d.motivo])).toEqual([
+      ["svc-payments", "llama_a", "ext-pasarela", "archivo inexistente"],
+      // La relación fina del endpoint cita la misma línea: cae con ella.
+      ["svc-payments:POST:/payments", "llama_a", "ext-pasarela", "archivo inexistente"],
+    ]);
     expect(await estado("svc-payments", "ext-pasarela")).toBe("dudoso");
 
     const r2 = await verifyDir(brain, { repos: { "repo-tienda": clon }, hoy: HOY });
     expect(r2.nuevas).toEqual([]);
-    expect(r2.dudosas).toHaveLength(1);
+    expect(r2.dudosas).toHaveLength(2);
 
     await writeFile(archivo, original);
     const r3 = await verifyDir(brain, { repos: { "repo-tienda": clon }, hoy: HOY });
-    expect(r3.recuperadas).toHaveLength(1);
+    expect(r3.recuperadas).toHaveLength(2);
     expect(r3.dudosas).toEqual([]);
     expect(await estado("svc-payments", "ext-pasarela")).toBe("vigente");
   });
@@ -72,8 +76,8 @@ describe("brain verify", () => {
     await verifyDir(brain, { repos: { "repo-tienda": clon }, hoy: HOY });
     const r = await verifyDir(brain, { hoy: HOY });
     expect(r.verificadas).toBe(0);
-    expect(r.noVerificables).toEqual([{ aristas: 8, repo: "repo-tienda" }]);
-    expect(r.dudosas).toHaveLength(1);
+    expect(r.noVerificables).toEqual([{ aristas: 11, repo: "repo-tienda" }]);
+    expect(r.dudosas).toHaveLength(2);
     expect(r.nuevas).toEqual([]);
   });
 
@@ -82,7 +86,8 @@ describe("brain verify", () => {
     await writeFile(pagina, (await readFile(pagina, "utf8")).replace("#L8\", origen: parser }", "#L8\", origen: parser, estado: deprecado }"));
     await rm(join(clon, "apps/payments/src/clients/pasarela.ts"));
     const r = await verifyDir(brain, { repos: { "repo-tienda": clon }, hoy: HOY });
-    expect(r.dudosas).toEqual([]);
+    // Solo queda dudosa la relación fina del endpoint, que nadie deprecó.
+    expect(r.dudosas.map((d) => d.desde)).toEqual(["svc-payments:POST:/payments"]);
     expect(await estado("svc-payments", "ext-pasarela")).toBe("deprecado");
   });
 

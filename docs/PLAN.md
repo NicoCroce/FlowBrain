@@ -20,7 +20,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 |---|---|---|
 | 0 | Limpieza de nombres del proyecto de referencia | Hecho (`09a6744`) |
 | 1 | Tipos en contratos de Nest | Hecho (`66e23b2`, decisión 119) |
-| 2 | Relaciones finas en el grafo | Pendiente |
+| 2 | Relaciones finas en el grafo | Hecho (decisión 120) |
 | 3 | MCP: respuestas compactas, búsqueda e instrucciones | Pendiente |
 | 4 | Comandos `sync`, `estado` y `doctor` | Pendiente |
 | 5 | Registro del MCP y los hooks | Pendiente, requiere decisión |
@@ -194,6 +194,6 @@ Publicar el paquete cuando las fases 1 y 2 estén cerradas (decisión 72 pendien
 ## Decisiones abiertas
 
 1. Paso 5: alcance del registro y a qué brain apunta.
-2. Paso 2: verbo de `feat → feat` y marca de aristas derivadas.
+2. ~~Paso 2: verbo de `feat → feat` y marca de aristas derivadas.~~ Resuelto en la decisión 120: `depende_de`, y origen heredado de la extracción en vez de una marca.
 3. Paso 13: qué proyecto de otra pila se usa como segundo banco de pruebas.
 4. Carpetas de ejemplo `afip` y `videoAnalysis` en `packages/indexer/test/borrador.test.ts`: renombrarlas si identifican al proyecto de referencia.

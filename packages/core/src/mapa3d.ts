@@ -33,6 +33,8 @@ export function mapa3dDelGrafo(graph: Graph, fichas: Ficha[] = []): Mapa3D {
   const dbDe: Record<string, string> = {};
   for (const e of graph.edges) {
     if (e.verbo === "expone") continue;
+    // Lo que sale de una funcionalidad (llamadas, tablas, otras funcionalidades) lo agregan las fichas, con sus veces.
+    if (tipo.get(e.desde) === "feat") continue;
     if (e.verbo === "llama_a" && e.endpoint && tipo.get(e.endpoint) === "endpoint") agregar(e.desde, e.endpoint, "llama_a");
     else agregar(e.desde, e.hasta, e.verbo);
     if (e.verbo === "vive_en" && tipo.get(e.hasta) === "repo" && !repoDe[e.desde]) repoDe[e.desde] = e.hasta;

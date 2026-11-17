@@ -62,15 +62,27 @@ export const VERBOS_DATOS: readonly Verbo[] = ["llama_a", "publica_en", "consume
 /** Pares (desde → hasta) permitidos por verbo. */
 const TODOS_PAGINA: readonly TipoPagina[] = TIPOS_PAGINA;
 export const DOMINIO: Record<Verbo, ReadonlyArray<readonly [readonly Tipo[], readonly Tipo[]]>> = {
-  llama_a: [[["svc", "lib", "ext"], ["svc", "ext"]]],
+  llama_a: [
+    [["svc", "lib", "ext"], ["svc", "ext"]],
+    [["pantalla", "endpoint", "feat"], ["svc", "ext"]],
+  ],
   publica_en: [[["svc"], ["queue"]]],
   consume_de: [[["svc"], ["queue"]]],
-  lee_de: [[["svc"], ["db", "tabla"]]],
-  escribe_en: [[["svc"], ["db", "tabla"]]],
-  depende_de: [[["repo", "svc", "lib"], ["repo", "svc", "lib", "db", "queue", "ext"]]],
+  lee_de: [
+    [["svc"], ["db", "tabla"]],
+    [["endpoint", "feat"], ["db", "tabla"]],
+  ],
+  escribe_en: [
+    [["svc"], ["db", "tabla"]],
+    [["endpoint", "feat"], ["db", "tabla"]],
+  ],
+  depende_de: [
+    [["repo", "svc", "lib"], ["repo", "svc", "lib", "db", "queue", "ext"]],
+    [["feat"], ["feat"]],
+  ],
   implementa: [
     [["svc", "lib", "repo"], ["feat"]],
-    [["pantalla"], ["feat"]],
+    [["pantalla", "endpoint"], ["feat"]],
   ],
   decidido_por: [[TODOS_PAGINA, ["decision"]]],
   vive_en: [

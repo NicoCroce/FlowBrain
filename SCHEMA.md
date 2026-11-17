@@ -46,13 +46,13 @@ Toda arista va de `desde` a `hasta`.
 
 | Verbo | desde | hasta | Dónde se escribe | Lleva datos |
 |---|---|---|---|---|
-| `llama_a` | svc, lib, ext | svc, ext | `relaciones` | sí |
+| `llama_a` | svc, lib, ext; endpoint, pantalla, feat | svc, ext | `relaciones` (endpoint y pantalla: lo genera el compilador) | sí |
 | `publica_en` | svc | queue | `relaciones` | sí |
 | `consume_de` | svc | queue | `relaciones` | sí |
-| `lee_de` | svc | db, tabla | `relaciones` | sí |
-| `escribe_en` | svc | db, tabla | `relaciones` | sí |
-| `depende_de` | repo, svc, lib | repo, svc, lib, db, queue, ext | `relaciones` | no |
-| `implementa` | svc, lib, repo; pantalla | feat | `relaciones` (pantalla: lo genera el compilador) | no |
+| `lee_de` | svc; endpoint, feat | db, tabla | `relaciones` (endpoint: lo genera el compilador) | sí |
+| `escribe_en` | svc; endpoint, feat | db, tabla | `relaciones` (endpoint: lo genera el compilador) | sí |
+| `depende_de` | repo, svc, lib → repo, svc, lib, db, queue, ext · feat → feat | | `relaciones` | no |
+| `implementa` | svc, lib, repo; pantalla, endpoint | feat | `relaciones` (pantalla y endpoint: lo genera el compilador) | no |
 | `decidido_por` | cualquiera salvo generados | decision | `relaciones` | no |
 | `vive_en` | svc, lib → repo · tabla → db | | campo `vive_en` | no |
 | `pertenece_a` | repo, svc, lib, db, queue, ext, feat | team | campo `pertenece_a` | no |
@@ -64,6 +64,14 @@ Reglas:
 - `vive_en` y `pertenece_a` se escriben solo como campos de primer nivel, nunca dentro de `relaciones`.
 - `expone`, `contiene` y `navega_a` los genera el compilador a partir de los JSON. Si aparecen en una página, la compilación falla.
 - Se permite `desde == hasta`: un servicio que se llama a sí mismo por HTTP.
+- **Relaciones finas.** Además de las aristas entre servicios, `compile` genera las de endpoints, pantallas y funcionalidades a partir de la extracción (`_build/extraccion`) y de los recorridos del código. Cada una cita la línea del acceso o de la llamada y hereda su origen y su `dato` (una llamada `inferido` da una relación `inferido`):
+  - endpoint → tabla (`lee_de`/`escribe_en`) y endpoint → servicio o externo (`llama_a`, con `endpoint` si se conoce): lo que toca el método que lo atiende y todo lo que llama dentro de su servicio, sin cruzar HTTP.
+  - pantalla → servicio o externo (`llama_a`, con `endpoint`): las llamadas en el árbol de sus componentes.
+  - endpoint → funcionalidad (`implementa`): el handler está en el `codigo` de la funcionalidad.
+  - funcionalidad → tabla, servicio o externo: accesos y llamadas dentro de su `codigo` (sin archivos de test).
+  - funcionalidad → funcionalidad (`depende_de`): llama a un endpoint que implementa la otra.
+
+  Una funcionalidad también puede declararlas a mano en `relaciones`; si coinciden, gana la curada. Sin extracción no se genera ninguna. Como en todo `llama_a`, el destino es el servicio y el endpoint va en el campo `endpoint`.
 - **`depende_de` en consultas es un superverbo:** `recorrer_grafo` con `verbos: [depende_de]` incluye también `llama_a`, `publica_en`, `consume_de`, `lee_de` y `escribe_en`. La arista explícita `depende_de` queda para dependencias que no son llamadas, como librerías o infraestructura.
 
 ## 4. Estados, orígenes y confianza

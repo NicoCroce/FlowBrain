@@ -15,6 +15,8 @@ export const DESTINOS = ["claude", "agents", "cursor", "windsurf"] as const;
 export type Destino = (typeof DESTINOS)[number];
 
 /** Verbos que cuentan como dependencia (el superverbo `depende_de` del SCHEMA). */
+/** Nodos de las relaciones finas: en el resumen de un servicio solo cuentan piezas técnicas con página. */
+const FINOS = new Set(["endpoint", "pantalla", "feat"]);
 const DEPENDENCIA = new Set(["depende_de", "llama_a", "publica_en", "consume_de", "lee_de", "escribe_en"]);
 const MAX_LISTA = 8;
 
@@ -34,7 +36,7 @@ function seccionRepo(ctx: Contexto, repo: GraphNode): string[] {
     lineas.push("", "Lo que vive acá:");
     for (const s of svcs) {
       const usa = (ctx.salientes.get(s.id) ?? []).filter((e) => DEPENDENCIA.has(e.verbo) && e.hasta !== s.id).map((e) => e.hasta);
-      const usan = (ctx.entrantes.get(s.id) ?? []).filter((e) => DEPENDENCIA.has(e.verbo) && e.desde !== s.id).map((e) => e.desde);
+      const usan = (ctx.entrantes.get(s.id) ?? []).filter((e) => DEPENDENCIA.has(e.verbo) && e.desde !== s.id && !FINOS.has(ctx.nodo.get(e.desde)?.tipo ?? "")).map((e) => e.desde);
       lineas.push(`- \`${s.id}\`${s.resumen ? ` — ${s.resumen}` : ""} Depende de: ${lista(usa)}. Lo usan: ${lista(usan)}.`);
     }
   }

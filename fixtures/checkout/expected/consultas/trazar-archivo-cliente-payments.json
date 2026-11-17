@@ -23,6 +23,13 @@
     },
     {
       "estado": "vigente",
+      "id": "svc-bff:POST:/checkout",
+      "nombre": "POST /checkout",
+      "resumen": null,
+      "tipo": "endpoint"
+    },
+    {
+      "estado": "vigente",
       "id": "svc-payments",
       "nombre": "Servicio de pagos",
       "resumen": "Cobra pedidos a través de la pasarela y registra cada pago.",
@@ -48,6 +55,17 @@
       "confianza": 0.9,
       "dato": "CrearPagoRequest → Pago",
       "desde": "svc-bff",
+      "endpoint": "svc-payments:POST:/payments",
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+      "hasta": "svc-payments",
+      "nivel": 1,
+      "verbo": "llama_a"
+    },
+    {
+      "confianza": 0.9,
+      "dato": "CrearPagoRequest → Pago",
+      "desde": "svc-bff:POST:/checkout",
       "endpoint": "svc-payments:POST:/payments",
       "estado": "vigente",
       "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",

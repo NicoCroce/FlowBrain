@@ -55,6 +55,40 @@
     },
     {
       "estado": "vigente",
+      "id": "svc-bff:POST:/checkout",
+      "nivel": 1,
+      "nombre": "POST /checkout",
+      "resumen": null,
+      "tipo": "endpoint",
+      "via": {
+        "confianza": 0.9,
+        "desde": "svc-bff:POST:/checkout",
+        "endpoint": "svc-payments:POST:/payments",
+        "estado": "vigente",
+        "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+        "hasta": "svc-payments",
+        "verbo": "llama_a"
+      }
+    },
+    {
+      "estado": "vigente",
+      "id": "svc-payments:POST:/payments",
+      "nivel": 2,
+      "nombre": "POST /payments",
+      "resumen": null,
+      "tipo": "endpoint",
+      "via": {
+        "confianza": 0.9,
+        "desde": "svc-payments:POST:/payments",
+        "endpoint": null,
+        "estado": "vigente",
+        "evidencia": "repo-tienda:apps/payments/src/clients/pasarela.ts#L8",
+        "hasta": "ext-pasarela",
+        "verbo": "llama_a"
+      }
+    },
+    {
+      "estado": "vigente",
       "id": "svc-web",
       "nivel": 2,
       "nombre": "Web de la tienda",

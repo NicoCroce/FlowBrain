@@ -19,4 +19,5 @@ La define el modelo Prisma `Pago` en `apps/payments/prisma/schema.prisma`.
 ## Backlinks
 
 - [[svc-payments]] · escribe_en
+- [[svc-payments:POST:/payments]] · escribe_en
 <!-- brain:backlinks:fin -->

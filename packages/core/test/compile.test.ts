@@ -77,6 +77,7 @@ describe("compile(fixtures/checkout)", () => {
       paginas: [...entradas.paginas].reverse(),
       contratos: [...entradas.contratos].reverse(),
       archivos: [...entradas.archivos].reverse(),
+      extracciones: [...(entradas.extracciones ?? [])].reverse(),
     });
     expect(b.generados).toEqual(a.generados);
   });

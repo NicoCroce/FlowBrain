@@ -52,6 +52,7 @@ describe("funcionalidades", () => {
     const impl = graph.edges.filter((e) => e.verbo === "implementa").map((e) => `${e.desde}→${e.hasta} ${e.origen} ${e.evidencia}`);
     expect(impl).toEqual([
       "svc-bff→feat-checkout curado repo-tienda:apps/bff/src/routes",
+      "svc-bff:POST:/checkout→feat-checkout parser repo-tienda:apps/bff/src/routes/checkout.ts#L14",
       "svc-payments→feat-checkout curado null",
       "svc-web→feat-carrito parser repo-tienda:apps/web/src",
       "svc-web→feat-checkout curado null",

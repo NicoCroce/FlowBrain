@@ -73,7 +73,7 @@ describe("brain verify, draft, nota y hook SessionEnd por CLI", () => {
       expect((await ejecutar(["verify", "--raiz", raiz, "--repos", dir, "--hoy", "2026-11-16"])).codigo).toBe(0);
       await cp(join(REPOS, "tienda"), join(dir, "tienda"), { recursive: true });
       const vuelta = await ejecutar(["verify", "--raiz", raiz, "--repos", dir, "--hoy", "2026-11-16"]);
-      expect(vuelta.stdout).toContain("1 recuperadas");
+      expect(vuelta.stdout).toContain("2 recuperadas");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

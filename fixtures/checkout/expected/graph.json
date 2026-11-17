@@ -179,6 +179,17 @@
     {
       "confianza": 0.9,
       "dato": null,
+      "desde": "svc-bff:POST:/checkout",
+      "endpoint": "svc-payments:POST:/payments",
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/bff/src/clients/payments.ts#L11",
+      "hasta": "svc-payments",
+      "origen": "parser",
+      "verbo": "llama_a"
+    },
+    {
+      "confianza": 0.9,
+      "dato": null,
       "desde": "svc-payments",
       "endpoint": null,
       "estado": "vigente",
@@ -252,6 +263,28 @@
       "hasta": "repo-tienda",
       "origen": "curado",
       "verbo": "vive_en"
+    },
+    {
+      "confianza": 0.9,
+      "dato": "Pago",
+      "desde": "svc-payments:POST:/payments",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/payments/src/routes/payments.ts#L21",
+      "hasta": "tabla-pagos",
+      "origen": "parser",
+      "verbo": "escribe_en"
+    },
+    {
+      "confianza": 0.9,
+      "dato": "CargoPasarela",
+      "desde": "svc-payments:POST:/payments",
+      "endpoint": null,
+      "estado": "vigente",
+      "evidencia": "repo-tienda:apps/payments/src/clients/pasarela.ts#L8",
+      "hasta": "ext-pasarela",
+      "origen": "parser",
+      "verbo": "llama_a"
     },
     {
       "confianza": 1,

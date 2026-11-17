@@ -11,6 +11,11 @@
       "desde": "svc-payments",
       "endpoint": null,
       "verbo": "llama_a"
+    },
+    {
+      "desde": "svc-payments:POST:/payments",
+      "endpoint": null,
+      "verbo": "llama_a"
     }
   ],
   "feat-checkout": [
@@ -148,6 +153,11 @@
       "desde": "svc-bff",
       "endpoint": "svc-payments:POST:/payments",
       "verbo": "llama_a"
+    },
+    {
+      "desde": "svc-bff:POST:/checkout",
+      "endpoint": "svc-payments:POST:/payments",
+      "verbo": "llama_a"
     }
   ],
   "svc-payments:POST:/payments": [
@@ -174,6 +184,11 @@
   "tabla-pagos": [
     {
       "desde": "svc-payments",
+      "endpoint": null,
+      "verbo": "escribe_en"
+    },
+    {
+      "desde": "svc-payments:POST:/payments",
       "endpoint": null,
       "verbo": "escribe_en"
     }

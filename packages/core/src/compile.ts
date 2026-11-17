@@ -29,6 +29,7 @@ import {
   type Verbo,
 } from "./schema.js";
 import { aristasDeExtracciones, fichasDeFuncionalidades, tablasSinPagina, RUTA_FUNCIONALIDADES, type EstructuraArchivo, type Ficha } from "./funcionalidades.js";
+import { aristasFinas } from "./finas.js";
 import { grafoDePantallas } from "./pantallas.js";
 
 /** Un archivo de entrada. `ruta` es relativa a la raíz del brain, con `/`. */
@@ -43,7 +44,7 @@ export interface Entradas {
   archivos: Fuente[];
   /** `_build/verificacion.json` de `brain verify`: sus aristas salen con estado `dudoso`. */
   verificacion?: Fuente | null;
-  /** `_build/extraccion/*.json` de `brain index`: solo alimentan la vista de funcionalidades. */
+  /** `_build/extraccion/*.json` de `brain index`: alimentan las fichas de funcionalidades y las relaciones finas del grafo. */
   extracciones?: Fuente[];
 }
 
@@ -224,7 +225,7 @@ export function compile(entradas: Entradas): Salidas {
   }
 
   // ---------- 3. Árboles de archivos ----------
-  /** Símbolos, imports e invocaciones por `repo:ruta`: solo alimentan la vista de funcionalidades. */
+  /** Símbolos, imports e invocaciones por `repo:ruta`: alimentan las fichas de funcionalidades y las relaciones finas del grafo. */
   const estructura = new Map<string, EstructuraArchivo>();
   for (const f of archivosIn) {
     const data = parseJson(f, errores);
@@ -365,12 +366,20 @@ export function compile(entradas: Entradas): Salidas {
 
   if (errores.length > 0) throw new CompileError(ordenarErrores(errores));
 
-  // ---------- 5. Dedupe y orden ----------
+  // ---------- 5. Relaciones finas, dedupe y orden ----------
+  const featsPagina = paginas.filter((p) => p.fm.tipo === "feat").map((p) => ({ id: p.fm.id, codigo: p.fm.codigo ?? [], cuerpo: p.cuerpo }));
+  const extracciones = [...(entradas.extracciones ?? [])].sort(porRuta).map((f) => f.contenido);
+  const accesos = aristasDeExtracciones(extracciones);
+  const sinPagina = tablasSinPagina(extracciones);
+  const nodes = [...nodos.values()].sort((a, b) => cmp(a.id, b.id));
+  const base = dedupe(aristas);
+  // Si una página ya declara la misma relación, gana la curada (dedupe por confianza).
+  const finas = aristasFinas({ edges: base, nodes, version: 1 }, featsPagina, accesos, estructura, sinPagina);
   const graph: Graph = {
-    edges: dedupe(aristas)
+    edges: dedupe([...base, ...finas])
       .map((e) => (e.estado === "vigente" && e.evidencia !== null && dudosas.has(claveDudosa({ ...e, evidencia: e.evidencia })) ? { ...e, estado: "dudoso" as const } : e))
       .sort((a, b) => cmpTuple(claveArista(a), claveArista(b))),
-    nodes: [...nodos.values()].sort((a, b) => cmp(a.id, b.id)),
+    nodes,
     version: 1,
   };
 
@@ -381,13 +390,7 @@ export function compile(entradas: Entradas): Salidas {
     [RUTAS_SALIDA.mapa]: renderMermaid(graph),
     [RUTAS_SALIDA.index]: renderIndex(graph),
   };
-  const funcionalidades = fichasDeFuncionalidades(
-    graph,
-    paginas.filter((p) => p.fm.tipo === "feat").map((p) => ({ id: p.fm.id, codigo: p.fm.codigo ?? [], cuerpo: p.cuerpo })),
-    aristasDeExtracciones([...(entradas.extracciones ?? [])].sort(porRuta).map((f) => f.contenido)),
-    estructura,
-    tablasSinPagina([...(entradas.extracciones ?? [])].sort(porRuta).map((f) => f.contenido)),
-  );
+  const funcionalidades = fichasDeFuncionalidades(graph, featsPagina, accesos, estructura, sinPagina);
   if (funcionalidades.length > 0) generados[RUTA_FUNCIONALIDADES] = stringifyCanonical({ funcionalidades, version: 1 });
   const salidaPaginas: Record<string, string> = {};
   for (const p of paginas) {
