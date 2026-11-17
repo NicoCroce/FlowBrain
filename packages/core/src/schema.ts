@@ -79,6 +79,7 @@ export const DOMINIO: Record<Verbo, ReadonlyArray<readonly [readonly Tipo[], rea
   depende_de: [
     [["repo", "svc", "lib"], ["repo", "svc", "lib", "db", "queue", "ext"]],
     [["feat"], ["feat"]],
+    [["tabla"], ["tabla"]],
   ],
   implementa: [
     [["svc", "lib", "repo"], ["feat"]],
@@ -264,6 +265,19 @@ export const ArchivosSchema = z
             desde: z.string().nullable(),
             ruta: z.string().startsWith("/"),
             tipo: z.enum(["navega", "enlace", "redirige"]),
+          })
+          .strict(),
+      )
+      .optional(),
+    /** Esquema de las tablas con página: columnas y claves foráneas. */
+    esquema: z
+      .array(
+        z
+          .object({
+            tabla: z.string().min(1),
+            evidencia: z.string(),
+            columnas: z.array(z.object({ nombre: z.string().min(1), tipo: z.string(), nulo: z.boolean(), pk: z.boolean() }).strict()),
+            fks: z.array(z.object({ columnas: z.array(z.string()), hasta: z.string().min(1), columnasRef: z.array(z.string()), evidencia: z.string() }).strict()),
           })
           .strict(),
       )

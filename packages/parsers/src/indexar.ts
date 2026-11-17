@@ -5,10 +5,11 @@ import { leerRepo } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
 import { tsParser } from "./ts-parser.js";
 import { phpParser } from "./php-parser.js";
+import { esquemaParser } from "./esquema-parser.js";
 import type { Extraccion, Forma, LlamadaCruda, Parser } from "./tipos.js";
 
 /** Parsers en orden de prioridad: los posteriores pisan formas y, si son autoritativos, endpoints. */
-export const PARSERS: Parser[] = [tsParser, phpParser, openapiParser];
+export const PARSERS: Parser[] = [tsParser, phpParser, openapiParser, esquemaParser];
 
 export interface NodoPagina {
   id: string;
@@ -27,6 +28,13 @@ export interface AristaExtraida {
   hasta: string;
   origen: "parser" | "inferido";
   verbo: "llama_a" | "lee_de" | "escribe_en" | "publica_en" | "consume_de";
+}
+
+export interface EsquemaTabla {
+  tabla: string;
+  evidencia: string;
+  columnas: Array<{ nombre: string; tipo: string; nulo: boolean; pk: boolean }>;
+  fks: Array<{ columnas: string[]; hasta: string; columnasRef: string[]; evidencia: string }>;
 }
 
 export interface Pendiente {
@@ -56,6 +64,8 @@ export interface ResultadoIndex {
     archivos: Extraccion["archivos"];
     pantallas?: Extraccion["pantallas"];
     navegaciones?: Extraccion["navegaciones"];
+    /** Esquema de las tablas que tienen página: columnas y claves foráneas hacia otras tablas con página. */
+    esquema?: EsquemaTabla[];
     repo: string; commit?: string; /** Ruta del clon relativa al brain, para comparar su HEAD actual con `commit`. */ raiz: string };
 }
 
@@ -139,6 +149,7 @@ export function fusionar(xs: Extraccion[]): Extraccion {
     out.llamadas.push(...x.llamadas.filter((l) => !esArchivoDeTest(l.archivo)));
     out.tablas.push(...x.tablas.filter((t) => !esArchivoDeTest(t.archivo)));
     out.modelos.push(...x.modelos);
+    (out.esquema ??= []).push(...(x.esquema ?? []));
     (out.eventos ??= []).push(...(x.eventos ?? []).filter((e) => !esArchivoDeTest(e.archivo)));
     out.pantallas.push(...(x.pantallas ?? []).filter((p) => !esArchivoDeTest(p.archivo)));
     out.navegaciones.push(...(x.navegaciones ?? []).filter((n) => !esArchivoDeTest(n.archivo)));
@@ -383,6 +394,27 @@ export async function indexar(
     for (const n of [...nombres].sort(cmp)) if (formas[n]) c.tipos[n] = formas[n]!;
   }
 
+  // ---------- Esquema: solo tablas con página; una clave foránea queda si su destino también la tiene ----------
+  const tablaDe = (nombre: string) => {
+    const hits = destinosPorClave(normalizar(nombre), ["tabla"]);
+    return hits.length === 1 ? hits[0]!.id : null;
+  };
+  const esquema: EsquemaTabla[] = [];
+  for (const t of x.esquema ?? []) {
+    const id = tablaDe(t.tabla);
+    if (!id || esquema.some((e) => e.tabla === id)) continue;
+    esquema.push({
+      tabla: id,
+      evidencia: ev(t.archivo, t.linea),
+      columnas: t.columnas,
+      fks: t.fks.flatMap((f) => {
+        const hasta = tablaDe(f.tabla);
+        return hasta ? [{ columnas: f.columnas, hasta, columnasRef: f.columnasRef, evidencia: ev(f.archivo, f.linea) }] : [];
+      }),
+    });
+  }
+  esquema.sort((a, b) => cmp(a.tabla, b.tabla));
+
   return {
     repo: repoId,
     repoNuevo,
@@ -395,6 +427,7 @@ export async function indexar(
       archivos: x.archivos,
       ...(x.pantallas.length ? { pantallas: x.pantallas } : {}),
       ...(x.navegaciones.length ? { navegaciones: x.navegaciones } : {}),
+      ...(esquema.length ? { esquema } : {}),
       raiz: ubicacion, repo: repoId, ...(commit ? { commit } : {}) },
   };
 }

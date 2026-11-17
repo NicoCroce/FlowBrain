@@ -132,6 +132,25 @@ export interface EventoCrudo {
   direccion: "publica" | "consume";
 }
 
+export interface ColumnaCruda {
+  nombre: string;
+  /** Tipo tal como está declarado, en minúsculas (`varchar(255)`, `int`). */
+  tipo: string;
+  nulo: boolean;
+  pk: boolean;
+}
+
+/** Tabla del esquema de base de datos, con el nombre físico. */
+export interface TablaEsquema {
+  paquete: string;
+  tabla: string;
+  /** Dónde se crea. */
+  archivo: string;
+  linea: number;
+  columnas: ColumnaCruda[];
+  fks: Array<{ columnas: string[]; tabla: string; columnasRef: string[]; archivo: string; linea: number }>;
+}
+
 export type Forma = Record<string, string>;
 
 export interface Extraccion {
@@ -145,6 +164,8 @@ export interface Extraccion {
   navegaciones: NavegacionCruda[];
   /** Mensajes publicados y consumidos. Opcional: no todos los parsers los detectan. */
   eventos?: EventoCrudo[];
+  /** Esquema de base de datos: tablas con columnas y claves foráneas. */
+  esquema?: TablaEsquema[];
   /** Formas de tipos declarados, por paquete y nombre. */
   formas: Record<string, Record<string, Forma>>;
   /** Paquetes cuyos endpoints declara este parser con autoridad (OpenAPI). */

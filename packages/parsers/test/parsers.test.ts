@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { compileDir, stringifyCanonical } from "@brain/core";
-import { endpointsAlcanzables, escribirIndex, indexar, leerRepo, openapiParser, phpParser, tsParser, type Extraccion, type ResultadoIndex } from "../src/index.js";
+import { buscarNodo, cargarContexto, compileDir, impactoDe, stringifyCanonical } from "@brain/core";
+import { endpointsAlcanzables, esquemaParser, escribirIndex, indexar, leerRepo, openapiParser, phpParser, tsParser, type Extraccion, type ResultadoIndex } from "../src/index.js";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const F = (p: string) => join(RAIZ, "fixtures", p);
@@ -714,5 +714,75 @@ describe("eventos y colas: del código al contrato y al grafo", () => {
     const g = JSON.parse(await readFile(join(brain, "_build/graph.json"), "utf8")) as { edges: Array<{ desde: string; verbo: string; hasta: string }> };
     // Las relaciones entre servicios entran al grafo por las páginas (las propone `brain draft`); la del endpoint, directo.
     expect(g.edges.filter((e) => e.hasta === "queue-turno-creado").map((e) => `${e.desde} ${e.verbo}`)).toEqual(["svc-avisos:POST:/turnos publica_en"]);
+  });
+});
+
+describe("esquema-parser: tablas, columnas y claves foráneas desde DDL en cualquier archivo", () => {
+  let dir: string, brain: string, repo: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "brain-esquema-"));
+    brain = join(dir, "brain");
+    repo = join(dir, "agenda");
+    const w = async (base: string, ruta: string, lineas: string[]) => {
+      await mkdir(dirname(join(base, ruta)), { recursive: true });
+      await writeFile(join(base, ruta), lineas.join("\n") + "\n");
+    };
+    const pagina = (id: string, tipo: string, extra: string[] = []) => ["---", `id: ${id}`, `tipo: ${tipo}`, `nombre: ${id}`, `resumen: ${id}.`, ...extra, "---", `# ${id}`];
+    await w(brain, "tecnologia/repo-agenda.md", pagina("repo-agenda", "repo"));
+    await w(brain, "tecnologia/tabla-turno.md", pagina("tabla-turno", "tabla", ["aliases: [turno]"]));
+    await w(brain, "tecnologia/tabla-paciente.md", pagina("tabla-paciente", "tabla", ["aliases: [paciente]"]));
+    await w(repo, "db/001_inicial.sql", [
+      "CREATE TABLE paciente (",
+      "  id INT NOT NULL AUTO_INCREMENT,",
+      "  nombre VARCHAR(120) NOT NULL,",
+      "  apodo VARCHAR(40),",
+      "  PRIMARY KEY (id)",
+      ");",
+      "CREATE TABLE IF NOT EXISTS `turno` (",
+      "  `id` BIGINT PRIMARY KEY,",
+      "  `paciente_id` INT NOT NULL,",
+      "  `inicio` TIMESTAMP WITH TIME ZONE NOT NULL,",
+      "  `importe` DECIMAL(10, 2),",
+      "  CONSTRAINT fk_turno_paciente FOREIGN KEY (`paciente_id`) REFERENCES `paciente` (`id`)",
+      ");",
+      "CREATE TABLE borrador (id INT);",
+      "CREATE TABLE copia AS SELECT * FROM turno;",
+    ]);
+    // Migración en otro lenguaje: el SQL va dentro de strings.
+    await w(repo, "migrations/Version002.php", [
+      "<?php",
+      "final class Version002 {",
+      "  public function up($schema): void {",
+      "    $this->addSql('ALTER TABLE paciente ADD email VARCHAR(255) DEFAULT NULL, DROP apodo');",
+      "    $this->addSql('ALTER TABLE turno ADD sala_id INT NOT NULL');",
+      "    $this->addSql('DROP TABLE borrador');",
+      "  }",
+      "}",
+    ]);
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("aplica CREATE, ALTER y DROP en orden y deja el esquema final", () => {
+    const x = esquemaParser.extract(leerRepo(repo)) as Extraccion;
+    const texto = (x.esquema ?? []).map((t) => `${t.tabla} @ ${t.archivo}#L${t.linea}: ${t.columnas.map((c) => `${c.nombre} ${c.tipo}${c.pk ? " pk" : ""}${c.nulo ? " null" : ""}`).join(" | ")}`);
+    expect(texto).toEqual([
+      "paciente @ db/001_inicial.sql#L1: id int pk | nombre varchar(120) | email varchar(255) null",
+      "turno @ db/001_inicial.sql#L7: id bigint pk | paciente_id int | inicio timestamp with time zone | importe decimal(10, 2) null | sala_id int",
+    ]);
+    expect(x.esquema!.find((t) => t.tabla === "turno")!.fks).toEqual([{ columnas: ["paciente_id"], tabla: "paciente", columnasRef: ["id"], archivo: "db/001_inicial.sql", linea: 12 }]);
+  });
+
+  it("en el grafo: columnas en la tabla, la clave foránea como dependencia, y se busca por columna", async () => {
+    await escribirIndex(brain, await indexar(repo, brain));
+    const { salidas } = await compileDir(brain);
+    const g = salidas.graph;
+    expect((g.nodes.find((n) => n.id === "tabla-turno")!.atributos["columnas"] as Array<{ nombre: string }>).map((c) => c.nombre)).toEqual(["id", "paciente_id", "inicio", "importe", "sala_id"]);
+    expect(g.edges.filter((e) => e.desde === "tabla-turno").map((e) => `${e.verbo} ${e.hasta} (${e.dato}) ${e.evidencia}`)).toEqual(["depende_de tabla-paciente (paciente_id → id) repo-agenda:db/001_inicial.sql#L12"]);
+    const ctx = await cargarContexto(brain);
+    expect(buscarNodo(ctx, { texto: "sala_id" }).nodos.map((n) => `${n.id} ${n.coincidencia}`)).toEqual(["tabla-turno columna"]);
+    // Cambiar la tabla referenciada alcanza a la que la referencia, y el impacto trae las columnas.
+    const imp = impactoDe(ctx, { pieza: "tabla-paciente" }) as { columnas: string[]; tecnicas: Array<{ id: string }> };
+    expect(imp.columnas).toEqual(["id int pk", "nombre varchar(120)", "email varchar(255) null"]);
+    expect(imp.tecnicas.map((t) => t.id)).toContain("tabla-turno");
   });
 });

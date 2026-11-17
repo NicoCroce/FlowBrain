@@ -531,6 +531,12 @@ export interface ImpactoParams {
 
 const VERBO: Record<string, string> = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de" };
 
+/** Columnas de una tabla como texto: `nombre tipo`, con `pk` y `null` cuando aplica. */
+function columnasDe(ctx: Contexto, id: string): string[] | null {
+  const cols = ctx.nodo.get(id)?.atributos["columnas"] as Array<{ nombre: string; tipo: string; nulo: boolean; pk: boolean }> | undefined;
+  return cols?.length ? cols.map((c) => `${c.nombre} ${c.tipo}${c.pk ? " pk" : ""}${c.nulo ? " null" : ""}`) : null;
+}
+
 export function impactoDe(ctx: Contexto, p: ImpactoParams) {
   const ix = indice(ctx);
   let id = ctx.nodo.has(p.pieza) ? p.pieza : null;
@@ -560,10 +566,11 @@ export function impactoDe(ctx: Contexto, p: ImpactoParams) {
     pieza: id,
     tipo: ctx.nodo.get(id)?.tipo ?? "",
     funcionalidades: afectados.filter((a) => a.tipo === "feat"),
+    ...(columnasDe(ctx, id) ? { columnas: columnasDe(ctx, id) } : {}),
     ...(ix.tocanTabla.has(id) ? { tocadaPor: ix.tocanTabla.get(id)!.map((t) => ({ verbo: t.verbo, quien: t.clave.includes("#") && !/#L\d/.test(t.clave) ? cita(ix, t.clave) : t.clave, ev: t.evidencia })) } : {}),
     tecnicas: afectados.filter((a) => a.tipo !== "feat"),
     avisos: [...(afectados.length ? [] : ["nada depende de esta pieza en el grafo"]), ...avisosIndice(ix)],
     indice: versiones(ix),
   };
-  return ajustarLista(res, ["tecnicas", "tocadaPor", "funcionalidades"], p.budget_tokens);
+  return ajustarLista(res, ["tecnicas", "tocadaPor", "columnas", "funcionalidades"], p.budget_tokens);
 }

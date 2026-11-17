@@ -253,6 +253,20 @@ export function compile(entradas: Entradas): Salidas {
       agregarNodo(generado(id, "archivo", arc.ruta, { lenguaje: arc.lenguaje, repo: a.repo, ruta: arc.ruta }), f.ruta, null);
       aristas.push(arista(a.repo, "contiene", id, "parser"));
     });
+    // Esquema: las columnas quedan en el nodo de la tabla; cada clave foránea es una dependencia entre tablas.
+    for (const [i, t] of (a.esquema ?? []).entries()) {
+      const n = nodos.get(t.tabla);
+      if (n?.tipo !== "tabla") {
+        if (!rotos.has(t.tabla)) errores.push({ archivo: f.ruta, linea: null, mensaje: `esquema[${i}]: tabla inexistente: ${t.tabla}` });
+        continue;
+      }
+      checkEvidencia(t.evidencia, f.ruta, null, `esquema[${i}]`);
+      n.atributos = { ...n.atributos, columnas: t.columnas, esquema: t.evidencia };
+      for (const fk of t.fks) {
+        if (nodos.get(fk.hasta)?.tipo !== "tabla" || fk.hasta === t.tabla) continue;
+        aristas.push(arista(t.tabla, "depende_de", fk.hasta, "parser", { dato: `${fk.columnas.join(", ")} → ${fk.columnasRef.join(", ")}`, evidencia: fk.evidencia }));
+      }
+    }
     // Pantallas del front: cada una es del servicio cuya raíz contiene su componente (o del repo, si no tiene).
     if (a.pantallas?.length) {
       const svcs = paginas.filter((q) => q.fm.tipo === "svc" && (q.fm.vive_en ?? []).includes(a.repo));

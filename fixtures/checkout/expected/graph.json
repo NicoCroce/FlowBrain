@@ -762,7 +762,41 @@
         "pagos tabla",
         "Pago"
       ],
-      "atributos": {},
+      "atributos": {
+        "columnas": [
+          {
+            "nombre": "id",
+            "nulo": false,
+            "pk": true,
+            "tipo": "string"
+          },
+          {
+            "nombre": "pedidoId",
+            "nulo": false,
+            "pk": false,
+            "tipo": "string"
+          },
+          {
+            "nombre": "monto",
+            "nulo": false,
+            "pk": false,
+            "tipo": "int"
+          },
+          {
+            "nombre": "moneda",
+            "nulo": false,
+            "pk": false,
+            "tipo": "string"
+          },
+          {
+            "nombre": "estado",
+            "nulo": false,
+            "pk": false,
+            "tipo": "string"
+          }
+        ],
+        "esquema": "repo-tienda:apps/payments/prisma/schema.prisma#L5"
+      },
       "estado": "vigente",
       "id": "tabla-pagos",
       "nombre": "Tabla de pagos",

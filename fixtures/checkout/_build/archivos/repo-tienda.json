@@ -190,6 +190,45 @@
       ]
     }
   ],
+  "esquema": [
+    {
+      "columnas": [
+        {
+          "nombre": "id",
+          "nulo": false,
+          "pk": true,
+          "tipo": "string"
+        },
+        {
+          "nombre": "pedidoId",
+          "nulo": false,
+          "pk": false,
+          "tipo": "string"
+        },
+        {
+          "nombre": "monto",
+          "nulo": false,
+          "pk": false,
+          "tipo": "int"
+        },
+        {
+          "nombre": "moneda",
+          "nulo": false,
+          "pk": false,
+          "tipo": "string"
+        },
+        {
+          "nombre": "estado",
+          "nulo": false,
+          "pk": false,
+          "tipo": "string"
+        }
+      ],
+      "evidencia": "repo-tienda:apps/payments/prisma/schema.prisma#L5",
+      "fks": [],
+      "tabla": "tabla-pagos"
+    }
+  ],
   "raiz": "../repos/tienda",
   "repo": "repo-tienda"
 }

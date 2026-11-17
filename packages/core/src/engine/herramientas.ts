@@ -92,7 +92,7 @@ function levenshtein(a: string, b: string, max: number): number {
 }
 
 /** `contiene`: el texto está dentro del nombre o de un alias. `texto`: aparece en el resumen o en la prosa de la página. */
-const RANGO = { exacta: 5, prefijo: 4, contiene: 3, difusa: 2, texto: 1 } as const;
+const RANGO = { exacta: 5, prefijo: 4, contiene: 3, columna: 3, difusa: 2, texto: 1 } as const;
 type Coincidencia = keyof typeof RANGO;
 /** Largo mínimo para buscar dentro de nombres y de texto: con menos, casi todo coincide. */
 const MIN_CONTIENE = 3;
@@ -140,6 +140,8 @@ export function buscarNodo(ctx: Contexto, p: BuscarParams) {
     if (claves.some((k) => k === q)) c = "exacta";
     else if (claves.some((k) => k.startsWith(q))) c = "prefijo";
     else if (q.length >= MIN_CONTIENE && nombres.some((k) => k.includes(q))) c = "contiene";
+    // Una tabla también se encuentra por el nombre exacto de una de sus columnas.
+    else if (n.tipo === "tabla" && ((n.atributos["columnas"] as Array<{ nombre: string }> | undefined) ?? []).some((col) => normalizar(col.nombre) === q)) c = "columna";
     else if (claves.some((k) => levenshtein(q, k, 2) <= 2)) c = "difusa";
     else if (q.length >= MIN_CONTIENE && [n.resumen ?? "", ctx.prosa.get(n.id) ?? ""].some((t) => normalizar(t).includes(q))) c = "texto";
     if (c) hits.push({ n, c });

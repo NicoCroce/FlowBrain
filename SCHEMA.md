@@ -51,7 +51,7 @@ Toda arista va de `desde` a `hasta`.
 | `consume_de` | svc; endpoint, feat | queue | `relaciones` (endpoint: lo genera el compilador) | sí |
 | `lee_de` | svc; endpoint, feat | db, tabla | `relaciones` (endpoint: lo genera el compilador) | sí |
 | `escribe_en` | svc; endpoint, feat | db, tabla | `relaciones` (endpoint: lo genera el compilador) | sí |
-| `depende_de` | repo, svc, lib → repo, svc, lib, db, queue, ext · feat → feat | | `relaciones` | no |
+| `depende_de` | repo, svc, lib → repo, svc, lib, db, queue, ext · feat → feat · tabla → tabla (clave foránea, la genera el compilador) | | `relaciones` | no |
 | `implementa` | svc, lib, repo; pantalla, endpoint | feat | `relaciones` (pantalla y endpoint: lo genera el compilador) | no |
 | `decidido_por` | cualquiera salvo generados | decision | `relaciones` | no |
 | `vive_en` | svc, lib → repo · tabla → db | | campo `vive_en` | no |
@@ -182,6 +182,7 @@ Los destinos sin resolver nunca llegan a una página compilada. Van como prosa e
 
 - `commit` (opcional): commit de HEAD del clon al indexar, leído de `.git` sin ejecutar git.
 - `simbolos`: funciones, clases, métodos (`Clase.metodo`, en la línea del nombre), interfaces, tipos y enums; `fin` es la última línea, si el parser la conoce.
+- `esquema` (opcional, raíz del JSON): por cada tabla con página, `tabla` (id), `evidencia` (dónde se crea), `columnas` (`nombre`, `tipo`, `nulo`, `pk`) y `fks` (`columnas`, `hasta` = id de la tabla referenciada, `columnasRef`, `evidencia`). `compile` deja `columnas` y `esquema` en los atributos del nodo de la tabla y genera `depende_de` de tabla a tabla por cada clave foránea, con `dato` = `columna → columna referenciada`. Lo genera el esquema-parser: lee DDL (`CREATE`/`ALTER`/`DROP TABLE`) en archivos `.sql` y dentro del texto de archivos de código (migraciones), y modelos de `schema.prisma`; aplica las sentencias en orden de ruta. Las tablas sin página y las claves foráneas hacia tablas sin página se omiten.
 - `importa` (opcional): archivos del mismo repo que importa. `invoca` (opcional): llamadas de cada método o función a símbolos de otros archivos o clases del repo; una llamada a una interfaz o método abstracto se atribuye a las clases que lo implementan. Hoy los genera el ts-parser.
 
 - `pantallas` (opcional): rutas del router del front con `ruta` (normalizada como las de endpoint), `archivo` y `linea` donde se declaran, `componente` (`{archivo, simbolo}` o `null`) y `envuelta` (componentes de las rutas contenedoras: layouts y guardas, de afuera hacia adentro).

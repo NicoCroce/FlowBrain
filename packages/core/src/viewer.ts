@@ -279,6 +279,11 @@ a.nb { text-decoration: none; }
       <input id="m3-escala" type="range" min="0.4" max="2.4" step="0.1" value="1">
     </section>
     <section>
+      <h2 class="lbl" style="padding: 0 4px">Impulsos</h2>
+      <label for="m3-int" class="m3-escala">Intensidad <span id="m3-int-txt">100%</span></label>
+      <input id="m3-int" type="range" min="0" max="100" step="5" value="100">
+    </section>
+    <section>
       <h2 class="lbl" style="padding: 0 4px">Agrupar por</h2>
       <div id="m3-grupo" class="seg" role="group" aria-label="Agrupar por"></div>
       <p class="m3-ayuda">Define qué nodos son “hijos” de cuál. Al arrastrar o separar un nodo, se lleva a todos sus hijos.</p>

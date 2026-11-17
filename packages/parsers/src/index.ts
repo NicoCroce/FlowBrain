@@ -5,3 +5,4 @@ export * from "./openapi-parser.js";
 export * from "./indexar.js";
 export * from "./php-parser.js";
 export * from "./url.js";
+export * from "./esquema-parser.js";

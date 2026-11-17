@@ -57,7 +57,7 @@ export const GRAFO3D_JS = String.raw`
   var ocultosIniciales = {};
   TIPOS.forEach(function (t) { if (D.tiposIniciales.indexOf(t[0]) < 0) ocultosIniciales[t[0]] = true; });
   var S = { hiddenTypes: ocultosIniciales, hiddenVerbs: {}, sizeMode: "uso", scale: 1, group: "feat", labels: "grandes", selId: null, query: "",
-    dragChildren: true, rotating: true, isolate: false, hiddenIds: {},
+    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, intensidad: 1,
     pulsos: !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) };
 
   function setParents(mode) {
@@ -354,21 +354,23 @@ export const GRAFO3D_JS = String.raw`
       ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy);
       ctx.quadraticCurveTo((pa.sx + pb.sx) / 2 - (pb.sy - pa.sy) * e.c, (pa.sy + pb.sy) / 2 + (pb.sx - pa.sx) * e.c, pb.sx, pb.sy); ctx.stroke();
     }
-    if (S.pulsos && vis.length) {
-      var tope = Math.min(150, 14 + vis.length * 0.07), foco = sel || hov;
+    // Intensidad: con menos, corren menos impulsos y brillan menos; en cero no corre ninguno.
+    var I = S.pulsos ? S.intensidad : 0, brillo = 0.3 + 0.7 * I;
+    if (I > 0 && vis.length) {
+      var tope = Math.min(150, 14 + vis.length * 0.07) * I, foco = sel || hov;
       for (var s0 = 0; s0 < 3 && pulsos.length < tope; s0++) {
-        if (Math.random() > 0.55) continue;
+        if (Math.random() > 0.55 * I) continue;
         var cand = vis[Math.floor(Math.random() * vis.length)];
         if (foco && Math.random() < 0.6) { var fa = foco.adj[Math.floor(Math.random() * foco.adj.length)]; if (fa && pm.get(fa.n) && !S.hiddenVerbs[fa.e.verbo]) cand = fa.e; }
         lanzar(cand, 0);
       }
-    } else if (!S.pulsos) pulsos.length = 0;
+    } else if (!I) pulsos.length = 0;
     for (var u = pulsos.length - 1; u >= 0; u--) {
       var pu = pulsos[u], pe = pu.e, qa = pm.get(pe.a), qb = pm.get(pe.b);
       if (!qa || !qb || S.hiddenVerbs[pe.verbo]) { pulsos.splice(u, 1); continue; }
       pu.t += pu.v;
       if (pu.t >= 1) {
-        pe.b.fire = 1; pulsos.splice(u, 1);
+        pe.b.fire = brillo; pulsos.splice(u, 1);
         if (pu.gen < 3 && Math.random() < 0.6) {
           var sal = pe.b.adj.filter(function (x) { return x.e.a === pe.b && !S.hiddenVerbs[x.e.verbo] && pm.get(x.n); });
           if (sal.length) { lanzar(sal[Math.floor(Math.random() * sal.length)].e, pu.gen + 1); if (sal.length > 1 && Math.random() < 0.25) lanzar(sal[Math.floor(Math.random() * sal.length)].e, pu.gen + 1); }
@@ -376,7 +378,7 @@ export const GRAFO3D_JS = String.raw`
         continue;
       }
       // Rastro quebrado, como una descarga, y una chispa en la punta.
-      var pc = col(pe.a.tipo), pal = Math.min(1, Math.min(qa.a, qb.a) + 0.25), nx = qb.sy - qa.sy, ny = qa.sx - qb.sx, nl = Math.sqrt(nx * nx + ny * ny) || 1;
+      var pc = col(pe.a.tipo), pal = Math.min(1, Math.min(qa.a, qb.a) + 0.25) * brillo, nx = qb.sy - qa.sy, ny = qa.sx - qb.sx, nl = Math.sqrt(nx * nx + ny * ny) || 1;
       ctx.beginPath();
       for (var tr = 0; tr <= 6; tr++) {
         var tt = Math.max(0, pu.t - 0.16 * (1 - tr / 6)), pt = curva(qa, qb, pe.c, tt), jit = tr > 0 && tr < 6 ? (Math.random() - 0.5) * 5 : 0;
@@ -520,6 +522,7 @@ export const GRAFO3D_JS = String.raw`
     drag.classList.toggle("on", S.dragChildren); drag.setAttribute("aria-pressed", S.dragChildren);
     rot.classList.toggle("on", S.rotating); rot.setAttribute("aria-pressed", S.rotating);
     var imp = $("m3-imp"); imp.classList.toggle("on", S.pulsos); imp.setAttribute("aria-pressed", S.pulsos);
+    $("m3-int").disabled = !S.pulsos;
     detalle();
   }
   function detalle() {
@@ -591,6 +594,7 @@ export const GRAFO3D_JS = String.raw`
   $("m3-buscar").addEventListener("input", function (ev) { S.query = ev.target.value; resultados(); });
   $("m3-buscar").addEventListener("keydown", function (ev) { var b = $("m3-res").querySelector("button"); if (ev.key === "Enter" && b) b.click(); });
   $("m3-escala").addEventListener("input", function (ev) { S.scale = parseFloat(ev.target.value); $("m3-escala-txt").textContent = S.scale.toFixed(1) + "×"; });
+  $("m3-int").addEventListener("input", function (ev) { S.intensidad = parseFloat(ev.target.value) / 100; $("m3-int-txt").textContent = ev.target.value + "%"; });
   ui();
 
   function mostrarMapa() { if (!corriendo) { corriendo = true; loop(); } }
