@@ -26,7 +26,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 5 | Registro del MCP y los hooks | Pendiente, requiere decisión |
 | 6 | Eventos y colas | Hecho (decisión 123) |
 | 7 | Bases de datos y esquema | Hecho (decisión 124) |
-| 8–9 | Cobertura del modelo | Pendiente |
+| 8 | Infraestructura | Hecho (decisión 125) |
+| 9 | Código compartido, equipos y decisiones | Pendiente |
 | 10–12 | Frescura | Pendiente |
 | 13–15 | Agnosticismo | Pendiente |
 | 16–19 | Diferenciación | Pendiente |

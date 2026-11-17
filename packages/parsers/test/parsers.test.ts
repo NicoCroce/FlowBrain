@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buscarNodo, cargarContexto, compileDir, impactoDe, stringifyCanonical } from "@brain/core";
-import { endpointsAlcanzables, esquemaParser, escribirIndex, indexar, leerRepo, openapiParser, phpParser, tsParser, type Extraccion, type ResultadoIndex } from "../src/index.js";
+import { buscarNodo, cargarContexto, compileDir, impactoDe, infra, stringifyCanonical } from "@brain/core";
+import { endpointsAlcanzables, esquemaParser, escribirIndex, infraParser, indexar, leerRepo, openapiParser, phpParser, tsParser, type Extraccion, type ResultadoIndex } from "../src/index.js";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const F = (p: string) => join(RAIZ, "fixtures", p);
@@ -784,5 +784,98 @@ describe("esquema-parser: tablas, columnas y claves foráneas desde DDL en cualq
     const imp = impactoDe(ctx, { pieza: "tabla-paciente" }) as { columnas: string[]; tecnicas: Array<{ id: string }> };
     expect(imp.columnas).toEqual(["id int pk", "nombre varchar(120)", "email varchar(255) null"]);
     expect(imp.tecnicas.map((t) => t.id)).toContain("tabla-turno");
+  });
+});
+
+describe("infra-parser: imágenes, compose, pipelines, variables y proxy", () => {
+  let dir: string, brain: string, repo: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "brain-infra-"));
+    brain = join(dir, "brain");
+    repo = join(dir, "agenda");
+    const w = async (base: string, ruta: string, lineas: string[]) => {
+      await mkdir(dirname(join(base, ruta)), { recursive: true });
+      await writeFile(join(base, ruta), lineas.join("\n") + "\n");
+    };
+    const pagina = (id: string, tipo: string, extra: string[] = []) => ["---", `id: ${id}`, `tipo: ${tipo}`, `nombre: ${id}`, `resumen: ${id}.`, ...extra, "---", `# ${id}`];
+    await w(brain, "tecnologia/repo-agenda.md", pagina("repo-agenda", "repo"));
+    await w(brain, "tecnologia/svc-agenda.md", pagina("svc-agenda", "svc", ["aliases: [api]", "vive_en: [repo-agenda]"]));
+    await w(brain, "tecnologia/db-agenda.md", pagina("db-agenda", "db", ["aliases: [db]"]));
+    await w(repo, "package.json", ['{ "name": "agenda" }']);
+    await w(repo, "Dockerfile", ["ARG BASE=node:22", "FROM ${BASE} AS build", "RUN npm ci", "FROM build AS pruebas", "FROM node:22-slim", "WORKDIR /app", "EXPOSE 3000", 'CMD ["node", "dist/main.js"]']);
+    await w(repo, "docker-compose.yml", [
+      "services:",
+      "  api:",
+      "    build: .",
+      "    ports:",
+      '      - "3000:3000"',
+      "    depends_on: [db, cache]",
+      "    environment:",
+      "      DATABASE_URL: postgres://usuario:clave-de-compose@db/agenda",
+      "  db:",
+      "    image: postgres:16",
+      "  cache:",
+      "    image: redis:7",
+    ]);
+    await w(repo, ".env.example", ["# ejemplo", "DATABASE_URL=postgres://localhost/agenda", "export JWT_SECRET=cambiar", "", "PUERTO=3000"]);
+    await w(repo, ".env", ["JWT_SECRET=valor-real-que-no-debe-salir"]);
+    await w(repo, "bitbucket-pipelines.yml", [
+      "definitions:",
+      "  steps:",
+      "    - step: &check",
+      "        name: Check",
+      "        script:",
+      "          - npm test",
+      "pipelines:",
+      "  branches:",
+      "    main:",
+      "      - step: *check",
+      "      - step:",
+      "          name: Publicar",
+      "          deployment: production",
+      "          script:",
+      "            - ./deploy.sh",
+    ]);
+    await w(repo, ".github/workflows/ci.yml", ["name: CI", "on: [push, pull_request]", "jobs:", "  test:", "    runs-on: ubuntu-latest", "    steps:", "      - uses: actions/checkout@v4", "      - name: Tests", "        run: npm test"]);
+    await w(repo, ".gitlab-ci.yml", ["stages: [deploy]", ".base:", "  script: [echo no]", "desplegar:", "  stage: deploy", "  environment: staging", "  script:", "    - ./deploy.sh staging"]);
+    await w(repo, "ops/nginx.conf", ["server {", "  listen 80;", "  server_name agenda.test;", "  location /api/ {", "    proxy_pass http://api:3000/;", "  }", "  location / {", "    root /usr/share/nginx/html;", "  }", "}"]);
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("extrae cada pieza con su archivo y línea; de las variables, solo los nombres de los archivos de ejemplo", () => {
+    const x = infraParser.extract(leerRepo(repo)) as Extraccion;
+    expect((x.infra ?? []).map((i) => `${i.archivo}#L${i.linea} ${i.clase} ${i.nombre}: ${i.detalle.join(" | ")}`)).toEqual([
+      ".env.example#L1 variables .env.example: DATABASE_URL | JWT_SECRET | PUERTO",
+      ".github/workflows/ci.yml#L4 pipeline CI: test: cuando push, pull_request | usa actions/checkout@v4 | paso Tests | corre npm test",
+      ".gitlab-ci.yml#L4 pipeline desplegar: etapa deploy | despliega en staging | corre ./deploy.sh staging",
+      "Dockerfile#L5 imagen node:22-slim: etapa build: node:22 | etapa pruebas: node:22 | base node:22-slim | directorio /app | puerto 3000 | comando [\"node\", \"dist/main.js\"]",
+      "bitbucket-pipelines.yml#L9 pipeline branches main: paso Check | corre npm test | paso Publicar | despliega en production | corre ./deploy.sh",
+      "docker-compose.yml#L2 servicio api: construye . | puerto 3000:3000 | depende de cache | depende de db | variable DATABASE_URL",
+      "docker-compose.yml#L9 servicio db: imagen postgres:16",
+      "docker-compose.yml#L11 servicio cache: imagen redis:7",
+      "ops/nginx.conf#L1 proxy servidor: escucha 80 | nombre agenda.test",
+      "ops/nginx.conf#L4 proxy /api/: → http://api:3000/",
+      "ops/nginx.conf#L7 proxy /: archivos de /usr/share/nginx/html",
+    ]);
+  });
+
+  it("en el brain: la infraestructura queda en su nodo, compose aporta dependencias y la consulta infra filtra por texto", async () => {
+    const r = await indexar(repo, brain);
+    await escribirIndex(brain, r);
+    const json = await readFile(join(brain, "_build/archivos/repo-agenda.json"), "utf8");
+    // Ni el `.env` real ni los valores de compose o del ejemplo llegan al brain.
+    for (const secreto of ["valor-real-que-no-debe-salir", "clave-de-compose", "cambiar", "postgres://"]) expect(json).not.toContain(secreto);
+    await compileDir(brain);
+    const ctx = await cargarContexto(brain);
+    expect(ctx.graph.edges.filter((e) => e.verbo === "depende_de").map((e) => `${e.desde} → ${e.hasta} ${e.evidencia}`)).toEqual(["svc-agenda → db-agenda repo-agenda:docker-compose.yml#L2"]);
+    const de = (p: Parameters<typeof infra>[1]) => (infra(ctx, p) as { items: Array<{ de: string; clase: string; nombre: string; detalle: string[] }> }).items.map((i) => `${i.de} ${i.clase} ${i.nombre}: ${i.detalle.join(" | ")}`);
+    // Un solo servicio en el repo: lo del repo es suyo; el servicio de compose `db` va a la base.
+    expect(de({ nodo: "db-agenda" })).toEqual(["db-agenda servicio db: imagen postgres:16"]);
+    expect(de({ texto: "DATABASE_URL" })).toEqual(["svc-agenda variables .env.example: DATABASE_URL", "svc-agenda servicio api: variable DATABASE_URL"]);
+    expect(de({ nodo: "svc-agenda", texto: "despliega" })).toEqual([
+      "svc-agenda pipeline desplegar: despliega en staging",
+      "svc-agenda pipeline branches main: despliega en production",
+    ]);
+    expect((infra(ctx, { texto: "kubernetes" }) as { avisos: string[] }).avisos).toEqual(["nada coincide: no hay infraestructura declarada para eso en los repos indexados"]);
   });
 });

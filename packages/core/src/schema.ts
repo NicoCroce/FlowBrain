@@ -269,6 +269,21 @@ export const ArchivosSchema = z
           .strict(),
       )
       .optional(),
+    /** Infraestructura declarada en el repo, por nodo dueño (servicio, base, cola, externo o el repo). */
+    infra: z
+      .array(
+        z
+          .object({
+            de: z.string().min(1),
+            clase: z.enum(["imagen", "servicio", "pipeline", "variables", "proxy"]),
+            nombre: z.string().min(1),
+            detalle: z.array(z.string()),
+            evidencia: z.string(),
+            dependeDe: z.array(z.string()).optional(),
+          })
+          .strict(),
+      )
+      .optional(),
     /** Esquema de las tablas con página: columnas y claves foráneas. */
     esquema: z
       .array(

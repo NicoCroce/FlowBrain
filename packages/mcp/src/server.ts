@@ -10,6 +10,7 @@ import {
   contratoDe,
   funcionalidad,
   impactoDe,
+  infra,
   PROFUNDIDAD_MAX,
   quienLlama,
   recorrido,
@@ -77,6 +78,7 @@ export const INSTRUCCIONES = [
   "- Qué recibe y devuelve un endpoint: contrato_de.",
   "- Qué se rompe si cambio una tabla, endpoint, servicio o funcionalidad: impacto. Si es un método o una clase: quien_llama.",
   "- Por dónde viaja un dato entre servicios: trazar.",
+  "- Cómo se construye, despliega y configura un servicio (imagen, pipeline, variables de entorno, proxy): infra.",
   "- Vecinos de un nodo por tipo de relación: recorrer_grafo.",
   "Cada dato trae evidencia `repo:ruta#Ln`: abrí ese archivo antes de afirmar algo. `avisos` y `truncado` marcan huecos conocidos: ahí falta dato, no significa que no pase nada.",
 ].join("\n");
@@ -230,6 +232,23 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     async (a) => {
       const ctx = await obtener();
       return responder(() => impactoDe(ctx, limpio(a)));
+    },
+  );
+
+  server.registerTool(
+    "infra",
+    {
+      description:
+        "Infraestructura declarada en los repos: imagen de cada servicio (base, puertos, comando), servicios de compose y de qué dependen, pipelines de CI con sus pasos, variables de entorno que espera (solo nombres) y rutas del proxy. Cada dato con repo:ruta#Ln. Con `texto` responde dónde se usa una variable, un puerto o una imagen.",
+      inputSchema: {
+        nodo: z.string().min(1).optional().describe("id de un servicio, repo, base, cola o externo; sin nodo, todo el brain"),
+        texto: z.string().min(1).optional().describe("filtra: nombre de variable, puerto, imagen, paso (DATABASE_URL, 5432, deploy)"),
+        ...presupuesto,
+      },
+    },
+    async (a) => {
+      const ctx = await obtener();
+      return responder(() => infra(ctx, limpio(a)));
     },
   );
 

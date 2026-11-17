@@ -531,6 +531,43 @@ export interface ImpactoParams {
 
 const VERBO: Record<string, string> = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de" };
 
+export interface InfraParams {
+  /** Servicio, repo, base, cola o externo. Sin nodo: toda la infraestructura del brain. */
+  nodo?: string;
+  /** Filtra por texto: una variable de entorno, un puerto, una imagen, un paso de pipeline. */
+  texto?: string;
+  budget_tokens?: number | null;
+}
+
+/**
+ * Infraestructura declarada en los repos: imágenes, servicios de compose, pipelines de CI, variables de entorno
+ * (solo nombres) y rutas de proxy, cada una con su archivo. Para un servicio suma lo del repo donde vive; para un
+ * repo, lo de sus servicios. No necesita índice de código.
+ */
+export function infra(ctx: Contexto, p: InfraParams) {
+  type Item = { clase: string; nombre: string; detalle: string[]; evidencia: string };
+  let ids: string[];
+  if (p.nodo !== undefined) {
+    if (!ctx.nodo.has(p.nodo)) throw new ConsultaError("nodo_inexistente", `no existe el nodo: ${p.nodo}`);
+    const vive = (verboDesde: "salientes" | "entrantes") => (ctx[verboDesde].get(p.nodo!) ?? []).filter((e) => e.verbo === "vive_en").map((e) => (verboDesde === "salientes" ? e.hasta : e.desde));
+    ids = [p.nodo, ...vive("salientes"), ...vive("entrantes")];
+  } else ids = ctx.graph.nodes.map((n) => n.id);
+  const q = p.texto ? normalizar(p.texto) : "";
+  const items = [...new Set(ids)].sort(cmp).flatMap((id) =>
+    ((ctx.nodo.get(id)?.atributos["infra"] as Item[] | undefined) ?? [])
+      .filter((it) => !q || [it.clase, it.nombre, ...it.detalle].some((t) => normalizar(t).includes(q)))
+      .map((it) => ({ de: id, clase: it.clase, nombre: it.nombre, detalle: q ? it.detalle.filter((t) => normalizar(t).includes(q) || normalizar(it.nombre).includes(q) || it.clase === q) : it.detalle, ev: it.evidencia })),
+  );
+  const res = {
+    ...(p.nodo !== undefined ? { nodo: p.nodo } : {}),
+    ...(p.texto ? { texto: p.texto } : {}),
+    total: items.length,
+    items,
+    avisos: items.length ? [] : [ctx.graph.nodes.some((n) => n.atributos["infra"]) ? "nada coincide: no hay infraestructura declarada para eso en los repos indexados" : "el brain no tiene infraestructura indexada (corré brain index y brain compile)"],
+  };
+  return ajustarLista(res, "items", p.budget_tokens);
+}
+
 /** Columnas de una tabla como texto: `nombre tipo`, con `pk` y `null` cuando aplica. */
 function columnasDe(ctx: Contexto, id: string): string[] | null {
   const cols = ctx.nodo.get(id)?.atributos["columnas"] as Array<{ nombre: string; tipo: string; nulo: boolean; pk: boolean }> | undefined;

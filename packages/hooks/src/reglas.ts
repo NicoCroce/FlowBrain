@@ -58,6 +58,7 @@ export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): st
     "- `pantalla` para una pantalla del front (`/login`, `LoginScreen`): de dónde se llega, a dónde lleva, qué guardas la envuelven y qué llama del back, de punta a punta.",
     "- `quien_llama` antes de cambiar un método: quién lo llama (también por eventos, colas y HTTP desde otros repos) y qué endpoints y funcionalidades alcanza.",
     "- `impacto` para saber qué funcionalidades se ven afectadas si cambia una tabla, un endpoint o un servicio.",
+    "- `infra` para saber cómo se construye, despliega y configura un servicio: imagen, pipelines, variables de entorno y proxy.",
     "- `funcionalidad` para la ficha de una funcionalidad de producto: endpoints, consumo, datos y relaciones.",
     "Los `avisos` de cada respuesta son huecos conocidos (no hay dato, no \"no pasa nada\"): llamadas sin resolver o índice desactualizado; ahí sí conviene mirar el código. `indice` dice de qué commit salió.",
     "Sin MCP, los mismos comandos por CLI: `brain buscar <texto>`, `brain recorrer <nodo>`, `brain contrato <nodo>`, `brain trazar --desde <ruta>`, `brain recorrido <endpoint|Clase.metodo>`, `brain pantalla </ruta>`, `brain quien-llama <Clase.metodo>`, `brain impacto <pieza>`, `brain funcionalidad <id>`.",

@@ -6,10 +6,11 @@ import { openapiParser } from "./openapi-parser.js";
 import { tsParser } from "./ts-parser.js";
 import { phpParser } from "./php-parser.js";
 import { esquemaParser } from "./esquema-parser.js";
+import { infraParser } from "./infra-parser.js";
 import type { Extraccion, Forma, LlamadaCruda, Parser } from "./tipos.js";
 
 /** Parsers en orden de prioridad: los posteriores pisan formas y, si son autoritativos, endpoints. */
-export const PARSERS: Parser[] = [tsParser, phpParser, openapiParser, esquemaParser];
+export const PARSERS: Parser[] = [tsParser, phpParser, openapiParser, esquemaParser, infraParser];
 
 export interface NodoPagina {
   id: string;
@@ -35,6 +36,16 @@ export interface EsquemaTabla {
   evidencia: string;
   columnas: Array<{ nombre: string; tipo: string; nulo: boolean; pk: boolean }>;
   fks: Array<{ columnas: string[]; hasta: string; columnasRef: string[]; evidencia: string }>;
+}
+
+export interface InfraDeNodo {
+  de: string;
+  clase: string;
+  nombre: string;
+  detalle: string[];
+  evidencia: string;
+  /** Nodos de los que depende, cuando los nombres de compose coinciden con páginas del brain. */
+  dependeDe?: string[];
 }
 
 export interface Pendiente {
@@ -66,6 +77,8 @@ export interface ResultadoIndex {
     navegaciones?: Extraccion["navegaciones"];
     /** Esquema de las tablas que tienen página: columnas y claves foráneas hacia otras tablas con página. */
     esquema?: EsquemaTabla[];
+    /** Infraestructura, atribuida al servicio del paquete donde está el archivo (o al repo). */
+    infra?: InfraDeNodo[];
     repo: string; commit?: string; /** Ruta del clon relativa al brain, para comparar su HEAD actual con `commit`. */ raiz: string };
 }
 
@@ -150,6 +163,7 @@ export function fusionar(xs: Extraccion[]): Extraccion {
     out.tablas.push(...x.tablas.filter((t) => !esArchivoDeTest(t.archivo)));
     out.modelos.push(...x.modelos);
     (out.esquema ??= []).push(...(x.esquema ?? []));
+    (out.infra ??= []).push(...(x.infra ?? []).filter((i) => !esArchivoDeTest(i.archivo)));
     (out.eventos ??= []).push(...(x.eventos ?? []).filter((e) => !esArchivoDeTest(e.archivo)));
     out.pantallas.push(...(x.pantallas ?? []).filter((p) => !esArchivoDeTest(p.archivo)));
     out.navegaciones.push(...(x.navegaciones ?? []).filter((n) => !esArchivoDeTest(n.archivo)));
@@ -415,6 +429,22 @@ export async function indexar(
   }
   esquema.sort((a, b) => cmp(a.tabla, b.tabla));
 
+  // ---------- Infraestructura: del servicio del paquete (o del repo); un servicio de compose, del nodo con su nombre ----------
+  const nodoDeCompose = (nombre: string) => {
+    const hits = destinosPorClave(normalizar(nombre), ["svc", "db", "queue", "ext"]);
+    return hits.length === 1 ? hits[0]!.id : null;
+  };
+  const infra: InfraDeNodo[] = [];
+  for (const i of x.infra ?? []) {
+    const propio = i.clase === "servicio" ? nodoDeCompose(i.nombre) : null;
+    const dueños = propio ? [propio] : (svcsDe.get(i.paquete) ?? []).filter((s) => !esNuevo.has(s));
+    const deps = [...new Set((i.dependeDe ?? []).flatMap((d) => nodoDeCompose(d) ?? []))].sort(cmp);
+    for (const de of dueños.length && (propio || i.paquete !== "" || servicios.length === 1) ? dueños : [repoId]) {
+      infra.push({ de, clase: i.clase, nombre: i.nombre, detalle: i.detalle, evidencia: ev(i.archivo, i.linea), ...(propio && deps.length ? { dependeDe: deps.filter((d) => d !== de) } : {}) });
+    }
+  }
+  infra.sort((a, b) => cmpTuple([a.de, a.evidencia, a.nombre], [b.de, b.evidencia, b.nombre]));
+
   return {
     repo: repoId,
     repoNuevo,
@@ -428,6 +458,7 @@ export async function indexar(
       ...(x.pantallas.length ? { pantallas: x.pantallas } : {}),
       ...(x.navegaciones.length ? { navegaciones: x.navegaciones } : {}),
       ...(esquema.length ? { esquema } : {}),
+      ...(infra.length ? { infra } : {}),
       raiz: ubicacion, repo: repoId, ...(commit ? { commit } : {}) },
   };
 }

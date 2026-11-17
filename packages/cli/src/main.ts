@@ -12,6 +12,7 @@ import {
   contratoDe,
   funcionalidad,
   impactoDe,
+  infra,
   quienLlama,
   recorrido,
   pantalla,
@@ -59,6 +60,7 @@ Comandos:
   pantalla </ruta|Componente>               pantalla del front de punta a punta: de dónde se llega, a dónde lleva, qué llama del back
   quien-llama <Clase.metodo|Clase> [--profundidad n]
   impacto <pieza>                           qué se ve afectado si cambia una tabla, endpoint, servicio, feat o símbolo
+  infra [nodo] [--texto <t>]                imágenes, compose, pipelines, variables de entorno y proxy, con su archivo
   evaluar [archivo] [--minimo pct]          corre preguntas con respuesta conocida (por defecto evals/preguntas.json)
                                             y da el porcentaje de aciertos; sale con 1 si queda debajo de --minimo
   context --prompt <texto> [--repo <dir>]   contexto para inyectar en un prompt (budget por defecto 1500)
@@ -112,6 +114,7 @@ export async function ejecutar(
         dias: { type: "string" },
         hoy: { type: "string" },
         minimo: { type: "string" },
+        texto: { type: "string" },
         escribir: { type: "boolean" },
         forzar: { type: "boolean" },
         json: { type: "boolean" },
@@ -312,6 +315,9 @@ export async function ejecutar(
       case "impacto":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <pieza>");
         resultado = impactoDe(ctx, { pieza: arg, ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
+      case "infra":
+        resultado = infra(ctx, { ...opt("nodo", arg), ...opt("texto", o.texto), ...opt("budget_tokens", comunes.budget_tokens) });
         break;
       case "evaluar": {
         const archivo = resolve(raiz, arg ?? "evals/preguntas.json");

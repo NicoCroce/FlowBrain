@@ -267,6 +267,21 @@ export function compile(entradas: Entradas): Salidas {
         aristas.push(arista(t.tabla, "depende_de", fk.hasta, "parser", { dato: `${fk.columnas.join(", ")} → ${fk.columnasRef.join(", ")}`, evidencia: fk.evidencia }));
       }
     }
+    // Infraestructura: queda en el nodo dueño; `depends_on` de compose es una dependencia entre nodos.
+    for (const [i, it] of (a.infra ?? []).entries()) {
+      const n = nodos.get(it.de);
+      if (!n) {
+        if (!rotos.has(it.de)) errores.push({ archivo: f.ruta, linea: null, mensaje: `infra[${i}]: nodo inexistente: ${it.de}` });
+        continue;
+      }
+      checkEvidencia(it.evidencia, f.ruta, null, `infra[${i}]`);
+      const previa = (n.atributos["infra"] as unknown[] | undefined) ?? [];
+      n.atributos = { ...n.atributos, infra: [...previa, { clase: it.clase, nombre: it.nombre, detalle: it.detalle, evidencia: it.evidencia }] };
+      for (const d of it.dependeDe ?? []) {
+        const h = nodos.get(d);
+        if (h && verboAdmite("depende_de", n.tipo, h.tipo)) aristas.push(arista(it.de, "depende_de", d, "parser", { evidencia: it.evidencia }));
+      }
+    }
     // Pantallas del front: cada una es del servicio cuya raíz contiene su componente (o del repo, si no tiene).
     if (a.pantallas?.length) {
       const svcs = paginas.filter((q) => q.fm.tipo === "svc" && (q.fm.vive_en ?? []).includes(a.repo));

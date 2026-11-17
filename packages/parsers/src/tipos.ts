@@ -151,6 +151,20 @@ export interface TablaEsquema {
   fks: Array<{ columnas: string[]; tabla: string; columnasRef: string[]; archivo: string; linea: number }>;
 }
 
+/** Pieza de infraestructura declarada en un archivo del repo. */
+export interface InfraCruda {
+  paquete: string;
+  archivo: string;
+  linea: number;
+  clase: "imagen" | "servicio" | "pipeline" | "variables" | "proxy";
+  /** Imagen base, servicio de compose, pipeline o job, archivo de variables, o ruta del proxy. */
+  nombre: string;
+  /** Datos en texto: puertos, comandos, pasos, nombres de variables (nunca valores). */
+  detalle: string[];
+  /** Servicios de compose de los que depende (`depends_on`), por su nombre en el archivo. */
+  dependeDe?: string[];
+}
+
 export type Forma = Record<string, string>;
 
 export interface Extraccion {
@@ -166,6 +180,8 @@ export interface Extraccion {
   eventos?: EventoCrudo[];
   /** Esquema de base de datos: tablas con columnas y claves foráneas. */
   esquema?: TablaEsquema[];
+  /** Infraestructura: imágenes, compose, pipelines, variables de ejemplo y proxy. */
+  infra?: InfraCruda[];
   /** Formas de tipos declarados, por paquete y nombre. */
   formas: Record<string, Record<string, Forma>>;
   /** Paquetes cuyos endpoints declara este parser con autoridad (OpenAPI). */
