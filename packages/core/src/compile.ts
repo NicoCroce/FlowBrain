@@ -25,6 +25,7 @@ import {
   type GraphEdge,
   type GraphNode,
   type Origen,
+  dentroDe,
   type Verbo,
 } from "./schema.js";
 import { aristasDeExtracciones, fichasDeFuncionalidades, tablasSinPagina, RUTA_FUNCIONALIDADES, type EstructuraArchivo, type Ficha } from "./funcionalidades.js";
@@ -341,6 +342,17 @@ export function compile(entradas: Entradas): Salidas {
         }),
       );
     });
+  }
+
+  // ---------- 4a. Pantallas → funcionalidad: la que tiene el componente de la pantalla en su `codigo` ----------
+  const feats = paginas.filter((p) => p.fm.tipo === "feat");
+  for (const n of nodos.values()) {
+    if (n.tipo !== "pantalla") continue;
+    const comps = ((n.atributos as { componentes?: string[] }).componentes ?? []).map((c) => c.slice(0, c.lastIndexOf("#")));
+    for (const q of feats) {
+      const c = comps.find((x) => (q.fm.codigo ?? []).some((k) => dentroDe(x, k)));
+      if (c) aristas.push(arista(n.id, "implementa", q.fm.id, "parser", { evidencia: c }));
+    }
   }
 
   // ---------- 4b. Verificación: aristas cuya evidencia ya no está → dudoso (deprecado manda) ----------

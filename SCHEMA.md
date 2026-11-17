@@ -52,7 +52,7 @@ Toda arista va de `desde` a `hasta`.
 | `lee_de` | svc | db, tabla | `relaciones` | sí |
 | `escribe_en` | svc | db, tabla | `relaciones` | sí |
 | `depende_de` | repo, svc, lib | repo, svc, lib, db, queue, ext | `relaciones` | no |
-| `implementa` | svc, lib, repo | feat | `relaciones` | no |
+| `implementa` | svc, lib, repo; pantalla | feat | `relaciones` (pantalla: lo genera el compilador) | no |
 | `decidido_por` | cualquiera salvo generados | decision | `relaciones` | no |
 | `vive_en` | svc, lib → repo · tabla → db | | campo `vive_en` | no |
 | `pertenece_a` | repo, svc, lib, db, queue, ext, feat | team | campo `pertenece_a` | no |
@@ -123,7 +123,7 @@ Un campo desconocido, un enum fuera de rango, un destino inexistente o un verbo 
 
 Si una página tiene `puntos_de_entrada`, su `vive_en` tiene que tener exactamente un repo.
 
-**`codigo` (solo `feat`):** cada entrada es `<repo-id>:<ruta>`, sin línea, con el repo existente. El compilador genera `implementa` (origen `parser`, evidencia = la entrada) desde cada servicio de ese repo hacia la funcionalidad. En un monorepo, solo desde los servicios cuya raíz (la carpeta común de sus `puntos_de_entrada`) contiene la ruta o está dentro de ella; si ninguno, desde todos los del repo; si el repo no tiene servicios, desde el repo.
+**`codigo` (solo `feat`):** cada entrada es `<repo-id>:<ruta>`, sin línea, con el repo existente. El compilador genera `implementa` (origen `parser`, evidencia = la entrada) desde cada servicio de ese repo hacia la funcionalidad. En un monorepo, solo desde los servicios cuya raíz (la carpeta común de sus `puntos_de_entrada`) contiene la ruta o está dentro de ella; si ninguno, desde todos los del repo; si el repo no tiene servicios, desde el repo. También genera `implementa` desde cada `pantalla` hacia la funcionalidad cuyo `codigo` contiene el archivo de su componente (evidencia = ese archivo).
 
 Los destinos sin resolver nunca llegan a una página compilada. Van como prosa en la sección `## Preguntas abiertas`.
 

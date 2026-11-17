@@ -54,6 +54,9 @@ describe("consultas de código", () => {
   it("pantalla de punta a punta: componente, funcionalidad, llamadas al back y recorrido que cruza por HTTP", () => {
     const r = pantalla(ctx, { ruta: "/checkout", budget_tokens: null });
     expect(r).toMatchObject({ id: "svc-web:pantalla:/checkout", componente: "main @ repo-tienda:apps/web/src/main.tsx#L1", funcionalidades: ["feat-carrito"], llamaAlBack: ["svc-bff:POST:/checkout"] });
+    // La relación pantalla → funcionalidad queda en el grafo y en la consulta de la funcionalidad.
+    expect(ctx.graph.edges.filter((e) => e.verbo === "implementa" && e.desde === "svc-web:pantalla:/checkout").map((e) => `${e.hasta} ${e.evidencia}`)).toEqual(["feat-carrito repo-tienda:apps/web/src/main.tsx"]);
+    expect(funcionalidad(ctx, { id: "feat-carrito", budget_tokens: null }).pantallas).toEqual([{ pantalla: "svc-web:pantalla:/checkout", ruta: "/checkout", componente: "repo-tienda:apps/web/src/main.tsx#main", llamaAlBack: ["svc-bff:POST:/checkout"] }]);
     expect(r.recorrido.map((p) => `${p.n} ${p.simbolo}${p.via ? ` (${p.via})` : ""}`)).toEqual([
       "0 main",
       "1 confirmarCheckout",

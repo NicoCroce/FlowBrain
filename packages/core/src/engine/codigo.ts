@@ -298,6 +298,8 @@ export function funcionalidad(ctx: Contexto, p: FuncionalidadParams) {
       ev: u.evidencia,
       veces: u.veces,
     })),
+    // Pantallas del front que dibuja (componente en su codigo) y qué endpoints llaman: `pantalla(ruta)` da el recorrido.
+    pantallas: f.pantallas.map((x) => ({ pantalla: x.id, ruta: x.ruta, componente: x.componente, llamaAlBack: x.endpoints })),
     datos,
     datosVia: via,
     dominioCompartido: f.dominio.filter((d) => d.de || d.usadoPor.length).map((d) => ({ archivo: d.archivo, elementos: d.elementos, de: d.de, usadoPor: d.usadoPor })),
@@ -308,7 +310,7 @@ export function funcionalidad(ctx: Contexto, p: FuncionalidadParams) {
     ],
     indice: versiones(ix),
   };
-  return ajustarLista(res, ["dominioCompartido", "datosVia", "consume", "expone", "datos"], p.budget_tokens);
+  return ajustarLista(res, ["dominioCompartido", "datosVia", "consume", "pantallas", "expone", "datos"], p.budget_tokens);
 }
 
 // ------------------------------------------------------------------ recorrido
