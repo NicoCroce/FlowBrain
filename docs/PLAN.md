@@ -23,7 +23,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 2 | Relaciones finas en el grafo | Hecho (decisión 120) |
 | 3 | MCP: respuestas compactas, búsqueda e instrucciones | Hecho (decisión 121) |
 | 4 | Comandos `sync`, `estado` y `doctor` | Hecho (decisión 122) |
-| 5 | Registro del MCP y los hooks | Pendiente: edita configuración fuera del repo, requiere decisión |
+| 5 | Registro del MCP y los hooks | Hecho el 2026-11-17: a nivel usuario, apuntando al brain de depuración |
 | 6 | Eventos y colas | Hecho (decisión 123) |
 | 7 | Bases de datos y esquema | Hecho (decisión 124) |
 | 8 | Infraestructura | Hecho (decisión 125) |
