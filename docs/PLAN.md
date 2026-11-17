@@ -41,6 +41,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 20 | Visor fuera de `core` | Hecho (decisión 135) |
 | 21 | Documentación al día | Hecho: el PRD queda como histórico y apunta a las fuentes vigentes |
 | 22 | Publicar `brain-graph` | Pendiente: publicar es una acción externa, requiere confirmación |
+| 23–27 | Varios cerebros: registro, MCP y hooks, pistas, relaciones entre cerebros, visor | Pendiente |
 
 ---
 
@@ -197,11 +198,48 @@ Publicar el paquete cuando las fases 1 y 2 estén cerradas (decisión 72 pendien
 
 ---
 
+## Fase 7 · Varios cerebros
+
+Pedido del 2026-11-17. Hasta 5 cerebros, cada uno con su nombre y sus repos o carpetas, aislados por defecto y con la comunicación entre ellos activable. Sirve para tener información vieja a mano sin mezclarla con la vigente.
+
+### Paso 23 · Registro y alta de cerebros
+
+Un archivo de registro con los cerebros (nombre, carpeta, repos o carpetas que contiene) y qué pares tienen la comunicación activada. Un comando de alta que pregunte el nombre y los repos de cada uno, lo cree y lo indexe; lo mismo por parámetros, para que se pueda probar y automatizar. El tope de 5 es un valor de configuración. A resolver: si un mismo repo puede estar en dos cerebros (por ejemplo en commits distintos).
+
+**Hecho cuando.** Con un registro de dos cerebros sintéticos, `estado` y `sync` trabajan sobre cada uno por nombre.
+
+### Paso 24 · MCP y hooks con varios cerebros
+
+Un solo servidor MCP para todos. Cada consulta lleva `cerebro` (por defecto, el del repo actual) y cada respuesta dice de qué cerebro salió. El hook carga solo el cerebro del repo donde se está parado; fuera de todo repo conocido no inyecta nada. En consultas que juntan cerebros, cada id va con el nombre de su cerebro, porque dos cerebros pueden tener un `repo-x` o una `tabla-user` distintos.
+
+**Hecho cuando.** Un test fija que una consulta desde el repo de un cerebro no devuelve nada del otro con la comunicación desactivada, y que el hook no carga los grafos ajenos.
+
+### Paso 25 · Pistas de otros cerebros
+
+Al compilar, cada cerebro escribe un índice chico de nombres (ids, nombres, alias, rutas de endpoints, tablas). Con la comunicación activada, si algo de la consulta coincide de forma exacta en otro cerebro, la respuesta suma una pista: cerebro, cantidad y coincidencias principales. Las instrucciones del servidor le piden al modelo que la mencione y que consulte ese cerebro solo si hace falta. Medido sobre el brain de depuración: unos 30 tokens por pista, unos 120 con los otros cuatro cerebros a la vez, 0 sin coincidencias; el índice pesa unos 27.000 caracteres contra 4 MB del grafo.
+
+**Hecho cuando.** Un test fija el formato y el tamaño de la pista, que solo hay coincidencia exacta, y que con la comunicación desactivada no hay pistas.
+
+### Paso 26 · Relaciones entre cerebros
+
+Lo que hace que una pista diga "el front de este cerebro llama a este endpoint de aquel" y no solo "allá hay algo con el mismo nombre". Hoy una llamada se une a su endpoint al indexar, contra los contratos del mismo cerebro. Para poder prenderlo y apagarlo sin reindexar, las llamadas que quedaron sin unir se resuelven al consultar contra los contratos de los cerebros comunicados. `impacto`, `riesgo`, `deriva` y `paridad` siguen ese cruce cuando la comunicación está activada. Es el paso más grande de la fase. Habilita `paridad` entre un cerebro viejo y uno nuevo, que hoy no se pudo probar con un caso real.
+
+**Hecho cuando.** Con dos cerebros sintéticos (un front y un back), `impacto` sobre un endpoint del segundo alcanza a la pantalla del primero solo con la comunicación activada.
+
+### Paso 27 · Visor con varios cerebros
+
+El mapa 3D dibuja un cerebro por cada cerebro del registro, con la misma estética de hoy (la corteza de puntos y las neuronas adentro), y los impulsos que cruzan de uno a otro son las relaciones del paso 26. Un panel de detalle por cerebro muestra qué contiene, con un interruptor para prender o apagar cada cerebro y, como hoy, cada tipo de nodo (tablas, pantallas, archivos, etc.), más uno para apagar todo. Depende del paso 26: sin relaciones reales entre cerebros no hay nada que viaje de uno a otro. Como todo el visor, refleja lo que ya está en los datos; no agrega información propia.
+
+**Hecho cuando.** Con dos cerebros sintéticos comunicados, el visor embebe los dos conjuntos de nodos, las relaciones que cruzan y los interruptores; con la comunicación desactivada no embebe cruces.
+
+---
+
 ## Orden y dependencias
 
 - 2 → 3 → 4 → 5 en ese orden. El 5 espera la decisión del usuario.
 - 16 depende de 2 y 11. 17 depende de 15. 10 conviene antes de 13 por tiempo de indexado.
 - Las fases 2 a 6 se pueden reordenar según lo que muestre el paso 13.
+- Fase 7: 23 → 24 → 25 → 26 → 27. El 27 necesita el 26; los pasos 23 a 25 ya dan cerebros aislados con pistas.
 
 ## Decisiones abiertas
 
@@ -221,3 +259,4 @@ Lo que cada paso dejó afuera está en su decisión (120 a 135), bajo "Queda fue
 - Kubernetes, Terraform y serverless en `infra` (125).
 - Seguir el uso de un tipo o una constante cambiados en `riesgo` (128).
 - Comparar campos entre lo que el front espera y lo que el back declara (132).
+- Precisión del hook de prompt: una palabra común del pedido ("documentos") alcanzó para inyectar el contexto de una funcionalidad que no venía al caso. Visto el 2026-11-17, en el primer uso real.
