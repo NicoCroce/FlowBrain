@@ -354,3 +354,4 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Cómo.** El nombre sobre la corteza es el asa: al arrastrarlo se mueven el centro del cerebro, su corteza y todos sus nodos, en el plano de la pantalla. El centro de cada cerebro pasa a tener tres coordenadas (antes solo se separaban en x), y la gravedad de cada nodo tira hacia el centro de su cerebro.
    - **Volver.** "Reorganizar" devuelve cada cerebro a su lugar en la fila. La posición no se guarda entre recargas.
    - **No se miró en un navegador en esta sesión.**
+   - **Ubicación inicial (mismo día).** Dos cerebros arrancan lado a lado; tres o más, en los vértices de un polígono regular de lado fijo (triángulo, cuadrado, pentágono), de frente a la cámara y con el primero del registro arriba. "Reorganizar" vuelve a esa ubicación. La escala de los nodos arranca en 0,9× (antes 1×), también con un solo cerebro.

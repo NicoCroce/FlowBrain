@@ -308,8 +308,8 @@ a.nb { text-decoration: none; }
     <section>
       <h2 class="lbl" style="padding: 0 4px">Tamaño del punto según</h2>
       <div id="m3-tam" class="seg" role="group" aria-label="Tamaño según"></div>
-      <label for="m3-escala" class="m3-escala">Escala <span id="m3-escala-txt">1.0×</span></label>
-      <input id="m3-escala" type="range" min="0.4" max="2.4" step="0.1" value="1">
+      <label for="m3-escala" class="m3-escala">Escala <span id="m3-escala-txt">0.9×</span></label>
+      <input id="m3-escala" type="range" min="0.4" max="2.4" step="0.1" value="0.9">
     </section>
     <section>
       <h2 class="lbl" style="padding: 0 4px">Impulsos</h2>
