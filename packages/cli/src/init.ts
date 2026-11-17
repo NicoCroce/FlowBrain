@@ -136,7 +136,7 @@ export async function instalarComando(env: NodeJS.ProcessEnv = process.env, bin?
   const escribible = (d: string) => access(d, constants.W_OK).then(() => true, () => false);
   const local = join(homedir(), ".local/bin");
   let dir = bin;
-  if (!dir) for (const d of [local, "/opt/homebrew/bin", "/usr/local/bin"]) if (enPath.includes(d) && (await escribible(d))) { dir = d; break; }
+  if (!dir) for (const d of ["/opt/homebrew/bin", "/usr/local/bin", local]) if (enPath.includes(d) && (await escribible(d))) { dir = d; break; }
   dir ??= local;
   await mkdir(dir, { recursive: true });
   const archivo = join(dir, "flowbrain");
