@@ -258,7 +258,7 @@ El mapa 3D dibuja un cerebro por cada cerebro del registro, con la misma estéti
 
 ## Pendientes anotados en las decisiones
 
-Lo que cada paso dejó afuera está en su decisión (120 a 135), bajo "Queda fuera". Los de más valor:
+Lo que cada paso dejó afuera está en su decisión (120 a 150), bajo "Queda fuera". Los de más valor:
 
 - Que `impacto` y la ficha lean del grafo en vez de recalcular desde la extracción (120).
 - Preguntas de evaluación para las herramientas sin cubrir (121): hoy `buscar_nodo`, `contrato_de`, `recorrer_grafo`, `trazar`, `infra`, `riesgo`, `deriva` y `paridad`.
@@ -268,3 +268,7 @@ Lo que cada paso dejó afuera está en su decisión (120 a 135), bajo "Queda fue
 - Seguir el uso de un tipo o una constante cambiados en `riesgo` (128).
 - Comparar campos entre lo que el front espera y lo que el back declara (132).
 - Precisión del hook de prompt: una palabra común del pedido ("documentos") alcanzó para inyectar el contexto de una funcionalidad que no venía al caso. Visto el 2026-11-17, en el primer uso real.
+- Falsos positivos de llamadas (150): `fetch` con `method` en las opciones leído como `GET`; query concatenada pegada a la ruta; rutas comodín del back (`/{token}`) que atrapan archivos estáticos del propio front.
+- Marcar en el registro una llamada como interna del front (URL relativa a su propio servidor), para que no se cruce con ningún cerebro (150).
+- `deriva` y `paridad` entre cerebros (139, 150).
+- Otros routers que hoy no dan pantallas: Expo Router (rutas por archivo), Next.js `pages/`/`app/` como pantallas, React Navigation con `createStaticNavigation` y pantallas declaradas como objetos (149).

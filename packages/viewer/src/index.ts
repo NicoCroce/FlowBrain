@@ -31,3 +31,4 @@ export async function visorDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[],
   return renderViewerCerebros(cerebros, cruces, conexiones, await cytoscapeJs());
 }
 export { GRAFO3D_JS } from "./viewer-3d.js";
+export { ORDEN_CEREBROS_JS } from "./orden-cerebros.js";

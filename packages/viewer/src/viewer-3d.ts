@@ -6,7 +6,9 @@
  * o separar un nodo se lleva a sus hijos. Publica `window.brainVisor` (datos, `enfocar`, `mostrarMapa`) para las
  * demás vistas. JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
-export const GRAFO3D_JS = String.raw`
+import { ORDEN_CEREBROS_JS } from "./orden-cerebros.js";
+
+export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
 (function () {
   "use strict";
   var D = JSON.parse(document.getElementById("datos").textContent);
@@ -33,13 +35,8 @@ export const GRAFO3D_JS = String.raw`
   var COLOR_C = ["#8FA6FF", "#F5B94A", "#5EDBB0", "#F28BB3", "#B79CFF", "#6FD3F7", "#F2906B", "#C8D96B"];
   function colorC(i) { return COLOR_C[i % COLOR_C.length]; }
   function puntoC(i) { return '<span class="pc" style="background:' + colorC(i) + '"></span>'; }
-  // Dos cerebros van lado a lado; tres o más, en los vértices de un polígono regular (triángulo, cuadrado, pentágono)
-  // con lado SEP, acostado: todos a la misma altura, sobre el plano horizontal, con el primero al fondo.
   var NC = MULTI ? CEREBROS.length : 1, RP = NC > 2 ? SEP / (2 * Math.sin(Math.PI / NC)) : 0;
-  var OX = CEREBROS.slice(0, NC).map(function (_, i) { return NC > 2 ? RP * Math.sin(2 * Math.PI * i / NC) : (i - (NC - 1) / 2) * SEP; });
-  if (!OX.length) OX = [0];
-  // El centro de cada cerebro arranca en fila sobre x; arrastrando su nombre se lo lleva a cualquier lado.
-  var OX0 = OX.slice(), OZ0 = OX.map(function (_, i) { return NC > 2 ? RP * Math.cos(2 * Math.PI * i / NC) : 0; }), OY = OX.map(function () { return 0; }), OZ = OZ0.slice(), cajaNombre = [];
+  var OX = [0], OY = [0], OZ = [0], OX0 = [0], OZ0 = [0], cajaNombre = [];
   function moverCerebro(c, dx, dy, dz) {
     OX[c] += dx; OY[c] += dy; OZ[c] += dz;
     N.forEach(function (n) { if (n.c === c) { n.x += dx; n.y += dy; n.z += dz; } });
@@ -62,6 +59,16 @@ export const GRAFO3D_JS = String.raw`
     E.push(e); s.adj.push({ n: h, e: e }); h.adj.push({ n: s, e: e });
   });
   N.forEach(function (n) { var vistos = {}; n.adj.forEach(function (x) { vistos[x.n.id] = true; }); n.deg = Object.keys(vistos).length; });
+
+  // Dos cerebros van lado a lado; tres o más, en los vértices de un polígono regular (triángulo, cuadrado, pentágono)
+  // con lado SEP, acostado: todos a la misma altura, sobre el plano horizontal, con el primero al fondo.
+  // Qué cerebro va en qué vértice se elige para que las líneas entre cerebros no se crucen (ver ordenSinCruces).
+  var SLOT = ordenSinCruces(NC, E.filter(function (e) { return e.a.c !== e.b.c; }).map(function (e) { return [e.a.c, e.b.c]; }));
+  OX = SLOT.map(function (s) { return NC > 2 ? RP * Math.sin(2 * Math.PI * s / NC) : (s - (NC - 1) / 2) * SEP; });
+  // El centro de cada cerebro arranca en su vértice; arrastrando su nombre se lo lleva a cualquier lado.
+  OZ0 = SLOT.map(function (s) { return NC > 2 ? RP * Math.cos(2 * Math.PI * s / NC) : 0; });
+  OX0 = OX.slice(); OY = OX.map(function () { return 0; }); OZ = OZ0.slice();
+
   var VERBOS = ORDEN_VERBOS.filter(function (v) { return E.some(function (e) { return e.verbo === v; }); });
   var cuentas = {};
   N.forEach(function (n) { cuentas[n.tipo] = (cuentas[n.tipo] || 0) + 1; });
@@ -74,11 +81,19 @@ export const GRAFO3D_JS = String.raw`
     n.x = OX[n.c] + R * Math.sin(v) * Math.cos(u); n.y = OY[n.c] + R * Math.sin(v) * Math.sin(u) * 0.8; n.z = OZ[n.c] + R * Math.cos(v);
     n.fase = rnd() * Math.PI * 2;
   });
+  // Cada línea entre cerebros parpadea a su ritmo: fase, velocidad y brillo máximo propios. El brillo sale sesgado hacia
+  // abajo (muchas apenas se ven y pocas se encienden del todo), así cientos de líneas no se suman en una mancha blanca.
+  E.forEach(function (e) {
+    if (e.a.c === e.b.c) return;
+    var b = rnd();
+    e.f = rnd() * Math.PI * 2; e.w = 0.008 + rnd() * 0.022; e.v = 0.12 + 0.88 * b * b;
+  });
+  var QUIETO = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches), nCruceVis = 0;
 
   var ocultosIniciales = {};
   TIPOS.forEach(function (t) { if (D.tiposIniciales.indexOf(t[0]) < 0) ocultosIniciales[t[0]] = true; });
   var S = { hiddenTypes: ocultosIniciales, hiddenVerbs: {}, sizeMode: "uso", scale: 0.6, group: "feat", labels: "grandes", selId: null, query: "",
-    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, hiddenBrains: {}, todas: {}, tabC: null, intensidad: 0.4,
+    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, hiddenBrains: {}, todas: {}, tabC: null, intensidad: 0.4, lineas: 0.6,
     pulsos: !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) };
 
   function setParents(mode) {
@@ -95,6 +110,17 @@ export const GRAFO3D_JS = String.raw`
   function base(n) { return !S.hiddenTypes[n.tipo] && !S.hiddenIds[n.id] && !S.hiddenBrains[n.c]; }
   // Una relación entre dos cerebros: lo que viaja de uno a otro.
   function cruza(e) { return e.a.c !== e.b.c; }
+  // Brillo de una línea entre cerebros en este cuadro: casi apagada y, de a ratos, se enciende (sin(…)^4 deja el pico
+  // corto). Con muchas líneas visibles cada una brilla menos. Con movimiento reducido, quietas y tenues. Lo que se
+  // ve viajar son los impulsos; la línea solo insinúa el camino.
+  function brilloCruce(e) {
+    var dens = Math.min(1, Math.sqrt(40 / Math.max(1, nCruceVis)));
+    // Opacidad del panel: 40 % es el brillo de base; 100 %, dos veces y media; 0 %, solo los impulsos.
+    var k = S.lineas / 0.4;
+    if (QUIETO) return Math.min(0.9, (0.03 + 0.12 * e.v * dens) * k);
+    var s = Math.max(0, Math.sin(T * e.w + e.f)), pico = s * s * s * s;
+    return Math.min(0.9, (0.02 + 0.5 * e.v * pico * dens) * k);
+  }
   var isoSet = null;
   function visible(n) { return base(n) && (!S.isolate || !isoSet || isoSet.has(n)); }
   function computeIso(id) {
@@ -247,12 +273,22 @@ export const GRAFO3D_JS = String.raw`
     x.fillStyle = g; x.beginPath(); x.arc(R, R, R, 0, Math.PI * 2); x.fill();
     return (sprites[k] = cv);
   }
-  function chispa(c) {
-    var k = "c" + c;
+  /** Estrella de un impulso: núcleo blanco, halo del color y cuatro puntas finas (dos largas y dos cortas en diagonal). */
+  function estrella(c) {
+    var k = "e" + c;
     if (sprites[k]) return sprites[k];
-    var R = 32, cv = lienzo(R * 2), x = cv.getContext("2d"), g = x.createRadialGradient(R, R, 0, R, R, R);
-    g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.22, rgba(c, 0.85)); g.addColorStop(1, rgba(c, 0));
+    var R = 32, cv = lienzo(R * 2), x = cv.getContext("2d"), g = x.createRadialGradient(R, R, 0, R, R, R * 0.45);
+    g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.35, rgba(c, 0.8)); g.addColorStop(1, rgba(c, 0));
     x.fillStyle = g; x.fillRect(0, 0, R * 2, R * 2);
+    x.globalCompositeOperation = "lighter";
+    var punta = function (ang, largo, ancho) {
+      x.save(); x.translate(R, R); x.rotate(ang);
+      var gp = x.createLinearGradient(0, 0, largo, 0);
+      gp.addColorStop(0, "rgba(255,255,255,0.95)"); gp.addColorStop(0.4, rgba(c, 0.55)); gp.addColorStop(1, rgba(c, 0));
+      x.fillStyle = gp; x.beginPath(); x.moveTo(0, -ancho); x.lineTo(largo, 0); x.lineTo(0, ancho); x.closePath(); x.fill();
+      x.restore();
+    };
+    for (var q = 0; q < 4; q++) { punta(q * Math.PI / 2, R, 2.2); punta(Math.PI / 4 + q * Math.PI / 2, R * 0.5, 1.4); }
     return (sprites[k] = cv);
   }
   // Corteza: puntos sobre una esfera deformada (base chata, fisura entre hemisferios, surcos).
@@ -281,7 +317,7 @@ export const GRAFO3D_JS = String.raw`
   }
   // Impulsos: viajan por una arista de origen a destino; al llegar encienden la neurona y pueden seguir por sus salidas.
   var pulsos = [];
-  function lanzar(e, gen) { pulsos.push({ e: e, t: 0, v: 0.011 + Math.random() * 0.014, gen: gen }); }
+  function lanzar(e, gen) { pulsos.push({ e: e, t: 0, v: 0.011 + Math.random() * 0.014, gen: gen, giro: Math.random() * Math.PI, tw: Math.random() * Math.PI * 2 }); }
   function curva(pa, pb, c, t) {
     var cx = (pa.sx + pb.sx) / 2 - (pb.sy - pa.sy) * c, cy = (pa.sy + pb.sy) / 2 + (pb.sx - pa.sx) * c, u = 1 - t;
     return [u * u * pa.sx + 2 * u * t * cx + t * t * pb.sx, u * u * pa.sy + 2 * u * t * cy + t * t * pb.sy];
@@ -396,12 +432,13 @@ export const GRAFO3D_JS = String.raw`
       var xc = cruza(e);
       if (xc) visCruce.push(e);
       var hl = (sel && (e.a === sel || e.b === sel)) || (hov && (e.a === hov || e.b === hov));
-      var al = Math.min(pa.a, pb.a) * (hl ? 0.85 : xc ? 0.42 : 0.13);
+      var al = Math.min(pa.a, pb.a) * (hl ? 0.85 : xc ? brilloCruce(e) : 0.13);
       ctx.strokeStyle = hl ? rgba(col((e.a === sel || e.a === hov) ? e.b.tipo : e.a.tipo), al) : xc ? "rgba(255,214,140," + al + ")" : "rgba(120,146,255," + al + ")";
       ctx.lineWidth = hl ? 1.6 : xc ? 1.3 : 1;
       ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy);
       ctx.quadraticCurveTo((pa.sx + pb.sx) / 2 - (pb.sy - pa.sy) * e.c, (pa.sy + pb.sy) / 2 + (pb.sx - pa.sx) * e.c, pb.sx, pb.sy); ctx.stroke();
     }
+    nCruceVis = visCruce.length;
     // Intensidad: con menos, corren menos impulsos y brillan menos; en cero no corre ninguno.
     var I = S.pulsos ? S.intensidad : 0, brillo = 0.3 + 0.7 * I;
     if (I > 0 && vis.length) {
@@ -427,17 +464,16 @@ export const GRAFO3D_JS = String.raw`
         }
         continue;
       }
-      // Rastro quebrado, como una descarga, y una chispa en la punta.
-      var pc = col(pe.a.tipo), pal = Math.min(1, Math.min(qa.a, qb.a) + 0.25) * brillo, nx = qb.sy - qa.sy, ny = qa.sx - qb.sx, nl = Math.sqrt(nx * nx + ny * ny) || 1;
-      ctx.beginPath();
-      for (var tr = 0; tr <= 6; tr++) {
-        var tt = Math.max(0, pu.t - 0.16 * (1 - tr / 6)), pt = curva(qa, qb, pe.c, tt), jit = tr > 0 && tr < 6 ? (Math.random() - 0.5) * 5 : 0;
-        if (tr === 0) ctx.moveTo(pt[0], pt[1]); else ctx.lineTo(pt[0] + nx / nl * jit, pt[1] + ny / nl * jit);
-      }
-      ctx.strokeStyle = rgba(pc, 0.85 * pal); ctx.lineWidth = 1.5; ctx.stroke();
-      ctx.strokeStyle = "rgba(255,255,255," + 0.55 * pal + ")"; ctx.lineWidth = 0.7; ctx.stroke();
-      var cab = curva(qa, qb, pe.c, pu.t), cr = Math.max(6, 20 * Math.min(qa.s, qb.s));
-      ctx.globalAlpha = pal; ctx.drawImage(chispa(pc), cab[0] - cr, cab[1] - cr, cr * 2, cr * 2); ctx.globalAlpha = 1;
+      // Una estrella que titila y gira, con una estela corta y recta (no una cola larga).
+      var pc = col(pe.a.tipo), pal = Math.min(1, Math.min(qa.a, qb.a) + 0.25) * brillo;
+      var cab = curva(qa, qb, pe.c, pu.t), atras = curva(qa, qb, pe.c, Math.max(0, pu.t - 0.045));
+      var est = ctx.createLinearGradient(atras[0], atras[1], cab[0], cab[1]);
+      est.addColorStop(0, rgba(pc, 0)); est.addColorStop(1, rgba(pc, 0.6 * pal));
+      ctx.strokeStyle = est; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(atras[0], atras[1]); ctx.lineTo(cab[0], cab[1]); ctx.stroke();
+      var tw = 0.75 + 0.25 * Math.sin(T * 0.25 + pu.tw), cr = Math.max(5, 15 * Math.min(qa.s, qb.s)) * tw;
+      ctx.save(); ctx.translate(cab[0], cab[1]); ctx.rotate(pu.giro + T * 0.04);
+      ctx.globalAlpha = pal; ctx.drawImage(estrella(pc), -cr, -cr, cr * 2, cr * 2);
+      ctx.restore(); ctx.globalAlpha = 1;
     }
     ctx.globalCompositeOperation = "source-over";
     P.sort(function (a, b) { return b.z - a.z; });
@@ -721,6 +757,8 @@ export const GRAFO3D_JS = String.raw`
   $("m3-buscar").addEventListener("input", function (ev) { S.query = ev.target.value; resultados(); });
   $("m3-buscar").addEventListener("keydown", function (ev) { var b = $("m3-res").querySelector("button"); if (ev.key === "Enter" && b) b.click(); });
   $("m3-escala").addEventListener("input", function (ev) { S.scale = parseFloat(ev.target.value); $("m3-escala-txt").textContent = S.scale.toFixed(1) + "×"; });
+  $("m3-lin").addEventListener("input", function (ev) { S.lineas = parseFloat(ev.target.value) / 100; $("m3-lin-txt").textContent = ev.target.value + "%"; });
+  if (!MULTI) $("m3-lin-sec").hidden = true;
   $("m3-int").addEventListener("input", function (ev) { S.intensidad = parseFloat(ev.target.value) / 100; $("m3-int-txt").textContent = ev.target.value + "%"; });
   ui();
 

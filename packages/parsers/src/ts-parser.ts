@@ -443,6 +443,11 @@ function extraer(repo: RepoFuente): Extraccion {
   const usaRouter = repo.archivos
     .filter((a) => a === "package.json" || a.endsWith("/package.json"))
     .some((a) => /"(react-router|react-router-dom|@remix-run\/react|@tanstack\/react-router|vue-router|@angular\/router)"\s*:/.test(readFileSync(join(repo.raiz, a), "utf8")));
+  // React Navigation (apps React Native): las pantallas son `<Stack.Screen name component>` y se navega por nombre,
+  // sin URL; la ruta de la pantalla es `/<name>`.
+  const usaNavegacionNativa = repo.archivos
+    .filter((a) => a === "package.json" || a.endsWith("/package.json"))
+    .some((a) => /"@react-navigation\/[\w-]+"\s*:/.test(readFileSync(join(repo.raiz, a), "utf8")));
 
   // ---------- Recorrido ----------
   const fuentes = programa
@@ -775,11 +780,16 @@ function extraer(repo: RepoFuente): Extraccion {
   const componenteDe = (e: ts.Expression | undefined): RefSimbolo | null => {
     if (!e) return null;
     let x: ts.Expression = e;
-    while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x)) x = x.expression;
+    while (ts.isParenthesizedExpression(x) || ts.isAsExpression(x) || ts.isNonNullExpression(x) || ts.isSatisfiesExpression(x)) x = x.expression;
+    // `render={() => <X />}` (React Router v5): el componente es lo que dibuja la función.
+    if ((ts.isArrowFunction(x) || ts.isFunctionExpression(x)) && !ts.isBlock(x.body)) {
+      const cuerpo = x.body;
+      if (ts.isJsxSelfClosingElement(cuerpo) || ts.isJsxElement(cuerpo) || ts.isParenthesizedExpression(cuerpo)) return componenteDe(cuerpo);
+    }
     if (ts.isJsxSelfClosingElement(x) || ts.isJsxElement(x)) {
       const tag = ts.isJsxElement(x) ? x.openingElement.tagName : x.tagName;
-      const d = ts.isIdentifier(tag) || ts.isPropertyAccessExpression(tag) ? declDe(tag) : undefined;
-      return d ? (destinos(d)[0] ?? null) : null;
+      // Por la misma vía que un identificador: así `const X = lazy(() => import("./X"))` llega al componente real.
+      return ts.isIdentifier(tag) || ts.isPropertyAccessExpression(tag) ? componenteDe(tag) : null;
     }
     if (ts.isIdentifier(x) || ts.isPropertyAccessExpression(x)) {
       const d = declDe(x);
@@ -807,11 +817,41 @@ function extraer(repo: RepoFuente): Extraccion {
     const dd = ts.isExportAssignment(d) && ts.isIdentifier(d.expression) ? declDe(d.expression) : d;
     return dd ? (destinos(dd)[0] ?? null) : null;
   };
-  /** Rutas del router: objetos `{ path, element | Component | lazy | … }` y `<Route path element>`, con el path de sus padres. */
+  /** `<Route>` y envolturas propias que terminan en `Route` (`<LayoutRoute>`, `<PrivateRoute>`), no `<Routes>`/`<Router>`. */
+  const esTagRuta = (t: string) => /^[\w.]*Route$/.test(t);
+  const tagJsx = (x: ts.JsxElement | ts.JsxSelfClosingElement) => (ts.isJsxElement(x) ? x.openingElement : x).tagName.getText();
+  /** ¿Hay alguna ruta dentro de este elemento? Entonces es un layout que envuelve rutas, no una pantalla. */
+  const contieneRutas = (el: ts.Node): boolean => {
+    let hay = false;
+    const ver = (x: ts.Node): void => {
+      if (hay) return;
+      if ((ts.isJsxElement(x) || ts.isJsxSelfClosingElement(x)) && x !== el && esTagRuta(tagJsx(x))) hay = true;
+      else ts.forEachChild(x, ver);
+    };
+    ts.forEachChild(el, ver);
+    return hay;
+  };
+  /** Primer hijo dibujado: `<Route path="/x"><X /></Route>` (v5) o `<Stack.Screen name="x">{(p) => <X {...p} />}</Stack.Screen>`. */
+  const hijoDibujado = (el: ts.JsxElement): ts.Expression | undefined => {
+    for (const c of el.children) {
+      if (ts.isJsxElement(c) || ts.isJsxSelfClosingElement(c)) return c;
+      if (ts.isJsxExpression(c) && c.expression) return c.expression;
+    }
+    return undefined;
+  };
+  /** `<Redirect>`/`<Navigate>` (o una función que los devuelve): no es una pantalla. */
+  const esRedireccion = (e: ts.Expression): boolean => {
+    let x: ts.Node = e;
+    while (ts.isParenthesizedExpression(x) || ((ts.isArrowFunction(x) || ts.isFunctionExpression(x)) && !ts.isBlock(x.body))) x = ts.isParenthesizedExpression(x) ? x.expression : x.body;
+    return (ts.isJsxElement(x) || ts.isJsxSelfClosingElement(x)) && /^(Navigate|Redirect)$/.test(tagJsx(x));
+  };
+  /** Rutas del router: objetos `{ path, element | Component | lazy | … }`, `<Route path element>` (v6) o `<Route path component | render>`
+   * y `<Route path><X /></Route>` (v5), y `<X.Screen name component>` de React Navigation, con el path de sus padres. */
   const pantallas = (n: ts.Node, archivo: string, paquete: string) => {
     let path: string | null = null;
     let comp: RefSimbolo | null = null;
     let marca = false;
+    let envolturaPropia: RefSimbolo | null = null;
     // Una ruta con hijas es un layout (`AppShell`): envuelve a sus pantallas, no es una.
     if (ts.isObjectLiteralExpression(n) && esObjetoRuta(n) && !propiedad(n, "children")) {
       const pe = propiedad(n, "path");
@@ -823,23 +863,29 @@ function extraer(repo: RepoFuente): Extraccion {
           comp ??= componenteDe(v);
         }
       }
-    } else if (
-      (ts.isJsxSelfClosingElement(n) || ts.isJsxOpeningElement(n)) &&
-      n.tagName.getText() === "Route" &&
-      !(ts.isJsxOpeningElement(n) && n.parent.children.some((c) => (ts.isJsxElement(c) ? c.openingElement : c).getText().startsWith("<Route")))
-    ) {
+    } else if (ts.isJsxSelfClosingElement(n) || ts.isJsxOpeningElement(n)) {
+      const tag = n.tagName.getText();
       const attr = (k: string) => n.attributes.properties.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && a.name.getText() === k);
       const valor = (a: ts.JsxAttribute | undefined) => (a?.initializer && ts.isJsxExpression(a.initializer) ? a.initializer.expression : a?.initializer && ts.isStringLiteral(a.initializer) ? a.initializer : undefined);
-      const pa = attr("path");
-      if (!pa && !attr("index")) return;
-      path = pa ? rutaFront(valor(pa)) : "";
-      for (const m of ["element", "Component", "component"]) {
-        const v = valor(attr(m));
-        if (v) {
+      const hijo = ts.isJsxOpeningElement(n) ? hijoDibujado(n.parent) : undefined;
+      if (usaRouter && esTagRuta(tag) && !(ts.isJsxOpeningElement(n) && contieneRutas(n.parent))) {
+        const pa = attr("path");
+        if (!pa && !attr("index")) return;
+        path = pa ? rutaFront(valor(pa)) : "";
+        for (const v of [...["element", "Component", "component", "render"].map((m) => valor(attr(m))), hijo]) {
+          if (!v || esRedireccion(v)) continue;
           marca = true;
           comp ??= componenteDe(v);
         }
-      }
+        // `<LayoutRoute component={X}>`: la envoltura propia dibuja la pantalla dentro de su layout o guarda.
+        if (tag !== "Route") envolturaPropia = componenteDe(n.tagName as ts.Expression);
+      } else if (usaNavegacionNativa && /\.Screen$/.test(tag)) {
+        const nombre = rutaFront(valor(attr("name")));
+        if (!nombre) return;
+        path = "/" + nombre.replace(/^\//, "");
+        marca = true;
+        for (const v of [valor(attr("component")), valor(attr("getComponent")), hijo]) comp ??= componenteDe(v);
+      } else return;
     } else return;
     if (path === null || !marca) return;
     // Padres: objetos con `children` (o `<Route>` anidados). Sin path: guardas o layouts que envuelven a la pantalla.
@@ -870,22 +916,25 @@ function extraer(repo: RepoFuente): Extraccion {
           const pe = propiedad(p, "path");
           padre = { path: pe ? rutaFront(pe) : null, elemento: propiedad(p, "element") ?? propiedad(p, "Component") ?? propiedad(p, "component") };
         }
-      } else if (ts.isJsxElement(p) && p.openingElement !== n && p.openingElement.tagName.getText() === "Route") {
+      } else if (ts.isJsxElement(p) && p.openingElement !== n && esTagRuta(p.openingElement.tagName.getText())) {
         const at = (k: string) => p.openingElement.attributes.properties.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && a.name.getText() === k);
         const v = (a: ts.JsxAttribute | undefined) => (a?.initializer && ts.isJsxExpression(a.initializer) ? a.initializer.expression : a?.initializer && ts.isStringLiteral(a.initializer) ? a.initializer : undefined);
-        padre = { path: at("path") ? rutaFront(v(at("path"))) : null, elemento: v(at("element")) };
+        padre = { path: at("path") ? rutaFront(v(at("path"))) : null, elemento: v(at("element")) ?? v(at("component")) ?? hijoDibujado(p) };
       }
       if (!padre) continue;
       const c = componenteDe(padre.elemento);
       if (c) envuelta.unshift(c);
       if (padre.path !== null && !completa.startsWith("/")) completa = `${padre.path.replace(/\/$/, "")}/${completa}`;
     }
+    if (envolturaPropia) envuelta.push(envolturaPropia);
     out.pantallas.push({ paquete, ruta: normalizarRuta(completa || "/"), archivo, linea: linea(n), componente: comp, envuelta });
   };
   const NAVEGA = new Set(["navigate", "push", "replace", "redirect", "navigateByUrl"]);
   const navegaciones = (n: ts.Node, archivo: string, paquete: string) => {
     const agregar = (destinos: string[], tipo: "navega" | "enlace" | "redirige") => {
-      for (const destino of new Set(destinos)) {
+      for (let destino of new Set(destinos)) {
+        // React Navigation navega por nombre de pantalla (`navigate("homeScreen")`): su ruta es `/homeScreen`.
+        if (usaNavegacionNativa && /^[A-Za-z_][\w-]*$/.test(destino)) destino = "/" + destino;
         if (!destino.startsWith("/")) continue;
         out.navegaciones.push({ paquete, archivo, linea: linea(n), desde: simboloContenedor(n), ruta: normalizarRuta(destino), tipo });
       }
@@ -894,6 +943,16 @@ function extraer(repo: RepoFuente): Extraccion {
       const e = n.expression;
       const nombre = ts.isIdentifier(e) ? e.text : ts.isPropertyAccessExpression(e) ? e.name.text : null;
       if (nombre && NAVEGA.has(nombre)) agregar(rutasFront(n.arguments[0]), nombre === "redirect" ? "redirige" : "navega");
+      if (usaNavegacionNativa && nombre && (NAVEGA.has(nombre) || nombre === "reset") && ts.isObjectLiteralExpression(n.arguments[0]!)) {
+        // `navigate({ name: "x", params })` y `reset({ index, routes: [{ name: "x" }] })`: la última pantalla nombrada.
+        const nombres: string[] = [];
+        const ver = (x: ts.Node): void => {
+          if (ts.isPropertyAssignment(x) && x.name.getText() === "name") nombres.push(...rutasFront(x.initializer));
+          ts.forEachChild(x, ver);
+        };
+        ver(n.arguments[0]!);
+        if (nombres.length) agregar([nombres[nombres.length - 1]!], nombre === "navigate" || nombre === "push" ? "navega" : "redirige");
+      }
     } else if (ts.isJsxAttribute(n) && (n.name.getText() === "to" || n.name.getText() === "href") && n.initializer) {
       const v = ts.isJsxExpression(n.initializer) ? n.initializer.expression : n.initializer;
       const tag = n.parent.parent.tagName.getText();
@@ -993,7 +1052,7 @@ function extraer(repo: RepoFuente): Extraccion {
       if (ts.isClassDeclaration(n)) nest(n);
       mensajes(n, archivo);
       if (usaKysely && ts.isTaggedTemplateExpression(n)) sqlCrudo(n);
-      if (usaRouter && /\.[cm]?[jt]sx?$/.test(archivo)) {
+      if ((usaRouter || usaNavegacionNativa) && /\.[cm]?[jt]sx?$/.test(archivo)) {
         pantallas(n, archivo, paquete);
         navegaciones(n, archivo, paquete);
       }

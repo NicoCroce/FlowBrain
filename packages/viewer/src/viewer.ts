@@ -316,6 +316,11 @@ a.nb { text-decoration: none; }
       <label for="m3-int" class="m3-escala">Intensidad <span id="m3-int-txt">40%</span></label>
       <input id="m3-int" type="range" min="0" max="100" step="5" value="40">
     </section>
+    <section id="m3-lin-sec">
+      <h2 class="lbl" style="padding: 0 4px">Líneas entre cerebros</h2>
+      <label for="m3-lin" class="m3-escala">Opacidad <span id="m3-lin-txt">60%</span></label>
+      <input id="m3-lin" type="range" min="0" max="100" step="5" value="60">
+    </section>
     <section>
       <h2 class="lbl" style="padding: 0 4px">Agrupar por</h2>
       <div id="m3-grupo" class="seg" role="group" aria-label="Agrupar por"></div>

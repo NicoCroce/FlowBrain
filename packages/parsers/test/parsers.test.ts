@@ -659,6 +659,140 @@ describe("ts-parser: pantallas y navegación del front", () => {
   });
 });
 
+describe("ts-parser: pantallas de React Router v5", () => {
+  let dir: string;
+  beforeAll(async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    dir = await mkdtemp(join(tmpdir(), "brain-front-v5-"));
+    const w = async (p: string, t: string[]) => {
+      await mkdir(dirname(join(dir, p)), { recursive: true });
+      await writeFile(join(dir, p), t.join("\n"));
+    };
+    await w("package.json", ['{ "name": "front", "dependencies": { "react-router-dom": "5.3.4" } }']);
+    await w("src/lib.tsx", [
+      "export declare function Route(p: any): any;",
+      "export declare function Switch(p: any): any;",
+      "export declare function Redirect(p: any): any;",
+      "export declare function lazy<T>(f: () => Promise<{ default: T }>): T;",
+    ]);
+    await w("src/pages/Login.tsx", ["export default function Login() { return null; }"]);
+    await w("src/pages/Club.tsx", ["export default function Club() { return null; }"]);
+    await w("src/pages/Pago.tsx", ["export default function Pago() { return null; }"]);
+    await w("src/pages/Panel.tsx", ["export function Panel() { return null; }"]);
+    await w("src/pages/Usuarios.tsx", ["export function Usuarios() { return null; }"]);
+    await w("src/LayoutRoute.tsx", [
+      'import { Route } from "./lib";',
+      "export default function LayoutRoute(p: any) { return <Route {...p} />; }",
+    ]);
+    await w("src/App.tsx", [
+      'import { Route, Switch, Redirect, lazy } from "./lib";',
+      'import LayoutRoute from "./LayoutRoute";',
+      'import { Panel } from "./pages/Panel";',
+      'import { Usuarios } from "./pages/Usuarios";',
+      'const Login = lazy (() => import ("./pages/Login"));',
+      'const Club = lazy(() => import("./pages/Club"));',
+      'const Pago = lazy(() => import("./pages/Pago"));',
+      "export function App() {",
+      "  return <Switch>",
+      '    <Route exact path="/" render={() => <Redirect to="/login" />} />',
+      '    <LayoutRoute exact path="/login" component={Login} />',
+      '    <Route exact path="/club/:id">',
+      "      <Club />",
+      "    </Route>",
+      '    <Route path="/pago" render={() => <Pago />} />',
+      '    <Route path="/admin">',
+      "      <Panel>",
+      '        <Route exact path="/admin/usuarios" component={Usuarios} />',
+      "      </Panel>",
+      "    </Route>",
+      "  </Switch>;",
+      "}",
+    ]);
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("componente como hijo, por render o diferido con lazy; envolturas propias; sin redirecciones ni layouts como pantallas", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const p = x.pantallas.map((s) => `${s.ruta} ${s.componente?.simbolo} ${s.componente?.archivo} [${s.envuelta.map((e) => e.simbolo).join(">")}] L${s.linea}`).sort();
+    expect(p).toEqual([
+      "/admin/usuarios Usuarios src/pages/Usuarios.tsx [Panel] L18",
+      "/club/{id} Club src/pages/Club.tsx [] L12",
+      "/login Login src/pages/Login.tsx [LayoutRoute] L11",
+      "/pago Pago src/pages/Pago.tsx [] L15",
+    ]);
+  });
+});
+
+describe("ts-parser: pantallas de React Navigation", () => {
+  let dir: string;
+  beforeAll(async () => {
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    dir = await mkdtemp(join(tmpdir(), "brain-front-rn-"));
+    const w = async (p: string, t: string[]) => {
+      await mkdir(dirname(join(dir, p)), { recursive: true });
+      await writeFile(join(dir, p), t.join("\n"));
+    };
+    await w("package.json", ['{ "name": "app", "dependencies": { "@react-navigation/native-stack": "7.0.0" } }']);
+    await w("src/lib.tsx", [
+      "export declare const Stack: { Navigator(p: any): any; Screen(p: any): any };",
+      "export declare function useNavigation(): { navigate(n: any, p?: any): void; reset(s: any): void; push(n: string): void };",
+    ]);
+    await w("src/features/home/HomeScreen.tsx", [
+      'import { useNavigation } from "../../lib";',
+      "export function HomeScreen() {",
+      "  const navigation = useNavigation();",
+      '  navigation.navigate("perfilScreen", { id: 1 });',
+      '  navigation.navigate({ name: "ajustesScreen" });',
+      "  return null;",
+      "}",
+    ]);
+    await w("src/features/home/index.ts", ['export { HomeScreen } from "./HomeScreen";']);
+    await w("src/features/perfil/PerfilScreen.tsx", [
+      'import { useNavigation } from "../../lib";',
+      "export default function PerfilScreen() {",
+      "  const navigation = useNavigation();",
+      '  navigation.reset({ index: 0, routes: [{ name: "homeScreen" }] });',
+      "  return null;",
+      "}",
+    ]);
+    await w("src/features/ajustes/Ajustes.tsx", ["export function Ajustes(p: any) { return null; }"]);
+    await w("src/navigation/HomeStack.tsx", [
+      'import { Stack } from "../lib";',
+      'import { HomeScreen } from "../features/home";',
+      'import PerfilScreen from "../features/perfil/PerfilScreen";',
+      'import { Ajustes } from "../features/ajustes/Ajustes";',
+      "export function HomeStack() {",
+      "  return <Stack.Navigator>",
+      '    <Stack.Screen name="homeScreen" component={HomeScreen} />',
+      '    <Stack.Screen name="perfilScreen" component={PerfilScreen as any} />',
+      '    <Stack.Screen name="ajustesScreen">{(props) => <Ajustes {...props} />}</Stack.Screen>',
+      "  </Stack.Navigator>;",
+      "}",
+    ]);
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("cada Screen es una pantalla /<name> con su componente real, aunque venga de un barril o de una función hija", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const p = x.pantallas.map((s) => `${s.ruta} ${s.componente?.simbolo} ${s.componente?.archivo} L${s.linea}`).sort();
+    expect(p).toEqual([
+      "/ajustesScreen Ajustes src/features/ajustes/Ajustes.tsx L9",
+      "/homeScreen HomeScreen src/features/home/HomeScreen.tsx L7",
+      "/perfilScreen PerfilScreen src/features/perfil/PerfilScreen.tsx L8",
+    ]);
+  });
+
+  it("navegaciones por nombre: navigate(nombre), navigate({ name }) y reset({ routes })", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const n = x.navegaciones.map((v) => `${v.tipo} ${v.ruta} ${v.desde} ${v.archivo}#L${v.linea}`).sort();
+    expect(n).toEqual([
+      "navega /ajustesScreen HomeScreen src/features/home/HomeScreen.tsx#L5",
+      "navega /perfilScreen HomeScreen src/features/home/HomeScreen.tsx#L4",
+      "redirige /homeScreen PerfilScreen src/features/perfil/PerfilScreen.tsx#L4",
+    ]);
+  });
+});
+
 describe("eventos y colas: del código al contrato y al grafo", () => {
   let dir: string, brain: string;
   beforeAll(async () => {
