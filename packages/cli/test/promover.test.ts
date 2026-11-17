@@ -27,6 +27,17 @@ beforeAll(async () => {
 });
 afterAll(() => rm(raiz, { recursive: true, force: true }));
 
+describe("notas ancladas a un nodo", () => {
+  it("una nota sobre una pieza aparece en su impacto y en estado, hasta que alguien la revise", async () => {
+    await brain("compile");
+    expect((await brain("impacto", "tabla-pagos")).stdout).not.toContain('"notas"');
+    await brain("nota", "tabla-pagos", "la columna estado ahora admite reembolsado");
+    const imp = JSON.parse((await brain("impacto", "tabla-pagos")).stdout) as { notas: Array<{ de: string; nota: string }> };
+    expect(imp.notas).toEqual([{ de: "tabla-pagos", nota: "la columna estado ahora admite reembolsado (manual)" }]);
+    expect((await brain("estado")).stdout).toContain("nodos con notas sin revisar: 1 — tabla-pagos");
+  });
+});
+
 describe("brain promover", () => {
   it("sin --escribir lista los borradores y su estado, sin tocar nada", async () => {
     const r = await brain("promover");

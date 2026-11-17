@@ -119,6 +119,7 @@ export async function estado(raiz: string, carpetas: string[] = [], ctx?: Contex
     hueco("archivos fuera de toda funcionalidad o librería", feats.length ? archivos.filter((n) => !codigos.some((k) => dentroDe(n.id, k))).map((n) => n.id) : [], archivos.length),
     hueco("relaciones dudosas", g.edges.filter((e) => e.estado === "dudoso").map((e) => `${e.desde} ${e.verbo} ${e.hasta}`), g.edges.length),
     hueco("borradores sin promover", drafts, drafts.length),
+    hueco("nodos con notas sin revisar", [...c.notas.keys()].sort(cmp), c.notas.size),
   ].filter((h) => h.cuantos > 0);
   return { repos, nodos: contar(g.nodes.map((n) => n.tipo)), aristas: contar(g.edges.map((e) => e.verbo)), huecos, desactualizado: repos.some((r) => r.estado === "desactualizado") };
 }

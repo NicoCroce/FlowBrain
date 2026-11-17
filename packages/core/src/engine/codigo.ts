@@ -15,7 +15,7 @@ import {
 } from "../funcionalidades.js";
 import { dependenciasDelGrafo, impacto as recorrerImpacto, type Dependencia } from "../impacto.js";
 import { dentroDe, ENDPOINT_REF, normalizarRuta, type Graph, type GraphNode } from "../schema.js";
-import type { Contexto } from "./contexto.js";
+import { notasDe, type Contexto } from "./contexto.js";
 import { ConsultaError, normalizar, rutaCoincide } from "./herramientas.js";
 import { pantallaDeRuta } from "../pantallas.js";
 import { tokens } from "./proyeccion.js";
@@ -296,6 +296,7 @@ export function funcionalidad(ctx: Contexto, p: FuncionalidadParams) {
     id: f.id,
     nombre: n?.nombre ?? f.id,
     resumen: n?.resumen ?? null,
+    ...(notasDe(ctx, f.id).length ? { notas: notasDe(ctx, f.id) } : {}),
     codigo: f.codigo,
     implementan: f.implementan,
     usa: f.usaFuncionalidades,
@@ -587,7 +588,9 @@ function contextoHumano(ctx: Contexto, id: string, afectados: string[]) {
   const porEquipo = new Map<string, string[]>();
   for (const x of [...(id ? [id] : []), ...new Set(afectados)]) for (const t of hacia(x, "pertenece_a")) porEquipo.set(t, [...(porEquipo.get(t) ?? []), x]);
   const equipos = [...porEquipo.entries()].sort((a, b) => cmp(a[0], b[0])).map(([equipo, por]) => ({ equipo, nombre: ctx.nodo.get(equipo)?.nombre ?? equipo, por: por.sort(cmp) }));
-  return { ...(decisiones.length ? { decisiones } : {}), ...(equipos.length ? { equipos } : {}) };
+  // Notas sin revisar sobre la pieza o lo afectado: alguien vio que el código no coincide con el brain.
+  const notas = [...(id ? [id] : []), ...new Set(afectados)].flatMap((x) => notasDe(ctx, x).map((nota) => ({ de: x, nota }))).slice(0, 20);
+  return { ...(decisiones.length ? { decisiones } : {}), ...(equipos.length ? { equipos } : {}), ...(notas.length ? { notas } : {}) };
 }
 
 /** Columnas de una tabla como texto: `nombre tipo`, con `pk` y `null` cuando aplica. */
