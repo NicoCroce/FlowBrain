@@ -41,7 +41,7 @@ describe("visor de varios cerebros", () => {
     // El borde del panel de detalle se arrastra para ensancharlo.
     expect(html).toContain('id="m3-asa"');
     expect(html).toContain("var(--der, 300px)");
-    for (const pieza of ["data-cerebro=", "data-foco-cerebro=", 'data-tipos="ninguno"', "hiddenBrains", "data-todas=", "data-tab-c=", "m3-asa", "COLOR_C"]) expect(GRAFO3D_JS).toContain(pieza);
+    for (const pieza of ["data-cerebro=", "data-foco-cerebro=", 'data-tipos="ninguno"', "hiddenBrains", "data-todas=", "data-tab-c=", "moverCerebro", "m3-asa", "COLOR_C"]) expect(GRAFO3D_JS).toContain(pieza);
     expect(() => new Function(GRAFO3D_JS)).not.toThrow();
   });
 });

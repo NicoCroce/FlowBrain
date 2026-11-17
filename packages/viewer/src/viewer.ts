@@ -340,7 +340,7 @@ a.nb { text-decoration: none; }
         <button type="button" class="ov on" id="m3-imp" aria-pressed="true" data-acc="imp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"></path></svg>Impulsos</button>
       </div>
     </div>
-    <div class="m3-guia"><span><b>Arrastrar fondo</b> rota</span><span><b>Rueda</b> acerca</span><span><b>Arrastrar nodo</b> lo mueve con sus hijos</span><span><b>Shift</b> mueve solo el nodo</span><span><b>Doble clic</b> enfoca</span></div>
+    <div class="m3-guia"><span><b>Arrastrar fondo</b> rota</span><span><b>Rueda</b> acerca</span><span><b>Arrastrar nodo</b> lo mueve con sus hijos</span><span class="solo-multi"><b>Arrastrar el nombre</b> mueve el cerebro entero</span><span><b>Shift</b> mueve solo el nodo</span><span><b>Doble clic</b> enfoca</span></div>
     <div id="m3-asa" role="separator" aria-orientation="vertical" title="Arrastrá para cambiar el ancho del detalle (doble clic: ancho original)"></div>
   </main>
   <aside class="m3-panel m3-der"><div id="m3-detalle"></div></aside>

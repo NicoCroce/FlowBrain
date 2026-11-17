@@ -349,3 +349,8 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Ancho.** El borde izquierdo del panel de detalle se arrastra (entre 260 px y el 60 % de la ventana); doble clic vuelve al ancho original. Se recuerda en el navegador; si no hay almacenamiento, funciona igual.
    - **No se miró en un navegador en esta sesión.**
    - **Pestañas (mismo día).** Con conexiones en más de un cerebro, el detalle muestra una pestaña por cerebro (color, nombre y cantidad) y lista de a uno; arranca en el cerebro del nodo y vuelve a él al elegir otro nodo. Con un solo cerebro no hay pestañas.
+
+143. **Un cerebro se mueve entero arrastrando su nombre (2026-11-17).** Con varios cerebros en el mapa, uno puede tapar a otro o quedar en el medio de lo que se quiere mirar.
+   - **Cómo.** El nombre sobre la corteza es el asa: al arrastrarlo se mueven el centro del cerebro, su corteza y todos sus nodos, en el plano de la pantalla. El centro de cada cerebro pasa a tener tres coordenadas (antes solo se separaban en x), y la gravedad de cada nodo tira hacia el centro de su cerebro.
+   - **Volver.** "Reorganizar" devuelve cada cerebro a su lugar en la fila. La posición no se guarda entre recargas.
+   - **No se miró en un navegador en esta sesión.**
