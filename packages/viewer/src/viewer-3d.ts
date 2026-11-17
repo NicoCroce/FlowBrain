@@ -334,7 +334,7 @@ export const GRAFO3D_JS = String.raw`
       // El nombre de cada cerebro, sobre su corteza.
       if (MULTI) {
         var ct = project(OX[cb], rb * 0.98, 0);
-        if (ct) { ctx.globalAlpha = 0.85; ctx.font = "600 " + Math.max(12, Math.min(22, 26000 * ct.s / 100)) + "px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#D5DAE4"; ctx.fillText(CEREBROS[cb].nombre + (CEREBROS[cb].sinRevisar ? " · sin revisar" : ""), ct.sx, ct.sy - 10); ctx.textAlign = "start"; ctx.fillStyle = "#8FA6FF"; }
+        if (ct) { ctx.globalAlpha = 0.85; ctx.font = "600 " + Math.max(12, Math.min(22, 26000 * ct.s / 100)) + "px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "#D5DAE4"; ctx.fillText(CEREBROS[cb].nombre, ct.sx, ct.sy - 10); ctx.textAlign = "start"; ctx.fillStyle = "#8FA6FF"; }
       }
     }
     ctx.globalAlpha = 1;
@@ -533,7 +533,7 @@ export const GRAFO3D_JS = String.raw`
     $("m3-vis").textContent = N.filter(visible).length + " nodos";
     $("m3-cerebros").innerHTML = MULTI ? CEREBROS.map(function (c, i) {
       var v = !S.hiddenBrains[i];
-      return '<button type="button" class="tg' + (v ? "" : " off") + '" aria-pressed="' + v + '" data-cerebro="' + i + '">' + esc(c.nombre) + (c.sinRevisar ? " · sin revisar" : "") + '<span class="ct">' + c.nodos + "</span></button>";
+      return '<button type="button" class="tg' + (v ? "" : " off") + '" aria-pressed="' + v + '" data-cerebro="' + i + '">' + esc(c.nombre) + '<span class="ct">' + c.nodos + "</span></button>";
     }).join("") : "";
     var hayTipos = TIPOS_PRESENTES.some(function (t) { return !S.hiddenTypes[t[0]]; });
     $("m3-todo").innerHTML = '<button type="button" class="chip" data-tipos="todos">Prender todo</button><button type="button" class="chip' + on(!hayTipos) + '" data-tipos="ninguno">Apagar todo</button>';
