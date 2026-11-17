@@ -361,3 +361,11 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Qué no cambió.** "Brain" y "cerebro" como sustantivo: un brain sigue siendo la carpeta con las páginas y el grafo, y el registro sigue siendo `cerebros.yaml`. Tampoco el formato de los datos: un brain ya indexado sirve tal cual.
    - **Compatibilidad.** En este repo `pnpm brain` sigue funcionando como alias, para no romper hooks y MCP ya registrados. `doctor` reconoce el servidor MCP con cualquiera de los dos nombres. Regenerar las reglas reemplaza un bloque escrito con los marcadores viejos en vez de duplicarlo. Las variables `BRAIN_*` y el prefijo `brain-nota` dejan de leerse.
 
+145. **`.flowbrain` dentro del proyecto: `flowbrain instalar` y `flowbrain iniciar` (2026-11-17).** Armar los cerebros pedía crear una carpeta aparte, proponer, editar, aplicar y registrar, y los hooks y el MCP quedaban atados a un solo registro por máquina.
+   - **`iniciar`** (dentro del proyecto): crea `.flowbrain/`, busca los repos (la carpeta misma si es un repo o no tiene repos adentro), escribe el registro con un cerebro que los contiene a todos, indexa y genera el visor. No pregunta nada: dividir en cerebros es editar `cerebros.yaml` y volver a correrlo. Si el registro ya existe, solo actualiza.
+   - **`instalar`** (una vez por máquina): deja un script `flowbrain` en un directorio del PATH y registra los hooks **sin `--raiz`**. El hook usa la carpeta de la sesión y `serve` la carpeta donde arrancó (o `INIT_CWD`): buscan `.flowbrain/cerebros.yaml` ahí o por encima. Así una sola instalación sirve para todos los proyectos, y fuera de uno el hook no dice nada.
+   - **Raíz por defecto.** Para todos los comandos: `--raiz`, `$FLOWBRAIN_ROOT`, el `.flowbrain` más cercano hacia arriba, o el directorio actual.
+   - **El comando en desarrollo** pasa a ser `tsx …/main.ts` directo en vez de `pnpm -C`, porque `pnpm -C` cambia de carpeta y se perdía dónde estaba parado el usuario.
+   - **Los parsers ignoran `.flowbrain`**, para que un repo que lo contiene no se indexe a sí mismo. `.flowbrain/.gitignore` excluye `_build/` y el visor.
+   - **El MCP no se registra solo:** `instalar` imprime las líneas de `claude mcp`, igual que `init`.
+

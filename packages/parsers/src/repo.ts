@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import { cmp } from "@flowbrain/core";
 import type { RepoFuente } from "./tipos.js";
 
-const IGNORAR = new Set(["node_modules", ".git", "dist", "build", ".next", "out", "coverage", "vendor", ".turbo", ".cache", "var", "tmp"]);
+const IGNORAR = new Set(["node_modules", ".git", "dist", "build", ".next", "out", "coverage", "vendor", ".turbo", ".cache", "var", "tmp", ".flowbrain"]);
 
 /** Lista el repo de forma determinística (orden por code units, sin depender del filesystem). */
 export function leerRepo(raiz: string): RepoFuente {

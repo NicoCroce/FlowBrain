@@ -1,5 +1,5 @@
 import { compileDirConVisor } from "@flowbrain/viewer";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, chmod, constants, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,8 @@ export function comandoBrain(env: NodeJS.ProcessEnv = process.env): string {
   if (env.FLOWBRAIN_COMANDO) return env.FLOWBRAIN_COMANDO;
   if (VERSION !== "dev") return `npx -y ${PAQUETE}@${VERSION}`;
   const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-  return `pnpm -s -C ${comillas(repo)} flowbrain`;
+  // Directo, sin pasar por pnpm: así el comando corre en la carpeta desde la que se lo llama.
+  return `${comillas(join(repo, "node_modules/.bin/tsx"))} ${comillas(join(repo, "packages/cli/src/main.ts"))}`;
 }
 
 export const comillas = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
@@ -123,4 +124,23 @@ export async function instalarHooksClaudeCode(settingsPath: string, comando: str
   if (previo !== null) await writeFile(`${settingsPath}.flowbrain.bak`, previo, "utf8");
   await writeFile(settingsPath, nuevo, "utf8");
   return true;
+}
+
+/**
+ * Deja el comando `flowbrain` disponible en cualquier carpeta: un script en un directorio del PATH que llama a este
+ * mismo código. Con el paquete instalado (`npm i -g flowbrain`) no hace falta. Devuelve dónde quedó y si ese directorio
+ * está en el PATH.
+ */
+export async function instalarComando(env: NodeJS.ProcessEnv = process.env, bin?: string): Promise<{ archivo: string; enPath: boolean }> {
+  const enPath = (env.PATH ?? "").split(":").filter(Boolean);
+  const escribible = (d: string) => access(d, constants.W_OK).then(() => true, () => false);
+  const local = join(homedir(), ".local/bin");
+  let dir = bin;
+  if (!dir) for (const d of [local, "/opt/homebrew/bin", "/usr/local/bin"]) if (enPath.includes(d) && (await escribible(d))) { dir = d; break; }
+  dir ??= local;
+  await mkdir(dir, { recursive: true });
+  const archivo = join(dir, "flowbrain");
+  await writeFile(archivo, `#!/bin/sh\n# Lo escribió \`flowbrain instalar\`.\nexec ${comandoBrain(env)} "$@"\n`, "utf8");
+  await chmod(archivo, 0o755);
+  return { archivo, enPath: enPath.includes(dir) };
 }

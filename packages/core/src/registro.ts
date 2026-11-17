@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { isAbsolute, join, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 import { cmp } from "./canonical.js";
@@ -147,4 +147,16 @@ export const esRegistro = (carpeta: string) => stat(join(carpeta, ARCHIVO_REGIST
 
 export async function leerRegistro(carpeta: string): Promise<Registro> {
   return interpretarRegistro(await readFile(join(carpeta, ARCHIVO_REGISTRO), "utf8"), carpeta);
+}
+
+/** Carpeta que `flowbrain iniciar` crea dentro de un proyecto: ahí viven el registro y los cerebros. */
+export const CARPETA_PROYECTO = ".flowbrain";
+
+/** El registro del proyecto donde se está parado: `<carpeta>/.flowbrain` con su `cerebros.yaml`, en `desde` o en cualquier carpeta por encima. */
+export async function buscarRegistro(desde: string): Promise<string | null> {
+  for (let d = resolve(desde); ; d = dirname(d)) {
+    const c = join(d, CARPETA_PROYECTO);
+    if (await esRegistro(c)) return c;
+    if (dirname(d) === d) return null;
+  }
 }

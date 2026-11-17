@@ -206,3 +206,32 @@ describe("registrar en Claude Code", () => {
     expect(s.hooks["SessionEnd"]!.flatMap((e) => e.hooks.map((h) => h.command))).toEqual([`flowbrain hook claude-code --raiz ${reg}`]);
   });
 });
+
+describe("dentro de un proyecto", () => {
+  it("iniciar crea .flowbrain con todo indexado, y los comandos y el hook lo encuentran desde cualquier subcarpeta", async () => {
+    const proyecto = join(dir, "repos");
+    const r = await ejecutar(["iniciar"], {}, proyecto);
+    expect(r.stdout).toContain(`registro creado en ${join(proyecto, ".flowbrain/cerebros.yaml")}: 3 repos en un cerebro`);
+    expect(await readFile(join(proyecto, ".flowbrain/.gitignore"), "utf8")).toBe("*/_build/\ncerebros.html\n");
+    expect(await readFile(join(proyecto, ".flowbrain/cerebros.yaml"), "utf8")).toContain('- ruta: "../tienda-web"');
+    // Sin --raiz, parado adentro de un repo del proyecto.
+    const b = JSON.parse((await ejecutar(["buscar", "/pedidos", "--tipos", "endpoint"], {}, join(proyecto, "tienda-api/src"))).stdout) as { nodos: Array<{ id: string }> };
+    expect(b.nodos.map((n) => n.id)).toContain("svc-tienda-api:GET:/pedidos");
+    // El hook no lleva --raiz: usa la carpeta de la sesión. Fuera de un proyecto no dice nada y no falla.
+    const hook = (cwd: string) => ejecutar(["hook", "claude-code"], {}, dir, async () => JSON.stringify({ hook_event_name: "UserPromptSubmit", prompt: "qué hace GET /pedidos en svc-tienda-api", cwd }));
+    expect((await hook(join(proyecto, "tienda-api"))).stdout).toContain("<flowbrain-context>");
+    expect(await hook(dir)).toEqual({ codigo: 0, stdout: "", stderr: "" });
+    // Volver a correrlo actualiza, sin pisar el registro.
+    expect((await ejecutar(["iniciar"], {}, proyecto)).stdout).toContain("registro existente");
+  }, 120_000);
+
+  it("instalar deja el comando en el PATH y los hooks sin atarlos a una carpeta", async () => {
+    const settings = join(dir, "global/settings.json"), bin = join(dir, "global/bin");
+    const r = await ejecutar(["instalar", "--settings", settings, "--bin", bin], { FLOWBRAIN_COMANDO: "flowbrain", PATH: bin }, dir);
+    expect(await readFile(join(bin, "flowbrain"), "utf8")).toContain('exec flowbrain "$@"');
+    expect(JSON.parse(await readFile(settings, "utf8")).hooks.UserPromptSubmit[0].hooks[0].command).toBe("flowbrain hook claude-code");
+    expect(r.stdout).toContain("claude mcp add --scope user flowbrain -- flowbrain serve --sync\n");
+    expect(r.stdout).not.toContain("no está en tu PATH");
+  });
+});
+

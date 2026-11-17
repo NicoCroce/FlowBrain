@@ -1,5 +1,24 @@
 # Instalación en Claude Code
 
+## La forma corta: `.flowbrain` dentro del proyecto
+
+Una vez por máquina (deja el comando `flowbrain` en el PATH y los hooks de Claude Code; imprime las dos líneas del servidor MCP):
+
+```bash
+pnpm -s -C /ruta/a/este/repo flowbrain instalar
+```
+
+En cada proyecto, parado en su carpeta (un repo, o una carpeta con varios repos adentro):
+
+```bash
+cd /ruta/al/proyecto
+flowbrain iniciar
+```
+
+`iniciar` crea `.flowbrain/` con el registro (`cerebros.yaml`, un cerebro con todos los repos que encontró), indexa todo y deja el visor en `.flowbrain/cerebros.html`. Volver a correrlo actualiza. Para separar los repos en varios cerebros o activar la comunicación, se edita `.flowbrain/cerebros.yaml` (ver "Varios cerebros") y se corre de nuevo. Los hooks y el servidor MCP no llevan `--raiz`: usan el `.flowbrain` de la carpeta donde se abrió Claude Code, o de cualquier carpeta por encima; fuera de un proyecto no hacen nada. `.flowbrain/.gitignore` deja fuera lo derivado (`_build/` y el visor); las páginas y el registro se pueden versionar.
+
+El resto de este documento describe la instalación a mano, con la carpeta del brain donde se quiera.
+
 ## Con el paquete publicado (`flowbrain`)
 
 ```bash

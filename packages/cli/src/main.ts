@@ -1,13 +1,15 @@
 import { compileDirConVisor } from "@flowbrain/viewer";
 import { realpathSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import {
   buscarNodo,
   ARCHIVO_REGISTRO,
+  buscarRegistro,
+  CARPETA_PROYECTO,
   cargarContexto,
   esRegistro,
   leerRegistro,
@@ -37,9 +39,9 @@ import {
 import { crearMulti } from "@flowbrain/mcp";
 import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@flowbrain/hooks";
 import { draftDir } from "@flowbrain/indexer";
-import { aplicar, escribirVisor, listar, proponer } from "./cerebros.js";
+import { aplicar, encontrarRepos, escribirVisor, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
-import { comandoBrain, comillas, init, instalarHooksClaudeCode, VERSION } from "./init.js";
+import { comandoBrain, comillas, init, instalarComando, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
 import { escribirIndex, indexar } from "@flowbrain/parsers";
 
@@ -52,6 +54,9 @@ Comandos:
   index <ruta-repo> [--repo <repo-id>]      corre los parsers y escribe contratos, archivos y extracción en _build/
   draft <ruta-repo> [--repo <repo-id>]      borradores en _drafts/<repo>/ y funcionalidades en _drafts/producto/
                                             (no toca tecnologia/, producto/ ni _build/)
+  instalar                                  una vez por máquina: comando flowbrain en el PATH y hooks de Claude Code
+  iniciar [carpeta]                         dentro de un proyecto: crea .flowbrain/, detecta los repos e indexa todo;
+                                            volver a correrlo actualiza
   cerebros                                  lista los cerebros del registro (cerebros.yaml en --raiz) y su estado
   cerebros proponer <carpeta...>            explora carpetas y escribe un borrador de cerebros.yaml con preguntas abiertas
   cerebros aplicar [nombre]                 crea e indexa los cerebros del registro (o uno solo)
@@ -90,7 +95,8 @@ Comandos:
   serve [--sync]                            servidor MCP por stdio; con --sync reindexa solo cuando un clon avanzó
 
 Opciones comunes:
-  --raiz <dir>          raíz del brain, o carpeta con cerebros.yaml (por defecto $FLOWBRAIN_ROOT o el directorio actual)
+  --raiz <dir>          raíz del brain, o carpeta con cerebros.yaml (por defecto $FLOWBRAIN_ROOT, el .flowbrain del
+                        proyecto donde estás parado, o el directorio actual)
   --cerebro <nombre>    con varios cerebros, cuál usar (por defecto, el del repo donde estás parado)
   --proyeccion <p>      resumen | relaciones | contrato | completo
   --budget <n|none>     presupuesto de tokens (por defecto 2000)
@@ -147,6 +153,7 @@ export async function ejecutar(
         json: { type: "boolean" },
         "claude-code": { type: "boolean" },
         settings: { type: "string" },
+        bin: { type: "string" },
         version: { type: "boolean", short: "v" },
         help: { type: "boolean", short: "h" },
       },
@@ -158,7 +165,16 @@ export async function ejecutar(
   const [comando, arg] = positionals;
   if (o.version) return { codigo: 0, stdout: `${VERSION}\n`, stderr: "" };
   if (o.help || !comando) return { codigo: comando || o.help ? 0 : 2, stdout: AYUDA, stderr: "" };
-  let raiz = resolve(cwd, o.raiz ?? env.FLOWBRAIN_ROOT ?? ".");
+  // Sin --raiz ni $FLOWBRAIN_ROOT: el `.flowbrain` del proyecto donde se está parado (en esta carpeta o por encima).
+  const explicita = o.raiz ?? env.FLOWBRAIN_ROOT;
+  let raiz = resolve(cwd, explicita ?? (await buscarRegistro(cwd)) ?? ".");
+  const resumenAplicar = (rs: Awaited<ReturnType<typeof aplicar>>, visor: string | null) => [...rs.flatMap((r) => [
+    `${r.nombre}${r.curado ? "" : " (sin curar)"}: ${r.nodos} nodos, ${r.relaciones} relaciones; ${r.promovidas} páginas creadas, ${r.borradores} borradores para revisar`,
+    ...r.repos.map((x) => `  ${x.repo ?? "(sin indexar)"} ← ${x.ruta}${x.error ? `: ${x.error}` : ""}`),
+    ...r.errores.slice(0, 10).map((e) => `  no compiló y quedó como borrador: ${e}`),
+    ...(r.errores.length > 10 ? [`  … y ${r.errores.length - 10} más`] : []),
+  ]), ...(visor ? [`visor de todos los cerebros: ${visor}`] : [])];
+  const fallo = (rs: Awaited<ReturnType<typeof aplicar>>) => rs.some((r) => r.repos.some((x) => x.error) || r.nodos === 0);
 
   try {
     if (comando === "init") {
@@ -177,6 +193,46 @@ export async function ejecutar(
         `Siguiente: ${r.comando} draft /ruta/a/un/repo --raiz ${r.raiz}`,
       ];
       return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+    }
+
+    if (comando === "instalar") {
+      // Una vez por máquina: el comando `flowbrain` en el PATH y los hooks de Claude Code, sin atarlos a una carpeta.
+      // Cada prompt y cada sesión usan el `.flowbrain` del proyecto donde se abrió Claude Code; fuera de uno, nada.
+      const cmd = comandoBrain(env);
+      const settings = o.settings !== undefined ? resolve(cwd, o.settings) : join(homedir(), ".claude/settings.json");
+      const bin = VERSION === "dev" || o.bin !== undefined ? await instalarComando(env, o.bin !== undefined ? resolve(cwd, o.bin) : undefined) : null;
+      const cambio = await instalarHooksClaudeCode(settings, `${cmd} hook claude-code`);
+      const lineas = [
+        ...(bin ? [`Comando flowbrain en ${bin.archivo}${bin.enPath ? "" : ` (esa carpeta no está en tu PATH: agregá export PATH="${dirname(bin.archivo)}:$PATH" a tu ~/.zshrc)`}.`] : []),
+        `Hooks de Claude Code ${cambio ? "registrados" : "ya estaban registrados"} en ${settings} (UserPromptSubmit y SessionEnd).`,
+        "",
+        "Servidor MCP (una sola vez; corré estas dos líneas):",
+        "  claude mcp remove --scope user flowbrain",
+        `  claude mcp add --scope user flowbrain -- ${cmd} serve --sync`,
+        "",
+        "Después, en cada proyecto: cd /ruta/al/proyecto && flowbrain iniciar",
+      ];
+      return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+    }
+
+    if (comando === "iniciar") {
+      // Dentro de un proyecto: crea `.flowbrain/`, detecta los repos, arma el registro si no existe e indexa todo.
+      const proyecto = resolve(cwd, arg ?? ".");
+      const reg = join(proyecto, CARPETA_PROYECTO);
+      await mkdir(reg, { recursive: true });
+      const lineas: string[] = [];
+      if (!(await esRegistro(reg))) {
+        // Una carpeta con código pero sin `.git` ni repos adentro: ella misma es el repo.
+        const repos = (await proponer(reg, [proyecto], !(await encontrarRepos(proyecto)).length)).repos;
+        lineas.push(`registro creado en ${join(reg, ARCHIVO_REGISTRO)}: ${repos.length} ${repos.length === 1 ? "repo" : "repos"} en un cerebro`, ...repos.map((x) => `  ${x.nombre}: ${[...x.pila, ...x.lenguajes].join(", ") || "sin código reconocido"}; ${x.endpoints} endpoints, ${x.pantallas} pantallas, ${x.tablas} tablas`));
+        // Lo derivado no se versiona; las páginas, los borradores y el registro sí.
+        if (!(await stat(join(reg, ".gitignore")).then(() => true, () => false))) await writeFile(join(reg, ".gitignore"), "*/_build/\ncerebros.html\n", "utf8");
+      } else lineas.push(`registro existente en ${join(reg, ARCHIVO_REGISTRO)}: se actualiza`);
+      const registro = await leerRegistro(reg);
+      const rs = await aplicar(registro);
+      const visor = await escribirVisor(registro);
+      lineas.push(...resumenAplicar(rs, visor), "", `Para separar los repos en varios cerebros o activar la comunicación entre ellos, editá ${join(reg, ARCHIVO_REGISTRO)} y volvé a correr: flowbrain iniciar`, "Si todavía no lo hiciste en esta máquina, corré una vez: flowbrain instalar");
+      return { codigo: fallo(rs) ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
     }
 
     if (comando === "cerebros") {
@@ -198,13 +254,7 @@ export async function ejecutar(
         if (solo && !registro.cerebro(solo)) throw new ConsultaError("nodo_inexistente", `no existe el cerebro: ${solo}`);
         const rs = await aplicar(registro, solo);
         const visor = await escribirVisor(registro);
-        const lineas = [...rs.flatMap((r) => [
-          `${r.nombre}${r.curado ? "" : " (sin curar)"}: ${r.nodos} nodos, ${r.relaciones} relaciones; ${r.promovidas} páginas creadas, ${r.borradores} borradores para revisar`,
-          ...r.repos.map((x) => `  ${x.repo ?? "(sin indexar)"} ← ${x.ruta}${x.error ? `: ${x.error}` : ""}`),
-          ...r.errores.slice(0, 10).map((e) => `  no compiló y quedó como borrador: ${e}`),
-          ...(r.errores.length > 10 ? [`  … y ${r.errores.length - 10} más`] : []),
-        ]), ...(visor ? [`visor de todos los cerebros: ${visor}`] : [])];
-        return { codigo: rs.some((r) => r.repos.some((x) => x.error) || r.nodos === 0) ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
+        return { codigo: fallo(rs) ? 1 : 0, stdout: resumenAplicar(rs, visor).join("\n") + "\n", stderr: "" };
       }
       if (arg === "visor") {
         const visor = await escribirVisor(await leerRegistro(raiz));
@@ -360,9 +410,12 @@ export async function ejecutar(
       if (arg !== "claude-code") return { codigo: 2, stdout: "", stderr: `hook desconocido: ${arg ?? ""}\n` };
       try {
         const entrada = JSON.parse((await stdin()) || "{}") as { prompt?: string; cwd?: string; hook_event_name?: string; session_id?: string; transcript_path?: string };
-        if (raizRegistro) {
+        // Sin raíz explícita manda la carpeta de la sesión: su `.flowbrain`, o nada si no está dentro de un proyecto.
+        const regHook = explicita ? raizRegistro : entrada.cwd ? await buscarRegistro(entrada.cwd) : raizRegistro;
+        if (!explicita && !regHook && !(await stat(join(raiz, "_build/graph.json")).then(() => true, () => false))) return { codigo: 0, stdout: "", stderr: "" };
+        if (regHook) {
           // Solo el cerebro del repo donde se está trabajando; fuera de todo repo conocido, nada.
-          const c = entrada.cwd ? (await leerRegistro(raizRegistro)).deDirectorio(entrada.cwd) : null;
+          const c = entrada.cwd ? (await leerRegistro(regHook)).deDirectorio(entrada.cwd) : null;
           if (!c) return { codigo: 0, stdout: "", stderr: "" };
           raiz = c.raiz;
         }

@@ -1,16 +1,18 @@
 import { resolve } from "node:path";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { esRegistro } from "@flowbrain/core";
+import { buscarRegistro, esRegistro } from "@flowbrain/core";
 import { crearMulti } from "./multi.js";
 import { cargadorConCache, crearServidor } from "./server.js";
 
 /**
- * `flowbrain serve`: servidor MCP por stdio. Raíz: --raiz <dir>, $FLOWBRAIN_ROOT o el directorio actual. Con `--sync` y un
+ * `flowbrain serve`: servidor MCP por stdio. Raíz: --raiz <dir>, $FLOWBRAIN_ROOT, el `.flowbrain` del proyecto donde se
+ * abrió la sesión (en esa carpeta o por encima) o el directorio actual. Con `--sync` y un
  * `sincronizar` (lo pasa la CLI), reindexa solo cuando un clon avanzó.
  */
 export async function servir(argv: string[], env: NodeJS.ProcessEnv = process.env, sincronizar?: (raiz: string) => Promise<unknown>): Promise<void> {
   const i = argv.indexOf("--raiz");
-  const raiz = resolve(i !== -1 && argv[i + 1] ? argv[i + 1]! : (env.FLOWBRAIN_ROOT ?? "."));
+  // INIT_CWD: la carpeta desde la que se invocó, cuando el comando pasa por pnpm o npm.
+  const raiz = resolve(i !== -1 && argv[i + 1] ? argv[i + 1]! : (env.FLOWBRAIN_ROOT ?? (await buscarRegistro(env.INIT_CWD ?? process.cwd())) ?? "."));
   const sync = sincronizar && argv.includes("--sync") ? sincronizar : undefined;
   // Una carpeta con `cerebros.yaml` sirve todos sus cerebros; si no, es un brain solo.
   const server = (await esRegistro(raiz))

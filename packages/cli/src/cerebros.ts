@@ -134,8 +134,9 @@ export function textoPropuesta(carpetaRegistro: string, nombre: string, repos: R
 }
 
 /** `flowbrain cerebros proponer <carpeta…>`: escribe el borrador del registro. No pisa un registro existente. */
-export async function proponer(carpetaRegistro: string, carpetas: string[]): Promise<{ archivo: string; repos: RepoDetectado[] }> {
-  const rutas = [...new Set((await Promise.all(carpetas.map((c) => encontrarRepos(c)))).flat())].sort(cmp);
+export async function proponer(carpetaRegistro: string, carpetas: string[], comoRepo = false): Promise<{ archivo: string; repos: RepoDetectado[] }> {
+  // `comoRepo`: cada carpeta es un repo tal cual, sin buscar adentro.
+  const rutas = comoRepo ? carpetas.map((c) => resolve(c)) : [...new Set((await Promise.all(carpetas.map((c) => encontrarRepos(c)))).flat())].sort(cmp);
   const repos: RepoDetectado[] = [];
   for (const r of rutas) repos.push(await detectarRepo(r));
   const nombre = slug(basename(resolve(carpetas[0] ?? carpetaRegistro))) || "principal";
