@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import {
   actualizarHeads,
+  avisosIndice,
   BUDGET_POR_DEFECTO,
   buscarNodo,
   cargarContexto,
@@ -27,15 +28,33 @@ import { z } from "zod";
 /** Versión del paquete, la inyecta el build de brain-graph; "dev" corriendo desde el repo. */
 declare const __BRAIN_VERSION__: string | undefined;
 
-/** Carga el contexto y lo recarga si `_build/graph.json` cambió (por mtime). */
-export function cargadorConCache(raiz: string): () => Promise<Contexto> {
+/**
+ * Carga el contexto y lo recarga si `_build/graph.json` cambió (por mtime). Con `alDesfase`, si algún clon avanzó
+ * desde que se indexó, lo llama (reindexar y recompilar) y recarga antes de responder: el agente consulta siempre
+ * sobre el código actual. Se intenta una vez por cada estado de los clones; si falla, se responde con el aviso de siempre.
+ */
+export function cargadorConCache(raiz: string, alDesfase?: () => Promise<unknown>): () => Promise<Contexto> {
   let cache: { mtime: number; ctx: Contexto } | null = null;
-  return async () => {
+  let intentado = "";
+  const cargar = async () => {
     const mtime = (await stat(join(raiz, "_build/graph.json"))).mtimeMs;
     if (!cache || cache.mtime !== mtime) cache = { mtime, ctx: await cargarContexto(raiz) };
     // El clon puede avanzar sin que cambie el brain: el HEAD se relee en cada consulta.
     else if (cache.ctx.codigo) await actualizarHeads(cache.ctx.codigo, raiz);
     return cache.ctx;
+  };
+  return async () => {
+    const ctx = await cargar();
+    const heads = ctx.codigo ? JSON.stringify(ctx.codigo.actuales) : "";
+    if (!alDesfase || !ctx.codigo || !avisosIndice(ctx.codigo).length || heads === intentado) return ctx;
+    intentado = heads;
+    try {
+      await alDesfase();
+    } catch {
+      return ctx;
+    }
+    cache = null;
+    return cargar();
   };
 }
 

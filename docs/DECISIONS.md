@@ -278,3 +278,10 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Decisiones y equipos.** Los tipos `decision` y `team` y sus verbos ya existían, pero ninguna consulta los mostraba. `impacto` ahora trae las decisiones que explican la pieza y los equipos dueños de la pieza y de lo afectado: quién tiene que enterarse de un cambio. `pertenece_a` admite también tablas.
    - **`verify` usa los clones que registró `index`.** Sin `--repos` no verificaba nada. Corrida por primera vez sobre el proyecto de referencia: 2.849 relaciones verificadas, 0 dudosas.
    - **Queda fuera:** que `draft` proponga librerías (carpetas importadas por varias funcionalidades); el proyecto de referencia no tiene páginas `lib`, `team` ni `decision`, así que ahí esto todavía no se ve.
+
+## 2026-11-17 · Auditoría: frescura
+
+127. **El índice se mantiene al día solo; no se hace indexado incremental por archivo.**
+   - **Medición.** Reindexar y recompilar los dos repos de referencia (3.213 archivos) tarda 7 segundos; `sync` sin cambios, 0,7. El indexado por archivo obligaría a rehacer el ts-parser, que resuelve llamadas con el programa entero, para ahorrar segundos. No se hace.
+   - **`brain serve --sync`.** El servidor MCP ya releía el HEAD de cada clon en cada consulta, para avisar. Con `--sync`, cuando un clon avanzó reindexa y recompila antes de responder, una vez por cada estado de los clones. El agente consulta sobre el código actual sin que nadie corra nada. Si la sincronización falla, responde con el aviso de índice desactualizado de siempre. Es opcional: sin la bandera, el servidor no escribe en el brain.
+   - **Queda fuera:** vigilar archivos sin commit (el índice sigue al HEAD, no al árbol de trabajo) e instalar hooks de git en los repos.

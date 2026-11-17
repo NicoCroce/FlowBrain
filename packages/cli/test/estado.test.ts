@@ -3,6 +3,9 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { avisosIndice } from "@brain/core";
+import { cargadorConCache } from "@brain/mcp";
+import { sync } from "../src/estado.js";
 import { ejecutar } from "../src/main.js";
 
 const F = (p: string) => resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures", p);
@@ -61,6 +64,27 @@ describe("brain sync, estado y doctor", () => {
     expect((await brain("estado")).stdout).toContain("repo-tienda: sin clon");
     expect((await brain("sync")).codigo).toBe(1);
     expect((await brain("estado", "--repos", otro)).stdout).toContain("repo-tienda: al día");
+  });
+
+  it("el MCP con sincronización reindexa solo cuando el clon avanzó, antes de responder", async () => {
+    const clones = join(dir, "clones");
+    let corridas = 0;
+    const cargar = cargadorConCache(raiz, async () => {
+      corridas++;
+      await sync(raiz, { carpetas: [clones] });
+    });
+    // El clon se movió: se reubica una vez para que el índice guarde la ruta nueva.
+    await brain("index", join(clones, "tienda"));
+    await brain("compile");
+    expect(avisosIndice((await cargar()).codigo!)).toEqual([]);
+    expect(corridas).toBe(0);
+    await writeFile(join(clones, "tienda/.git/refs/heads/main"), `${"c".repeat(40)}\n`);
+    const ctx = await cargar();
+    expect(corridas).toBe(1);
+    expect(avisosIndice(ctx.codigo!)).toEqual([]);
+    expect(ctx.codigo!.commits["repo-tienda"]).toBe("c".repeat(40));
+    await cargar();
+    expect(corridas).toBe(1);
   });
 
   it("doctor solo lee: dice qué falta registrar y sale con 1", async () => {

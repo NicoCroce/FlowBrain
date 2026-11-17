@@ -97,6 +97,8 @@ pnpm -s -C "$BRAIN_TOOL" brain estado --raiz "$BRAIN_ROOT"    # repos al día o 
 pnpm -s -C "$BRAIN_TOOL" brain doctor --raiz "$BRAIN_ROOT"    # diagnóstico de la instalación (solo lee)
 ```
 
+Para que el agente consulte siempre sobre el código actual, registrá el servidor con `serve --sync`: cuando un clon avanzó, reindexa y recompila antes de responder.
+
 `sync` usa la ruta del clon que guardó `brain index` (relativa al brain); si el clon está en otro lado, `--repos <carpeta>` lo busca por nombre. No hace `git pull`.
 
 ## 6. Reglas para el agente

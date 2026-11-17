@@ -65,7 +65,7 @@ Comandos:
                                             y da el porcentaje de aciertos; sale con 1 si queda debajo de --minimo
   context --prompt <texto> [--repo <dir>]   contexto para inyectar en un prompt (budget por defecto 1500)
   hook claude-code                          hooks UserPromptSubmit y SessionEnd: lee el JSON de Claude Code por stdin
-  serve                                     servidor MCP por stdio
+  serve [--sync]                            servidor MCP por stdio; con --sync reindexa solo cuando un clon avanzó
 
 Opciones comunes:
   --raiz <dir>          raíz del brain (por defecto $BRAIN_ROOT o el directorio actual)
@@ -373,7 +373,7 @@ const real = (p: string) => {
 const esMain = process.argv[1] !== undefined && real(fileURLToPath(import.meta.url)) === real(process.argv[1]);
 if (esMain && process.argv[2] === "serve") {
   const { servir } = await import("@brain/mcp");
-  await servir(process.argv.slice(3));
+  await servir(process.argv.slice(3), process.env, (raiz) => sync(raiz, { carpetas: (process.env.BRAIN_REPOS ?? "").split(":").filter(Boolean) }));
 } else if (esMain) {
   const r = await ejecutar(process.argv.slice(2), process.env, process.cwd(), leerStdin);
   process.stdout.write(r.stdout);
