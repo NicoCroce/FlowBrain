@@ -18,6 +18,7 @@ import {
   quienLlama,
   recorrido,
   pantalla,
+  paridad,
   formatError,
   recorrerGrafo,
   stringifyCanonical,
@@ -67,6 +68,7 @@ Comandos:
   impacto <pieza>                           qué se ve afectado si cambia una tabla, endpoint, servicio, feat o símbolo
   riesgo [archivo...] [--diff <archivo|->]  alcance de un cambio: desde un diff (git diff | brain riesgo --diff -) o archivos
          [--repo <repo-id>]                 tocados, qué funcionalidades, endpoints, pantallas, tablas y repos alcanza
+  paridad <svc-viejo> <svc-nuevo>           qué falta migrar de un servicio a otro: endpoints, pantallas y tablas
   deriva [svc]                              llamadas que ningún endpoint atiende y endpoints que nadie llama
   infra [nodo] [--texto <t>]                imágenes, compose, pipelines, variables de entorno y proxy, con su archivo
   evaluar [archivo] [--minimo pct]          corre preguntas con respuesta conocida (por defecto evals/preguntas.json)
@@ -352,6 +354,10 @@ export async function ejecutar(
         resultado = riesgo(ctx, { ...opt("diff", diff), ...(archivos.length ? { archivos } : {}), ...opt("repo", o.repo), ...opt("profundidad", entero(o.profundidad, "--profundidad")), ...opt("budget_tokens", comunes.budget_tokens) });
         break;
       }
+      case "paridad":
+        if (!arg || !positionals[2]) throw new ConsultaError("parametro_invalido", "uso: brain paridad <svc-viejo> <svc-nuevo>");
+        resultado = paridad(ctx, { viejo: arg, nuevo: positionals[2], ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
       case "deriva":
         resultado = deriva(ctx, { ...opt("nodo", arg), ...opt("budget_tokens", comunes.budget_tokens) });
         break;

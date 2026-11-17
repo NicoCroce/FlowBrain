@@ -828,3 +828,81 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
   };
   return ajustarLista(res, ["endpointsSinLlamadasDetectadas", "llamadasAmbiguas", "llamadasSinEndpoint"], p.budget_tokens);
 }
+
+// ------------------------------------------------------------------ paridad entre dos servicios
+
+export interface ParidadParams {
+  /** Servicio de origen (el que se reemplaza) y de destino (el que lo reemplaza). */
+  viejo: string;
+  nuevo: string;
+  budget_tokens?: number | null;
+}
+
+/**
+ * Paridad de una migración: compara dos servicios por lo que exponen (endpoints o pantallas) y por las tablas que
+ * toca cada pieza. Empareja por método y ruta sin importar el nombre de los parámetros; si un lado lleva un prefijo
+ * fijo que el otro no (`/api`), lo descuenta. No compara comportamiento: dice qué falta y dónde difieren los datos.
+ */
+export function paridad(ctx: Contexto, p: ParidadParams) {
+  for (const id of [p.viejo, p.nuevo]) if (ctx.nodo.get(id)?.tipo !== "svc") throw new ConsultaError("nodo_inexistente", `no existe el servicio: ${id}`);
+  const forma = (ruta: string) => ruta.replace(/\{[^}]*\}/g, "{}").toLowerCase();
+  const piezas = (svc: string, tipo: "endpoint" | "pantalla") =>
+    (ctx.salientes.get(svc) ?? [])
+      .filter((e) => e.verbo === "contiene" && ctx.nodo.get(e.hasta)?.tipo === tipo)
+      .map((e) => {
+        const a = ctx.nodo.get(e.hasta)!.atributos as { metodo?: string; ruta: string };
+        return { id: e.hasta, metodo: a.metodo ?? "", ruta: forma(a.ruta) };
+      });
+  const tablasDe = (id: string) => (ctx.salientes.get(id) ?? []).filter((e) => e.verbo === "lee_de" || e.verbo === "escribe_en").map((e) => `${e.verbo} ${e.hasta}`);
+  const comparar = (tipo: "endpoint" | "pantalla") => {
+    const v = piezas(p.viejo, tipo), n = piezas(p.nuevo, tipo);
+    // Prefijo fijo de un lado (`/api`): el primer segmento que comparten todas sus rutas. Se descuenta solo si así
+    // coinciden más piezas que sin descontar nada.
+    const comun = (xs: typeof v) => {
+      const primero = new Set(xs.map((x) => x.ruta.split("/")[1] ?? ""));
+      const unico = primero.size === 1 ? [...primero][0]! : "";
+      return unico && !unico.startsWith("{") ? `/${unico}` : "";
+    };
+    const clave = (x: (typeof v)[number], pre: string) => `${x.metodo} ${pre && (x.ruta === pre || x.ruta.startsWith(`${pre}/`)) ? x.ruta.slice(pre.length) || "/" : x.ruta}`;
+    const coinciden = (a: string, b: string) => {
+      const claves = new Set(n.map((x) => clave(x, b)));
+      return v.filter((x) => claves.has(clave(x, a))).length;
+    };
+    const [pv, pn] = ([["", ""], ["", comun(n)], [comun(v), ""]] as Array<[string, string]>).reduce((mejor, c) => (coinciden(...c) > coinciden(...mejor) ? c : mejor));
+    const enNuevo = new Map(n.map((x) => [clave(x, pn), x.id]));
+    const enViejo = new Map(v.map((x) => [clave(x, pv), x.id]));
+    const iguales = v.filter((x) => enNuevo.has(clave(x, pv))).map((x) => ({ viejo: x.id, nuevo: enNuevo.get(clave(x, pv))! }));
+    const difieren = iguales.flatMap((par) => {
+      const a = new Set(tablasDe(par.viejo)), b = new Set(tablasDe(par.nuevo));
+      const soloViejo = [...a].filter((t) => !b.has(t)).sort(cmp), soloNuevo = [...b].filter((t) => !a.has(t)).sort(cmp);
+      return soloViejo.length || soloNuevo.length ? [{ ...par, soloViejo, soloNuevo }] : [];
+    });
+    return {
+      total: { viejo: v.length, nuevo: n.length, migrados: iguales.length },
+      faltan: v.filter((x) => !enNuevo.has(clave(x, pv))).map((x) => x.id).sort(cmp),
+      soloEnNuevo: n.filter((x) => !enViejo.has(clave(x, pn))).map((x) => x.id).sort(cmp),
+      difierenEnTablas: difieren,
+    };
+  };
+  const tablasSvc = (svc: string) => new Set([svc, ...piezas(svc, "endpoint").map((x) => x.id)].flatMap((id) => (ctx.salientes.get(id) ?? []).filter((e) => e.verbo === "lee_de" || e.verbo === "escribe_en").map((e) => e.hasta)));
+  const tv = tablasSvc(p.viejo), tn = tablasSvc(p.nuevo);
+  const endpoints = comparar("endpoint"), pantallas = comparar("pantalla");
+  const res = {
+    viejo: p.viejo,
+    nuevo: p.nuevo,
+    endpoints,
+    pantallas,
+    tablasSinMigrar: [...tv].filter((t) => !tn.has(t)).sort(cmp),
+    avisos: [
+      ...(endpoints.total.viejo + pantallas.total.viejo === 0 ? [`${p.viejo} no tiene endpoints ni pantallas indexados`] : []),
+      ...(endpoints.total.nuevo + pantallas.total.nuevo === 0 ? [`${p.nuevo} no tiene endpoints ni pantallas indexados`] : []),
+      "se emparejó por método y ruta: una pieza renombrada figura como faltante de un lado y nueva del otro",
+    ],
+  };
+  // Recorte por presupuesto: primero lo nuevo, después las diferencias, al final lo que falta (lo que más importa).
+  const b = p.budget_tokens === undefined ? 2000 : p.budget_tokens;
+  let omitidos = 0;
+  const listas: unknown[][] = [pantallas.soloEnNuevo, endpoints.soloEnNuevo, pantallas.difierenEnTablas, endpoints.difierenEnTablas, res.tablasSinMigrar, pantallas.faltan, endpoints.faltan];
+  for (const l of listas) while (b !== null && l.length && tokens({ ...res, truncado: true, omitidos: omitidos + 1 }) > b) { l.pop(); omitidos++; }
+  return omitidos ? { ...res, truncado: true as const, omitidos } : res;
+}

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, archivosDeDiff, buscarNodo, deriva, riesgo, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, archivosDeDiff, buscarNodo, crearContexto, deriva, paridad, riesgo, type Graph, type GraphEdge, type GraphNode, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -220,7 +220,7 @@ describe("consultas de código", () => {
     const r = evaluar(ctx, preguntas);
     expect(r).toMatchObject({ total: 4, aciertos: 3, porcentaje: 75, cobertura: 80, porHerramienta: { quien_llama: { total: 2, aciertos: 2 }, recorrido: { total: 2, aciertos: 1 } } });
     // Lo que la evaluación no mide queda a la vista.
-    expect(r.sinPreguntas).toEqual(["buscar_nodo", "contrato_de", "deriva", "funcionalidad", "impacto", "infra", "pantalla", "recorrer_grafo", "riesgo", "trazar"]);
+    expect(r.sinPreguntas).toEqual(["buscar_nodo", "contrato_de", "deriva", "funcionalidad", "impacto", "infra", "pantalla", "paridad", "recorrer_grafo", "riesgo", "trazar"]);
     expect(r.falladas).toEqual([{ id: "c", pregunta: "c", herramienta: "recorrido", ok: false, faltan: ["tabla-inexistente"], sobran: [] }]);
     expect(() => leerPreguntas('[{"id":"x","herramienta":"otra","args":{}}]')).toThrow(/herramienta desconocida/);
   });
@@ -232,5 +232,35 @@ describe("consultas de código", () => {
       "2 crearPago",
     ]);
     expect(r.pasos[0]!.toca).toEqual(["llama_a svc-bff:POST:/checkout"]);
+  });
+});
+
+describe("paridad de una migración", () => {
+  const nodo = (id: string, tipo: GraphNode["tipo"], atributos: Record<string, unknown> = {}): GraphNode => ({ actualizado: null, aliases: [], atributos, estado: "vigente", id, nombre: id, origen: "parser", pagina: null, resumen: null, tecnologia: [], tipo, verificado: null });
+  const arista = (desde: string, verbo: GraphEdge["verbo"], hasta: string): GraphEdge => ({ confianza: 0.9, dato: null, desde, endpoint: null, estado: "vigente", evidencia: null, hasta, origen: "parser", verbo });
+  const ep = (svc: string, metodo: string, ruta: string) => nodo(`${svc}:${metodo}:${ruta}`, "endpoint", { metodo, ruta });
+  const eps = [ep("svc-viejo", "GET", "/turnos"), ep("svc-viejo", "GET", "/turnos/{id}"), ep("svc-viejo", "POST", "/turnos"), ep("svc-viejo", "DELETE", "/turnos/{id}"), ep("svc-nuevo", "GET", "/api/turnos"), ep("svc-nuevo", "GET", "/api/turnos/{turnoId}"), ep("svc-nuevo", "POST", "/api/turnos"), ep("svc-nuevo", "GET", "/api/salud")];
+  const graph: Graph = {
+    version: 1,
+    nodes: [nodo("svc-viejo", "svc"), nodo("svc-nuevo", "svc"), nodo("tabla-turno", "tabla"), nodo("tabla-auditoria", "tabla"), ...eps],
+    edges: [
+      ...eps.map((e) => arista(e.id.slice(0, e.id.indexOf(":")), "contiene", e.id)),
+      arista("svc-viejo:POST:/turnos", "escribe_en", "tabla-turno"),
+      arista("svc-viejo:POST:/turnos", "escribe_en", "tabla-auditoria"),
+      arista("svc-nuevo:POST:/api/turnos", "escribe_en", "tabla-turno"),
+    ],
+  };
+  const ctx2 = crearContexto(graph, [], new Map());
+
+  it("empareja por método y ruta, descuenta el prefijo fijo y dice qué falta y dónde difieren las tablas", () => {
+    const r = paridad(ctx2, { viejo: "svc-viejo", nuevo: "svc-nuevo" });
+    expect(r.endpoints).toEqual({
+      total: { viejo: 4, nuevo: 4, migrados: 3 },
+      faltan: ["svc-viejo:DELETE:/turnos/{id}"],
+      soloEnNuevo: ["svc-nuevo:GET:/api/salud"],
+      difierenEnTablas: [{ viejo: "svc-viejo:POST:/turnos", nuevo: "svc-nuevo:POST:/api/turnos", soloViejo: ["escribe_en tabla-auditoria"], soloNuevo: [] }],
+    });
+    expect(r.tablasSinMigrar).toEqual(["tabla-auditoria"]);
+    expect(() => paridad(ctx2, { viejo: "svc-viejo", nuevo: "tabla-turno" })).toThrow(ConsultaError);
   });
 });

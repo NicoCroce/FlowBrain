@@ -36,7 +36,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 15 | Huecos de contratos | Hecho en parte (decisión 130) |
 | 16 | `riesgo` | Hecho (decisión 128) |
 | 17 | Deriva de contratos | Hecho (decisión 132) |
-| 18–19 | Paridad de migración y notas ancladas | Pendiente |
+| 18 | Paridad de migración | Hecho (decisión 134), sin probar con un caso real |
+| 19 | Decisiones y notas ancladas | Hecho (decisiones 126 y 133) |
 | 20–22 | Higiene | Pendiente |
 
 ---

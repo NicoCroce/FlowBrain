@@ -1,5 +1,5 @@
 import { cmp } from "../canonical.js";
-import { deriva, funcionalidad, impactoDe, infra, pantalla, quienLlama, recorrido, riesgo } from "./codigo.js";
+import { deriva, funcionalidad, impactoDe, infra, pantalla, paridad, quienLlama, recorrido, riesgo } from "./codigo.js";
 import type { Contexto } from "./contexto.js";
 import { buscarNodo, ConsultaError, contratoDe, recorrerGrafo, trazar } from "./herramientas.js";
 
@@ -57,6 +57,7 @@ const HERRAMIENTAS: Record<string, (ctx: Contexto, a: never) => unknown> = {
   infra,
   riesgo,
   deriva,
+  paridad,
 };
 
 export function leerPreguntas(texto: string): Pregunta[] {

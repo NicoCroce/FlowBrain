@@ -59,6 +59,7 @@ export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): st
     "- `quien_llama` antes de cambiar un método: quién lo llama (también por eventos, colas y HTTP desde otros repos) y qué endpoints y funcionalidades alcanza.",
     "- `impacto` para saber qué funcionalidades se ven afectadas si cambia una tabla, un endpoint o un servicio.",
     "- `riesgo` con un diff o los archivos que vas a tocar, antes de un cambio grande: qué alcanza y a quién avisar.",
+    "- `deriva` para ver llamadas que ningún endpoint atiende y endpoints que nadie llama; `paridad` para saber qué falta migrar de un servicio a otro.",
     "- `infra` para saber cómo se construye, despliega y configura un servicio: imagen, pipelines, variables de entorno y proxy.",
     "- `funcionalidad` para la ficha de una funcionalidad de producto: endpoints, consumo, datos y relaciones.",
     "Los `avisos` de cada respuesta son huecos conocidos (no hay dato, no \"no pasa nada\"): llamadas sin resolver o índice desactualizado; ahí sí conviene mirar el código. `indice` dice de qué commit salió.",

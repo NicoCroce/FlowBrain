@@ -17,6 +17,7 @@ import {
   quienLlama,
   recorrido,
   pantalla,
+  paridad,
   PROYECCIONES,
   recorrerGrafo,
   riesgo,
@@ -100,6 +101,7 @@ export const INSTRUCCIONES = [
   "- Qué se rompe si cambio una tabla, endpoint, servicio o funcionalidad: impacto. Si es un método o una clase: quien_llama.",
   "- Qué tan riesgoso es un cambio concreto (un diff o unos archivos): riesgo.",
   "- Endpoints que nadie llama o llamadas que nadie atiende: deriva.",
+  "- Qué falta migrar de un servicio a otro: paridad.",
   "- Por dónde viaja un dato entre servicios: trazar.",
   "- Cómo se construye, despliega y configura un servicio (imagen, pipeline, variables de entorno, proxy): infra.",
   "- Vecinos de un nodo por tipo de relación: recorrer_grafo.",
@@ -304,6 +306,19 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     async (a) => {
       const ctx = await obtener();
       return responder(() => deriva(ctx, limpio(a)));
+    },
+  );
+
+  server.registerTool(
+    "paridad",
+    {
+      description:
+        "Paridad de una migración entre dos servicios (el que se reemplaza y el que lo reemplaza): qué endpoints o pantallas ya están del otro lado, cuáles faltan, cuáles son nuevos, en cuáles difieren las tablas que tocan, y qué tablas del viejo todavía no usa el nuevo.",
+      inputSchema: { viejo: z.string().min(1).describe("id del servicio de origen"), nuevo: z.string().min(1).describe("id del servicio que lo reemplaza"), ...presupuesto },
+    },
+    async (a) => {
+      const ctx = await obtener();
+      return responder(() => paridad(ctx, limpio(a)));
     },
   );
 
