@@ -1,6 +1,8 @@
 /**
  * Vista "Mapa 3D" del visor (`#/grafo`): el grafo entero en 3D, dibujado en un `<canvas>` sin librerías.
- * Cada punto crece con su uso en el código; se elige qué tipos y relaciones se ven, cómo se agrupan, y al arrastrar
+ * Se dibuja como un cerebro: cada nodo es una neurona (soma, halo y dendritas), cada arista un axón curvo por el que
+ * corren impulsos en el sentido de la relación, y una nube de puntos marca la corteza con sus dos hemisferios.
+ * Cada neurona crece con su uso en el código; se elige qué tipos y relaciones se ven, cómo se agrupan, y al arrastrar
  * o separar un nodo se lleva a sus hijos. Publica `window.brainVisor` (datos, `enfocar`, `mostrarMapa`) para las
  * demás vistas. JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
@@ -28,14 +30,14 @@ export const GRAFO3D_JS = String.raw`
   var N = [], by = {};
   D.nodes.forEach(function (n) {
     if (!TIPO[n.t]) return;
-    var x = { id: n.id, tipo: n.t, nombre: n.n, uso: M.uso[n.id] || 0, deg: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, pin: false, adj: [], kids: [], parent: null, puesto: false };
+    var x = { id: n.id, tipo: n.t, nombre: n.n, uso: M.uso[n.id] || 0, deg: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, pin: false, adj: [], kids: [], parent: null, puesto: false, fire: 0, fase: 0 };
     N.push(x); by[n.id] = x;
   });
   var E = [];
   M.aristas.forEach(function (a) {
     var s = by[a[0]], h = by[a[1]];
     if (!s || !h || s === h) return;
-    var e = { a: s, b: h, verbo: a[2], ev: a[3] };
+    var e = { a: s, b: h, verbo: a[2], ev: a[3], c: ((E.length % 7) - 3) * 0.035 };
     E.push(e); s.adj.push({ n: h, e: e }); h.adj.push({ n: s, e: e });
   });
   N.forEach(function (n) { var vistos = {}; n.adj.forEach(function (x) { vistos[x.n.id] = true; }); n.deg = Object.keys(vistos).length; });
@@ -49,12 +51,14 @@ export const GRAFO3D_JS = String.raw`
   N.forEach(function (n) {
     var u = rnd() * Math.PI * 2, v = Math.acos(2 * rnd() - 1), R = 160 + rnd() * 280;
     n.x = R * Math.sin(v) * Math.cos(u); n.y = R * Math.sin(v) * Math.sin(u) * 0.8; n.z = R * Math.cos(v);
+    n.fase = rnd() * Math.PI * 2;
   });
 
   var ocultosIniciales = {};
   TIPOS.forEach(function (t) { if (D.tiposIniciales.indexOf(t[0]) < 0) ocultosIniciales[t[0]] = true; });
   var S = { hiddenTypes: ocultosIniciales, hiddenVerbs: {}, sizeMode: "uso", scale: 1, group: "feat", labels: "grandes", selId: null, query: "",
-    dragChildren: true, rotating: true, isolate: false, hiddenIds: {} };
+    dragChildren: true, rotating: true, isolate: false, hiddenIds: {},
+    pulsos: !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) };
 
   function setParents(mode) {
     var P = mode === "none" ? {} : M.padres[mode] || {};
@@ -106,7 +110,7 @@ export const GRAFO3D_JS = String.raw`
     L.forEach(function (r) { var ca = cuenta.get(r.a), cb = cuenta.get(r.b); r.k = r.k / Math.min(ca, cb); r.bias = ca / (ca + cb); });
     resortes = L;
   }
-  var VMAX = 40;
+  var VMAX = 40, FISURA = 26;
   function simStep(a) {
     var A = activos, i, j, n, m, dx, dy, dz, d2, d, f;
     if (A.length <= 900) {
@@ -140,7 +144,11 @@ export const GRAFO3D_JS = String.raw`
         }
       }
     }
-    for (i = 0; i < A.length; i++) { n = A[i]; n.vx -= n.x * 0.004; n.vy -= n.y * 0.004; n.vz -= n.z * 0.004; }
+    // Forma de cerebro: más largo de adelante hacia atrás que alto, y una fisura que separa los dos hemisferios.
+    for (i = 0; i < A.length; i++) {
+      n = A[i]; n.vx -= n.x * 0.004; n.vy -= n.y * 0.0056; n.vz -= n.z * 0.0031;
+      if (n.x > -FISURA && n.x < FISURA) n.vx += (n.x >= 0 ? 1 : -1) * (FISURA - Math.abs(n.x)) * 0.03;
+    }
     for (i = 0; i < resortes.length; i++) {
       var r = resortes[i], p = r.a, q = r.b, ex = q.x - p.x, ey = q.y - p.y, ez = q.z - p.z, dd = Math.sqrt(ex * ex + ey * ey + ez * ez) + 0.01, ff = (dd - r.len) * r.k / dd;
       var fq = ff * r.bias, fp = ff * (1 - r.bias);
@@ -182,15 +190,69 @@ export const GRAFO3D_JS = String.raw`
     return "rgb(" + Math.round(p(a, 1) + (p(b, 1) - p(a, 1)) * t) + "," + Math.round(p(a, 3) + (p(b, 3) - p(a, 3)) * t) + "," + Math.round(p(a, 5) + (p(b, 5) - p(a, 5)) * t) + ")";
   }
   function rgba(h, a) { return "rgba(" + parseInt(h.slice(1, 3), 16) + "," + parseInt(h.slice(3, 5), 16) + "," + parseInt(h.slice(5, 7), 16) + "," + a + ")"; }
-  // Una esfera prerenderizada por color: dibujar miles de nodos por cuadro es copiar una imagen escalada.
-  var esferas = {};
-  function esfera(c) {
-    if (esferas[c]) return esferas[c];
-    var R = 48, cv = document.createElement("canvas"); cv.width = cv.height = R * 2;
-    var x = cv.getContext("2d"), g = x.createRadialGradient(R * 0.65, R * 0.6, R * 0.1, R, R, R);
-    g.addColorStop(0, mezcla(c, "#FFFFFF", 0.55)); g.addColorStop(0.45, c); g.addColorStop(1, mezcla(c, "#05070B", 0.55));
+  // Imágenes prerenderizadas por color: dibujar miles de neuronas por cuadro es copiar imágenes escaladas.
+  var sprites = {};
+  function lienzo(lado) { var cv = document.createElement("canvas"); cv.width = cv.height = lado; return cv; }
+  function rama(x, px, py, ang, largo, ancho, c, r, nivel) {
+    var pasos = 6, paso = largo / pasos;
+    for (var i = 1; i <= pasos; i++) {
+      ang += (r() - 0.5) * 0.7;
+      var nx = px + Math.cos(ang) * paso, ny = py + Math.sin(ang) * paso, k = i / pasos;
+      x.strokeStyle = rgba(c, 0.6 * (1 - k * 0.85)); x.lineWidth = Math.max(0.6, ancho * (1 - k * 0.75));
+      x.beginPath(); x.moveTo(px, py); x.lineTo(nx, ny); x.stroke();
+      px = nx; py = ny;
+      if (nivel < 2 && (i === 2 || i === 4)) rama(x, px, py, ang + (r() < 0.5 ? -0.75 : 0.75), largo * (1 - k) * 0.9, ancho * 0.6, c, r, nivel + 1);
+    }
+  }
+  // Halo y dendritas: el soma ocupa un cuarto del radio de la imagen.
+  function neurona(c) {
+    var k = "n" + c;
+    if (sprites[k]) return sprites[k];
+    var R = 96, cv = lienzo(R * 2), x = cv.getContext("2d"), g = x.createRadialGradient(R, R, 0, R, R, R);
+    g.addColorStop(0, rgba(c, 0.5)); g.addColorStop(0.25, rgba(c, 0.16)); g.addColorStop(0.55, rgba(c, 0.035)); g.addColorStop(1, rgba(c, 0));
+    x.fillStyle = g; x.fillRect(0, 0, R * 2, R * 2);
+    var r = azar(11); x.lineCap = "round";
+    for (var b = 0; b < 7; b++) { var ang = b / 7 * Math.PI * 2 + (r() - 0.5) * 0.5; rama(x, R + Math.cos(ang) * R * 0.2, R + Math.sin(ang) * R * 0.2, ang, R * (0.42 + r() * 0.3), 3.4, c, r, 1); }
+    return (sprites[k] = cv);
+  }
+  function soma(c) {
+    var k = "s" + c;
+    if (sprites[k]) return sprites[k];
+    var R = 32, cv = lienzo(R * 2), x = cv.getContext("2d"), g = x.createRadialGradient(R * 0.8, R * 0.75, R * 0.05, R, R, R);
+    g.addColorStop(0, "#FFFFFF"); g.addColorStop(0.3, mezcla(c, "#FFFFFF", 0.5)); g.addColorStop(0.72, c); g.addColorStop(1, mezcla(c, "#05070B", 0.4));
     x.fillStyle = g; x.beginPath(); x.arc(R, R, R, 0, Math.PI * 2); x.fill();
-    return (esferas[c] = cv);
+    return (sprites[k] = cv);
+  }
+  function chispa(c) {
+    var k = "c" + c;
+    if (sprites[k]) return sprites[k];
+    var R = 32, cv = lienzo(R * 2), x = cv.getContext("2d"), g = x.createRadialGradient(R, R, 0, R, R, R);
+    g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.22, rgba(c, 0.85)); g.addColorStop(1, rgba(c, 0));
+    x.fillStyle = g; x.fillRect(0, 0, R * 2, R * 2);
+    return (sprites[k] = cv);
+  }
+  // Corteza: puntos sobre una esfera deformada (base chata, fisura entre hemisferios, surcos).
+  var CORTEZA = [];
+  (function () {
+    var K = 1500, oro = Math.PI * (3 - Math.sqrt(5));
+    for (var i = 0; i < K; i++) {
+      var dy = 1 - 2 * (i + 0.5) / K, rr = Math.sqrt(1 - dy * dy), t = i * oro, dx = Math.cos(t) * rr, dz = Math.sin(t) * rr;
+      var w = (1 + 0.05 * Math.sin(dx * 13 + dz * 7) * Math.sin(dy * 11 + dz * 5)) * (1 - 0.2 * Math.exp(-(dx / 0.13) * (dx / 0.13)) * (dy > -0.2 ? 1 : 0.3));
+      CORTEZA.push([dx * 0.95 * (1 - 0.1 * dz) * w, dy * (dy < 0 ? 0.6 : 0.82) * w, dz * 1.2 * w]);
+    }
+  })();
+  var BR = 0, T = 0;
+  function radioCerebro() {
+    var r = 0, k = 0;
+    for (var i = 0; i < activos.length; i++) { var n = activos[i]; if (n.pin) continue; r += Math.sqrt(n.x * n.x + n.y * n.y + n.z * n.z); k++; }
+    return k ? Math.max(260, 1.5 * r / k) : 260;
+  }
+  // Impulsos: viajan por una arista de origen a destino; al llegar encienden la neurona y pueden seguir por sus salidas.
+  var pulsos = [];
+  function lanzar(e, gen) { pulsos.push({ e: e, t: 0, v: 0.011 + Math.random() * 0.014, gen: gen }); }
+  function curva(pa, pb, c, t) {
+    var cx = (pa.sx + pb.sx) / 2 - (pb.sy - pa.sy) * c, cy = (pa.sy + pb.sy) / 2 + (pb.sx - pa.sx) * c, u = 1 - t;
+    return [u * u * pa.sx + 2 * u * t * cx + t * t * pb.sx, u * u * pa.sy + 2 * u * t * cy + t * t * pb.sy];
   }
   function pick(x, y) {
     var best = null, bz = 1e9;
@@ -206,7 +268,7 @@ export const GRAFO3D_JS = String.raw`
     return { x: cx, y: cy, z: cz, r: r / k };
   }
   function focus(n) { cam.goal = { x: n.x, y: n.y, z: n.z, dist: Math.max(360, Math.min(cam.dist, 700)) }; }
-  function recentrar() { var c = centro(N.filter(visible)); cam.goal = { x: c.x, y: c.y, z: c.z, dist: Math.max(600, Math.min(4000, c.r * 4.2)) }; }
+  function recentrar() { var c = centro(N.filter(visible)); cam.goal = { x: c.x, y: c.y, z: c.z, dist: Math.max(600, Math.min(4000, Math.max(c.r * 4.2, BR * 2.9))) }; }
   function separar(n) {
     var grp = [n].concat(desc(n)), set = new Set(grp), c = centro(grp), g = centro(activos.filter(function (m) { return !set.has(m); }));
     var dx = c.x - g.x, dy = c.y - g.y, dz = c.z - g.z, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
@@ -227,6 +289,8 @@ export const GRAFO3D_JS = String.raw`
 
   function step() {
     var c = cam;
+    T++;
+    if (!BR) { BR = radioCerebro(); c.dist = Math.max(c.dist, BR * 2.9); } else if (T % 20 === 0) BR += (radioCerebro() - BR) * 0.25;
     if (S.rotating && !ptr) c.yaw += 0.0016;
     if (alpha > 0.01) { simStep(alpha); if (activos.length <= 900) simStep(alpha); alpha *= 0.975; }
     for (var i = anims.length - 1; i >= 0; i--) {
@@ -242,6 +306,18 @@ export const GRAFO3D_JS = String.raw`
   }
   function draw(ctx) {
     ctx.fillStyle = color("fondo"); ctx.fillRect(0, 0, W, H);
+    var luz = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.62);
+    luz.addColorStop(0, "rgba(64,88,190,.17)"); luz.addColorStop(0.55, "rgba(40,52,120,.06)"); luz.addColorStop(1, "rgba(10,12,17,0)");
+    ctx.fillStyle = luz; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#8FA6FF";
+    for (var ci = 0; ci < CORTEZA.length; ci++) {
+      var cp = CORTEZA[ci], cq = project(cp[0] * BR, cp[1] * BR, cp[2] * BR);
+      if (!cq) continue;
+      ctx.globalAlpha = Math.max(0.07, Math.min(0.55, 0.95 - (cq.z / cam.dist) * 0.66));
+      var cs = Math.max(1.2, 3 * cq.s);
+      ctx.fillRect(cq.sx - cs / 2, cq.sy - cs / 2, cs, cs);
+    }
+    ctx.globalAlpha = 1;
     var sel = S.selId ? by[S.selId] : null, hov = hover;
     var selKids = sel ? new Set(desc(sel)) : null;
     var dragGrp = ptr && ptr.group ? new Set(ptr.group) : null;
@@ -263,23 +339,70 @@ export const GRAFO3D_JS = String.raw`
       p.a = fog * dim; P.push(p); pm.set(n, p);
     }
     proj = P;
-    ctx.lineCap = "round";
+    ctx.lineCap = "round"; ctx.globalCompositeOperation = "lighter";
+    var vis = [];
     for (var j = 0; j < E.length; j++) {
       var e = E[j];
       if (S.hiddenVerbs[e.verbo]) continue;
       var pa = pm.get(e.a), pb = pm.get(e.b);
       if (!pa || !pb) continue;
+      vis.push(e);
       var hl = (sel && (e.a === sel || e.b === sel)) || (hov && (e.a === hov || e.b === hov));
-      var al = Math.min(pa.a, pb.a) * (hl ? 0.85 : 0.16);
-      ctx.strokeStyle = hl ? rgba(col((e.a === sel || e.a === hov) ? e.b.tipo : e.a.tipo), al) : "rgba(150,162,190," + al + ")";
+      var al = Math.min(pa.a, pb.a) * (hl ? 0.85 : 0.13);
+      ctx.strokeStyle = hl ? rgba(col((e.a === sel || e.a === hov) ? e.b.tipo : e.a.tipo), al) : "rgba(120,146,255," + al + ")";
       ctx.lineWidth = hl ? 1.6 : 1;
-      ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy); ctx.lineTo(pb.sx, pb.sy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy);
+      ctx.quadraticCurveTo((pa.sx + pb.sx) / 2 - (pb.sy - pa.sy) * e.c, (pa.sy + pb.sy) / 2 + (pb.sx - pa.sx) * e.c, pb.sx, pb.sy); ctx.stroke();
     }
+    if (S.pulsos && vis.length) {
+      var tope = Math.min(150, 14 + vis.length * 0.07), foco = sel || hov;
+      for (var s0 = 0; s0 < 3 && pulsos.length < tope; s0++) {
+        if (Math.random() > 0.55) continue;
+        var cand = vis[Math.floor(Math.random() * vis.length)];
+        if (foco && Math.random() < 0.6) { var fa = foco.adj[Math.floor(Math.random() * foco.adj.length)]; if (fa && pm.get(fa.n) && !S.hiddenVerbs[fa.e.verbo]) cand = fa.e; }
+        lanzar(cand, 0);
+      }
+    } else if (!S.pulsos) pulsos.length = 0;
+    for (var u = pulsos.length - 1; u >= 0; u--) {
+      var pu = pulsos[u], pe = pu.e, qa = pm.get(pe.a), qb = pm.get(pe.b);
+      if (!qa || !qb || S.hiddenVerbs[pe.verbo]) { pulsos.splice(u, 1); continue; }
+      pu.t += pu.v;
+      if (pu.t >= 1) {
+        pe.b.fire = 1; pulsos.splice(u, 1);
+        if (pu.gen < 3 && Math.random() < 0.6) {
+          var sal = pe.b.adj.filter(function (x) { return x.e.a === pe.b && !S.hiddenVerbs[x.e.verbo] && pm.get(x.n); });
+          if (sal.length) { lanzar(sal[Math.floor(Math.random() * sal.length)].e, pu.gen + 1); if (sal.length > 1 && Math.random() < 0.25) lanzar(sal[Math.floor(Math.random() * sal.length)].e, pu.gen + 1); }
+        }
+        continue;
+      }
+      // Rastro quebrado, como una descarga, y una chispa en la punta.
+      var pc = col(pe.a.tipo), pal = Math.min(1, Math.min(qa.a, qb.a) + 0.25), nx = qb.sy - qa.sy, ny = qa.sx - qb.sx, nl = Math.sqrt(nx * nx + ny * ny) || 1;
+      ctx.beginPath();
+      for (var tr = 0; tr <= 6; tr++) {
+        var tt = Math.max(0, pu.t - 0.16 * (1 - tr / 6)), pt = curva(qa, qb, pe.c, tt), jit = tr > 0 && tr < 6 ? (Math.random() - 0.5) * 5 : 0;
+        if (tr === 0) ctx.moveTo(pt[0], pt[1]); else ctx.lineTo(pt[0] + nx / nl * jit, pt[1] + ny / nl * jit);
+      }
+      ctx.strokeStyle = rgba(pc, 0.85 * pal); ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255," + 0.55 * pal + ")"; ctx.lineWidth = 0.7; ctx.stroke();
+      var cab = curva(qa, qb, pe.c, pu.t), cr = Math.max(6, 20 * Math.min(qa.s, qb.s));
+      ctx.globalAlpha = pal; ctx.drawImage(chispa(pc), cab[0] - cr, cab[1] - cr, cr * 2, cr * 2); ctx.globalAlpha = 1;
+    }
+    ctx.globalCompositeOperation = "source-over";
     P.sort(function (a, b) { return b.z - a.z; });
+    var muchos = P.length > 1500;
     for (var k = 0; k < P.length; k++) {
       var p2 = P[k], nn = p2.n;
+      var fi = nn.fire; nn.fire = fi > 0.02 ? fi * 0.9 : 0;
+      if (p2.r >= (muchos ? 3 : 1.8) || fi) {
+        var hr = p2.r * (4 + fi * 2.4);
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = Math.min(1, p2.a * (0.52 + 0.16 * Math.sin(T * 0.035 + nn.fase) + fi * 0.8));
+        ctx.drawImage(neurona(col(nn.tipo)), p2.sx - hr, p2.sy - hr, hr * 2, hr * 2);
+        ctx.globalCompositeOperation = "source-over";
+      }
       ctx.globalAlpha = p2.a;
-      ctx.drawImage(esfera(col(nn.tipo)), p2.sx - p2.r, p2.sy - p2.r, p2.r * 2, p2.r * 2);
+      ctx.drawImage(soma(col(nn.tipo)), p2.sx - p2.r, p2.sy - p2.r, p2.r * 2, p2.r * 2);
+      if (fi > 0.05) { ctx.globalAlpha = Math.min(1, fi * 0.7); ctx.fillStyle = "#FFFFFF"; ctx.beginPath(); ctx.arc(p2.sx, p2.sy, p2.r * 0.8, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = p2.a; }
       var ring = null;
       if (nn === sel) ring = ["#FFFFFF", 2];
       else if (nn === hov) ring = ["#C7D4FF", 1.5];
@@ -396,6 +519,7 @@ export const GRAFO3D_JS = String.raw`
     var drag = $("m3-drag"), rot = $("m3-rot");
     drag.classList.toggle("on", S.dragChildren); drag.setAttribute("aria-pressed", S.dragChildren);
     rot.classList.toggle("on", S.rotating); rot.setAttribute("aria-pressed", S.rotating);
+    var imp = $("m3-imp"); imp.classList.toggle("on", S.pulsos); imp.setAttribute("aria-pressed", S.pulsos);
     detalle();
   }
   function detalle() {
@@ -447,6 +571,7 @@ export const GRAFO3D_JS = String.raw`
     else if (d.acc === "recenter") recentrar();
     else if (d.acc === "drag") S.dragChildren = !S.dragChildren;
     else if (d.acc === "rot") S.rotating = !S.rotating;
+    else if (d.acc === "imp") S.pulsos = !S.pulsos;
     else if (d.acc === "sep" && sel) separar(sel);
     else if (d.acc === "focus" && sel) focus(sel);
     else if (d.acc === "iso") { computeIso(); S.isolate = !S.isolate; }

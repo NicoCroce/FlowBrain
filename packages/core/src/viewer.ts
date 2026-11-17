@@ -299,6 +299,7 @@ a.nb { text-decoration: none; }
       <div>
         <button type="button" class="ov on" id="m3-drag" aria-pressed="true" data-acc="drag"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="3"></circle><circle cx="17" cy="15" r="2"></circle><circle cx="10" cy="18" r="1.6"></circle><path d="M9 9.5l6.5 4M8 10l1.6 6.2"></path></svg>Arrastrar con hijos</button>
         <button type="button" class="ov on" id="m3-rot" aria-pressed="true" data-acc="rot"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="4"></ellipse><path d="M17 6.5l2.5 1.5-1.2 2.6"></path></svg>Girar</button>
+        <button type="button" class="ov on" id="m3-imp" aria-pressed="true" data-acc="imp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"></path></svg>Impulsos</button>
       </div>
     </div>
     <div class="m3-guia"><span><b>Arrastrar fondo</b> rota</span><span><b>Rueda</b> acerca</span><span><b>Arrastrar nodo</b> lo mueve con sus hijos</span><span><b>Shift</b> mueve solo el nodo</span><span><b>Doble clic</b> enfoca</span></div>

@@ -237,3 +237,10 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **`instructions`.** El servidor declara qué herramienta usar para cada tipo de pregunta; el cliente MCP se lo pasa al agente al conectarse, sin depender de que el repo tenga las reglas de `brain gen`.
    - **`evaluar` dice qué no mide.** El motor ya aceptaba las nueve herramientas; lo que faltaba era ver cuáles no tienen ninguna pregunta. El resultado suma `sinPreguntas`.
    - En el proyecto de referencia: `buscar_nodo SessionService` pasa de 0 resultados a 12 símbolos. Eval 32/32; quedan sin preguntas `buscar_nodo`, `contrato_de`, `recorrer_grafo` y `trazar`. **Queda fuera:** búsqueda por varias palabras o por relevancia (hoy es una sola cadena), y símbolos fuera de TS/JS (el índice de símbolos lo genera solo el ts-parser).
+
+## 2026-11-17 · Visor: el Mapa 3D como cerebro
+
+122. **El Mapa 3D se dibuja como un cerebro; es solo estética.** Cada nodo es una neurona (soma, halo que late y dendritas), cada arista un axón curvo, y por los axones corren impulsos en el sentido de la relación: al llegar encienden la neurona destino y pueden seguir por sus salidas. Una nube de puntos marca la corteza, y la gravedad del layout es más fuerte en vertical y tiene una fisura al medio, así el grafo queda en dos hemisferios.
+   - **No cambia qué se muestra.** Mismos nodos, aristas, colores por tipo, filtros, selección y arrastre. Los impulsos son al azar: no representan tráfico ni uso; solo respetan el sentido de la arista y se concentran en el nodo seleccionado o bajo el cursor.
+   - **Sigue sin librerías.** Todo en el `<canvas>` 2D, con imágenes prerenderizadas por color; con más de 1.500 nodos visibles los más chicos se dibujan sin halo.
+   - **Se puede apagar.** Botón "Impulsos"; arrancan apagados si el sistema pide reducir movimiento.
