@@ -122,7 +122,7 @@ Para que el agente consulte siempre sobre el código actual, registrá el servid
 
 ## Varios cerebros
 
-Para separar grupos de repos (por ejemplo, lo vigente de lo viejo) en hasta 5 cerebros, con la comunicación entre ellos activable:
+Para separar grupos de repos (por ejemplo, lo vigente de lo viejo) en hasta 8 cerebros, con la comunicación entre ellos activable:
 
 ```bash
 mkdir ~/cerebros

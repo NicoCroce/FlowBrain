@@ -11,7 +11,7 @@ import { cmp } from "./canonical.js";
  */
 
 export const ARCHIVO_REGISTRO = "cerebros.yaml";
-export const MAX_CEREBROS = 5;
+export const MAX_CEREBROS = 8;
 
 const NOMBRE = /^[a-z0-9][a-z0-9-]*$/;
 /** `cerebro/svc-id`. */

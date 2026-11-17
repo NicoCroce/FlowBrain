@@ -369,3 +369,4 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Los parsers ignoran `.flowbrain`**, para que un repo que lo contiene no se indexe a sí mismo. `.flowbrain/.gitignore` excluye `_build/` y el visor.
    - **El MCP no se registra solo:** `instalar` imprime las líneas de `claude mcp`, igual que `init`.
 
+146. **Hasta 8 cerebros (2026-11-17).** El tope era 5 y el primer proyecto real tiene 7 repos que se quieren ver cada uno como un cerebro. El visor suma tres colores; la ubicación en polígono ya servía para cualquier cantidad. Más cerebros comunicados son más pares que cruzar en cada consulta, así que el tope sigue existiendo.

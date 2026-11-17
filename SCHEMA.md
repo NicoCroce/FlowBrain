@@ -317,7 +317,7 @@ Consultas de código y producto (necesitan `flowbrain index` + `flowbrain compil
 
 ## 11. Varios cerebros
 
-Un registro (`cerebros.yaml` en una carpeta) agrupa hasta 5 cerebros. Cada cerebro es un brain como el descrito arriba, en su propia carpeta (por defecto, una subcarpeta con su nombre). Nada de lo que sigue se guarda en los grafos: se calcula al consultar.
+Un registro (`cerebros.yaml` en una carpeta) agrupa hasta 8 cerebros. Cada cerebro es un brain como el descrito arriba, en su propia carpeta (por defecto, una subcarpeta con su nombre). Nada de lo que sigue se guarda en los grafos: se calcula al consultar.
 
 - **`cerebros`:** `nombre` (minúsculas, números y guiones), `repos` (cada uno con `ruta`, relativa al registro o absoluta, e `id` opcional), `carpeta` y `descripcion` opcionales, y `curado` (por defecto `true`; con `false` las respuestas de ese cerebro llevan `sinRevisar: true`).
 - **`comunicacion`:** pares `entre: [a, b]` con `activa`. Sin un par activo, dos cerebros no se ven.

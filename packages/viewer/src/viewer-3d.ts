@@ -29,8 +29,8 @@ export const GRAFO3D_JS = String.raw`
   // ---------- Modelo ----------
   // Varios cerebros: cada uno se dibuja como un cerebro aparte, uno al lado del otro. Con uno solo, todo queda en el origen.
   var CEREBROS = D.cerebros || [], MULTI = CEREBROS.length > 1, SEP = 1500;
-  /** Un color por cerebro (hasta 5): el del nombre sobre su corteza y el de la marca en cada conexión que cruza. */
-  var COLOR_C = ["#8FA6FF", "#F5B94A", "#5EDBB0", "#F28BB3", "#B79CFF"];
+  /** Un color por cerebro (hasta 8): el del nombre sobre su corteza y el de la marca en cada conexión que cruza. */
+  var COLOR_C = ["#8FA6FF", "#F5B94A", "#5EDBB0", "#F28BB3", "#B79CFF", "#6FD3F7", "#F2906B", "#C8D96B"];
   function colorC(i) { return COLOR_C[i % COLOR_C.length]; }
   function puntoC(i) { return '<span class="pc" style="background:' + colorC(i) + '"></span>'; }
   // Dos cerebros van lado a lado; tres o más, en los vértices de un polígono regular (triángulo, cuadrado, pentágono)

@@ -89,7 +89,7 @@ describe("registro de cerebros", () => {
     const con = (cuerpo: string) => interpretarRegistro(`version: 1\ncerebros:\n${cuerpo}`, "/tmp/x");
     const uno = (n: string) => `  - { nombre: ${n}, repos: [] }\n`;
     expect(con(uno("a") + uno("b")).cerebros.map((c) => `${c.nombre} ${c.raiz} ${c.curado}`)).toEqual(["a /tmp/x/a true", "b /tmp/x/b true"]);
-    expect(() => con(["a", "b", "c", "d", "e", "f"].map(uno).join(""))).toThrow(/como máximo 5 cerebros/);
+    expect(() => con(["a", "b", "c", "d", "e", "f", "g", "h", "i"].map(uno).join(""))).toThrow(/como máximo 8 cerebros/);
     expect(() => con(uno("a") + uno("a"))).toThrow(/cerebro repetido: a/);
     expect(() => con(uno("a") + "comunicacion:\n  - { entre: [a, z], activa: true }\n")).toThrow(RegistroError);
     expect(() => con(uno("a") + "conexiones:\n  - { desde: a/svc-x, hacia: z/svc-y }\n")).toThrow(/cerebro inexistente: z/);
@@ -104,7 +104,7 @@ describe("registro de cerebros", () => {
     expect(r.stdout).toContain("3 repos");
     const texto = await readFile(join(reg, "cerebros.yaml"), "utf8");
     expect(texto).toContain('- ruta: "../repos/tienda-web"');
-    expect(texto).toContain("¿Cómo se agrupan estos 3 repos en cerebros (hasta 5)");
+    expect(texto).toContain("¿Cómo se agrupan estos 3 repos en cerebros (hasta 8)");
     expect(texto).toContain("endpoints: 2");
     // Lo propuesto es un registro válido: un cerebro con todo.
     expect(interpretarRegistro(texto, reg).cerebros.map((c) => `${c.nombre} ${c.repos.length}`)).toEqual(["repos 3"]);
