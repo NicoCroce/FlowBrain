@@ -34,12 +34,12 @@ export const GRAFO3D_JS = String.raw`
   function colorC(i) { return COLOR_C[i % COLOR_C.length]; }
   function puntoC(i) { return '<span class="pc" style="background:' + colorC(i) + '"></span>'; }
   // Dos cerebros van lado a lado; tres o más, en los vértices de un polígono regular (triángulo, cuadrado, pentágono)
-  // con lado SEP, de frente a la cámara y con el primero arriba.
+  // con lado SEP, acostado: todos a la misma altura, sobre el plano horizontal, con el primero al fondo.
   var NC = MULTI ? CEREBROS.length : 1, RP = NC > 2 ? SEP / (2 * Math.sin(Math.PI / NC)) : 0;
   var OX = CEREBROS.slice(0, NC).map(function (_, i) { return NC > 2 ? RP * Math.sin(2 * Math.PI * i / NC) : (i - (NC - 1) / 2) * SEP; });
   if (!OX.length) OX = [0];
   // El centro de cada cerebro arranca en fila sobre x; arrastrando su nombre se lo lleva a cualquier lado.
-  var OX0 = OX.slice(), OY0 = OX.map(function (_, i) { return NC > 2 ? RP * Math.cos(2 * Math.PI * i / NC) : 0; }), OY = OY0.slice(), OZ = OX.map(function () { return 0; }), cajaNombre = [];
+  var OX0 = OX.slice(), OZ0 = OX.map(function (_, i) { return NC > 2 ? RP * Math.cos(2 * Math.PI * i / NC) : 0; }), OY = OX.map(function () { return 0; }), OZ = OZ0.slice(), cajaNombre = [];
   function moverCerebro(c, dx, dy, dz) {
     OX[c] += dx; OY[c] += dy; OZ[c] += dz;
     N.forEach(function (n) { if (n.c === c) { n.x += dx; n.y += dy; n.z += dz; } });
@@ -77,8 +77,8 @@ export const GRAFO3D_JS = String.raw`
 
   var ocultosIniciales = {};
   TIPOS.forEach(function (t) { if (D.tiposIniciales.indexOf(t[0]) < 0) ocultosIniciales[t[0]] = true; });
-  var S = { hiddenTypes: ocultosIniciales, hiddenVerbs: {}, sizeMode: "uso", scale: 0.9, group: "feat", labels: "grandes", selId: null, query: "",
-    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, hiddenBrains: {}, todas: {}, tabC: null, intensidad: 1,
+  var S = { hiddenTypes: ocultosIniciales, hiddenVerbs: {}, sizeMode: "uso", scale: 0.6, group: "feat", labels: "grandes", selId: null, query: "",
+    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, hiddenBrains: {}, todas: {}, tabC: null, intensidad: 0.4,
     pulsos: !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) };
 
   function setParents(mode) {
@@ -697,7 +697,7 @@ export const GRAFO3D_JS = String.raw`
     else if (d.etq) S.labels = d.etq;
     else if (d.grupo) { S.group = d.grupo; setParents(d.grupo); actualizarActivos(); soltarTodo(); }
     else if (d.acc === "explode") separarGrupos();
-    else if (d.acc === "relayout") { OX.forEach(function (_, c) { moverCerebro(c, OX0[c] - OX[c], OY0[c] - OY[c], -OZ[c]); }); soltarTodo(); }
+    else if (d.acc === "relayout") { OX.forEach(function (_, c) { moverCerebro(c, OX0[c] - OX[c], -OY[c], OZ0[c] - OZ[c]); }); soltarTodo(); }
     else if (d.acc === "recenter") recentrar();
     else if (d.acc === "drag") S.dragChildren = !S.dragChildren;
     else if (d.acc === "rot") S.rotating = !S.rotating;
