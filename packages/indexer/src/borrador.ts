@@ -335,7 +335,7 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
 
   // ---------- 4. Funcionalidades: una por carpeta de features/modules/domains ----------
   // Van a `_drafts/producto/` (una funcionalidad puede abarcar varios repos). Si ya existe una página o un borrador
-  // con el mismo id, se le suma la ruta a `codigo`: así `wellness` del front y `wellness` del back quedan juntas.
+  // con el mismo id, se le suma la ruta a `codigo`: así `pagos` del front y `pagos` del back quedan juntas.
   const feats = new Map<string, { ruta: string; frontmatter: string; cuerpo: string; codigo: string[]; borrador: boolean }>();
   const cargar = (fuentes: Fuente[], borrador: boolean) => {
     for (const f of fuentes) {
@@ -351,7 +351,7 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
   cargar(paginas.filter((f) => f.ruta.startsWith("producto/")), false);
   cargar(borradoresProducto, true);
   // Una carpeta repartida entre varias funcionalidades (cada subcarpeta en el `codigo` de alguna) también está
-  // cubierta: los archivos sueltos de su raíz (`player.module.ts`) solo cablean las partes.
+  // cubierta: los archivos sueltos de su raíz (`pedidos.module.ts`) solo cablean las partes.
   const rutasRepo = r.archivos.archivos.map((a) => a.ruta);
   const cubierta = (c: string): boolean => {
     if ([...feats.values()].some((f) => f.codigo.some((x) => x === c || dentroDe(c, x)))) return true;

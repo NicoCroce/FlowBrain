@@ -69,13 +69,13 @@ origen: curado
 actualizado: 2026-11-15
 verificado: 2026-11-15
 pertenece_a: [team-platform]
-vive_en: [repo-proyecto-payments]
+vive_en: [repo-payments]
 puntos_de_entrada:
   arranque: src/main.ts
   rutas_http: src/routes/
   clientes_externos: src/clients/
 relaciones:
-  - { verbo: llama_a, destino: svc-auth, evidencia: "repo-proyecto-payments:src/clients/auth.ts#L12", origen: parser }
+  - { verbo: llama_a, destino: svc-auth, evidencia: "repo-payments:src/clients/auth.ts#L12", origen: parser }
   - { verbo: implementa, destino: feat-checkout, origen: curado }
 ```
 

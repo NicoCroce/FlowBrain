@@ -768,7 +768,7 @@ function extraer(repo: RepoFuente): Extraccion {
       const tag = n.parent.parent.tagName.getText();
       if (tag !== "Route") agregar(rutasFront(v), /^(Navigate|Redirect)$/.test(tag) ? "redirige" : "enlace");
     } else if (ts.isPropertyAssignment(n) && /^(path|to|href|route)$/.test(n.name.getText()) && ts.isObjectLiteralExpression(n.parent)) {
-      // Ítems de menú declarados como datos (`{ path: ROUTES.staff, title }`), salvo las propias definiciones de rutas.
+      // Ítems de menú declarados como datos (`{ path: ROUTES.inicio, title }`), salvo las propias definiciones de rutas.
       const o = n.parent;
       if (!MARCAS_PANTALLA.some((m) => propiedad(o, m)) && !propiedad(o, "children")) agregar(rutasFront(n.initializer), "enlace");
     }
@@ -914,7 +914,7 @@ function extraer(repo: RepoFuente): Extraccion {
           const d = decorador(m, nombre);
           if (d) rutas.push({ metodo, ruta: argTexto(d) });
         }
-        // Decoradores propios que envuelven uno de Nest: `LegacyPost = (p) => applyDecorators(Post(p), HttpCode(200))`.
+        // Decoradores propios que envuelven uno de Nest: `MiPost = (p) => applyDecorators(Post(p), HttpCode(200))`.
         for (const d of ts.getDecorators(m) ?? []) {
           const r = rutaEnvuelta(d);
           if (r) rutas.push(r);
@@ -1064,7 +1064,7 @@ function extraer(repo: RepoFuente): Extraccion {
       const base = linea(tpl);
       for (const c of ctesDeSql(texto)) ctesRepo.add(c);
       for (const a of tablasDeSql(texto)) deSql.add(out.tablas[out.tablas.push({ paquete, archivo, linea: base + a.saltos, modelo: a.tabla, verbo: a.verbo }) - 1]!);
-      // Fragmentos compartidos: `${WELLNESS_FROM}` → la constante es otro sql`…`; sus tablas van a la línea donde se usa.
+      // Fragmentos compartidos: `${BASE_FROM}` → la constante es otro sql`…`; sus tablas van a la línea donde se usa.
       const fragmentos = (tp: ts.TemplateLiteral, l: number | null, prof: number) => {
         if (ts.isNoSubstitutionTemplateLiteral(tp) || prof > 3) return;
         for (const sp of tp.templateSpans) {

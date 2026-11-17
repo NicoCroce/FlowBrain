@@ -296,10 +296,10 @@ describe("ts-parser: auxiliares de ruta y Kysely", () => {
         'import axios from "axios";',
         'import { generatePath } from "react-router";',
         "const buildPath = generatePath;",
-        'const EP = { doc: "/documentation/generate_download/:fileId", skills: "/skill-group/find" } as const;',
+        'const EP = { doc: "/archivos/descargar/:fileId", grupos: "/grupos/buscar" } as const;',
         "const withId = (endpoint: string, id: string) => `${endpoint}/${id}`;",
         "export const a = (fileId: string) => axios.get(`${import.meta.env.VITE_API}${buildPath(EP.doc, { fileId })}`);",
-        "export const b = (id: string) => axios.get(`${import.meta.env.VITE_API}${withId(EP.skills, id)}`);",
+        "export const b = (id: string) => axios.get(`${import.meta.env.VITE_API}${withId(EP.grupos, id)}`);",
         "",
       ].join("\n"),
     );
@@ -308,9 +308,9 @@ describe("ts-parser: auxiliares de ruta y Kysely", () => {
       [
         'import { sql } from "kysely";',
         "declare const db: any;",
-        "const DESDE = sql`FROM wellness_test w JOIN category c ON c.id = w.category_id`;",
+        "const DESDE = sql`FROM zona_test w JOIN category c ON c.id = w.category_id`;",
         "export const contar = () => sql`SELECT COUNT(*) ${DESDE}`.execute(db);",
-        'export const leer = () => db.selectFrom("team_has_players as thp").innerJoin("player as p", "p.id", "thp.player_id").selectAll().execute();',
+        'export const leer = () => db.selectFrom("pedido_tiene_items as pti").innerJoin("item as i", "i.id", "pti.item_id").selectAll().execute();',
         'export const escribir = () => db.insertInto("user_token").values({}).execute();',
         'export const borrar = () => db.deleteFrom("payment").execute();',
         "",
@@ -318,7 +318,7 @@ describe("ts-parser: auxiliares de ruta y Kysely", () => {
     );
     // CTE declarado en un fragmento y usado en otro: `vp` no es una tabla.
     await w(
-      "src/mvp.ts",
+      "src/cte.ts",
       [
         'import { sql } from "kysely";',
         "declare const db: any;",
@@ -333,7 +333,7 @@ describe("ts-parser: auxiliares de ruta y Kysely", () => {
 
   it("resuelve rutas armadas con funciones auxiliares y constructores de librería", async () => {
     const x = await tsParser.extract(leerRepo(dir));
-    expect(x.llamadas.map((l) => `${l.metodo} ${l.url.ruta}`).sort()).toEqual(["GET /documentation/generate_download/{fileId}", "GET /skill-group/find/{param}"]);
+    expect(x.llamadas.map((l) => `${l.metodo} ${l.url.ruta}`).sort()).toEqual(["GET /archivos/descargar/{fileId}", "GET /grupos/buscar/{param}"]);
   });
 
   it("extrae accesos a tablas de Kysely", async () => {
@@ -343,14 +343,14 @@ describe("ts-parser: auxiliares de ruta y Kysely", () => {
       "escribe_en user_token",
       "lee_de category",
       "lee_de category",
-      "lee_de player",
-      "lee_de team_has_players",
+      "lee_de item",
+      "lee_de pedido_tiene_items",
       "lee_de votes",
-      "lee_de wellness_test",
-      "lee_de wellness_test",
+      "lee_de zona_test",
+      "lee_de zona_test",
     ]);
     // El fragmento cuenta donde se declara y, además, en la línea donde se interpola.
-    expect(x.tablas.filter((t) => t.modelo === "wellness_test").map((t) => t.linea)).toEqual([3, 4]);
+    expect(x.tablas.filter((t) => t.modelo === "zona_test").map((t) => t.linea)).toEqual([3, 4]);
   });
 });
 
@@ -450,13 +450,13 @@ describe("ts-parser: llamadas indirectas (eventos, colas, inyección por token) 
       "  }",
       "}",
     ]);
-    await w("src/rutas.ts", ['import { applyDecorators, HttpCode, Put } from "@nestjs/common";', "export const LegacyPut = (path?: string) => applyDecorators(Put(path), HttpCode(200));", 'export function Fijo() { return Put("fijo"); }']);
+    await w("src/rutas.ts", ['import { applyDecorators, HttpCode, Put } from "@nestjs/common";', "export const MiPut = (path?: string) => applyDecorators(Put(path), HttpCode(200));", 'export function Fijo() { return Put("fijo"); }']);
     await w("src/sesion.controller.ts", [
       'import { Controller } from "@nestjs/common";',
-      'import { LegacyPut, Fijo } from "./rutas";',
+      'import { MiPut, Fijo } from "./rutas";',
       '@Controller("api")',
       "export class SesionController {",
-      '  @LegacyPut("login")',
+      '  @MiPut("login")',
       "  login() {}",
       "  @Fijo()",
       "  otro() {}",

@@ -177,7 +177,7 @@ export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
     {
       description:
         "Una pantalla del front de punta a punta: su componente y funcionalidad, qué la envuelve (layouts, guardas y a dónde redirigen), desde qué pantallas o menús se llega, a cuáles lleva, qué endpoints del back llama y el recorrido completo (pantalla → componentes → hooks → API → endpoint → controller → servicio → tabla) con repo:ruta#Ln.",
-      inputSchema: { ruta: z.string().min(1).describe("ruta del front (/login, /players/{id}), id de la pantalla o nombre de su componente (LoginScreen)"), ...presupuesto },
+      inputSchema: { ruta: z.string().min(1).describe("ruta del front (/login, /pedidos/{id}), id de la pantalla o nombre de su componente (LoginScreen)"), ...presupuesto },
     },
     async (a) => {
       const ctx = await obtener();

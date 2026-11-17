@@ -101,7 +101,7 @@ export interface RefSimbolo {
 /** Pantalla del front: una ruta del router y el componente que la dibuja. */
 export interface PantallaCruda {
   paquete: string;
-  /** Ruta normalizada (`/players/{id}`). */
+  /** Ruta normalizada (`/pedidos/{id}`). */
   ruta: string;
   /** Dónde se declara la ruta. */
   archivo: string;

@@ -183,26 +183,26 @@ describe("brain draft: funcionalidades", () => {
     const { generarBorradores } = await import("../src/index.js");
     const r = (repo: string, rutas: string[]) =>
       ({ repo, repoNuevo: false, aristas: [], pendientes: [], servicios: [], archivos: { repo, archivos: rutas.map((ruta) => ({ ruta, lenguaje: "ts", simbolos: [] })) } }) as never;
-    const front = generarBorradores(r("repo-front", ["src/features/wellness/a.ts", "src/features/pagos/b.ts"]), [], "front");
-    expect(Object.keys(front.archivos).filter((k) => k.includes("producto"))).toEqual(["_drafts/producto/feat-pagos.md", "_drafts/producto/feat-wellness.md"]);
+    const front = generarBorradores(r("repo-front", ["src/features/reservas/a.ts", "src/features/pagos/b.ts"]), [], "front");
+    expect(Object.keys(front.archivos).filter((k) => k.includes("producto"))).toEqual(["_drafts/producto/feat-pagos.md", "_drafts/producto/feat-reservas.md"]);
     expect(front.resumen.funcionalidades).toBe(2);
     const previos = Object.entries(front.archivos).filter(([k]) => k.startsWith("_drafts/producto/")).map(([ruta, contenido]) => ({ ruta, contenido }));
-    const back = generarBorradores(r("repo-back", ["modules/wellness/c.ts"]), [], "back", previos);
+    const back = generarBorradores(r("repo-back", ["modules/reservas/c.ts"]), [], "back", previos);
     expect(back.resumen.funcionalidades).toBe(0);
-    const wellness = back.archivos["_drafts/producto/feat-wellness.md"]!;
-    expect(wellness).toContain("  - repo-front:src/features/wellness\n  - repo-back:modules/wellness\n");
+    const reservas = back.archivos["_drafts/producto/feat-reservas.md"]!;
+    expect(reservas).toContain("  - repo-front:src/features/reservas\n  - repo-back:modules/reservas\n");
     // Una segunda corrida no duplica la ruta.
-    const otra = generarBorradores(r("repo-back", ["modules/wellness/c.ts"]), [], "back", [{ ruta: "_drafts/producto/feat-wellness.md", contenido: wellness }]);
-    expect(otra.archivos["_drafts/producto/feat-wellness.md"]).toBeUndefined();
+    const otra = generarBorradores(r("repo-back", ["modules/reservas/c.ts"]), [], "back", [{ ruta: "_drafts/producto/feat-reservas.md", contenido: reservas }]);
+    expect(otra.archivos["_drafts/producto/feat-reservas.md"]).toBeUndefined();
   });
 
   it("no propone una carpeta cuyas subcarpetas ya reparten otras funcionalidades", async () => {
     const { generarBorradores } = await import("../src/index.js");
-    const repo = { repo: "repo-back", repoNuevo: false, aristas: [], pendientes: [], servicios: [], archivos: { repo: "repo-back", archivos: ["modules/player/player.module.ts", "modules/player/list/a.ts", "modules/player/info/b.ts"].map((ruta) => ({ ruta, lenguaje: "ts", simbolos: [] })) } } as never;
+    const repo = { repo: "repo-back", repoNuevo: false, aristas: [], pendientes: [], servicios: [], archivos: { repo: "repo-back", archivos: ["modules/pedidos/pedidos.module.ts", "modules/pedidos/list/a.ts", "modules/pedidos/info/b.ts"].map((ruta) => ({ ruta, lenguaje: "ts", simbolos: [] })) } } as never;
     const pagina = (id: string, codigo: string) => ({ ruta: `producto/${id}.md`, contenido: `---\nid: ${id}\ntipo: feat\nnombre: ${id}\nresumen: x\ncodigo:\n  - ${codigo}\n---\n# ${id}\n` });
-    const una = generarBorradores(repo, [pagina("feat-lista", "repo-back:modules/player/list")], "back");
+    const una = generarBorradores(repo, [pagina("feat-lista", "repo-back:modules/pedidos/list")], "back");
     expect(una.resumen.funcionalidades).toBe(1);
-    const ambas = generarBorradores(repo, [pagina("feat-lista", "repo-back:modules/player/list"), pagina("feat-ficha", "repo-back:modules/player/info")], "back");
+    const ambas = generarBorradores(repo, [pagina("feat-lista", "repo-back:modules/pedidos/list"), pagina("feat-ficha", "repo-back:modules/pedidos/info")], "back");
     expect(ambas.resumen.funcionalidades).toBe(0);
   });
 });
