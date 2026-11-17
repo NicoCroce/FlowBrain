@@ -342,3 +342,9 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Por qué pantallas y no hooks.** Un hook es un símbolo, no un nodo del grafo; el archivo del hook sí es un nodo, pero los archivos son miles y están apagados al abrir el mapa. La pantalla es el nodo visible más cercano a la llamada, y la línea del hook queda como evidencia del cruce.
    - **Lo que no es de ninguna pantalla** (sesión, notificaciones, un job, un back) queda a nombre del servicio, como antes. Sin `_build/archivos` no se inventan pantallas.
    - **Medido** sobre el banco de pruebas: 60 de 90 llamadas a un cerebro y 61 de 83 al otro quedan a nombre de 47 y 48 pantallas.
+
+142. **Detalle del mapa: todas las conexiones, agrupadas por cerebro, y panel ensanchable (2026-11-17).** El detalle de un nodo mostraba solo las 10 conexiones más fuertes, sin decirlo, y no se distinguía a qué cerebro iba cada una.
+   - **Todas, por grupo.** Primero las del cerebro del nodo y después un grupo por cada otro cerebro (`Con <cerebro>`), con el total y cuántas van hacia allá y cuántas vienen. Cada grupo muestra 30 y un botón para ver el resto.
+   - **Un color por cerebro.** El mismo color va en el nombre sobre la corteza, en el interruptor del cerebro, en el borde del grupo y en la marca con el nombre del cerebro de cada conexión que cruza. La flecha dice el sentido: `llama a →` sale del nodo, `← llama a` llega a él.
+   - **Ancho.** El borde izquierdo del panel de detalle se arrastra (entre 260 px y el 60 % de la ventana); doble clic vuelve al ancho original. Se recuerda en el navegador; si no hay almacenamiento, funciona igual.
+   - **No se miró en un navegador en esta sesión.**

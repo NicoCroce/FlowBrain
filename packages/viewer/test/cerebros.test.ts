@@ -38,7 +38,10 @@ describe("visor de varios cerebros", () => {
     const html = renderViewerCerebros(cerebros, cruces, [], "/* lib */");
     expect(html).toContain('"cerebros":[{"nombre":"front"');
     expect(html).toContain('id="m3-cerebros"');
-    for (const pieza of ["data-cerebro=", "data-foco-cerebro=", 'data-tipos="ninguno"', "hiddenBrains"]) expect(GRAFO3D_JS).toContain(pieza);
+    // El borde del panel de detalle se arrastra para ensancharlo.
+    expect(html).toContain('id="m3-asa"');
+    expect(html).toContain("var(--der, 300px)");
+    for (const pieza of ["data-cerebro=", "data-foco-cerebro=", 'data-tipos="ninguno"', "hiddenBrains", "data-todas=", "m3-asa", "COLOR_C"]) expect(GRAFO3D_JS).toContain(pieza);
     expect(() => new Function(GRAFO3D_JS)).not.toThrow();
   });
 });

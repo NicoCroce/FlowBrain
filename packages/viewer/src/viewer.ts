@@ -173,7 +173,7 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 a.nb { text-decoration: none; }
 
 /* Mapa 3D */
-#app { display: grid; grid-template-columns: 280px minmax(0, 1fr) 300px; height: calc(100vh - 56px); min-height: 640px; }
+#app { display: grid; grid-template-columns: 280px minmax(0, 1fr) var(--der, 300px); height: calc(100vh - 56px); min-height: 640px; }
 .m3-panel { background: var(--panel); overflow-y: auto; padding: 18px 14px; display: flex; flex-direction: column; gap: 22px; min-width: 0; }
 .m3-izq { border-right: 1px solid #1A1F2B; }
 .m3-der { border-left: 1px solid #1A1F2B; padding: 18px 16px; }
@@ -231,12 +231,23 @@ a.nb { text-decoration: none; }
 .m3-acciones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .m3-acciones .ancho { grid-column: 1 / -1; }
 .m3-enlaces { display: flex; flex-direction: column; gap: 6px; padding: 0 4px; font-size: 13px; }
-#m3-detalle h3.lbl { padding: 0 4px 6px; }
+#m3-detalle h3.lbl { padding: 0 4px 6px; display: flex; align-items: center; gap: 7px; }
+#m3-detalle h3.lbl .ct { margin-left: auto; font: 500 11px var(--sans); color: var(--suave); text-transform: none; letter-spacing: 0; }
+.m3-grupo { display: flex; flex-direction: column; border-left: 2px solid transparent; padding-left: 4px; }
+.m3-grupo .btn { margin: 6px 4px 0; }
+.pc { flex: none; width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.m3-cer h3 .pc { margin-right: 7px; }
+.mc { flex: none; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 6px; padding: 1px 7px; border: 1px solid; border-radius: 999px; font: 600 10px var(--sans); }
+.nb .vb { flex: none; }
+#m3-asa { position: absolute; top: 0; right: 0; bottom: 0; width: 8px; z-index: 5; cursor: col-resize; touch-action: none; }
+#m3-asa::after { content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 2px; background: transparent; }
+#m3-asa:hover::after, #m3-asa.on::after { background: #5B7CFA; }
 
 @media (max-width: 900px) {
   .ficha { grid-template-columns: 1fr; }
   #app, #deps { grid-template-columns: 1fr; grid-template-rows: auto 70vh auto; height: auto; }
   #deps { grid-template-rows: 70vh auto; }
+  #m3-asa { display: none; }
   .m3-izq, .m3-der, .derecha { border: 0; border-bottom: 1px solid #1A1F2B; }
   #presets { margin-left: 0; }
 }
@@ -325,6 +336,7 @@ a.nb { text-decoration: none; }
       </div>
     </div>
     <div class="m3-guia"><span><b>Arrastrar fondo</b> rota</span><span><b>Rueda</b> acerca</span><span><b>Arrastrar nodo</b> lo mueve con sus hijos</span><span><b>Shift</b> mueve solo el nodo</span><span><b>Doble clic</b> enfoca</span></div>
+    <div id="m3-asa" role="separator" aria-orientation="vertical" title="Arrastrá para cambiar el ancho del detalle (doble clic: ancho original)"></div>
   </main>
   <aside class="m3-panel m3-der"><div id="m3-detalle"></div></aside>
 </div>
