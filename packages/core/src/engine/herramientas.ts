@@ -1,7 +1,7 @@
 import { cmp, cmpTuple } from "../canonical.js";
 import { ENDPOINT_REF, VERBOS, normalizarRuta, type Estado, type GraphEdge, type GraphNode, type Verbo } from "../schema.js";
 import type { Contexto } from "./contexto.js";
-import { ajustar, confNodo, endpointsDe, PROYECCIONES, proyectar, type ConPresupuesto, type Item, type Proyeccion } from "./proyeccion.js";
+import { ajustar, confNodo, endpointsDe, PROYECCIONES, proyectar, tokens, type ConPresupuesto, type Item, type Proyeccion } from "./proyeccion.js";
 
 export class ConsultaError extends Error {
   constructor(
@@ -91,8 +91,37 @@ function levenshtein(a: string, b: string, max: number): number {
   return prev[b.length]!;
 }
 
-const RANGO = { exacta: 3, prefijo: 2, difusa: 1 } as const;
+/** `contiene`: el texto está dentro del nombre o de un alias. `texto`: aparece en el resumen o en la prosa de la página. */
+const RANGO = { exacta: 5, prefijo: 4, contiene: 3, difusa: 2, texto: 1 } as const;
 type Coincidencia = keyof typeof RANGO;
+/** Largo mínimo para buscar dentro de nombres y de texto: con menos, casi todo coincide. */
+const MIN_CONTIENE = 3;
+
+export interface SimboloHallado {
+  simbolo: string;
+  tipo: string;
+  /** Dónde está definido: `repo:ruta#Ln`. */
+  ev: string;
+  coincidencia: "exacta" | "prefijo" | "contiene";
+}
+
+/** Símbolos de código (clases, métodos, funciones, tipos) cuyo nombre coincide; un método también por su nombre sin la clase. */
+function buscarSimbolos(ctx: Contexto, q: string): SimboloHallado[] {
+  const ix = ctx.codigo;
+  if (!ix) return [];
+  const out: SimboloHallado[] = [];
+  for (const [nombre, claves] of ix.porNombre) {
+    const n = normalizar(nombre), corto = n.slice(n.lastIndexOf(".") + 1);
+    const c = n === q || corto === q ? "exacta" : n.startsWith(q) || corto.startsWith(q) ? "prefijo" : q.length >= MIN_CONTIENE && n.includes(q) ? "contiene" : null;
+    if (!c) continue;
+    for (const k of claves) {
+      const archivo = k.slice(0, k.lastIndexOf("#"));
+      const s = ix.estructura.get(archivo)?.simbolos.find((x) => x.nombre === nombre);
+      out.push({ simbolo: nombre, tipo: s?.tipo ?? "simbolo", ev: s ? `${archivo}#L${s.linea}` : archivo, coincidencia: c });
+    }
+  }
+  return out.sort((a, b) => RANGO[b.coincidencia] - RANGO[a.coincidencia] || cmp(a.simbolo, b.simbolo) || cmp(a.ev, b.ev));
+}
 
 export function buscarNodo(ctx: Contexto, p: BuscarParams) {
   const { proyeccion, budget } = comunes(p, "resumen");
@@ -105,24 +134,32 @@ export function buscarNodo(ctx: Contexto, p: BuscarParams) {
   for (const n of ctx.graph.nodes) {
     if (p.tipos && p.tipos.length > 0 && !p.tipos.includes(n.tipo)) continue;
     const claves = [n.id, n.nombre, ...n.aliases].map(normalizar);
+    // Dentro del nombre: de un archivo cuenta solo su nombre, no las carpetas (si no, cada carpeta arrastra todo).
+    const nombres = (n.tipo === "archivo" ? [n.nombre.slice(n.nombre.lastIndexOf("/") + 1)] : [n.nombre, ...n.aliases]).map(normalizar);
     let c: Coincidencia | null = null;
     if (claves.some((k) => k === q)) c = "exacta";
     else if (claves.some((k) => k.startsWith(q))) c = "prefijo";
+    else if (q.length >= MIN_CONTIENE && nombres.some((k) => k.includes(q))) c = "contiene";
     else if (claves.some((k) => levenshtein(q, k, 2) <= 2)) c = "difusa";
+    else if (q.length >= MIN_CONTIENE && [n.resumen ?? "", ctx.prosa.get(n.id) ?? ""].some((t) => normalizar(t).includes(q))) c = "texto";
     if (c) hits.push({ n, c });
   }
+  const conSimbolos = !p.tipos || p.tipos.length === 0 || p.tipos.includes("simbolo");
+  const hallados = conSimbolos ? buscarSimbolos(ctx, q) : [];
+  const simbolos = hallados.slice(0, limite);
   hits.sort((a, b) => RANGO[b.c] - RANGO[a.c] || confNodo(b.n) - confNodo(a.n) || cmp(a.n.id, b.n.id));
   const total = hits.length;
   const nodos = hits.slice(0, limite).map(({ n, c }) => proyectar(ctx, n, proyeccion, { coincidencia: c }));
-  return ajustar(
-    {
-      consulta: { limite, proyeccion, texto: p.texto, tipos: p.tipos ?? [] },
-      herramienta: "buscar_nodo" as const,
-      nodos,
-      total,
-    },
-    budget,
-  );
+  const base = { consulta: { limite, proyeccion, texto: p.texto, tipos: p.tipos ?? [] }, herramienta: "buscar_nodo" as const, nodos, total };
+  if (!hallados.length) return ajustar(base, budget);
+  // Los símbolos entran primero en el presupuesto: son una línea cada uno; después se recortan los nodos.
+  const r = ajustar({ ...base, simbolos, totalSimbolos: hallados.length }, budget);
+  let omitidos = 0;
+  while (budget !== null && r.simbolos.length && tokens({ ...r, simbolosOmitidos: omitidos + 1 }) > budget) {
+    r.simbolos.pop();
+    omitidos++;
+  }
+  return omitidos ? { ...r, simbolosOmitidos: omitidos, truncado: true } : r;
 }
 
 // ============================== recorrer_grafo ==============================

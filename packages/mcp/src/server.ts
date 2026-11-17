@@ -16,7 +16,7 @@ import {
   pantalla,
   PROYECCIONES,
   recorrerGrafo,
-  stringifyCanonical,
+  stringifyCompact,
   trazar,
   VERBOS,
   type Contexto,
@@ -51,17 +51,35 @@ const comunes = {
 
 type Texto = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
 
-/** Ejecuta una herramienta del motor y la serializa igual que la CLI. */
+/**
+ * Ejecuta una herramienta del motor y la serializa compacta: el presupuesto de tokens se mide sobre ese mismo
+ * texto, así que lo que recibe el agente es lo que se presupuestó (la CLI indenta, para leerla una persona).
+ */
 async function responder(fn: () => unknown): Promise<Texto> {
   try {
-    return { content: [{ type: "text", text: stringifyCanonical(fn()) }] };
+    return { content: [{ type: "text", text: stringifyCompact(fn()) }] };
   } catch (e) {
     if (e instanceof ConsultaError) {
-      return { content: [{ type: "text", text: stringifyCanonical({ error: { codigo: e.codigo, mensaje: e.message } }) }], isError: true };
+      return { content: [{ type: "text", text: stringifyCompact({ error: { codigo: e.codigo, mensaje: e.message } }) }], isError: true };
     }
     throw e;
   }
 }
+
+/** Guía de uso que el cliente MCP le pasa al agente al conectarse. */
+export const INSTRUCCIONES = [
+  "Grafo de conocimiento del sistema: producto (funcionalidades, pantallas), código (endpoints, métodos, tablas) y cómo se conectan entre repos. Consultalo antes de explorar el código con grep.",
+  "Qué herramienta usar:",
+  "- No sé el id de algo, o busco una clase, método o palabra: buscar_nodo.",
+  "- Qué hace una funcionalidad de producto: funcionalidad.",
+  "- Una pantalla del front de punta a punta: pantalla.",
+  "- Qué ejecuta un endpoint o un método, paso a paso: recorrido.",
+  "- Qué recibe y devuelve un endpoint: contrato_de.",
+  "- Qué se rompe si cambio una tabla, endpoint, servicio o funcionalidad: impacto. Si es un método o una clase: quien_llama.",
+  "- Por dónde viaja un dato entre servicios: trazar.",
+  "- Vecinos de un nodo por tipo de relación: recorrer_grafo.",
+  "Cada dato trae evidencia `repo:ruta#Ln`: abrí ese archivo antes de afirmar algo. `avisos` y `truncado` marcan huecos conocidos: ahí falta dato, no significa que no pase nada.",
+].join("\n");
 
 /** Quita claves con valor undefined (el motor usa exactOptionalPropertyTypes). */
 type SinUndefined<T> = { [K in keyof T as undefined extends T[K] ? never : K]: T[K] } & {
@@ -72,16 +90,16 @@ function limpio<T extends Record<string, unknown>>(o: T): SinUndefined<T> {
 }
 
 export function crearServidor(obtener: () => Promise<Contexto>): McpServer {
-  const server = new McpServer({ name: "brain", version: typeof __BRAIN_VERSION__ === "string" ? __BRAIN_VERSION__ : "dev" });
+  const server = new McpServer({ name: "brain", version: typeof __BRAIN_VERSION__ === "string" ? __BRAIN_VERSION__ : "dev" }, { instructions: INSTRUCCIONES });
 
   server.registerTool(
     "buscar_nodo",
     {
       description:
-        "Busca nodos del grafo de conocimiento (servicios, repos, tablas, features, endpoints) por id, nombre o alias. Exacto > prefijo > difuso.",
+        "Busca nodos del grafo (servicios, repos, tablas, funcionalidades, endpoints, pantallas) por id, nombre o alias, y también dentro del nombre y en el texto de su página. Además devuelve `simbolos`: clases, métodos y funciones del código con ese nombre, con su `repo:ruta#Ln`. Exacto > prefijo > contiene > difuso > texto.",
       inputSchema: {
         texto: z.string().min(1),
-        tipos: z.array(z.string()).optional().describe("filtra por tipo de nodo, p. ej. [\"svc\", \"endpoint\"]"),
+        tipos: z.array(z.string()).optional().describe("filtra por tipo de nodo, p. ej. [\"svc\", \"endpoint\"]; \"simbolo\" para solo símbolos de código"),
         limite: z.number().int().positive().optional(),
         ...comunes,
       },

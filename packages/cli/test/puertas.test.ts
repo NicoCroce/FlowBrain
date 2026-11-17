@@ -37,6 +37,9 @@ async function mcp(nombre: string, args: Record<string, unknown>): Promise<{ tex
   return { texto: r.content[0]!.text, error: r.isError === true };
 }
 
+/** El MCP responde compacto; para comparar con la CLI y los golden se re-serializa canónico. */
+const legible = (texto: string) => stringifyCanonical(JSON.parse(texto));
+
 async function hook(prompt: string, cwd = join(raiz, "ws/tienda")): Promise<string> {
   const r = await ejecutar(["hook", "claude-code", "--raiz", raiz], {}, raiz, async () => JSON.stringify({ prompt, cwd }));
   expect(r.codigo).toBe(0);
@@ -76,7 +79,9 @@ describe("CLI, MCP y hook devuelven el mismo JSON", () => {
       const m = await mcp(...c.mcp);
       expect(cli.stdout).toBe(esperado);
       expect(m.error).toBe(false);
-      expect(m.texto).toBe(esperado);
+      expect(legible(m.texto)).toBe(esperado);
+      // Compacto: sin saltos de línea ni sangría, que el presupuesto no cuenta.
+      expect(m.texto).toBe(JSON.stringify(JSON.parse(m.texto)));
     });
   }
 
@@ -85,21 +90,35 @@ describe("CLI, MCP y hook devuelven el mismo JSON", () => {
     const desdeHook = seccion(await hook("¿Qué se rompe si cambio /checkout?"), "trazar /checkout");
     expect(desdeHook).toBe(esperado);
     expect((JSON.parse(desdeHook) as { saltos: unknown[] }).saltos).toHaveLength(5);
-    expect((await mcp("trazar", { desde: "/checkout" })).texto).toBe(esperado);
+    expect(legible((await mcp("trazar", { desde: "/checkout" })).texto)).toBe(esperado);
     expect((await ejecutar(["trazar", "--desde", "/checkout", "--raiz", raiz])).stdout).toBe(esperado);
   });
 
   it("recorrer_grafo por hook coincide con MCP para un nodo mencionado", async () => {
     const texto = await hook("revisá la pasarela");
     const viaMcp = await mcp("recorrer_grafo", { nodo: "ext-pasarela", direccion: "both" });
-    expect(seccion(texto, "recorrer_grafo ext-pasarela")).toBe(viaMcp.texto);
+    expect(seccion(texto, "recorrer_grafo ext-pasarela")).toBe(legible(viaMcp.texto));
   });
 
   it("los errores de consulta son iguales por CLI y MCP", async () => {
     const cli = await ejecutar(["recorrer", "svc-nada", "--raiz", raiz]);
     const m = await mcp("recorrer_grafo", { nodo: "svc-nada" });
     expect(m.error).toBe(true);
-    expect(m.texto).toBe(cli.stdout);
+    expect(legible(m.texto)).toBe(cli.stdout);
+  });
+
+  it("lo que el MCP envía entra en el presupuesto pedido", async () => {
+    for (const budget of [150, 300, 600]) {
+      const m = await mcp("recorrer_grafo", { nodo: "svc-payments", proyeccion: "completo", budget_tokens: budget });
+      expect(Math.ceil(m.texto.length / 4), `budget ${budget}`).toBeLessThanOrEqual(budget);
+    }
+    const b = await mcp("buscar_nodo", { texto: "pago", budget_tokens: 150 });
+    expect(Math.ceil(b.texto.length / 4)).toBeLessThanOrEqual(150);
+  });
+
+  it("el servidor le dice al agente qué herramienta usar para cada pregunta", () => {
+    const guia = cliente.getInstructions() ?? "";
+    for (const h of ["buscar_nodo", "funcionalidad", "pantalla", "recorrido", "contrato_de", "impacto", "quien_llama", "trazar", "recorrer_grafo"]) expect(guia).toContain(h);
   });
 });
 

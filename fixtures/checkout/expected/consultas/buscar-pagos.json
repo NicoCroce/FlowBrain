@@ -22,6 +22,30 @@
       "nombre": "Tabla de pagos",
       "resumen": "Un registro por intento de cobro, con su estado.",
       "tipo": "tabla"
+    },
+    {
+      "coincidencia": "contiene",
+      "estado": "vigente",
+      "id": "ext-pasarela",
+      "nombre": "Pasarela de pagos",
+      "resumen": "Proveedor externo que procesa tarjetas y notifica el resultado por webhook.",
+      "tipo": "ext"
+    },
+    {
+      "coincidencia": "texto",
+      "estado": "vigente",
+      "id": "repo-tienda",
+      "nombre": "Monorepo de la tienda",
+      "resumen": "Monorepo pnpm con la web, el BFF y el servicio de pagos en apps/.",
+      "tipo": "repo"
+    },
+    {
+      "coincidencia": "texto",
+      "estado": "vigente",
+      "id": "svc-bff",
+      "nombre": "BFF de la tienda",
+      "resumen": "Backend-for-frontend que orquesta el checkout para la web.",
+      "tipo": "svc"
     }
   ],
   "omitidos": {
@@ -31,6 +55,6 @@
     "prosa": 0,
     "saltos": 0
   },
-  "total": 2,
+  "total": 5,
   "truncado": false
 }

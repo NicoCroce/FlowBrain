@@ -50,7 +50,7 @@ export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): st
     "",
     ...(ctx && repo ? [...seccionRepo(ctx, repo), ""] : []),
     "Antes de explorar el código con grep, consultá el grafo de conocimiento por MCP (servidor `brain`):",
-    "- `buscar_nodo` para ubicar servicios, repos, tablas o features por nombre.",
+    "- `buscar_nodo` para ubicar servicios, repos, tablas o features por nombre, y clases o métodos del código (con archivo y línea).",
     "- `recorrer_grafo` con `verbos: [\"depende_de\"], direccion: \"in\"` para saber qué se rompe si cambiás algo.",
     "- `contrato_de` para ver qué devuelve un endpoint.",
     "- `trazar` para seguir un flujo desde una ruta HTTP o un archivo.",

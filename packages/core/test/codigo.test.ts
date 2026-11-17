@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, buscarNodo, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -41,6 +41,14 @@ beforeAll(async () => {
   sinIndice = contextoDeSalidas(salidas, contratos);
 });
 
+const SIMBOLOS_CHECKOUT = [
+  "CheckoutRequest repo-tienda:apps/bff/src/routes/checkout.ts#L4 prefijo",
+  "CheckoutRequest repo-tienda:apps/web/src/api/checkout.ts#L1 prefijo",
+  "CheckoutResponse repo-tienda:apps/bff/src/routes/checkout.ts#L9 prefijo",
+  "confirmarCheckout repo-tienda:apps/web/src/api/checkout.ts#L8 contiene",
+  "postCheckout repo-tienda:apps/bff/src/routes/checkout.ts#L14 contiene",
+];
+
 const FINAS_ESPERADAS = [
   "feat-carrito depende_de feat-checkout · parser repo-tienda:apps/web/src/api/checkout.ts#L8",
   "feat-carrito llama_a svc-bff:POST:/checkout · parser repo-tienda:apps/web/src/api/checkout.ts#L8",
@@ -54,6 +62,26 @@ const FINAS_ESPERADAS = [
 ];
 
 describe("consultas de código", () => {
+  it("buscar_nodo encuentra símbolos de código, con archivo y línea, y texto dentro de nombres y páginas", () => {
+    const sim = (texto: string, extra: Record<string, unknown> = {}) => (buscarNodo(ctx, { texto, ...extra }) as { simbolos?: Array<{ simbolo: string; ev: string; coincidencia: string }> }).simbolos?.map((x) => `${x.simbolo} ${x.ev} ${x.coincidencia}`);
+    expect(sim("postCheckout")).toEqual(["postCheckout repo-tienda:apps/bff/src/routes/checkout.ts#L14 exacta"]);
+    expect(sim("crear")).toEqual([
+      "CrearPagoRequest repo-tienda:apps/payments/src/routes/payments.ts#L28 prefijo",
+      "crearPago repo-tienda:apps/bff/src/clients/payments.ts#L10 prefijo",
+    ]);
+    expect(sim("Checkout", { tipos: ["simbolo"] })).toEqual(SIMBOLOS_CHECKOUT);
+    // Filtrar por un tipo de nodo deja afuera los símbolos; sin índice de código no hay campo.
+    expect(sim("postCheckout", { tipos: ["svc"] })).toBeUndefined();
+    expect((buscarNodo(sinIndice, { texto: "postCheckout" }) as { simbolos?: unknown }).simbolos).toBeUndefined();
+    // Con poco presupuesto los símbolos se recortan y queda dicho cuántos.
+    const corto = buscarNodo(ctx, { texto: "Checkout", tipos: ["simbolo"], budget_tokens: 120 }) as { simbolos: unknown[]; simbolosOmitidos?: number; truncado: boolean };
+    expect(corto.truncado).toBe(true);
+    expect(corto.simbolos.length + corto.simbolosOmitidos!).toBe(SIMBOLOS_CHECKOUT.length);
+    expect(tokens(corto)).toBeLessThanOrEqual(120);
+    // Texto del resumen: "orquesta" no está en ningún nombre.
+    expect(buscarNodo(ctx, { texto: "orquesta" }).nodos.map((n) => `${n.id} ${n.coincidencia}`)).toEqual(["svc-bff texto"]);
+  });
+
   it("relaciones finas en el grafo: endpoint, pantalla y funcionalidad con lo que tocan y llaman", () => {
     const FINOS = new Set(["endpoint", "pantalla", "feat"]);
     const finas = ctx.graph.edges
@@ -150,6 +178,8 @@ describe("consultas de código", () => {
     ] }));
     const r = evaluar(ctx, preguntas);
     expect(r).toMatchObject({ total: 4, aciertos: 3, porcentaje: 75, cobertura: 80, porHerramienta: { quien_llama: { total: 2, aciertos: 2 }, recorrido: { total: 2, aciertos: 1 } } });
+    // Lo que la evaluación no mide queda a la vista.
+    expect(r.sinPreguntas).toEqual(["buscar_nodo", "contrato_de", "funcionalidad", "impacto", "pantalla", "recorrer_grafo", "trazar"]);
     expect(r.falladas).toEqual([{ id: "c", pregunta: "c", herramienta: "recorrido", ok: false, faltan: ["tabla-inexistente"], sobran: [] }]);
     expect(() => leerPreguntas('[{"id":"x","herramienta":"otra","args":{}}]')).toThrow(/herramienta desconocida/);
   });

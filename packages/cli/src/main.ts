@@ -293,7 +293,7 @@ export async function ejecutar(
         const r = evaluar(ctx, leerPreguntas(await readFile(archivo, "utf8")));
         const minimo = o.minimo === undefined ? null : Number(o.minimo);
         if (minimo !== null && Number.isNaN(minimo)) throw new ConsultaError("parametro_invalido", "--minimo debe ser un número");
-        return { codigo: minimo !== null && r.porcentaje < minimo ? 1 : 0, stdout: stringifyCanonical(r), stderr: `${r.aciertos}/${r.total} correctas (${r.porcentaje}%), cobertura de lo esperado ${r.cobertura}%\n` };
+        return { codigo: minimo !== null && r.porcentaje < minimo ? 1 : 0, stdout: stringifyCanonical(r), stderr: `${r.aciertos}/${r.total} correctas (${r.porcentaje}%), cobertura de lo esperado ${r.cobertura}%${r.sinPreguntas.length ? `; sin preguntas: ${r.sinPreguntas.join(", ")}` : ""}\n` };
       }
       case "context": {
         if (!o.prompt) throw new ConsultaError("parametro_invalido", "falta --prompt");

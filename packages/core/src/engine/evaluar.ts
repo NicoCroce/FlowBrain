@@ -40,6 +40,8 @@ export interface Evaluacion {
   /** Fracción de los textos esperados que aparecieron (crédito parcial). */
   cobertura: number;
   falladas: ResultadoPregunta[];
+  /** Herramientas sin ninguna pregunta: lo que esta evaluación no mide. */
+  sinPreguntas: string[];
 }
 
 const HERRAMIENTAS: Record<string, (ctx: Contexto, a: never) => unknown> = {
@@ -105,5 +107,6 @@ export function evaluar(ctx: Contexto, preguntas: Pregunta[]): Evaluacion {
     porHerramienta: Object.fromEntries(Object.entries(porHerramienta).sort((a, b) => cmp(a[0], b[0]))),
     cobertura: esperados ? Math.round((encontrados / esperados) * 1000) / 10 : 100,
     falladas: resultados.filter((r) => !r.ok),
+    sinPreguntas: Object.keys(HERRAMIENTAS).filter((h) => !porHerramienta[h]).sort(cmp),
   };
 }

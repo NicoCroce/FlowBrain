@@ -282,7 +282,9 @@ La proyección `relaciones` no muestra `contiene` ni `expone` (se ven con `contr
 
 Todas las herramientas ordenan sus resultados por confianza descendente y después por id ascendente.
 
-- **`buscar_nodo`:** la coincidencia exacta con id, nombre o alias va antes que la de prefijo, y la de prefijo antes que la difusa. La comparación ignora mayúsculas y acentos (NFD sin marcas). La difusa usa la distancia de Levenshtein ≤ 2 sobre id, nombre y aliases.
+- **`buscar_nodo`:** orden de coincidencia: `exacta` con id, nombre o alias; `prefijo`; `contiene` (el texto está dentro del nombre o de un alias; de un archivo, solo en su nombre sin carpetas); `difusa` (distancia de Levenshtein ≤ 2 sobre id, nombre y aliases); `texto` (aparece en el resumen o en la prosa de la página). `contiene` y `texto` piden al menos 3 caracteres. La comparación ignora mayúsculas y acentos (NFD sin marcas).
+  - **Símbolos de código.** Si el brain tiene índice de código, la respuesta suma `simbolos`: clases, métodos, funciones y tipos cuyo nombre coincide (`exacta`, `prefijo` o `contiene`; un método también por su nombre sin la clase), cada uno con `tipo` y `ev` (`repo:ruta#Ln` de su definición), y `totalSimbolos`. No son nodos del grafo: sirven para pasarlos a `recorrido`, `quien_llama` o `impacto`. `tipos: ["simbolo"]` devuelve solo símbolos; cualquier otro filtro de tipos los deja afuera. Con presupuesto excedido se recortan desde el final y se informa `simbolosOmitidos`.
+- **Serialización.** El MCP responde JSON compacto, que es el texto sobre el que se mide `budget_tokens` (caracteres / 4). La CLI devuelve el mismo JSON indentado.
 - **`recorrer_grafo`:** BFS por niveles desde el nodo, con profundidad por defecto 1 y máximo 5. Sin `verbos`, usa todos menos `contiene` y `expone`. La raíz va como nivel 0; cada nodo aparece una sola vez, en el primer nivel donde se lo alcanza, con `nivel` y `via` (la arista de mayor confianza que lo alcanzó).
 - **`contrato_de`:** acepta un svc o un endpoint; proyección por defecto `resumen`, pero siempre incluye los endpoints (tipos expandidos y `llamado_por`) y los eventos.
 - **`trazar`:**
