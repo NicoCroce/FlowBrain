@@ -64,7 +64,7 @@ export const GRAFO3D_JS = String.raw`
   var ocultosIniciales = {};
   TIPOS.forEach(function (t) { if (D.tiposIniciales.indexOf(t[0]) < 0) ocultosIniciales[t[0]] = true; });
   var S = { hiddenTypes: ocultosIniciales, hiddenVerbs: {}, sizeMode: "uso", scale: 1, group: "feat", labels: "grandes", selId: null, query: "",
-    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, hiddenBrains: {}, todas: {}, intensidad: 1,
+    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, hiddenBrains: {}, todas: {}, tabC: null, intensidad: 1,
     pulsos: !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) };
 
   function setParents(mode) {
@@ -513,7 +513,7 @@ export const GRAFO3D_JS = String.raw`
   var $ = function (id) { return document.getElementById(id); };
   var sw = function (t) { return '<span class="sw" style="background:' + col(t) + '"></span>'; };
   var on = function (b) { return b ? " on" : ""; };
-  function seleccionar(id) { if (S.selId !== id) S.todas = {}; S.selId = id; computeIso(id); ui(); }
+  function seleccionar(id) { if (S.selId !== id) { S.todas = {}; S.tabC = null; } S.selId = id; computeIso(id); ui(); }
   function irA(id) {
     var n = by[id];
     if (!n) return;
@@ -539,16 +539,21 @@ export const GRAFO3D_JS = String.raw`
     sel.adj.forEach(function (a) { grupos[a.n.c || 0].push(a); });
     var ids = grupos.map(function (_, i) { return i; }).filter(function (i) { return grupos[i].length; }).sort(function (a, b) { return (a === sel.c ? -1 : 0) - (b === sel.c ? -1 : 0) || a - b; });
     if (!ids.length) return '<div><h3 class="lbl">Conexiones</h3><p class="vacio">Ninguna.</p></div>';
-    return ids.map(function (i) {
+    // Con varios cerebros, una pestaña por cerebro con conexiones: se ve de a uno.
+    var tab = ids.indexOf(Number(S.tabC)) >= 0 && S.tabC !== null ? Number(S.tabC) : ids[0];
+    var tabs = MULTI && ids.length > 1 ? '<div class="m3-tabs" role="tablist">' + ids.map(function (i) {
+      return '<button type="button" role="tab" class="m3-tab' + on(i === tab) + '" aria-selected="' + (i === tab) + '" data-tab-c="' + i + '"' + (i === tab ? ' style="border-color:' + colorC(i) + '"' : "") + ">" + puntoC(i) + esc(CEREBROS[i].nombre) + '<span class="ct">' + grupos[i].length + "</span></button>";
+    }).join("") + "</div>" : "";
+    return (tabs ? '<h3 class="lbl">Conexiones<span class="ct">' + sel.adj.length + "</span></h3>" + tabs : "") + (tabs ? [tab] : ids).map(function (i) {
       var xs = grupos[i].slice().sort(orden), fuera = MULTI && i !== sel.c;
       var sale = xs.filter(function (a) { return a.e.a === sel; }).length, entra = xs.length - sale;
       var titulo = !MULTI ? "Conexiones" : fuera ? "Con " + CEREBROS[i].nombre : "En " + CEREBROS[i].nombre;
-      var cuenta = xs.length + (fuera ? " · " + [sale ? sale + " hacia allá" : "", entra ? entra + " desde allá" : ""].filter(Boolean).join(", ") : "");
+      var cuenta = (tabs ? "" : xs.length + " · ") + [sale ? sale + (fuera ? " hacia allá" : " salen") : "", entra ? entra + (fuera ? " desde allá" : " llegan") : ""].filter(Boolean).join(", ");
       var ver = S.todas[i] ? xs : xs.slice(0, TOPE_GRUPO);
       return '<div class="m3-grupo"' + (fuera ? ' style="border-left-color:' + colorC(i) + '"' : "") + '><h3 class="lbl">' + (MULTI ? puntoC(i) : "") + esc(titulo) + '<span class="ct">' + cuenta + "</span></h3>" +
         ver.map(function (a) {
           var va = a.e.a === sel, verbo = a.e.verbo.replace("_", " ");
-          return fila(a.n, (va ? verbo + " →" : "← " + verbo) + (fuera && a.e.ev > 1 ? " ×" + a.e.ev : ""), fuera ? '<span class="mc" style="color:' + colorC(i) + ";border-color:" + colorC(i) + '">' + esc(CEREBROS[i].nombre) + "</span>" : "");
+          return fila(a.n, (va ? verbo + " →" : "← " + verbo) + (fuera && a.e.ev > 1 ? " ×" + a.e.ev : ""), fuera && !tabs ? '<span class="mc" style="color:' + colorC(i) + ";border-color:" + colorC(i) + '">' + esc(CEREBROS[i].nombre) + "</span>" : "");
         }).join("") +
         (xs.length > TOPE_GRUPO ? '<button type="button" class="btn" data-todas="' + i + '">' + (S.todas[i] ? "Ver menos" : "Ver las " + xs.length) + "</button>" : "") + "</div>";
     }).join("");
@@ -651,6 +656,7 @@ export const GRAFO3D_JS = String.raw`
     var d = b.dataset, sel = S.selId ? by[S.selId] : null;
     if (d.pick) { irA(d.pick); if (b.closest("#m3-res")) { S.query = ""; $("m3-buscar").value = ""; resultados(); } return; }
     if (d.cerebro) { S.hiddenBrains[d.cerebro] = !S.hiddenBrains[d.cerebro]; actualizarActivos(); reacomodar(0.3); }
+    else if (d.tabC) S.tabC = d.tabC;
     else if (d.todas) S.todas[d.todas] = !S.todas[d.todas];
     else if (d.focoCerebro) { var fc = Number(d.focoCerebro); cam.goal = { x: OX[fc], y: 0, z: 0, dist: Math.max(600, (BRS[fc] || 260) * 3.1) }; }
     else if (d.tipos) { TIPOS.forEach(function (t) { S.hiddenTypes[t[0]] = d.tipos === "ninguno"; }); actualizarActivos(); reacomodar(0.3); }

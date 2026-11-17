@@ -348,3 +348,4 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Un color por cerebro.** El mismo color va en el nombre sobre la corteza, en el interruptor del cerebro, en el borde del grupo y en la marca con el nombre del cerebro de cada conexión que cruza. La flecha dice el sentido: `llama a →` sale del nodo, `← llama a` llega a él.
    - **Ancho.** El borde izquierdo del panel de detalle se arrastra (entre 260 px y el 60 % de la ventana); doble clic vuelve al ancho original. Se recuerda en el navegador; si no hay almacenamiento, funciona igual.
    - **No se miró en un navegador en esta sesión.**
+   - **Pestañas (mismo día).** Con conexiones en más de un cerebro, el detalle muestra una pestaña por cerebro (color, nombre y cantidad) y lista de a uno; arranca en el cerebro del nodo y vuelve a él al elegir otro nodo. Con un solo cerebro no hay pestañas.

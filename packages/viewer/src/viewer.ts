@@ -233,6 +233,11 @@ a.nb { text-decoration: none; }
 .m3-enlaces { display: flex; flex-direction: column; gap: 6px; padding: 0 4px; font-size: 13px; }
 #m3-detalle h3.lbl { padding: 0 4px 6px; display: flex; align-items: center; gap: 7px; }
 #m3-detalle h3.lbl .ct { margin-left: auto; font: 500 11px var(--sans); color: var(--suave); text-transform: none; letter-spacing: 0; }
+#m3-detalle .m3-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 4px 10px; }
+.m3-tab { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 10px; border: 1px solid var(--borde); border-radius: 999px; background: transparent; color: var(--medio); font: 500 12px var(--sans); cursor: pointer; }
+.m3-tab:hover { background: var(--hover); color: #FFFFFF; }
+.m3-tab.on { background: var(--tarjeta); color: var(--texto); }
+.m3-tab .ct { font-size: 11px; color: var(--suave); }
 .m3-grupo { display: flex; flex-direction: column; border-left: 2px solid transparent; padding-left: 4px; }
 .m3-grupo .btn { margin: 6px 4px 0; }
 .pc { flex: none; width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
