@@ -48,7 +48,7 @@ import {
 import { crearMulti } from "@flowbrain/mcp";
 import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@flowbrain/hooks";
 import { draftDir } from "@flowbrain/indexer";
-import { aplicar, ARCHIVO_VISOR, crearRegistro, encontrarRepos, escribirVisor, listar, proponer } from "./cerebros.js";
+import { aplicar, ARCHIVO_VISOR, asegurarGitignore, crearRegistro, encontrarRepos, escribirVisor, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { evidencia } from "./evidencia.js";
 import { GUIA_ANALISIS, GUIA_ESTUDIO, GUIA_FUNCIONALIDADES, NOMBRE_COMANDO, NOMBRE_ESTUDIO, NOMBRE_FUNCIONALIDADES } from "./guia.js";
@@ -283,8 +283,7 @@ export async function ejecutar(
         }
         const c = await crearRegistro(reg, proyecto, rutas, dividir);
         lineas.push(`registro creado en ${c.archivo}: ${c.repos.length} ${c.repos.length === 1 ? "repo" : "repos"} en ${c.cerebros.length === 1 ? "un cerebro" : `${c.cerebros.length} cerebros`}`, ...c.repos.map((x) => `  ${x.nombre}: ${[...x.pila, ...x.lenguajes].join(", ") || "sin código reconocido"}; ${x.endpoints} endpoints, ${x.pantallas} pantallas, ${x.tablas} tablas`));
-        // Lo derivado no se versiona; las páginas, los borradores y el registro sí.
-        if (!(await stat(join(reg, ".gitignore")).then(() => true, () => false))) await writeFile(join(reg, ".gitignore"), `*/_build/\n${ARCHIVO_VISOR}\n`, "utf8");
+        await asegurarGitignore(reg);
       } else lineas.push(`registro existente en ${join(reg, ARCHIVO_REGISTRO)}: se actualiza`);
       const registro = await leerRegistro(reg);
       const rs = await aplicar(registro);
@@ -676,7 +675,7 @@ if (esMain && process.argv[2] === "serve") {
   if (interactivo && (args.length === 0 || (args.length === 1 && args[0] === "menu"))) {
     // Sin argumentos y con una persona del otro lado: el menú.
     const { menu, terminal } = await import("./menu.js");
-    await menu(process.cwd(), terminal((a, cwd) => ejecutar(a, process.env, cwd, leerStdin, preguntar)));
+    await menu(process.cwd(), terminal((a, cwd) => ejecutar(a, process.env, cwd, leerStdin, preguntar)), { forzarMenu: args[0] === "menu" });
     process.exit(0);
   }
   const r = await ejecutar(args, process.env, process.cwd(), leerStdin, preguntar);

@@ -583,3 +583,10 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **`flowbrain setup`:** deja la máquina al día (comando, hooks y comandos de Claude Code) sin tocar ningún proyecto. Lo usa Actualizar después de traer el código nuevo, porque el proceso que corre el menú todavía tiene el viejo.
    - Cada opción corre los mismos comandos que se escriben a mano; el menú no agrega lógica propia.
 
+173. **Asistente para un proyecto nuevo (2026-11-18).** Con el menú, un proyecto sin nada obligaba a saber por dónde empezar. Se pidió un asistente que no se equivoque de orden.
+   - **`flowbrain` en un proyecto sin `.flowbrain/` arranca el asistente**; `flowbrain menu` abre siempre el menú. Al terminar, pide Enter antes de pasar al menú para que el resumen no se borre.
+   - **El orden es fijo, porque cada paso usa lo que deja el anterior:** requisitos (`setup`) → repositorios → índice → MCP → análisis → visor. El análisis va después del índice porque el modelo arranca midiendo lo que los parsers ya leyeron; el MCP va antes del análisis para que Claude Code ya consulte FlowBrain mientras analiza.
+   - **Los repos se confirman antes de escribir nada:** se muestran con su tecnología (por dependencias, por los parsers o, si no hay parser, por las extensiones del código) y lo que se ve a primera vista; se pueden dejar repos afuera y elegir uno o varios cerebros. Una carpeta sin código no crea cerebros vacíos: lo dice y espera.
+   - **Retoma solo:** cada paso se detecta por lo que dejó en disco (`flowbrain.yaml`, `_build/graph.json`, `profile.md`). El menú muestra el **siguiente paso** con ese mismo orden y arranca parado en él, así Enter siempre hace lo correcto.
+   - **Lo que tarda o toca la configuración del usuario pide un sí:** el análisis (por defecto no) y el MCP (por defecto sí, porque solo registra un servidor).
+

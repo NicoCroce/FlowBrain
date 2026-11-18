@@ -8,6 +8,7 @@ import { buscarRegistro, leerRegistro } from "@flowbrain/core";
 import { ARCHIVO_VISOR } from "./cerebros.js";
 import { mcpRegistrado } from "./estado.js";
 import { comandoBrain, VERSION } from "./init.js";
+import { asistente } from "./asistente.js";
 
 /**
  * `flowbrain` sin argumentos (o `flowbrain menu`): un menú en la terminal con lo que se puede hacer en el proyecto
@@ -29,9 +30,13 @@ export interface ContextoMenu {
   /** Carpeta del registro (`.flowbrain/`), si existe. */
   registro: string | null;
   cerebros: string[];
+  /** Cerebros sin índice compilado (`_build/graph.json`) y sin análisis del modelo (`profile.md`). */
+  faltaIndice: string[];
+  faltaAnalisis: string[];
   visor: string | null;
   mcp: boolean;
   claude: boolean;
+  git: boolean;
   version: string;
 }
 
@@ -46,6 +51,8 @@ export interface Entorno {
   tecla(): Promise<string>;
   preguntar(pregunta: string): Promise<string>;
   limpiar(): void;
+  /** Cómo leer el estado del proyecto (las pruebas lo fijan; por defecto, `contextoMenu`). */
+  contexto?: (cwd: string) => Promise<ContextoMenu>;
 }
 
 export const PROMPT_ANALISIS = [
@@ -58,22 +65,26 @@ export const PROMPT_ANALISIS = [
 
 export async function contextoMenu(cwd: string, entorno: { hayComando(nombre: string): boolean; mcpConfig?: string[] } = { hayComando }): Promise<ContextoMenu> {
   const registro = await buscarRegistro(cwd);
-  let cerebros: string[] = [];
+  let lista: Array<{ nombre: string; raiz: string }> = [];
   if (registro) {
     try {
-      cerebros = (await leerRegistro(registro)).cerebros.map((c) => c.nombre);
+      lista = (await leerRegistro(registro)).cerebros.map((c) => ({ nombre: c.nombre, raiz: c.raiz }));
     } catch {
-      cerebros = [];
+      lista = [];
     }
   }
+  const cerebros = lista.map((c) => c.nombre);
   const visor = registro && existsSync(join(registro, ARCHIVO_VISOR)) ? join(registro, ARCHIVO_VISOR) : null;
   return {
     proyecto: registro ? dirname(registro) : resolve(cwd),
     registro,
     cerebros,
+    faltaIndice: lista.filter((c) => !existsSync(join(c.raiz, "_build/graph.json"))).map((c) => c.nombre),
+    faltaAnalisis: lista.filter((c) => !existsSync(join(c.raiz, "profile.md"))).map((c) => c.nombre),
     visor,
     mcp: !!(await mcpRegistrado(entorno.mcpConfig)),
     claude: entorno.hayComando("claude"),
+    git: entorno.hayComando("git"),
     version: VERSION,
   };
 }
@@ -103,6 +114,19 @@ export function opciones(c: ContextoMenu): Opcion[] {
   return out;
 }
 
+/**
+ * El siguiente paso, en el único orden que funciona: repos → índice → análisis. Cada uno necesita lo que deja el
+ * anterior (el análisis mide lo que los parsers ya leyeron). El MCP no bloquea nada, va al final.
+ */
+export function siguiente(c: ContextoMenu): { clave: Clave; motivo: string } | null {
+  const nombres = (xs: string[]) => (xs.length === c.cerebros.length && xs.length > 1 ? "todos los cerebros" : xs.join(", "));
+  if (!c.registro || !c.cerebros.length) return { clave: "configurar", motivo: "el proyecto no está configurado" };
+  if (c.faltaIndice.length) return { clave: "reindexar", motivo: `falta indexar ${nombres(c.faltaIndice)}` };
+  if (c.faltaAnalisis.length) return { clave: "analizar", motivo: `falta el análisis completo en ${nombres(c.faltaAnalisis)}` };
+  if (!c.mcp) return { clave: "mcp", motivo: "Claude Code todavía no consulta FlowBrain" };
+  return null;
+}
+
 const NEGRITA = "\x1b[1m", TENUE = "\x1b[2m", INVERSO = "\x1b[7m", FIN = "\x1b[0m";
 
 export function dibujar(c: ContextoMenu, ops: Opcion[], elegida: number): string {
@@ -113,6 +137,11 @@ export function dibujar(c: ContextoMenu, ops: Opcion[], elegida: number): string
     `${NEGRITA}FlowBrain${FIN} ${TENUE}${c.version}${FIN}`,
     `${TENUE}Proyecto:${FIN} ${c.proyecto}`,
     `${TENUE}Estado:${FIN}   ${estado} · MCP ${c.mcp ? "conectado" : "sin conectar"}`,
+    ...(() => {
+      const s = siguiente(c);
+      const o = s && ops.find((x) => x.clave === s.clave);
+      return [s && o ? `${NEGRITA}Siguiente paso:${FIN} ${o.titulo} (${s.motivo})` : `${TENUE}Todo al día.${FIN}`];
+    })(),
     "",
     ...ops.map((o, i) => {
       const n = o.clave === "salir" ? "q" : String(i + 1);
@@ -127,7 +156,9 @@ export function dibujar(c: ContextoMenu, ops: Opcion[], elegida: number): string
 
 /** Elige una opción con las flechas, Enter o su número. */
 export async function elegir(c: ContextoMenu, ops: Opcion[], e: Entorno): Promise<Opcion> {
-  let i = 0;
+  // Arranca parado en el siguiente paso recomendado: Enter lo hace.
+  const s = siguiente(c);
+  let i = Math.max(0, s ? ops.findIndex((o) => o.clave === s.clave) : 0);
   for (;;) {
     e.limpiar();
     e.escribir(dibujar(c, ops, i));
@@ -140,7 +171,9 @@ export async function elegir(c: ContextoMenu, ops: Opcion[], e: Entorno): Promis
   }
 }
 
-const si = (r: string) => /^(s|si|sí|y|yes)$/i.test(r.trim());
+export const si = (r: string) => /^(s|si|sí|y|yes)$/i.test(r.trim());
+/** Sí por defecto: Enter también vale. */
+export const siPorDefecto = (r: string) => !/^(n|no)$/i.test(r.trim());
 
 /** Corre una opción. Devuelve false para salir. */
 export async function accion(o: Opcion, c: ContextoMenu, e: Entorno): Promise<boolean> {
@@ -149,7 +182,11 @@ export async function accion(o: Opcion, c: ContextoMenu, e: Entorno): Promise<bo
     case "salir":
       return false;
     case "configurar":
-      e.escribir(c.registro ? "Actualizando la máquina y reindexando…\n" : "Configurando el proyecto…\n");
+      if (!c.registro) {
+        await asistente(c, e);
+        break;
+      }
+      e.escribir("Actualizando la máquina y reindexando…\n");
       mostrar(await e.flowbrain(["install"], c.proyecto));
       break;
     case "analizar": {
@@ -158,13 +195,14 @@ export async function accion(o: Opcion, c: ContextoMenu, e: Entorno): Promise<bo
         break;
       }
       if (!c.registro) {
-        e.escribir("Primero configuro el proyecto…\n");
-        const r = await e.flowbrain(["install"], c.proyecto);
-        mostrar(r);
-        if (r.codigo !== 0) {
-          e.escribir("La configuración no terminó bien: revisá lo de arriba antes de analizar.\n");
-          break;
-        }
+        // El análisis necesita los cerebros y el índice: el asistente los arma y ofrece el análisis al final.
+        e.escribir("Antes de analizar hay que configurar el proyecto.\n");
+        await asistente(c, e);
+        break;
+      }
+      if (c.faltaIndice.length) {
+        e.escribir("Primero indexo lo que falta…\n");
+        mostrar(await e.flowbrain(["brains", "apply"], c.proyecto));
       }
       e.escribir("Abriendo Claude Code con el análisis completo. Va a tardar: estudia cada repo de punta a punta.\n");
       await e.correr("claude", [PROMPT_ANALISIS], c.proyecto);
@@ -229,9 +267,17 @@ async function actualizar(c: ContextoMenu, e: Entorno): Promise<void> {
   e.escribir("FlowBrain actualizado. Si cambió algo del índice, elegí Reindexar.\n");
 }
 
-export async function menu(cwd: string, e: Entorno): Promise<void> {
+export async function menu(cwd: string, e: Entorno, opcionesMenu: { forzarMenu?: boolean } = {}): Promise<void> {
+  // Un proyecto sin configurar empieza por el asistente; después (o si se lo deja a medias), el menú.
+  const leer = e.contexto ?? contextoMenu;
+  const inicial = await leer(cwd);
+  if (!inicial.registro && !opcionesMenu.forzarMenu) {
+    await asistente(inicial, e);
+    // Que el resumen del asistente no se borre: el menú aparece recién cuando la persona lo pide.
+    await e.preguntar("\nEnter para ir al menú ");
+  }
   for (;;) {
-    const c = await contextoMenu(cwd);
+    const c = await leer(cwd);
     const o = await elegir(c, opciones(c), e);
     e.limpiar();
     if (!(await accion(o, c, e))) return;

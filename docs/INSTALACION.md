@@ -22,7 +22,18 @@ Volver a correrlo actualiza. Para reagrupar repos o apagar la comunicación se e
 
 ### El menú
 
-`flowbrain` sin argumentos (o `flowbrain menu`), en una terminal, abre un menú con lo que se puede hacer en el proyecto donde estás parado (lo encuentra también desde un subrepo):
+En un proyecto sin `.flowbrain/`, `flowbrain` arranca un **asistente** con los pasos en el único orden que funciona, porque cada uno usa lo que deja el anterior:
+
+1. **Requisitos:** deja la máquina lista (`flowbrain setup`) y avisa si faltan git o Claude Code (sin Claude Code sigue con lo que no lo necesita).
+2. **Repositorios:** pregunta la carpeta, muestra los subrepositorios con su tecnología y lo que se ve a primera vista, deja elegir cuáles quedan afuera y si va un cerebro por repo o uno solo, y escribe `.flowbrain/` recién al confirmar. Sin código en la carpeta no crea nada.
+3. **Índice:** corren los parsers.
+4. **Claude Code (MCP):** lo conecta si se acepta.
+5. **Análisis completo:** pide el ok, porque es lo que más tarda.
+6. **Visor.**
+
+Cada paso mira primero si ya está hecho (`flowbrain.yaml`, `_build/graph.json` y `profile.md` de cada cerebro), así que cortarlo y volver a escribir `flowbrain` sigue desde el primero pendiente; el menú marca ese paso como **Siguiente paso** y arranca parado en él.
+
+Ya configurado, `flowbrain` sin argumentos (o `flowbrain menu`, que lo abre siempre), en una terminal, abre un menú con lo que se puede hacer en el proyecto donde estás parado (lo encuentra también desde un subrepo):
 
 - **Configurar este proyecto** (sin `.flowbrain/`): lo mismo que `flowbrain install`. Con el proyecto ya configurado, **Actualizar la configuración** deja al día el comando, los hooks y los comandos de Claude Code, y reindexa.
 - **Analizar el proyecto completo:** abre Claude Code con el análisis de punta a punta, en orden: estudio de cada repo y extractores (`flowbrain coverage --guide`), comunicación entre servicios (`flowbrain evidence --guide`) y funcionalidades de producto (`flowbrain feature --guide`). Si el proyecto no está configurado, lo configura antes. El análisis es siempre completo: no hay una versión rápida.

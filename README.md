@@ -51,7 +51,7 @@ Después, en cualquier proyecto (o en cualquiera de sus subrepos), alcanza con e
 flowbrain
 ```
 
-Abre un menú en la terminal (flechas y Enter, o el número) con lo que se puede hacer ahí: configurar el proyecto (detecta los subrepositorios y arma los cerebros), analizarlo completo con Claude Code, reindexar, abrir el visor, ver el estado, conectar el MCP y actualizar FlowBrain. Las opciones dependen del estado: sin `.flowbrain/`, lo primero es configurarlo. Cada opción corre los mismos comandos que se pueden escribir a mano.
+En un proyecto sin configurar arranca un asistente que hace todo en orden: prepara la máquina, te muestra los subrepositorios que encontró (con su tecnología) para que elijas cuáles entran y cómo se agrupan, indexa, conecta el MCP y ofrece el análisis completo con Claude Code. Si lo cortás, la próxima vez sigue desde el primer paso pendiente. Ya configurado, abre un menú en la terminal (flechas y Enter, o el número) con lo que se puede hacer ahí: configurar el proyecto (detecta los subrepositorios y arma los cerebros), analizarlo completo con Claude Code, reindexar, abrir el visor, ver el estado, conectar el MCP y actualizar FlowBrain. Las opciones dependen del estado: sin `.flowbrain/`, lo primero es configurarlo. Cada opción corre los mismos comandos que se pueden escribir a mano.
 
 Volver a correr `flowbrain install` actualiza. Detalle completo, instalación a mano y CI en [docs/INSTALACION.md](docs/INSTALACION.md).
 

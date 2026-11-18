@@ -53,6 +53,24 @@ export async function encontrarRepos(carpeta: string, profundidad = 3): Promise<
   return out.sort(cmp);
 }
 
+/** Extensiones de código (no configuración ni documentación) que delatan que hay un programa. */
+const EXT_CODIGO = /\.(ts|tsx|js|jsx|mjs|cjs|vue|svelte|astro|php|py|go|rb|java|kt|kts|scala|groovy|cs|fs|vb|swift|m|mm|dart|rs|ex|exs|erl|clj|c|cc|cpp|h|hpp|lua|r|sql)$/i;
+
+/** Las extensiones de código de una carpeta, de la más usada a la menos (vacío: no hay código). */
+export function lenguajesDeCarpeta(ruta: string): string[] {
+  const n = new Map<string, number>();
+  for (const f of leerRepo(ruta).archivos) {
+    const m = EXT_CODIGO.exec(f);
+    if (m) n.set(m[1]!.toLowerCase(), (n.get(m[1]!.toLowerCase()) ?? 0) + 1);
+  }
+  return [...n.entries()].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0])).map(([e]) => e);
+}
+
+/** Lo derivado no se versiona; las páginas, los borradores y el registro sí. */
+export async function asegurarGitignore(carpetaRegistro: string): Promise<void> {
+  if (!(await existe(join(carpetaRegistro, ".gitignore")))) await writeFile(join(carpetaRegistro, ".gitignore"), `*/_build/\n${ARCHIVO_VISOR}\n`, "utf8");
+}
+
 export interface RepoDetectado {
   ruta: string;
   nombre: string;
