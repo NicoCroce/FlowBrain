@@ -1,6 +1,6 @@
 import { cmp } from "../canonical.js";
 import type { Conexion } from "../registro.js";
-import { crearRecorredor, LIMITES_PANTALLA, type AristaExtraccion, type EstructuraArchivo } from "../funcionalidades.js";
+import { aristasDeExtracciones, crearRecorredor, LIMITES_PANTALLA, tablasSinPagina, type AristaExtraccion, type EstructuraArchivo, type Paso, type Toque } from "../funcionalidades.js";
 import type { Graph } from "../schema.js";
 import { normalizar, rutaCoincide } from "./herramientas.js";
 
@@ -142,13 +142,24 @@ const segmentos = (r: string) => r.split("/").filter(Boolean);
 /** Endpoints de `destino` que atienden `metodo ruta`: los de ruta idéntica; si no hay, los que terminan igual (la base de la URL aporta el prefijo). */
 function candidatos(destino: CerebroLiviano, metodo: string, ruta: string, svcs: Set<string> | null) {
   const eps = destino.endpoints.filter((e) => e.metodo === metodo && (!svcs || svcs.has(e.svc)));
-  const exactos = eps.filter((e) => rutaCoincide(e.ruta, ruta));
-  if (exactos.length) return exactos;
   const s = segmentos(ruta);
-  return eps.filter((e) => {
+  // Como un router: entre varias rutas que coinciden gana la que acierta más segmentos literales. `/login` es
+  // `/api/login` y no `/api/image/{userId}`. Si empatan, siguen siendo varias.
+  const masLiterales = <T extends { ruta: string }>(cs: T[]): T[] => {
+    if (cs.length < 2) return cs;
+    const puntos = (e: T) => {
+      const t = segmentos(e.ruta).slice(-s.length);
+      return t.filter((x, i) => x === s[i]).length;
+    };
+    const mejor = Math.max(...cs.map(puntos));
+    return cs.filter((e) => puntos(e) === mejor);
+  };
+  const exactos = eps.filter((e) => rutaCoincide(e.ruta, ruta));
+  if (exactos.length) return masLiterales(exactos);
+  return masLiterales(eps.filter((e) => {
     const t = segmentos(e.ruta);
     return t.length > s.length && rutaCoincide(`/${t.slice(t.length - s.length).join("/")}`, ruta);
-  });
+  }));
 }
 
 /**
@@ -238,4 +249,94 @@ export function resumenConexiones(cruces: Cruce[], conexiones: Conexion[]): Resu
     if (!out.some((o) => o.desde === desde && o.hacia === hacia)) out.push({ desde, hacia, declarada: true, origen: x.origen, por: x.por, llamadas: 0, endpoints: 0, pantallas: 0, ejemplos: [] });
   }
   return out.sort((a, b) => cmp(a.desde, b.desde) || cmp(a.hacia, b.hacia));
+}
+
+/** Lo que hace falta de un cerebro para armar trazas: el grafo y los JSON de `_build` (estructura de archivos y extracción). */
+export interface FuenteTraza {
+  nombre: string;
+  graph: Graph;
+  extracciones: string[];
+  archivos: string[];
+}
+
+export interface TrazasCruzadas {
+  /**
+   * Por pantalla (`cerebro/id`) con alguna llamada que cruza: su recorrido en el front, donde cada llamada que atiende
+   * otro cerebro figura como un toque hacia ese endpoint, y los endpoints que llama, en orden.
+   */
+  pantallas: Record<string, { pasos: Paso[]; endpoints: string[] }>;
+  /** Por endpoint cruzado (`cerebro/endpoint`): lo que ejecuta el back que lo atiende, hasta las tablas. */
+  backs: Record<string, { pasos: Paso[]; truncado?: true }>;
+}
+
+function estructuraDe(archivos: string[]): Map<string, EstructuraArchivo> {
+  const estructura = new Map<string, EstructuraArchivo>();
+  for (const c of archivos) {
+    try {
+      const j = JSON.parse(c) as { repo: string; archivos?: Array<{ ruta: string } & Partial<EstructuraArchivo>> };
+      for (const a of j.archivos ?? []) estructura.set(`${j.repo}:${a.ruta}`, { simbolos: a.simbolos ?? [], importa: a.importa ?? [], invoca: a.invoca ?? [] });
+    } catch {
+      /* ilegible: no aporta */
+    }
+  }
+  return estructura;
+}
+
+/** Recorrido de un endpoint del back para una traza: alcanza para llegar a las tablas sin volverse ilegible. */
+const LIMITES_BACK = { pasos: 60, nivel: 10 };
+
+/**
+ * Trazas de punta a punta entre cerebros: pantalla → componentes y hooks → llamada HTTP → endpoint de otro cerebro →
+ * lo que ejecuta ese back → tablas. Cada cerebro por separado solo ve su mitad; acá se unen por los cruces. Todos los
+ * ids salen con el prefijo de su cerebro. No se guarda: se calcula con la comunicación y las conexiones vigentes.
+ */
+export function trazasCruzadas(fuentes: FuenteTraza[], cruces: Cruce[]): TrazasCruzadas {
+  const out: TrazasCruzadas = { pantallas: {}, backs: {} };
+  const fuente = new Map(fuentes.map((f) => [f.nombre, f]));
+  const MARCA = "\u0000";
+  for (const f of fuentes) {
+    const salen = cruces.filter((c) => c.desde.cerebro === f.nombre && c.desde.pantallas.length && fuente.has(c.hacia.cerebro));
+    if (!salen.length) continue;
+    const ids = new Set(f.graph.nodes.map((n) => n.id));
+    const propio = (id: string) => (ids.has(id) ? `${f.nombre}/${id}` : id);
+    // Las llamadas que cruzan entran al recorredor como toques marcados, junto a lo que el cerebro ya resolvió solo.
+    const marcas: AristaExtraccion[] = salen.map((c, i) => ({ desde: c.desde.svc, verbo: "llama_a", hasta: `${MARCA}${i}`, endpoint: null, evidencia: c.desde.evidencia }));
+    const rec = crearRecorredor(f.graph, estructuraDe(f.archivos), [...aristasDeExtracciones(f.extracciones), ...marcas], [], LIMITES_PANTALLA);
+    const conCruce = new Set(salen.flatMap((c) => c.desde.pantallas));
+    for (const n of f.graph.nodes) {
+      if (n.tipo !== "pantalla" || !conCruce.has(n.id)) continue;
+      const pasos: Paso[] = [];
+      const endpoints: string[] = [];
+      for (const comp of (n.atributos as { componentes?: string[] }).componentes ?? []) {
+        const i = comp.lastIndexOf("#");
+        if (i < 0) continue;
+        for (const p of rec.desdeSimbolo(comp.slice(0, i), comp.slice(i + 1)).pasos) {
+          const toca: Toque[] = p.toca.map((t) => {
+            if (!t.hasta.startsWith(MARCA)) return { ...t, hasta: t.sinPagina ? t.hasta : propio(t.hasta), endpoint: t.endpoint ? propio(t.endpoint) : null };
+            const c = salen[Number(t.hasta.slice(1))]!;
+            const ep = `${c.hacia.cerebro}/${c.hacia.endpoint}`;
+            return { verbo: "llama_a", hasta: `${c.hacia.cerebro}/${c.hacia.endpoint.slice(0, c.hacia.endpoint.indexOf(":"))}`, endpoint: ep };
+          });
+          for (const t of toca) if (t.endpoint && !p.repite && !endpoints.includes(t.endpoint)) endpoints.push(t.endpoint);
+          pasos.push({ ...p, toca });
+        }
+      }
+      if (endpoints.length) out.pantallas[`${f.nombre}/${n.id}`] = { pasos, endpoints };
+    }
+  }
+  // El otro lado del HTTP: lo que ejecuta cada endpoint cruzado, una vez.
+  const porDestino = new Map<string, Set<string>>();
+  for (const c of cruces) if (c.desde.pantallas.length && fuente.has(c.hacia.cerebro)) (porDestino.get(c.hacia.cerebro) ?? porDestino.set(c.hacia.cerebro, new Set()).get(c.hacia.cerebro)!).add(c.hacia.endpoint);
+  for (const [nombre, eps] of porDestino) {
+    const f = fuente.get(nombre)!;
+    const ids = new Set(f.graph.nodes.map((n) => n.id));
+    const propio = (id: string) => (ids.has(id) ? `${nombre}/${id}` : id);
+    const rec = crearRecorredor(f.graph, estructuraDe(f.archivos), aristasDeExtracciones(f.extracciones), tablasSinPagina(f.extracciones), LIMITES_BACK);
+    for (const ep of [...eps].sort(cmp)) {
+      const r = rec.desdeEndpoint(ep);
+      const pasos = r.pasos.map((p) => ({ ...p, toca: p.toca.map((t) => ({ ...t, hasta: t.sinPagina ? t.hasta : propio(t.hasta), endpoint: t.endpoint ? propio(t.endpoint) : null })) }));
+      out.backs[`${nombre}/${ep}`] = r.truncado ? { pasos, truncado: true } : { pasos };
+    }
+  }
+  return out;
 }

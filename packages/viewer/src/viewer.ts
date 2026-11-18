@@ -132,6 +132,9 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .tarjeta { display: block; padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); color: var(--text); text-decoration: none; transition: border-color .15s; }
 .tarjeta:hover { border-color: var(--primario); color: var(--text); }
 .tarjeta h3 { margin: 0 0 6px; font-size: 16px; }
+.tarjeta h3 a { color: inherit; text-decoration: none; }
+.tarjeta h3 a:hover { color: var(--primario); }
+.tarjeta .cerebros { margin-top: 8px; }
 .tarjeta p { margin: 0 0 12px; color: var(--medio); font-size: 13px; }
 .columnas { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 28px; margin-top: 16px; }
 .columnas section { padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
@@ -151,6 +154,19 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .capa-datos { background: var(--tabla); } .capa-interfaz { background: var(--endpoint); } .capa-otros { background: var(--archivo); }
 .recorrido { border: 1px solid var(--borde); border-radius: 12px; padding: 10px 14px; margin: 0 0 8px; background: var(--tarjeta); }
 .recorrido summary { cursor: pointer; }
+.traza { margin: 8px 0 4px; border: 1px solid var(--borde); border-radius: 10px; overflow: hidden; background: var(--fondo); }
+.tz-fila { display: grid; grid-template-columns: minmax(240px, 48%) minmax(0, 1fr); align-items: center; min-height: 28px; border-bottom: 1px solid #141925; }
+.tz-fila:last-child { border-bottom: 0; } .tz-fila:hover { background: var(--hover); }
+.tz-nom { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 3px 10px; font-size: 12.5px; white-space: nowrap; overflow: hidden; }
+.tz-nom strong { font-weight: 600; color: var(--claro); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+.tz-nom small { color: var(--suave); overflow: hidden; text-overflow: ellipsis; flex: 1 1 0; min-width: 0; }
+.tz-pt { flex: none; width: 8px; height: 8px; border-radius: 2px; background: var(--tz); }
+.tz-pista { position: relative; height: 28px; border-left: 1px solid #1A1F2B; background: repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 1px), #141925 calc(10% - 1px), #141925 10%); }
+.tz-barra { position: absolute; top: 8px; height: 12px; border-radius: 3px; background: var(--tz); opacity: .9; }
+.tz-front { --tz: #8FA6FF; } .tz-http { --tz: #F5B94A; } .tz-back { --tz: #5EDBB0; } .tz-tabla { --tz: #F28BB3; } .tz-ext { --tz: #B79CFF; } .tz-cola { --tz: #6FD3F7; }
+.tz-http .tz-nom strong { color: #F5B94A; } .tz-tabla .tz-nom strong { color: #F28BB3; }
+.tz-resumen { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 8px 0 0; font-size: 12px; color: var(--medio); }
+.tz-ley { display: inline-flex; align-items: center; gap: 5px; color: var(--suave); } .tz-ley:first-of-type { margin-left: auto; }
 .pasos { list-style: none; margin: 10px 0 2px; padding: 0; }
 .pasos li { padding: 4px 0; }
 .pasos .flecha { color: var(--suave); }

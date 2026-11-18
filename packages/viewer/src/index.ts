@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { compileDir, type Cruce, type ResumenConexion, type Salidas } from "@flowbrain/core";
+import { compileDir, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
 import { renderViewerCerebros, type CerebroVisor } from "./cerebros.js";
 import { renderViewer } from "./viewer.js";
 
@@ -27,8 +27,8 @@ export async function visor(s: Salidas): Promise<Record<string, string>> {
 export const compileDirConVisor = (raiz: string) => compileDir(raiz, visor);
 
 /** Página del visor para varios cerebros, con Cytoscape embebido. */
-export async function visorDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[]): Promise<string> {
-  return renderViewerCerebros(cerebros, cruces, conexiones, await cytoscapeJs());
+export async function visorDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas?: TrazasCruzadas): Promise<string> {
+  return renderViewerCerebros(cerebros, cruces, conexiones, await cytoscapeJs(), trazas);
 }
 export { GRAFO3D_JS } from "./viewer-3d.js";
 export { ORDEN_CEREBROS_JS } from "./orden-cerebros.js";

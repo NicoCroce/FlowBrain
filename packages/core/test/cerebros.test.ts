@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cerebroLiviano, crucesDelRegistro, crucesEntre, resumenConexiones, type Graph, type GraphNode } from "../src/index.js";
+import { cerebroLiviano, crucesDelRegistro, crucesEntre, resumenConexiones, trazasCruzadas, type Graph, type GraphNode } from "../src/index.js";
 
 const nodo = (id: string, tipo: GraphNode["tipo"], atributos: Record<string, unknown> = {}): GraphNode => ({ actualizado: null, aliases: [], atributos, estado: "vigente", id, nombre: id, origen: "parser", pagina: null, resumen: null, tecnologia: [], tipo, verificado: null });
 
@@ -57,5 +57,42 @@ describe("cruces entre cerebros", () => {
     expect(d.cruces.map((c) => `${c.hacia.cerebro}/${c.hacia.endpoint} ${c.declarada}`)).toEqual(["viejo/svc-vieja:GET:/pedidos true"]);
     expect(d.entreCerebros).toEqual([]);
     expect(resumenConexiones(d.cruces, [conexion]).map((x) => [x.hacia, x.origen, x.llamadas])).toEqual([["viejo/svc-vieja", "modelo", 1]]);
+  });
+
+  it("traza de punta a punta: la pantalla de un cerebro llega a la tabla del otro, con cada id rotulado con su cerebro", () => {
+    const api: Graph = {
+      version: 1,
+      nodes: [...back.nodes.map((n) => (n.id === "svc-api:GET:/pedidos" ? { ...n, atributos: { ...n.atributos, evidencia: "repo-api:src/pedidos.controller.ts#L3" } } : n)), nodo("tabla-pedidos", "tabla")],
+      edges: [],
+    };
+    const archivosApi = JSON.stringify({
+      repo: "repo-api",
+      archivos: [
+        { ruta: "src/pedidos.controller.ts", simbolos: [{ nombre: "PedidosController.listar", tipo: "metodo", linea: 3, fin: 5 }], invoca: [{ desde: "PedidosController.listar", archivo: "src/pedidos.repository.ts", simbolo: "PedidosRepository.todos", linea: 4 }] },
+        { ruta: "src/pedidos.repository.ts", simbolos: [{ nombre: "PedidosRepository.todos", tipo: "metodo", linea: 2, fin: 4 }] },
+      ],
+    });
+    const extraccionApi = JSON.stringify({ accesos: [{ desde: "svc-api", verbo: "lee_de", hasta: "tabla-pedidos", endpoint: null, evidencia: "repo-api:src/pedidos.repository.ts#L3" }] });
+    const fuentes = [{ nombre: "front", graph: front, extracciones: [extraccion], archivos: [archivos] }, { nombre: "back", graph: api, extracciones: [extraccionApi], archivos: [archivosApi] }];
+    const { cruces } = crucesEntre(cerebroLiviano("front", front, [extraccion], [archivos]), cerebroLiviano("back", api, [extraccionApi], [archivosApi]), []);
+    const t = trazasCruzadas(fuentes, cruces);
+    const linea = (p: { nivel: number; simbolo: string; toca: Array<{ verbo: string; hasta: string; endpoint: string | null }> }) => `${p.nivel} ${p.simbolo}${p.toca.map((x) => ` → ${x.verbo} ${x.endpoint ?? x.hasta}`).join("")}`;
+    expect(Object.keys(t.pantallas)).toEqual(["front/svc-web:/pedidos"]);
+    expect(t.pantallas["front/svc-web:/pedidos"]!.pasos.map(linea)).toEqual(["0 Pedidos", "1 usePedidos → llama_a back/svc-api:GET:/pedidos"]);
+    expect(t.pantallas["front/svc-web:/pedidos"]!.endpoints).toEqual(["back/svc-api:GET:/pedidos"]);
+    // El script suelto no es de ninguna pantalla: su endpoint no entra en las trazas.
+    expect(Object.keys(t.backs)).toEqual(["back/svc-api:GET:/pedidos"]);
+    expect(t.backs["back/svc-api:GET:/pedidos"]!.pasos.map(linea)).toEqual(["0 PedidosController.listar", "1 PedidosRepository.todos → lee_de back/tabla-pedidos"]);
+    // Sin cruces (comunicación apagada) no hay trazas.
+    expect(trazasCruzadas(fuentes, [])).toEqual({ pantallas: {}, backs: {} });
+  });
+
+  it("entre dos rutas que coinciden gana la más literal, como en un router", () => {
+    const g: Graph = { version: 1, nodes: [nodo("svc-api", "svc"), nodo("svc-api:POST:/api/login", "endpoint", { metodo: "POST", ruta: "/api/login" }), nodo("svc-api:POST:/api/imagen/{id}", "endpoint", { metodo: "POST", ruta: "/api/imagen/{id}" })], edges: [] };
+    const llama = (ruta: string) => JSON.stringify({ pendientes: [{ verbo: "llama_a", desde: "svc-web", evidencia: "repo-web:src/api.ts#L1", llamada: { metodo: "POST", ruta, base: "API" } }] });
+    const cruza = (ruta: string) => crucesEntre(cerebroLiviano("front", front, [llama(ruta)]), cerebroLiviano("back", g, []), []);
+    expect(cruza("/login").cruces.map((c) => c.hacia.endpoint)).toEqual(["svc-api:POST:/api/login"]);
+    // Una sola candidata con parámetro sigue valiendo.
+    expect(cruza("/imagen/7").cruces.map((c) => c.hacia.endpoint)).toEqual(["svc-api:POST:/api/imagen/{id}"]);
   });
 });

@@ -22,6 +22,9 @@ export const PANTALLAS_JS = String.raw`
   });
   D.edges.forEach(function (e) { if (e.v === "navega_a") (entran[e.h] = entran[e.h] || []).push({ desde: e.s, evidencia: e.ev }); });
   var filtro = "";
+  // Con varios cerebros, el front y el back de una pantalla viven en cerebros distintos: la traza unida viene aparte.
+  var CZ = D.cruzado || { pantallas: {}, backs: {} };
+  Object.keys(CZ.backs).forEach(function (ep) { if (!backDe[ep] && CZ.backs[ep].pasos.length) backDe[ep] = { f: null, r: CZ.backs[ep] }; });
 
   var nombre = function (id) { return porId[id] ? porId[id].n : id; };
   var plural = function (n, uno, varios) { return n + " " + (n === 1 ? uno : varios); };
@@ -58,8 +61,8 @@ export const PANTALLAS_JS = String.raw`
       }),
       llega: llega.concat(envolturas),
       va: p.sale.map(function (s) { return chipPant(s.a, s.ruta, s.tipo); }),
-      recorrido: fp ? fp.p.recorrido : null,
-      endpoints: fp ? fp.p.endpoints : []
+      recorrido: CZ.pantallas[id] ? { pasos: CZ.pantallas[id].pasos } : fp ? fp.p.recorrido : null,
+      endpoints: CZ.pantallas[id] ? CZ.pantallas[id].endpoints : fp ? fp.p.endpoints : []
     };
   }
 
@@ -68,18 +71,60 @@ export const PANTALLAS_JS = String.raw`
     var b = backDe[ep];
     var titulo = "<code>" + esc(nombre(ep)) + "</code>";
     if (!b) return '<details class="recorrido"><summary>' + titulo + '<br><small>No se encontró el método que lo atiende en el back.</small></summary></details>';
-    return '<details class="recorrido"><summary>' + titulo + "<br><small>" + P().resumenRecorrido(b.r) + " · " + esc(nombre(b.f.id)) + "</small></summary>" +
+    return '<details class="recorrido"><summary>' + titulo + "<br><small>" + P().resumenRecorrido(b.r) + (b.f ? " · " + esc(nombre(b.f.id)) : "") + "</small></summary>" +
       P().pasosHtml(b.r.pasos, sinRepo) +
       (b.r.truncado ? '<p class="vacio">Recortado. Completo: <code>flowbrain flow "' + esc(nombre(ep)) + '"</code>.</p>' : "") + "</details>";
+  }
+  // ---------- Traza en cascada: una fila por paso, de la pantalla a la tabla ----------
+  // No hay tiempos: el eje es el orden de ejecución, y cada barra cubre el paso y todo lo que cuelga de él.
+  var VERBO = { lee_de: "lee", escribe_en: "escribe", llama_a: "llama a", publica_en: "publica en", consume_de: "consume de" };
+  var TOPE_TRAZA = 240;
+  function filasTraza(x) {
+    var filas = [], vistos = {};
+    var hoja = function (n, t) {
+      filas.push({ n: n, t: t.verbo === "llama_a" ? "ext" : t.verbo === "lee_de" || t.verbo === "escribe_en" ? "tabla" : "cola", label: nombre(t.hasta), sub: (VERBO[t.verbo] || t.verbo) + (t.sinPagina ? " · sin página" : "") });
+    };
+    x.recorrido.pasos.forEach(function (p) {
+      filas.push({ n: p.nivel, t: "front", label: p.simbolo, sub: sinRepo(p.evidencia), nota: p.repite ? (p.repite === "ciclo" ? "recursivo" : "ya recorrido arriba") : "" });
+      if (p.repite) return;
+      p.toca.forEach(function (t) {
+        if (!(t.verbo === "llama_a" && t.endpoint)) return hoja(p.nivel + 1, t);
+        var b = backDe[t.endpoint], ya = vistos[t.endpoint];
+        filas.push({ n: p.nivel + 1, t: "http", label: nombre(t.endpoint), sub: "HTTP → " + nombre(t.hasta), nota: ya ? "ya mostrado arriba" : b ? "" : "no se encontró el método que lo atiende" });
+        if (!b || ya) return;
+        vistos[t.endpoint] = true;
+        b.r.pasos.forEach(function (bp) {
+          var n = p.nivel + 2 + bp.nivel;
+          filas.push({ n: n, t: "back", label: bp.simbolo, sub: sinRepo(bp.evidencia), nota: bp.repite ? (bp.repite === "ciclo" ? "recursivo" : "ya recorrido arriba") : bp.aviso || "" });
+          if (!bp.repite) bp.toca.forEach(function (bt) { hoja(n + 1, bt); });
+        });
+        if (b.r.truncado) filas.push({ n: p.nivel + 2, t: "back", label: "…", sub: "recortado", nota: 'completo: flowbrain flow "' + nombre(t.endpoint) + '"' });
+      });
+    });
+    return filas;
+  }
+  var LEYENDA = [["front", "Front"], ["http", "Llamada HTTP"], ["back", "Back"], ["tabla", "Tabla"], ["ext", "Servicio o externo"]];
+  function trazaHtml(filas) {
+    var total = Math.min(filas.length, TOPE_TRAZA), tablas = {}, eps = 0;
+    filas.forEach(function (f) { if (f.t === "tabla") tablas[f.label] = true; if (f.t === "http") eps++; });
+    var cuerpo = filas.slice(0, total).map(function (f, i) {
+      var fin = i + 1;
+      while (fin < total && filas[fin].n > f.n) fin++;
+      return '<div class="tz-fila tz-' + f.t + '"><div class="tz-nom" style="padding-left:' + Math.min(f.n, 14) * 14 + 'px" title="' + esc(f.label + " · " + f.sub) + '"><span class="tz-pt"></span><strong>' + esc(f.label) + "</strong> <small>" + esc(f.sub) + (f.nota ? " · " + esc(f.nota) : "") + "</small></div>" +
+        '<div class="tz-pista"><span class="tz-barra" style="left:' + (100 * i / total).toFixed(2) + "%;width:" + Math.max(0.8, 100 * (fin - i) / total).toFixed(2) + '%"></span></div></div>';
+    }).join("");
+    return '<div class="tz-resumen"><span>' + plural(total, "paso", "pasos") + "</span><span>" + plural(eps, "llamada al back", "llamadas al back") + "</span><span>" + plural(Object.keys(tablas).length, "tabla", "tablas") + "</span>" +
+      LEYENDA.map(function (l) { return '<span class="tz-ley tz-' + l[0] + '"><span class="tz-pt"></span>' + l[1] + "</span>"; }).join("") + "</div>" +
+      '<div class="traza">' + cuerpo + "</div>" +
+      (filas.length > total ? '<p class="vacio">La traza sigue: se muestran los primeros ' + total + " pasos de " + filas.length + ".</p>" : "");
   }
   function puntaAPunta(x) {
     if (!x.recorrido) return '<p class="vacio">Esta pantalla no está en ninguna funcionalidad: su recorrido no se calculó.</p>';
     var r = x.recorrido;
-    var front = r.pasos.length > 1 || x.endpoints.length
-      ? P().pasosHtml(r.pasos, sinRepo) + (r.truncado ? '<p class="vacio">El árbol de componentes es grande y se recorrió hasta cierto punto. Completo: <code>flowbrain screen ' + esc(x.p.ruta) + "</code>.</p>" : "")
-      : '<p class="vacio">No se encontró ninguna llamada al back desde esta pantalla.</p>';
-    return "<h4>En el front</h4><p><small>Desde el componente de la pantalla hasta la llamada a la API: los componentes, hooks y funciones del camino.</small></p>" + front +
-      (x.endpoints.length ? "<h4>En el back (" + x.endpoints.length + ")</h4><p><small>Qué hace el back con cada pedido: el método que lo atiende y lo que toca.</small></p>" + x.endpoints.map(backDeEndpoint).join("") : "");
+    if (!(r.pasos.length > 1 || x.endpoints.length)) return '<h4>Traza</h4><p class="vacio">No se encontró ninguna llamada al back desde esta pantalla.</p>';
+    return "<h4>Traza</h4><p><small>De la pantalla a la tabla, en orden de ejecución: componentes y hooks del front, la llamada HTTP, el método del back que la atiende y lo que toca. Cada barra cubre el paso y todo lo que cuelga de él.</small></p>" +
+      trazaHtml(filasTraza(x)) +
+      (r.truncado ? '<p class="vacio">El árbol de componentes es grande y se recorrió hasta cierto punto. Completo: <code>flowbrain screen ' + esc(x.p.ruta) + "</code>.</p>" : "");
   }
   function navegacion(x) {
     return (x.envuelta.length ? "<h4>Envuelta por</h4><p><small>Layouts y guardas, de afuera hacia adentro, con a dónde llevan o redirigen.</small></p>" + '<ul class="lista">' + x.envuelta.join("") + "</ul>" : "") +
@@ -97,7 +142,7 @@ export const PANTALLAS_JS = String.raw`
         var x = datos(pf.id);
         if (!x) return "";
         var resumen = [esc(simbolo(pf.componente || ""))];
-        if (pf.endpoints.length) resumen.push("llama a " + pf.endpoints.map(function (e) { return esc(nombre(e)); }).join(", "));
+        if (x.endpoints.length) resumen.push(x.endpoints.length > 3 ? "llama a " + x.endpoints.length + " endpoints" : "llama a " + x.endpoints.map(function (e) { return esc(nombre(e)); }).join(", "));
         else resumen.push("no llama al back");
         return "<details" + (abiertas ? " open" : "") + ' class="recorrido"><summary><code>' + esc(pf.ruta) + "</code> · " + resumen.join(" · ") + "</summary>" +
           navegacion(x) + puntaAPunta(x) +

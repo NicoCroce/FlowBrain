@@ -1,4 +1,4 @@
-import type { Cruce, Ficha, Graph, ResumenConexion } from "@flowbrain/core";
+import type { Cruce, Ficha, Graph, ResumenConexion, TrazasCruzadas } from "@flowbrain/core";
 import { datosDelVisor, paginaDelVisor, type DatosVisor } from "./viewer.js";
 
 /**
@@ -26,7 +26,7 @@ function conPrefijo<T>(valor: T, ids: Set<string>, pre: (id: string) => string):
   return valor;
 }
 
-export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[]) {
+export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas: TrazasCruzadas = { pantallas: {}, backs: {} }) {
   const partes = cerebros.map((c, i) => {
     const ids = new Set(c.graph.nodes.map((n) => n.id));
     const d = conPrefijo(datosDelVisor(c.graph, c.funcionalidades), ids, (id) => `${c.nombre}/${id}`) as DatosVisor;
@@ -49,6 +49,8 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
   return {
     cerebros: cerebros.map((c, i) => ({ nombre: c.nombre, sinRevisar: c.sinRevisar, nodos: partes[i]!.nodes.length })),
     conexiones,
+    // Trazas de punta a punta que cruzan de un cerebro a otro; ya vienen con los ids prefijados.
+    cruzado: trazas,
     dependencias: partes.flatMap((p) => p.dependencias),
     funcionalidades: partes.flatMap((p) => p.funcionalidades),
     pantallas: partes.flatMap((p) => p.pantallas),
@@ -66,6 +68,6 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
   };
 }
 
-export function renderViewerCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], cytoscapeJs: string): string {
-  return paginaDelVisor(datosDeCerebros(cerebros, cruces, conexiones), cytoscapeJs);
+export function renderViewerCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], cytoscapeJs: string, trazas?: TrazasCruzadas): string {
+  return paginaDelVisor(datosDeCerebros(cerebros, cruces, conexiones, trazas), cytoscapeJs);
 }

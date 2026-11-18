@@ -38,6 +38,11 @@ describe("visor de varios cerebros", () => {
     const html = renderViewerCerebros(cerebros, cruces, [], "/* lib */");
     expect(html).toContain('"cerebros":[{"nombre":"front"');
     expect(html).toContain('id="m3-cerebros"');
+    // Las trazas entre cerebros viajan en los datos, y la ficha las dibuja en cascada.
+    const traza = { pantallas: { "front/svc-web:/pedidos": { pasos: [], endpoints: ["back/svc-api:GET:/pedidos"] } }, backs: {} };
+    expect(renderViewerCerebros(cerebros, cruces, [], "/* lib */", traza)).toContain('"cruzado":{"pantallas":{"front/svc-web:/pedidos"');
+    expect(html).toContain('"cruzado":{"pantallas":{},"backs":{}}');
+    expect(html).toContain("function filasTraza");
     // El borde del panel de detalle se arrastra para ensancharlo.
     expect(html).toContain('id="m3-asa"');
     expect(html).toContain("var(--der, 300px)");
