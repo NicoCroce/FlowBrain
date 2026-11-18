@@ -1047,15 +1047,22 @@ function extraer(repo: RepoFuente): Extraccion {
     if (envolturaPropia) envuelta.push(envolturaPropia);
     envuelta.push(...marcos);
     out.pantallas.push({ paquete, ruta: normalizarRuta(completa || "/"), archivo, linea: linea(n), componente: comp, envuelta });
+    // Ruta con nombre (`{ path, name: "reservar", component }`): se navega a ella por el nombre.
+    const nm = ts.isObjectLiteralExpression(n) ? propiedad(n, "name") : undefined;
+    if (nm && ts.isStringLiteralLike(nm)) rutasConNombre.set(`${paquete}\u0000${nm.text}`, normalizarRuta(completa || "/"));
   };
+  /** Nombre de ruta → ruta, por paquete; las navegaciones por nombre se resuelven al final, con todas las rutas vistas. */
+  const rutasConNombre = new Map<string, string>();
+  const POR_NOMBRE = "\u0000nombre:";
   const NAVEGA = new Set(["navigate", "push", "replace", "redirect", "navigateByUrl", "navigateTo", "goto"]);
   const navegaciones = (n: ts.Node, archivo: string, paquete: string) => {
     const agregar = (destinos: string[], tipo: "navega" | "enlace" | "redirige") => {
       for (let destino of new Set(destinos)) {
         // React Navigation navega por nombre de pantalla (`navigate("homeScreen")`): su ruta es `/homeScreen`.
         if (usaNavegacionNativa && /^[A-Za-z_][\w-]*$/.test(destino)) destino = "/" + destino;
-        if (!destino.startsWith("/")) continue;
-        out.navegaciones.push({ paquete, archivo, linea: linea(n), desde: simboloContenedor(n), ruta: normalizarRuta(destino), tipo });
+        const porNombre = destino.startsWith(POR_NOMBRE);
+        if (!destino.startsWith("/") && !porNombre) continue;
+        out.navegaciones.push({ paquete, archivo, linea: linea(n), desde: simboloContenedor(n), ruta: porNombre ? destino : normalizarRuta(destino), tipo });
       }
     };
     if (ts.isCallExpression(n) && n.arguments.length) {
@@ -1071,6 +1078,12 @@ function extraer(repo: RepoFuente): Extraccion {
         };
         ver(n.arguments[0]!);
         if (nombres.length) agregar([nombres[nombres.length - 1]!], nombre === "navigate" || nombre === "push" ? "navega" : "redirige");
+      } else if (nombre && NAVEGA.has(nombre) && ts.isObjectLiteralExpression(n.arguments[0]!)) {
+        // `router.push({ name: "reservar", params })` (vue-router y otros routers con rutas nombradas).
+        const nm = propiedad(n.arguments[0], "name");
+        const pa = propiedad(n.arguments[0], "path");
+        if (nm && ts.isStringLiteralLike(nm)) agregar([POR_NOMBRE + nm.text], "navega");
+        else if (pa) agregar(rutasFront(pa), "navega");
       }
     } else if (ts.isJsxAttribute(n) && (n.name.getText() === "to" || n.name.getText() === "href") && n.initializer) {
       const v = ts.isJsxExpression(n.initializer) ? n.initializer.expression : n.initializer;
@@ -1260,7 +1273,12 @@ function extraer(repo: RepoFuente): Extraccion {
       const script = scriptDeSfc(original.join("\n")).split("\n");
       original.forEach((l, i) => {
         if (script[i]!.trim()) return;
-        for (const m of l.matchAll(/(?:^|\s)(:?to|href)\s*=\s*"\s*'?(\/[^"'\s{]*)/g)) out.navegaciones.push({ paquete, archivo, linea: i + 1, desde: comp, ruta: normalizarRuta(m[2]!), tipo: "enlace" });
+        const enlace = (ruta: string) => out.navegaciones.push({ paquete, archivo, linea: i + 1, desde: comp, ruta, tipo: "enlace" });
+        for (const m of l.matchAll(/(?:^|\s)(:?to|href)\s*=\s*"\s*'?(\/[^"'\s{]*)/g)) enlace(normalizarRuta(m[2]!));
+        // `:to="\`/clubes/\${c.id}\`"`: cada `\${…}` es un parámetro con el nombre de lo último que usa.
+        for (const m of l.matchAll(/(?:^|\s):(?:to|href)\s*=\s*"\s*`(\/[^`"]*)`/g)) enlace(normalizarRuta(m[1]!.replace(/\$\{([^}]*)\}/g, (_, e: string) => `{${e.split(/\W+/).filter(Boolean).pop() ?? "param"}}`)));
+        // `:to="{ name: 'pago-reserva', params }"`: por el nombre de la ruta.
+        for (const m of l.matchAll(/(?:^|\s):(?:to|href)\s*=\s*"\s*\{[^"]*?\bname\s*:\s*'([^']+)'/g)) enlace(POR_NOMBRE + m[1]!);
         for (const m of l.matchAll(/\b(?:\$?router\.(?:push|replace)|navigateTo|goto)\(\s*['"`](\/[^'"`$]*)['"`]/g)) out.navegaciones.push({ paquete, archivo, linea: i + 1, desde: comp, ruta: normalizarRuta(m[1]!), tipo: "navega" });
       });
     }
@@ -1295,7 +1313,7 @@ function extraer(repo: RepoFuente): Extraccion {
       if (ts.isClassDeclaration(n)) nest(n);
       mensajes(n, archivo);
       if (usaKysely && ts.isTaggedTemplateExpression(n)) sqlCrudo(n);
-      if ((usaRouter || usaNavegacionNativa) && /\.[cm]?[jt]sx?$/.test(archivo)) {
+      if ((usaRouter || usaNavegacionNativa) && (/\.[cm]?[jt]sx?$/.test(archivo) || EXT_SFC.test(archivo))) {
         pantallas(n, archivo, paquete);
         navegaciones(n, archivo, paquete);
       }
@@ -1530,6 +1548,12 @@ function extraer(repo: RepoFuente): Extraccion {
   for (const arc of porRuta.values()) arc.invoca?.sort((a, b) => cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo) || a.linea - b.linea || cmp(a.via ?? "", b.via ?? ""));
 
   out.tablas = out.tablas.filter((t) => !deSql.has(t) || !ctesRepo.has(t.modelo.toLowerCase()));
+  // Navegaciones por nombre de ruta: a la ruta con ese nombre en el mismo paquete; sin una, se descartan.
+  out.navegaciones = out.navegaciones.flatMap((v) => {
+    if (!v.ruta.startsWith(POR_NOMBRE)) return [v];
+    const ruta = rutasConNombre.get(`${v.paquete}\u0000${v.ruta.slice(POR_NOMBRE.length)}`);
+    return ruta ? [{ ...v, ruta }] : [];
+  });
   ordenar(out);
   return out;
 }

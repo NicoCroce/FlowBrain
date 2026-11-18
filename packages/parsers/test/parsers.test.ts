@@ -682,13 +682,13 @@ describe("ts-parser: Vue 3 con vue-router y componentes de un solo archivo", () 
       'import { createRouter, createWebHistory } from "vue-router";',
       'import Inicio from "../views/Inicio.vue";',
       "export const router = createRouter({ history: createWebHistory(), routes: [",
-      '  { path: "/", component: Inicio },',
+      '  { path: "/", name: "inicio", component: Inicio },',
       '  { path: "/reservas", component: () => import("../views/ReservasView.vue"), children: [',
-      '    { path: ":id", component: () => import("../views/reservas/index.vue") },',
+      '    { path: ":id", name: "detalle", component: () => import("../views/reservas/index.vue") },',
       "  ] },",
       "] });",
     ]);
-    await w("src/views/Inicio.vue", ["<template>", '  <router-link to="/reservas">Reservar</router-link>', "</template>", '<script setup lang="ts">', "const x = 1;", "</script>"]);
+    await w("src/views/Inicio.vue", ["<template>", '  <router-link to="/reservas">Reservar</router-link>', '  <router-link :to="`/reservas/${r.id}`">Ver</router-link>', "  <router-link :to=\"{ name: 'detalle', params: { id: 1 } }\">Detalle</router-link>", "</template>", '<script setup lang="ts">', "const x = 1;", "</script>"]);
     await w("src/views/ReservasView.vue", [
       "<template>",
       '  <button @click="$router.push(\'/reservas/1\')">Ver</button>',
@@ -696,7 +696,9 @@ describe("ts-parser: Vue 3 con vue-router y componentes de un solo archivo", () 
       '<script setup lang="ts">',
       'import { onMounted } from "vue";',
       'import { reservasApi } from "../api/reservas";',
-      "const cargar = async () => { await reservasApi.listar(); };",
+      'import { useRouter } from "vue-router";',
+      "const router = useRouter();",
+      'const cargar = async () => { await reservasApi.listar(); router.push({ name: "inicio" }); };',
       "onMounted(() => cargar());",
       "</script>",
     ]);
@@ -714,7 +716,11 @@ describe("ts-parser: Vue 3 con vue-router y componentes de un solo archivo", () 
     ]);
     expect(x.navegaciones.map((n) => `${n.archivo}#${n.linea} ${n.desde} ${n.ruta} ${n.tipo}`).sort()).toEqual([
       "src/views/Inicio.vue#2 Inicio /reservas enlace",
+      // Plantilla con parámetro y ruta nombrada, en el template; ruta nombrada desde el script.
+      "src/views/Inicio.vue#3 Inicio /reservas/{id} enlace",
+      "src/views/Inicio.vue#4 Inicio /reservas/{id} enlace",
       "src/views/ReservasView.vue#2 ReservasView /reservas/1 navega",
+      "src/views/ReservasView.vue#9 cargar / navega",
     ]);
     expect(x.llamadas.map((l) => `${l.archivo}#${l.linea} ${l.metodo} ${l.url.texto}`).sort()).toEqual(["src/api/reservas.ts#3 GET ${env:VITE_API_URL}/reservas", "src/api/reservas.ts#4 POST ${env:VITE_API_URL}/reservas"]);
     // El componente llega a la función que llama a la API.
