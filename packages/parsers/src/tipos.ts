@@ -47,6 +47,31 @@ export interface ArchivoCrudo {
   /** Llamadas de sus métodos y funciones a símbolos de otros archivos o clases del repo. */
   invoca?: Invocacion[];
   sinResolver?: LlamadaSinResolver[];
+  /** Componentes de interfaz que el archivo exporta, si es parte de una librería (un sistema de diseño, un kit de UI). */
+  componentes?: ComponenteCrudo[];
+  /** Componentes que el archivo toma de otro paquete (`import { Button } from "@empresa/ui"`) y dónde los usa. */
+  usaPaquetes?: UsoDePaquete[];
+}
+
+export interface ComponenteCrudo {
+  nombre: string;
+  linea: number;
+}
+
+export interface UsoDePaquete {
+  /** Símbolo del archivo que lo usa (como en `invoca`), o `null` si lo usa el archivo suelto. */
+  desde: string | null;
+  /** Nombre del paquete (`@empresa/ui`), sin la subruta. */
+  paquete: string;
+  /** Nombre con el que el paquete lo exporta. */
+  simbolo: string;
+  linea: number;
+}
+
+/** Nombre del paquete de un import: `@empresa/ui/boton` → `@empresa/ui`, `lodash/get` → `lodash`. */
+export function nombreDePaquete(modulo: string): string {
+  const s = modulo.split("/");
+  return modulo.startsWith("@") ? s.slice(0, 2).join("/") : s[0]!;
 }
 
 export interface EndpointCrudo {

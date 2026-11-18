@@ -12,6 +12,7 @@ import {
   pistas,
   resumenConexiones,
   riesgo,
+  usosEntreCerebros,
   type CerebroLiviano,
   type Contexto,
   type Cruce,
@@ -83,6 +84,52 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
   };
 
   /**
+   * Lo que une al cerebro `nombre` con otros por paquetes: los componentes suyos que dibujan otros cerebros (de los
+   * nodos en `ids`) y los componentes de otros cerebros que dibujan sus pantallas (las de `ids`). Un import nombra el
+   * paquete sin dudas, así que no depende de la comunicación entre cerebros.
+   */
+  const porPaquetes = async (r: Registro, nombre: string, ids: (id: string) => boolean) => {
+    const { livianos } = await todoDe(r);
+    const u = usosEntreCerebros(livianos);
+    const out: Record<string, unknown> = {};
+    const entran = u.componentes.filter((x) => x.hacia.cerebro === nombre && ids(x.hacia.componente));
+    if (entran.length) {
+      const por = new Map<string, { pantallas: Set<string>; servicios: Set<string>; componentes: Set<string>; funcionalidades: Map<string, string> }>();
+      for (const x of entran) {
+        const b = por.get(x.desde.cerebro) ?? por.set(x.desde.cerebro, { pantallas: new Set(), servicios: new Set(), componentes: new Set(), funcionalidades: new Map() }).get(x.desde.cerebro)!;
+        b.componentes.add(x.hacia.componente);
+        if (!x.desde.pantallas.length) b.servicios.add(x.desde.svc);
+        const fd = livianos.find((l) => l.nombre === x.desde.cerebro)?.funcionalidadesDe ?? {};
+        for (const p of x.desde.pantallas) {
+          b.pantallas.add(p);
+          for (const f of fd[p] ?? []) b.funcionalidades.set(f.id, f.nombre);
+        }
+      }
+      out["usadoEnOtrosCerebros"] = [...por.entries()].sort(([a], [b]) => cmp(a, b)).map(([cerebro, b]) => ({
+        cerebro,
+        componentes: [...b.componentes].sort(cmp).slice(0, 20),
+        funcionalidades: [...b.funcionalidades.entries()].sort(([a], [b2]) => cmp(a, b2)).slice(0, 30).map(([id, n]) => ({ id, nombre: n })),
+        pantallas: { total: b.pantallas.size, primeras: [...b.pantallas].sort(cmp).slice(0, 15) },
+        ...(b.servicios.size ? { servicios: [...b.servicios].sort(cmp) } : {}),
+      }));
+    }
+    const dependen = u.dependencias.filter((x) => x.hacia.cerebro === nombre && ids(x.hacia.nodo));
+    if (dependen.length) out["dependenDesdeOtrosCerebros"] = dependen.slice(0, 20).map((x) => ({ cerebro: x.desde.cerebro, desde: x.desde.svc, paquete: x.hacia.paquete, ev: x.desde.evidencia }));
+    const salen = u.componentes.filter((x) => x.desde.cerebro === nombre && x.desde.pantallas.some(ids));
+    if (salen.length) {
+      const por = new Map<string, { cerebro: string; componente: string; ev: string; pantallas: Set<string> }>();
+      for (const x of salen) {
+        const k = `${x.hacia.cerebro}/${x.hacia.componente}`;
+        const v = por.get(k) ?? por.set(k, { cerebro: x.hacia.cerebro, componente: x.hacia.componente, ev: x.desde.evidencia, pantallas: new Set() }).get(k)!;
+        for (const p of x.desde.pantallas) if (ids(p)) v.pantallas.add(p);
+      }
+      const lista = [...por.values()].sort((a, b) => cmp(a.cerebro + a.componente, b.cerebro + b.componente));
+      out["usaDeOtrosCerebros"] = { total: lista.length, componentes: lista.slice(0, 40).map((v) => ({ cerebro: v.cerebro, componente: v.componente, ev: v.ev, pantallas: [...v.pantallas].sort(cmp).slice(0, 3) })) };
+    }
+    return out;
+  };
+
+  /**
    * El impacto de unos endpoints de `cerebro`, siguiendo a quien los llama de cerebro en cerebro. Una llamada desde una
    * pantalla deja afectadas la pantalla y sus funcionalidades; una llamada desde otro back (sin pantalla) deja afectado
    * lo que, en ese cerebro, llega a la línea que llama (sus endpoints, pantallas y funcionalidades), y desde esos
@@ -147,6 +194,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       "En `impacto`, `enOtrosCerebros` sigue el cambio a los cerebros que llaman a los endpoints alcanzados: sus funcionalidades y pantallas también quedan afectadas. `servicios` son llamadas que no salen de una pantalla (un job, otro back); `alcanceDeLosServicios` es lo que, en ese cerebro, llega a esas llamadas, y desde ahí el impacto sigue al salto siguiente (`salto` 2, 3…).",
       "`llamaAOtrosCerebros` son los endpoints de otro cerebro que llaman las pantallas de la respuesta: la otra mitad de la pantalla o de la funcionalidad; para ver qué ejecutan, `recorrido` con ese endpoint y `cerebro`.",
       "`conexiones` resume qué servicios de un cerebro llaman a servicios de otro.",
+      "`usadoEnOtrosCerebros` son componentes de este cerebro (un sistema de diseño, una librería) que dibujan pantallas de otro cerebro: un cambio en ellos las afecta, y con ellas a sus funcionalidades. `usaDeOtrosCerebros` son los componentes de otro cerebro que dibujan las pantallas de la respuesta. `dependenDesdeOtrosCerebros`: repos de otro cerebro que declaran en su manifiesto depender de un paquete de este. Salen de los imports y los manifiestos, sin depender de la comunicación entre cerebros.",
     ].join("\n"),
     async resolver(nombre?: string): Promise<CerebroResuelto> {
       const { r, c } = await elegir(nombre);
@@ -156,9 +204,17 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
         nombre: c.nombre,
         sinRevisar: !c.curado,
         async anotar(herramienta, args, resultado) {
+          const texto = JSON.stringify(resultado);
+          // Por paquetes (un sistema de diseño en otro cerebro): no depende de la comunicación.
+          const pieza0 = (resultado as { pieza?: unknown } | null)?.pieza;
+          const enRespuesta =
+            herramienta === "impacto" && typeof pieza0 === "string"
+              ? (id: string) => id === pieza0 || id.startsWith(`${pieza0}:componente:`) || texto.includes(JSON.stringify(id))
+              : (id: string) => texto.includes(JSON.stringify(id));
+          const paquetes = r.cerebros.length > 1 ? await porPaquetes(r, c.nombre, enRespuesta) : {};
           const { propio, vecinos } = await vecindario(r, c.nombre, c.raiz);
-          if (!propio || !vecinos.length) return {};
-          const extra: Record<string, unknown> = {};
+          if (!propio || !vecinos.length) return paquetes;
+          const extra: Record<string, unknown> = { ...paquetes };
           const ps = pistas(args, vecinos);
           if (ps.length) extra["otrosCerebros"] = ps;
           // El impacto sigue en los cerebros que llaman a los endpoints alcanzados: sus pantallas y funcionalidades.
@@ -171,7 +227,6 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
             return extra;
           }
           // Llamadas desde otros cerebros a endpoints que aparecen en esta respuesta.
-          const texto = JSON.stringify(resultado);
           const todos = (await crucesDe(r)).cruces;
           const entrantes: Cruce[] = todos.filter((x) => x.hacia.cerebro === c.nombre && texto.includes(JSON.stringify(x.hacia.endpoint)));
           // Y la otra mitad: lo que las pantallas de la respuesta (una pantalla, las de una funcionalidad) llaman en otro cerebro.
@@ -205,10 +260,24 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       const ambiguas = crucesDelRegistro([propio, ...vecinos], (a, b) => (a === c.nombre || b === c.nombre) && r.comunicados(a, b), r.conexiones).ambiguas;
       const resumen = resumenConexiones(todos, r.conexiones.filter(mios).filter((x) => r.comunicados(x.desde.cerebro, x.hacia.cerebro)));
       const apagados = r.cerebros.filter((x) => x.nombre !== c.nombre && !r.comunicados(c.nombre, x.nombre)).map((x) => x.nombre);
+      // Por paquetes: componentes que una pantalla toma de una librería de otro cerebro y dependencias declaradas.
+      const u = usosEntreCerebros((await todoDe(r)).livianos);
+      const pares = new Map<string, { desde: string; hacia: string; paquetes: Set<string>; componentes: Set<string>; pantallas: Set<string>; ejemplo: string }>();
+      const par = (desde: string, hacia: string, ev: string) => pares.get(`${desde}\u0000${hacia}`) ?? pares.set(`${desde}\u0000${hacia}`, { desde, hacia, paquetes: new Set(), componentes: new Set(), pantallas: new Set(), ejemplo: ev }).get(`${desde}\u0000${hacia}`)!;
+      for (const x of u.dependencias) if (mios(x)) par(`${x.desde.cerebro}/${x.desde.svc}`, `${x.hacia.cerebro}/${x.hacia.nodo}`, x.desde.evidencia).paquetes.add(x.hacia.paquete);
+      for (const x of u.componentes) {
+        if (!mios(x)) continue;
+        const dueño = x.hacia.componente.slice(0, x.hacia.componente.indexOf(":componente:"));
+        const v = par(`${x.desde.cerebro}/${x.desde.svc}`, `${x.hacia.cerebro}/${dueño}`, x.desde.evidencia);
+        v.componentes.add(x.hacia.componente);
+        x.desde.pantallas.forEach((p) => v.pantallas.add(p));
+      }
+      const porPaquete = [...pares.values()].sort((a, b) => cmp(a.desde + a.hacia, b.desde + b.hacia)).map((v) => ({ desde: v.desde, hacia: v.hacia, paquetes: [...v.paquetes].sort(cmp), componentes: v.componentes.size, pantallas: v.pantallas.size, ejemplo: v.ejemplo }));
       return {
         cerebro: c.nombre,
         comunicadoCon: vecinos.map((v) => v.nombre),
         conexiones: resumen,
+        ...(porPaquete.length ? { porPaquetes: porPaquete } : {}),
         avisos: [
           ...resumen.filter((x) => x.declarada && x.llamadas === 0).map((x) => `conexión declarada sin llamadas que la respalden: ${x.desde} → ${x.hacia}`),
           ...resumen.filter((x) => !x.declarada).map((x) => `llamadas detectadas sin conexión declarada: ${x.desde} → ${x.hacia} (${x.llamadas})`),

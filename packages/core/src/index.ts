@@ -15,6 +15,7 @@ export * from "./engine/codigo.js";
 export * from "./git.js";
 export * from "./engine/evaluar.js";
 export * from "./pantallas.js";
+export * from "./componentes.js";
 export * from "./registro.js";
 export * from "./engine/cerebros.js";
 export * from "./llamadas.js";

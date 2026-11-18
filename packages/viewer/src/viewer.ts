@@ -12,7 +12,7 @@ import { PRODUCTO_JS } from "./viewer-producto.js";
  */
 
 /** Tipos visibles al abrir el mapa 3D: los archivos son miles y se prenden a mano. */
-const TIPOS_INICIALES = ["feat", "pantalla", "endpoint", "tabla", "svc", "repo", "lib", "ext", "queue", "db", "team", "decision"];
+const TIPOS_INICIALES = ["feat", "pantalla", "componente", "endpoint", "tabla", "svc", "repo", "lib", "ext", "queue", "db", "team", "decision"];
 
 const seguroEnScript = (s: string) => s.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
 
@@ -74,7 +74,7 @@ export function paginaDelVisor(datos: unknown): string {
   --sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; --display: "Space Grotesk", Inter, system-ui, -apple-system, sans-serif;
   --fondo: #0A0C11; --panel: #0D1016; --tarjeta: #10141C; --hover: #171B25; --text: #E6E8EE; --claro: #D5DAE4; --medio: #A3ABBD; --suave: #8A93A6;
   --borde: #1F2433; --borde2: #2A3142; --linea: #3A4256; --acento: #9DB4FF; --primario: #4F6BFF;
-  --feat: #F5A524; --pantalla: #E879F9; --endpoint: #7DD3FC; --tabla: #4ADE80; --svc: #5B7CFF; --repo: #B794F6; --lib: #FDE68A; --ext: #F472B6; --queue: #FB7185;
+  --feat: #F5A524; --pantalla: #E879F9; --componente: #A3E635; --endpoint: #7DD3FC; --tabla: #4ADE80; --svc: #5B7CFF; --repo: #B794F6; --lib: #FDE68A; --ext: #F472B6; --queue: #FB7185;
   --db: #14B8A6; --team: #FCA5A5; --decision: #C4B5FD; --contrato: #64748B; --archivo: #94A3B8; --dudoso: #F87171;
 }
 * { box-sizing: border-box; }

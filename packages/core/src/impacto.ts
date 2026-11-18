@@ -13,7 +13,7 @@ import type { Graph } from "./schema.js";
 export type Dependencia = [string, string, string, number];
 
 /** Verbos del grafo que expresan dependencia, en el sentido de la arista. */
-const VERBOS_DEPENDENCIA = new Set(["llama_a", "publica_en", "consume_de", "lee_de", "escribe_en", "depende_de"]);
+const VERBOS_DEPENDENCIA = new Set(["llama_a", "publica_en", "consume_de", "lee_de", "escribe_en", "depende_de", "usa"]);
 
 export function dependenciasDelGrafo(graph: Graph, fichas: Ficha[]): Dependencia[] {
   const tipo = new Map(graph.nodes.map((n) => [n.id, n.tipo]));
@@ -39,6 +39,11 @@ export function dependenciasDelGrafo(graph: Graph, fichas: Ficha[]): Dependencia
     // Una cola depende de quien publica en ella: si cambia el mensaje, se ven afectados los que consumen.
     if (e.verbo === "publica_en") sumar(e.hasta, e.desde, "alimenta");
   }
+  // Una funcionalidad usa los componentes que dibujan sus pantallas: cambiar un componente del sistema de diseño
+  // llega a ellas (la pantalla no arrastra a su funcionalidad por propagación, así que se suma directo).
+  const funcionalidadesDe = new Map<string, string[]>();
+  for (const e of graph.edges) if (e.verbo === "implementa" && tipo.get(e.desde) === "pantalla" && tipo.get(e.hasta) === "feat") funcionalidadesDe.set(e.desde, [...(funcionalidadesDe.get(e.desde) ?? []), e.hasta]);
+  for (const e of graph.edges) if (e.verbo === "usa" && e.estado !== "deprecado" && tipo.get(e.hasta) === "componente") for (const f of funcionalidadesDe.get(e.desde) ?? []) sumar(f, e.hasta, "usa");
   for (const f of fichas) {
     for (const u of f.usaFuncionalidades) {
       const dueña = fichas.find((x) => x.id === u);

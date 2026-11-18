@@ -99,6 +99,26 @@ function alcance(repo: string, inicio: RefSimbolo, estructura: Map<string, Estru
   return { simbolos, archivos, importados };
 }
 
+/**
+ * Lo que alcanza cada pantalla desde sus componentes (`repo:archivo#Simbolo`), siguiendo lo que llaman y dibujan:
+ * con esto se sabe qué pantallas llegan a una línea del repo (un componente importado de otro paquete, por ejemplo).
+ */
+export function alcancePorPantalla(repo: string, pantallas: Array<{ id: string; atributos: { componentes: string[] } }>, estructura: Map<string, EstructuraArchivo>) {
+  const out = new Map<string, { simbolos: Set<string>; archivos: Set<string> }>();
+  for (const p of pantallas) {
+    const simbolos = new Set<string>(), archivos = new Set<string>();
+    for (const c of p.atributos.componentes) {
+      const i = c.lastIndexOf("#"), j = c.indexOf(":");
+      if (i < 0 || j < 0 || c.slice(0, j) !== repo) continue;
+      const x = alcance(repo, { archivo: c.slice(j + 1, i), simbolo: c.slice(i + 1) }, estructura);
+      x.simbolos.forEach((s) => simbolos.add(s));
+      x.archivos.forEach((a) => archivos.add(a));
+    }
+    out.set(p.id, { simbolos, archivos });
+  }
+  return out;
+}
+
 export function grafoDePantallas(
   repo: string,
   pantallas: PantallaCruda[],

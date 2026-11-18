@@ -229,6 +229,28 @@
       "tabla": "tabla-pagos"
     }
   ],
+  "paquetes": [
+    {
+      "carpeta": "",
+      "manifiesto": "package.json",
+      "nombre": "tienda"
+    },
+    {
+      "carpeta": "apps/bff",
+      "manifiesto": "apps/bff/package.json",
+      "nombre": "@tienda/bff"
+    },
+    {
+      "carpeta": "apps/payments",
+      "manifiesto": "apps/payments/package.json",
+      "nombre": "@tienda/payments"
+    },
+    {
+      "carpeta": "apps/web",
+      "manifiesto": "apps/web/package.json",
+      "nombre": "@tienda/web"
+    }
+  ],
   "raiz": "../repos/tienda",
   "repo": "repo-tienda"
 }

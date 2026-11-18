@@ -19,8 +19,8 @@ export const MAPA_JS =
   var nombre = function (id) { return porId[id] ? porId[id].n : id; };
   var tipo = function (id) { return porId[id] ? porId[id].t : ""; };
   var plural = function (n, uno, varios) { return n + " " + (n === 1 ? uno : varios); };
-  var TIPO = { feat: "funcionalidad", pantalla: "pantalla", tabla: "tabla", endpoint: "endpoint", svc: "servicio", ext: "servicio externo", db: "base de datos", queue: "cola", lib: "librería", repo: "repo" };
-  var TIPOS = { feat: "funcionalidades", pantalla: "pantallas", tabla: "tablas", endpoint: "endpoints", svc: "servicios", ext: "servicios externos", db: "bases de datos", queue: "colas", lib: "librerías", repo: "repos" };
+  var TIPO = { feat: "funcionalidad", pantalla: "pantalla", componente: "componente", tabla: "tabla", endpoint: "endpoint", svc: "servicio", ext: "servicio externo", db: "base de datos", queue: "cola", lib: "librería", repo: "repo" };
+  var TIPOS = { feat: "funcionalidades", pantalla: "pantallas", componente: "componentes", tabla: "tablas", endpoint: "endpoints", svc: "servicios", ext: "servicios externos", db: "bases de datos", queue: "colas", lib: "librerías", repo: "repos" };
   var VERBO = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" };
   var puntoT = function (t) { return '<span class="punto" style="background:' + color(t) + '"></span>'; };
   var punto = function (id) { return puntoT(tipo(id)); };
@@ -77,7 +77,7 @@ export const MAPA_JS =
   function gruposHtml(todos, porque, enlaceExtra) {
     var porTipo = {};
     todos.forEach(function (x) { var t = tipo(x.id); (porTipo[t] = porTipo[t] || []).push(x); });
-    var orden = ["feat", "pantalla", "svc", "endpoint", "tabla", "ext", "queue", "db", "lib", "repo"];
+    var orden = ["feat", "pantalla", "componente", "svc", "endpoint", "tabla", "ext", "queue", "db", "lib", "repo"];
     var tipos = Object.keys(porTipo).sort(function (a, b) { return (orden.indexOf(a) + 1 || 99) - (orden.indexOf(b) + 1 || 99); });
     var titulo = function (t, k) { return esc((k === 1 ? TIPO[t] : TIPOS[t]) || t); };
     var filtro = filtroImpacto !== "todos" && porTipo[filtroImpacto] ? filtroImpacto : "todos";

@@ -1,4 +1,4 @@
-import type { Cruce, Ficha, Graph, ResumenConexion, TrazasCruzadas } from "@flowbrain/core";
+import type { Cruce, DependenciaCruzada, Ficha, Graph, ResumenConexion, TrazasCruzadas, UsoCruzado } from "@flowbrain/core";
 import { datosDelVisor, paginaDelVisor, type DatosVisor } from "./viewer.js";
 
 /**
@@ -26,7 +26,13 @@ function conPrefijo<T>(valor: T, ids: Set<string>, pre: (id: string) => string):
   return valor;
 }
 
-export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas: TrazasCruzadas = { pantallas: {}, backs: {} }) {
+/** Lo que une a los cerebros por paquetes: componentes que dibuja otro cerebro y dependencias declaradas. */
+export interface PorPaquetes {
+  componentes: UsoCruzado[];
+  dependencias: DependenciaCruzada[];
+}
+
+export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas: TrazasCruzadas = { pantallas: {}, backs: {} }, paquetes: PorPaquetes = { componentes: [], dependencias: [] }) {
   const partes = cerebros.map((c, i) => {
     const ids = new Set(c.graph.nodes.map((n) => n.id));
     const d = conPrefijo(datosDelVisor(c.graph, c.funcionalidades), ids, (id) => `${c.nombre}/${id}`) as DatosVisor;
@@ -64,7 +70,24 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
       }
     }
   }
+  // Por paquetes: cada pantalla (o el servicio, si no sale de una) usa el componente del otro cerebro, y su
+  // funcionalidad también, para que cambiar el componente llegue hasta ella en el impacto.
+  const usan = new Map<string, { a: string; b: string; ev: string; v: string }>();
+  for (const u of paquetes.componentes) {
+    const b = `${u.hacia.cerebro}/${u.hacia.componente}`;
+    for (const o of u.desde.pantallas.length ? u.desde.pantallas : [u.desde.svc]) {
+      const a = `${u.desde.cerebro}/${o}`;
+      if (!usan.has(`${a}\u0000${b}`)) usan.set(`${a}\u0000${b}`, { a, b, ev: u.desde.evidencia, v: "usa" });
+      for (const f of implementadaPor.get(a) ?? []) if (!usan.has(`${f}\u0000${b}`)) usan.set(`${f}\u0000${b}`, { a: f, b, ev: u.desde.evidencia, v: "usa" });
+    }
+  }
+  for (const d of paquetes.dependencias) {
+    const a = `${d.desde.cerebro}/${d.desde.svc}`, b = `${d.hacia.cerebro}/${d.hacia.nodo}`;
+    if (!usan.has(`${a}\u0000${b}`)) usan.set(`${a}\u0000${b}`, { a, b, ev: d.desde.evidencia, v: "depende_de" });
+  }
+  const porPaquete = [...usan.values()].sort((x, y) => (x.a + x.b < y.a + y.b ? -1 : 1));
   const depsCruzadas: Array<[string, string, string, number]> = [
+    ...porPaquete.map((x) => [x.a, x.b, x.v, 1] as [string, string, string, number]),
     ...desdePantallas.map((x) => [x.a, x.b, "llama_a", x.veces] as [string, string, string, number]),
     ...[...usaEntre.values()].sort((x, y) => (x.a + x.b < y.a + y.b ? -1 : 1)).map((u) => [u.a, u.b, "usa", u.endpoints.size] as [string, string, string, number]),
   ];
@@ -77,19 +100,24 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
     funcionalidades: partes.flatMap((p) => p.funcionalidades),
     pantallas: partes.flatMap((p) => p.pantallas),
     mapa3d: {
-      aristas: [...partes.flatMap((p) => p.mapa3d.aristas), ...cruzan.map((x) => [x.a, x.b, "llama_a", x.veces] as [string, string, string, number])],
+      aristas: [
+        ...partes.flatMap((p) => p.mapa3d.aristas),
+        ...cruzan.map((x) => [x.a, x.b, "llama_a", x.veces] as [string, string, string, number]),
+        ...porPaquete.filter((x) => !x.a.includes("/feat-")).map((x) => [x.a, x.b, x.v, 1] as [string, string, string, number]),
+      ],
       uso: Object.assign({}, ...partes.map((p) => p.mapa3d.uso)) as Record<string, number>,
       padres: { feat: Object.assign({}, ...partes.map((p) => p.mapa3d.padres.feat)) as Record<string, string>, svc: Object.assign({}, ...partes.map((p) => p.mapa3d.padres.svc)) as Record<string, string> },
     },
     edges: [
       ...partes.flatMap((p) => p.edges),
       ...cruzan.map((x) => ({ c: 0.9, d: null, e: "vigente", ev: x.ev, h: `${x.b.slice(0, x.b.indexOf("/"))}/${svcDe(x.b.slice(x.b.indexOf("/") + 1))}`, o: "parser", p: x.b, s: x.a, v: "llama_a" })),
+      ...porPaquete.filter((x) => !x.a.includes("/feat-")).map((x) => ({ c: 0.9, d: null, e: "vigente", ev: x.ev, h: x.b, o: "parser", p: null, s: x.a, v: x.v })),
     ],
     nodes: partes.flatMap((p) => p.nodes),
     tiposIniciales: partes[0]?.tiposIniciales ?? [],
   };
 }
 
-export function renderViewerCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas?: TrazasCruzadas): string {
-  return paginaDelVisor(datosDeCerebros(cerebros, cruces, conexiones, trazas));
+export function renderViewerCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas?: TrazasCruzadas, paquetes?: PorPaquetes): string {
+  return paginaDelVisor(datosDeCerebros(cerebros, cruces, conexiones, trazas, paquetes));
 }

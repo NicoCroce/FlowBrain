@@ -26,6 +26,8 @@ import { paqueteDe, type Extraccion, type RepoFuente } from "./tipos.js";
  *   "navegaciones": [{ "archivo": "…", "linea": 14, "desde": "PedidosPage.irAlDetalle", "ruta": "/pedidos/{id}", "tipo": "navega" }],
  *   "eventos":      [{ "archivo": "…", "linea": 50, "nombre": "pago.confirmado", "direccion": "publica" }],
  *   "importa":      [{ "archivo": "lib/pedidos_page.dart", "importa": ["lib/api/pedidos.dart"] }],
+ *   "componentes":  [{ "archivo": "lib/src/boton.dart", "nombre": "BotonPrimario", "linea": 12 }],
+ *   "usos":         [{ "archivo": "lib/pedidos_page.dart", "linea": 40, "paquete": "empresa_ui", "simbolo": "BotonPrimario", "desde": "PedidosPage.build" }],
  *   "accesos":      [{ "archivo": "src/repo.go", "linea": 33, "tabla": "pedidos", "verbo": "escribe", "columnas": ["estado", "total"] }],
  *   "esquema":      [{ "tabla": "pedidos", "archivo": "src/models.go", "linea": 5, "columnas": [{ "nombre": "id", "tipo": "int", "pk": true }, { "nombre": "nota", "tipo": "text", "nulo": true }] }],
  *   "quitar":       [{ "tipo": "llamada", "archivo": "src/api.ts", "linea": 30 }, { "tipo": "pantalla", "ruta": "/{path}/config" }, { "tipo": "endpoint", "metodo": "GET", "ruta": "/debug" }]
@@ -38,6 +40,10 @@ import { paqueteDe, type Extraccion, type RepoFuente } from "./tipos.js";
  * de nombres propia), y `quitar` borra lo que el parser inventó (una llamada, una pantalla, una navegación, un endpoint, un
  * acceso a una tabla o un evento).
  *
+ * `componentes` son los componentes de interfaz que exporta una librería (un sistema de diseño) y `usos`, los que un
+ * archivo toma de otro paquete (`paquete` es el nombre con el que se publica, el de su manifiesto); con eso las pantallas
+ * se unen a los componentes que dibujan, también entre repos y entre cerebros. `desde` es el símbolo que lo usa.
+ *
  * `handler` en un endpoint dice qué método lo atiende cuando la ruta se declara en otro lugar (`r.GET("/x", h.Crear)`):
  * el recorrido y la traza arrancan ahí. `desde` en una navegación es el símbolo que navega (`Clase.metodo` o función);
  * también se acepta la ruta de la pantalla desde la que se navega. `host` en una llamada la manda a ese sistema
@@ -49,7 +55,7 @@ export const RUTA_INFORME_EXTRACTORES = (repo: string) => `_build/extractors/${r
 
 const INTERPRETES: Record<string, string> = { ".mjs": "node", ".js": "node", ".cjs": "node", ".py": "python3", ".sh": "sh", ".rb": "ruby", ".php": "php" };
 const TIEMPO_MS = 180_000;
-const TIPOS = ["simbolos", "invocaciones", "endpoints", "llamadas", "pantallas", "navegaciones", "accesos", "esquema", "eventos", "importa", "quitar"] as const;
+const TIPOS = ["simbolos", "invocaciones", "endpoints", "llamadas", "pantallas", "navegaciones", "accesos", "esquema", "eventos", "importa", "componentes", "usos", "quitar"] as const;
 type Tipo = (typeof TIPOS)[number];
 
 export interface InformeExtractor {
@@ -289,6 +295,39 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
       const a = archivoDe(d["archivo"] as string);
       a.importa = [...new Set([...(a.importa ?? []), ...destinos])].sort(cmp);
       inf.aceptados.importa++;
+    }
+    // Lo citado tiene que estar escrito en esa línea: el nombre del componente o del símbolo importado.
+    const nombraEn = (archivo: string, linea: number, nombre: string) => (readFileSync(join(repo.raiz, archivo), "utf8").split("\n")[linea - 1] ?? "").includes(nombre);
+    for (const d of lista(salida["componentes"])) {
+      const m = cita(d["archivo"], d["linea"]) ?? (!esTexto(d["nombre"]) ? "falta `nombre`" : !nombraEn(d["archivo"] as string, d["linea"] as number, d["nombre"] as string) ? "el nombre no aparece en esa línea" : null);
+      if (m) {
+        rechazar("componentes", d, m);
+        continue;
+      }
+      const a = archivoDe(d["archivo"] as string);
+      if (!(a.componentes ??= []).some((c) => c.nombre === d["nombre"])) a.componentes.push({ nombre: d["nombre"] as string, linea: d["linea"] as number });
+      a.componentes.sort((p, q) => p.linea - q.linea || cmp(p.nombre, q.nombre));
+      inf.aceptados.componentes++;
+    }
+    for (const d of lista(salida["usos"])) {
+      const desde = d["desde"] === undefined || d["desde"] === null ? null : d["desde"];
+      const m =
+        cita(d["archivo"], d["linea"]) ??
+        (!esTexto(d["paquete"]) || !esTexto(d["simbolo"])
+          ? "faltan `paquete` o `simbolo`"
+          : !nombraEn(d["archivo"] as string, d["linea"] as number, d["simbolo"] as string)
+            ? "el símbolo no aparece en esa línea"
+            : desde !== null && !simbolo(d["archivo"], desde)
+              ? "no existe el símbolo `desde` (declaralo en `simbolos`)"
+              : null);
+      if (m) {
+        rechazar("usos", d, m);
+        continue;
+      }
+      const a = archivoDe(d["archivo"] as string);
+      const u = { desde: desde as string | null, paquete: d["paquete"] as string, simbolo: d["simbolo"] as string, linea: d["linea"] as number };
+      if (!(a.usaPaquetes ??= []).some((y) => y.desde === u.desde && y.paquete === u.paquete && y.simbolo === u.simbolo)) a.usaPaquetes.push(u);
+      inf.aceptados.usos++;
     }
     for (const d of lista(salida["quitar"])) {
       const tipo = d["tipo"];

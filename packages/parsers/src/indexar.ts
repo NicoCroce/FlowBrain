@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
+import { type PaqueteDelRepo, aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
 import { correrExtractores, RUTA_INFORME_EXTRACTORES, type InformeExtractor } from "./extractores.js";
 import { leerRepo, podarPaquetes } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
@@ -8,7 +9,7 @@ import { tsParser } from "./ts-parser.js";
 import { phpParser } from "./php-parser.js";
 import { esquemaParser } from "./esquema-parser.js";
 import { infraParser } from "./infra-parser.js";
-import type { Extraccion, Forma, LlamadaCruda, Parser } from "./tipos.js";
+import type { Extraccion, Forma, LlamadaCruda, Parser, RepoFuente } from "./tipos.js";
 import { paqueteDe } from "./tipos.js";
 
 /** Parsers en orden de prioridad: los posteriores pisan formas y, si son autoritativos, endpoints. */
@@ -89,6 +90,8 @@ export interface ResultadoIndex {
     esquema?: EsquemaTabla[];
     /** Infraestructura, atribuida al servicio del paquete donde está el archivo (o al repo). */
     infra?: InfraDeNodo[];
+    /** Nombre con el que se publica cada paquete del repo (su manifiesto): con él lo importan otros repos. */
+    paquetes?: PaqueteDelRepo[];
     repo: string; commit?: string; /** Ruta del clon relativa al brain, para comparar su HEAD actual con `commit`. */ raiz: string };
 }
 
@@ -486,6 +489,7 @@ export async function indexar(
 
   // Lo que el código no dice con tipos y quedó resuelto en `calls.yaml`: se suma acá para que sobreviva a reindexar.
   if (declaradas) aplicarLlamadasDeclaradas(x.archivos, repoId, declaradas.llamadas);
+  const publicados = paquetesPublicados(repo);
 
   return {
     extractores,
@@ -503,11 +507,81 @@ export async function indexar(
       ...(x.navegaciones.length ? { navegaciones: x.navegaciones } : {}),
       ...(esquema.length ? { esquema } : {}),
       ...(infra.length ? { infra } : {}),
+      ...(publicados.length ? { paquetes: publicados } : {}),
       raiz: ubicacion, repo: repoId, ...(commit ? { commit } : {}) },
   };
 }
 
 export { commitDe };
+
+/**
+ * Cada paquete del repo según su manifiesto: con qué nombre se publica (`@empresa/ui`, `github.com/empresa/pagos`,
+ * `empresa_ui`), que es el nombre con el que otro repo lo importa, y de qué paquetes declara depender. Con eso se une
+ * un repo con otro del proyecto que lo usa, en cualquier lenguaje: un front con su sistema de diseño, un back con su
+ * librería compartida.
+ */
+export function paquetesPublicados(repo: RepoFuente): PaqueteDelRepo[] {
+  const lineaDe = (t: string, i: number) => t.slice(0, i).split("\n").length;
+  const json = (t: string) => {
+    try {
+      return JSON.parse(t) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  };
+  // Las claves de un bloque JSON (`"dependencies": { … }`), con su línea.
+  const clavesDeBloque = (t: string, bloques: string[]) => {
+    const out: Array<{ nombre: string; linea: number }> = [];
+    for (const b of bloques) {
+      const m = new RegExp(`"${b}"\\s*:\\s*\\{`).exec(t);
+      if (!m) continue;
+      const fin = t.indexOf("}", m.index);
+      const cuerpo = t.slice(m.index + m[0].length, fin < 0 ? undefined : fin);
+      for (const k of cuerpo.matchAll(/"([^"]+)"\s*:/g)) out.push({ nombre: k[1]!, linea: lineaDe(t, m.index + m[0].length + k.index!) });
+    }
+    return out;
+  };
+  const MANIFIESTOS: Array<[string, (t: string) => { nombre: string | null; dependeDe: Array<{ nombre: string; linea: number }> }]> = [
+    ["package.json", (t) => ({ nombre: typeof json(t)?.["name"] === "string" ? (json(t)!["name"] as string) : null, dependeDe: clavesDeBloque(t, ["dependencies", "devDependencies", "peerDependencies"]) })],
+    ["composer.json", (t) => ({ nombre: typeof json(t)?.["name"] === "string" ? (json(t)!["name"] as string) : null, dependeDe: clavesDeBloque(t, ["require", "require-dev"]) })],
+    [
+      "pubspec.yaml",
+      (t) => {
+        const dependeDe: Array<{ nombre: string; linea: number }> = [];
+        for (const b of t.matchAll(/^(?:dev_)?dependencies:\s*\n((?:[ \t]+.*\n?|\s*\n)*)/gm)) {
+          for (const k of b[1]!.matchAll(/^[ ]{2}([a-z0-9_]+):/gm)) dependeDe.push({ nombre: k[1]!, linea: lineaDe(t, b.index! + b[0].indexOf(b[1]!) + k.index!) });
+        }
+        return { nombre: /^name:\s*([\w-]+)\s*$/m.exec(t)?.[1] ?? null, dependeDe };
+      },
+    ],
+    [
+      "go.mod",
+      (t) => ({
+        nombre: /^module\s+(\S+)/m.exec(t)?.[1] ?? null,
+        dependeDe: [...t.matchAll(/^(?:require\s+|\t)([\w.-]+\.[\w./-]+)\s+v\S+/gm)].map((m) => ({ nombre: m[1]!, linea: lineaDe(t, m.index!) })),
+      }),
+    ],
+    ["pyproject.toml", (t) => ({ nombre: /^\[(?:project|tool\.poetry)\][^[]*?^name\s*=\s*"([^"]+)"/ms.exec(t)?.[1] ?? null, dependeDe: [] })],
+    ["Cargo.toml", (t) => ({ nombre: /^\[package\][^[]*?^name\s*=\s*"([^"]+)"/ms.exec(t)?.[1] ?? null, dependeDe: [] })],
+  ];
+  const out: PaqueteDelRepo[] = [];
+  for (const carpeta of [...new Set(["", ...repo.paquetes])].sort(cmp)) {
+    for (const [archivo, leer] of MANIFIESTOS) {
+      const ruta = carpeta ? `${carpeta}/${archivo}` : archivo;
+      if (!repo.archivos.includes(ruta)) continue;
+      let texto = "";
+      try {
+        texto = readFileSync(join(repo.raiz, ruta), "utf8");
+      } catch {
+        continue;
+      }
+      const { nombre, dependeDe } = leer(texto);
+      if (!nombre && !dependeDe.length) continue;
+      out.push({ carpeta, manifiesto: ruta, ...(nombre ? { nombre } : {}), ...(dependeDe.length ? { dependeDe } : {}) });
+    }
+  }
+  return out;
+}
 
 export const rutasIndex = (repo: string) => ({
   archivos: `_build/files/${repo}.json`,

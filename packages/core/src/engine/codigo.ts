@@ -474,6 +474,11 @@ export function pantalla(ctx: Contexto, p: PantallaParams) {
     ],
     vaA: a.sale.map(salida),
     llamaAlBack: llama,
+    // Componentes de una librería del cerebro (un sistema de diseño) que dibuja.
+    ...(() => {
+      const usa = ctx.graph.edges.filter((e) => e.verbo === "usa" && e.desde === n.id && ctx.nodo.get(e.hasta)?.tipo === "componente");
+      return usa.length ? { usaComponentes: usa.map((e) => ({ componente: e.hasta, paquete: String(ctx.nodo.get(e.hasta)!.atributos["paquete"] ?? ""), ev: e.evidencia })) } : {};
+    })(),
     recorrido: r.pasos,
     avisos: [
       ...(entran.length === 0 && !(a.desdeEnvolturas ?? []).length ? ["ninguna pantalla conocida lleva acá: se entra desde afuera (link, mail, callback) o con una ruta armada en tiempo de ejecución"] : []),

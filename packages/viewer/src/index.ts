@@ -1,5 +1,5 @@
 import { compileDir, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
-import { renderViewerCerebros, type CerebroVisor } from "./cerebros.js";
+import { renderViewerCerebros, type CerebroVisor, type PorPaquetes } from "./cerebros.js";
 import { renderViewer } from "./viewer.js";
 
 export * from "./viewer.js";
@@ -21,8 +21,8 @@ export async function visor(s: Salidas): Promise<Record<string, string>> {
 export const compileDirConVisor = (raiz: string) => compileDir(raiz, visor);
 
 /** Página del visor para varios cerebros. */
-export async function visorDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas?: TrazasCruzadas): Promise<string> {
-  return renderViewerCerebros(cerebros, cruces, conexiones, trazas);
+export async function visorDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas?: TrazasCruzadas, paquetes?: PorPaquetes): Promise<string> {
+  return renderViewerCerebros(cerebros, cruces, conexiones, trazas, paquetes);
 }
 export { GRAFO3D_JS } from "./viewer-3d.js";
 export { ORDEN_CEREBROS_JS } from "./orden-cerebros.js";

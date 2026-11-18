@@ -6,6 +6,7 @@ import { analizarUrl, type Parte } from "./url.js";
 import {
   type RefSimbolo,
   extraccionVacia,
+  nombreDePaquete,
   paqueteDe,
   type AccesoTabla,
   type ArchivoCrudo,
@@ -18,6 +19,8 @@ import {
   type Parser,
   type RepoFuente,
   type Simbolo,
+  type ComponenteCrudo,
+  type UsoDePaquete,
 } from "./tipos.js";
 
 /**
@@ -502,6 +505,125 @@ function extraer(repo: RepoFuente): Extraccion {
   const usaNavegacionNativa = repo.archivos
     .filter((a) => a === "package.json" || a.endsWith("/package.json"))
     .some((a) => /"@react-navigation\/[\w-]+"\s*:/.test(readFileSync(join(repo.raiz, a), "utf8")));
+
+  // ---------- Componentes entre paquetes (un sistema de diseño y quien lo usa) ----------
+  // Una librería se publica para que otro la importe: su package.json dice por dónde entrar (`main`, `exports`…).
+  // Una app no lo dice. Solo los componentes de una librería son piezas del grafo; los de una app ya son sus pantallas.
+  const librerias = new Map<string, string | null>();
+  /** Nombre de la librería que es el paquete, o `null` si no lo es. */
+  const libreria = (paquete: string): string | null => {
+    if (!librerias.has(paquete)) {
+      let pj: Record<string, unknown> = {};
+      try {
+        pj = JSON.parse(readFileSync(join(repo.raiz, paquete, "package.json"), "utf8")) as Record<string, unknown>;
+      } catch {
+        /* sin package.json: no es una librería de JavaScript */
+      }
+      librerias.set(paquete, typeof pj["name"] === "string" && ["main", "module", "exports", "types", "typings", "svelte"].some((k) => pj[k] !== undefined) ? pj["name"] : null);
+    }
+    return librerias.get(paquete)!;
+  };
+  const esLibreria = (paquete: string) => libreria(paquete) !== null;
+  const NO_ES_FUENTE = /\.(stories|story|test|spec)\.[^.]+$|(^|\/)(__tests__|__mocks__|stories)\//;
+  const esComponente = (n: string) => /^[A-Z][A-Za-z0-9]*$/.test(n);
+  /** Componentes que exporta un archivo de una librería: funciones, clases y constantes con nombre de componente. */
+  const componentesExportados = (sf: ts.SourceFile, archivo: string): ComponenteCrudo[] => {
+    if (NO_ES_FUENTE.test(archivo)) return [];
+    const out = new Map<string, number>();
+    const exportado = (st: ts.Statement) => ts.canHaveModifiers(st) && !!ts.getModifiers(st)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+    const locales = new Map<string, number>();
+    for (const st of sf.statements) {
+      const nombres: string[] = [];
+      if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st)) && st.name) nombres.push(st.name.text);
+      if (ts.isVariableStatement(st)) for (const d of st.declarationList.declarations) if (ts.isIdentifier(d.name) && d.initializer) nombres.push(d.name.text);
+      for (const n of nombres) {
+        locales.set(n, linea(st));
+        if (exportado(st) && esComponente(n)) out.set(n, linea(st));
+      }
+    }
+    // `export { Boton, Tarjeta }` y `export default Boton` sobre declaraciones del mismo archivo.
+    for (const st of sf.statements) {
+      if (ts.isExportDeclaration(st) && !st.moduleSpecifier && st.exportClause && ts.isNamedExports(st.exportClause)) {
+        for (const el of st.exportClause.elements) {
+          const local = (el.propertyName ?? el.name).text;
+          if (esComponente(el.name.text) && locales.has(local)) out.set(el.name.text, locales.get(local)!);
+        }
+      }
+      if (ts.isExportAssignment(st) && ts.isIdentifier(st.expression) && esComponente(st.expression.text) && locales.has(st.expression.text)) out.set(st.expression.text, locales.get(st.expression.text)!);
+    }
+    // Un componente de un solo archivo (`Boton.vue`) es el archivo entero.
+    if (EXT_SFC.test(archivo) && esComponente(nombreSfc(archivo))) out.set(nombreSfc(archivo), 1);
+    return [...out.entries()].map(([nombre, l]) => ({ nombre, linea: l })).sort((a, b) => a.linea - b.linea || cmp(a.nombre, b.nombre));
+  };
+  /**
+   * Componentes importados de un paquete que no es del repo (`import { Boton } from "@empresa/ui"`), con el símbolo
+   * del archivo que los usa. En un componente de un solo archivo lo que el `<script>` no usa lo usa el template.
+   */
+  const usosDePaquetes = (sf: ts.SourceFile, simbolos: Simbolo[], sfc: string | null, propio: string): UsoDePaquete[] => {
+    const importados = new Map<string, { paquete: string; simbolo: string; linea: number }>();
+    for (const st of sf.statements) {
+      if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier) || !st.importClause || st.importClause.isTypeOnly) continue;
+      const mod = st.moduleSpecifier.text;
+      if (mod.startsWith("node:")) continue;
+      const relativo = mod.startsWith(".") || mod.startsWith("/");
+      // Un alias del propio repo (`@/components/x`) se resuelve a un archivo del repo: eso ya es `importa`. Salvo que
+      // sea otra librería del mismo monorepo (`@empresa/ui` en `packages/ui`): ahí también cuenta como uso del paquete.
+      const d = checker.getSymbolAtLocation(st.moduleSpecifier)?.declarations?.[0];
+      let paquete = nombreDePaquete(mod);
+      if (d && ts.isSourceFile(d) && delRepo(d)) {
+        const destino = paqueteDe(repo, rel(d));
+        const nombre = destino !== propio ? libreria(destino) : null;
+        if (!nombre) continue;
+        paquete = nombre;
+      } else if (relativo) continue;
+      const ic = st.importClause;
+      if (ic.name && esComponente(ic.name.text)) importados.set(ic.name.text, { paquete, simbolo: ic.name.text, linea: linea(st) });
+      if (ic.namedBindings && ts.isNamedImports(ic.namedBindings)) {
+        for (const el of ic.namedBindings.elements) {
+          const exportado = (el.propertyName ?? el.name).text;
+          if (!el.isTypeOnly && esComponente(exportado)) importados.set(el.name.text, { paquete, simbolo: exportado, linea: linea(st) });
+        }
+      }
+    }
+    if (!importados.size) return [];
+    // El símbolo más chico que contiene la línea: el que figura como `desde` en `invoca`.
+    const dueño = (l: number) => {
+      let mejor: Simbolo | null = null;
+      for (const s of simbolos) if ((s.tipo === "funcion" || s.tipo === "metodo") && s.linea <= l && l <= (s.fin ?? s.linea) && (!mejor || (s.fin ?? s.linea) - s.linea < (mejor.fin ?? mejor.linea) - mejor.linea)) mejor = s;
+      return mejor?.nombre ?? null;
+    };
+    const out = new Map<string, UsoDePaquete>();
+    const usados = new Set<string>();
+    // Un componente se dibuja: `<Boton />` en JSX. Una clase o un decorador con mayúscula (`Router`, `Injectable`) no.
+    const ver = (n: ts.Node): void => {
+      if (ts.isImportDeclaration(n)) return;
+      const etiqueta = ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n) ? n.tagName : null;
+      const id = etiqueta && ts.isIdentifier(etiqueta) ? etiqueta : null;
+      if (id) usados.add(id.text);
+      if (id && importados.has(id.text)) {
+        const i = importados.get(id.text)!;
+        const l = linea(id);
+        const desde = dueño(l);
+        const k = `${desde}\u0000${i.paquete}\u0000${i.simbolo}`;
+        if (!out.has(k)) out.set(k, { desde, paquete: i.paquete, simbolo: i.simbolo, linea: l });
+      }
+      ts.forEachChild(n, ver);
+    };
+    ts.forEachChild(sf, ver);
+    // En un componente de un solo archivo lo dibuja el template, que no es TypeScript: cuenta lo importado con nombre
+    // de componente que el `<script>` no usa como valor (si lo usa, es una clase o una función, no algo que se dibuja).
+    if (sfc) {
+      const enScript = new Set<string>();
+      const valores = (n: ts.Node): void => {
+        if (ts.isImportDeclaration(n)) return;
+        if (ts.isIdentifier(n) && importados.has(n.text) && !(ts.isPropertyAssignment(n.parent) || ts.isShorthandPropertyAssignment(n.parent))) enScript.add(n.text);
+        ts.forEachChild(n, valores);
+      };
+      ts.forEachChild(sf, valores);
+      for (const [local, i] of importados) if (!enScript.has(local) && !usados.has(local)) out.set(`${sfc}\u0000${i.paquete}\u0000${i.simbolo}`, { desde: sfc, paquete: i.paquete, simbolo: i.simbolo, linea: i.linea });
+    }
+    return [...out.values()].sort((a, b) => a.linea - b.linea || cmp(a.paquete + a.simbolo, b.paquete + b.simbolo) || cmp(a.desde ?? "", b.desde ?? ""));
+  };
 
   // ---------- Recorrido ----------
   const fuentes = programa
@@ -1282,8 +1404,12 @@ function extraer(repo: RepoFuente): Extraccion {
         for (const m of l.matchAll(/\b(?:\$?router\.(?:push|replace)|navigateTo|goto)\(\s*['"`](\/[^'"`$]*)['"`]/g)) out.navegaciones.push({ paquete, archivo, linea: i + 1, desde: comp, ruta: normalizarRuta(m[1]!), tipo: "navega" });
       });
     }
+    const usaPaquetes = usosDePaquetes(sf, simbolos, EXT_SFC.test(archivo) ? nombreSfc(archivo) : null, paquete);
+    const componentes = esLibreria(paquete) ? componentesExportados(sf, archivo) : [];
     simbolos.sort((a, b) => a.linea - b.linea || cmp(a.nombre, b.nombre));
     const arc: ArchivoCrudo = { lenguaje: lenguajeDe(archivo), ruta: archivo, simbolos };
+    if (componentes.length) arc.componentes = componentes;
+    if (usaPaquetes.length) arc.usaPaquetes = usaPaquetes;
     if (importa.size) arc.importa = [...importa].sort(cmp);
     if (invoca.size) arc.invoca = [...invoca.values()];
     if (sinResolver.length) arc.sinResolver = sinResolver.sort((a, b) => a.linea - b.linea || cmp(a.llamada, b.llamada));

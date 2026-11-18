@@ -2,6 +2,8 @@ import { cmp } from "../canonical.js";
 import type { Conexion } from "../registro.js";
 import { aristasDeExtracciones, crearRecorredor, LIMITES_PANTALLA, tablasSinPagina, type AristaExtraccion, type EstructuraArchivo, type Paso, type Toque } from "../funcionalidades.js";
 import type { Graph } from "../schema.js";
+import { alcancePorPantalla } from "../pantallas.js";
+import { paqueteDeArchivo, quienesUsan, type PaqueteDelRepo, type RepoLeido } from "../componentes.js";
 import { normalizar, rutaCoincide } from "./herramientas.js";
 
 /**
@@ -20,6 +22,109 @@ export interface CerebroLiviano {
   pendientes: Array<{ desde: string; evidencia: string; metodo: string; ruta: string; base: string; pantallas: string[] }>;
   /** Funcionalidades que implementa cada pantalla (`implementa` pantalla → feat), con su nombre. */
   funcionalidadesDe?: Record<string, Array<{ id: string; nombre: string }>>;
+  /** Paquetes que publica el cerebro (por su manifiesto) y la pieza dueña de cada uno. */
+  publica?: Array<{ paquete: string; dueño: string }>;
+  /** Componentes que exportan esos paquetes. */
+  componentes?: Array<{ id: string; paquete: string; nombre: string }>;
+  /** Componentes que el cerebro toma de un paquete que no publica él, con quién los usa. */
+  usosExternos?: Array<{ desde: string; paquete: string; simbolo: string; evidencia: string; pantallas: string[] }>;
+  /** Paquetes de los que declara depender (en un manifiesto) y que no publica él. */
+  dependenciasExternas?: Array<{ desde: string; paquete: string; evidencia: string }>;
+}
+
+/** Un repo del cerebro tal como queda en `_build/files`, con lo que hace falta para unirlo por paquetes. */
+interface ArchivosDeRepo {
+  repo: string;
+  archivos?: RepoLeido["archivos"];
+  paquetes?: PaqueteDelRepo[];
+}
+
+/**
+ * Lo que el cerebro publica y lo que toma de paquetes ajenos. El dueño de un uso es la pantalla que llega a esa línea;
+ * si no es de ninguna, el servicio del repo (si tiene uno solo) o el repo.
+ */
+function porPaquetes(graph: Graph, archivos: string[]): Pick<CerebroLiviano, "publica" | "componentes" | "usosExternos" | "dependenciasExternas"> {
+  const repos: ArchivosDeRepo[] = [];
+  for (const c of archivos) {
+    try {
+      repos.push(JSON.parse(c) as ArchivosDeRepo);
+    } catch {
+      /* ilegible: no aporta */
+    }
+  }
+  const componentes = graph.nodes.filter((n) => n.tipo === "componente").map((n) => ({ id: n.id, paquete: String(n.atributos["paquete"] ?? ""), nombre: n.nombre }));
+  const svcsDe = new Map<string, string[]>();
+  const svcs = new Set(graph.nodes.filter((n) => n.tipo === "svc").map((n) => n.id));
+  for (const e of graph.edges) if (e.verbo === "vive_en" && svcs.has(e.desde)) svcsDe.set(e.hasta, [...(svcsDe.get(e.hasta) ?? []), e.desde]);
+  const dueñoDeRepo = (repo: string) => ((svcsDe.get(repo) ?? []).length === 1 ? svcsDe.get(repo)![0]! : repo);
+  const propios = new Set<string>();
+  const publica: NonNullable<CerebroLiviano["publica"]> = [];
+  for (const r of repos) {
+    for (const p of r.paquetes ?? []) {
+      if (!p.nombre || propios.has(p.nombre)) continue;
+      propios.add(p.nombre);
+      const comp = componentes.find((c) => c.paquete === p.nombre);
+      publica.push({ paquete: p.nombre, dueño: comp ? comp.id.slice(0, comp.id.indexOf(":componente:")) : dueñoDeRepo(r.repo) });
+    }
+  }
+  const usosExternos: NonNullable<CerebroLiviano["usosExternos"]> = [];
+  const dependenciasExternas: NonNullable<CerebroLiviano["dependenciasExternas"]> = [];
+  const estructura = new Map<string, EstructuraArchivo>();
+  for (const r of repos) for (const a of (r.archivos ?? []) as Array<{ ruta: string } & Partial<EstructuraArchivo>>) estructura.set(`${r.repo}:${a.ruta}`, { simbolos: a.simbolos ?? [], importa: a.importa ?? [], invoca: a.invoca ?? [] });
+  const pantallasTodas = graph.nodes.filter((n) => n.tipo === "pantalla");
+  for (const r of repos) {
+    const pantallas = pantallasTodas.filter((n) => ((n.atributos["componentes"] as string[] | undefined) ?? []).some((c) => c.startsWith(`${r.repo}:`))) as unknown as Array<{ id: string; atributos: { componentes: string[] } }>;
+    const leido: RepoLeido = { repo: r.repo, archivos: r.archivos ?? [], paquetes: r.paquetes ?? [], dueñoDe: () => dueñoDeRepo(r.repo), alcance: () => alcancePorPantalla(r.repo, pantallas, estructura) };
+    const cache = {};
+    for (const a of r.archivos ?? []) {
+      for (const u of a.usaPaquetes ?? []) {
+        if (propios.has(u.paquete)) continue;
+        usosExternos.push({ desde: dueñoDeRepo(r.repo), paquete: u.paquete, simbolo: u.simbolo, evidencia: `${r.repo}:${a.ruta}#L${u.linea}`, pantallas: quienesUsan(leido, a.ruta, u.desde, cache) });
+      }
+    }
+    for (const p of r.paquetes ?? []) for (const d of p.dependeDe ?? []) if (!propios.has(d.nombre) && p.manifiesto) dependenciasExternas.push({ desde: dueñoDeRepo(r.repo), paquete: d.nombre, evidencia: `${r.repo}:${p.manifiesto}#L${d.linea}` });
+  }
+  return { publica, componentes, usosExternos, dependenciasExternas };
+}
+
+/** Un componente de un cerebro que dibuja otro: quién lo usa (pantallas, o el servicio) y cuál es. */
+export interface UsoCruzado {
+  desde: { cerebro: string; svc: string; evidencia: string; pantallas: string[] };
+  hacia: { cerebro: string; componente: string };
+}
+
+/** Un repo de un cerebro que declara depender de un paquete que publica otro cerebro. */
+export interface DependenciaCruzada {
+  desde: { cerebro: string; svc: string; evidencia: string };
+  hacia: { cerebro: string; nodo: string; paquete: string };
+}
+
+/**
+ * Lo que une a los cerebros por paquetes: cada componente importado de un paquete que publica otro cerebro (con las
+ * pantallas que lo dibujan) y cada dependencia declarada hacia uno de esos paquetes. Un import nombra el paquete sin
+ * ambigüedad, así que no depende de la comunicación entre cerebros, que es para adivinar a quién va una URL.
+ */
+export function usosEntreCerebros(cerebros: CerebroLiviano[]): { componentes: UsoCruzado[]; dependencias: DependenciaCruzada[] } {
+  const componentes: UsoCruzado[] = [];
+  const dependencias: DependenciaCruzada[] = [];
+  const quienPublica = (paquete: string, salvo: string) => cerebros.filter((c) => c.nombre !== salvo && c.publica?.some((p) => p.paquete === paquete));
+  for (const o of cerebros) {
+    for (const u of o.usosExternos ?? []) {
+      const hits = cerebros.filter((c) => c.nombre !== o.nombre).flatMap((c) => (c.componentes ?? []).filter((x) => x.paquete === u.paquete && x.nombre === u.simbolo).map((x) => ({ cerebro: c.nombre, componente: x.id })));
+      if (hits.length === 1) componentes.push({ desde: { cerebro: o.nombre, svc: u.desde, evidencia: u.evidencia, pantallas: u.pantallas }, hacia: hits[0]! });
+    }
+    const vistas = new Set<string>();
+    for (const d of [...(o.dependenciasExternas ?? []), ...(o.usosExternos ?? []).map((u) => ({ desde: u.desde, paquete: u.paquete, evidencia: u.evidencia }))]) {
+      const destinos = quienPublica(d.paquete, o.nombre);
+      if (destinos.length !== 1) continue;
+      const nodo = destinos[0]!.publica!.find((p) => p.paquete === d.paquete)!.dueño;
+      const k = `${d.desde}\u0000${destinos[0]!.nombre}\u0000${nodo}`;
+      if (vistas.has(k)) continue;
+      vistas.add(k);
+      dependencias.push({ desde: { cerebro: o.nombre, svc: d.desde, evidencia: d.evidencia }, hacia: { cerebro: destinos[0]!.nombre, nodo, paquete: d.paquete } });
+    }
+  }
+  return { componentes, dependencias };
 }
 
 /**
@@ -84,7 +189,7 @@ export function cerebroLiviano(nombre: string, graph: Graph, extracciones: strin
     if (e.verbo !== "implementa" || nodo.get(e.desde)?.tipo !== "pantalla" || nodo.get(e.hasta)?.tipo !== "feat") continue;
     (funcionalidadesDe[e.desde] ??= []).push({ id: e.hasta, nombre: nodo.get(e.hasta)!.nombre });
   }
-  return { nombre, nombres, endpoints, pendientes, funcionalidadesDe };
+  return { nombre, nombres, endpoints, pendientes, funcionalidadesDe, ...porPaquetes(graph, archivos) };
 }
 
 export interface Pista {

@@ -350,6 +350,8 @@ $ARGUMENTS
      "navegaciones": [{ "archivo": "src/pedidos/Pedidos.tsx", "linea": 14, "desde": "Pedidos", "ruta": "/pedidos/{id}", "tipo": "navega" }],
      "eventos":      [{ "archivo": "src/pagos/servicio.go", "linea": 50, "nombre": "pago.confirmado", "direccion": "publica" }],
      "importa":      [{ "archivo": "lib/pedidos_page.dart", "importa": ["lib/api/pedidos_api.dart"] }],
+     "componentes":  [{ "archivo": "lib/src/boton.dart", "nombre": "BotonPrimario", "linea": 12 }],
+     "usos":         [{ "archivo": "lib/pedidos_page.dart", "linea": 40, "paquete": "empresa_ui", "simbolo": "BotonPrimario", "desde": "PedidosPage.build" }],
      "accesos":      [{ "archivo": "src/pedidos/repo.go", "linea": 33, "tabla": "pedidos", "verbo": "escribe", "columnas": ["estado", "total"] }],
      "esquema":      [{ "tabla": "pedidos", "archivo": "src/pedidos/modelo.go", "linea": 5,
                         "columnas": [{ "nombre": "id", "tipo": "int", "pk": true }, { "nombre": "nota", "tipo": "text", "nulo": true }] }]
@@ -374,6 +376,12 @@ $ARGUMENTS
      cambiar quien publica llega a quien consume. Si la cola no tiene página, el borrador la propone.
    - **Importa** declara qué archivos del repo usa un archivo, cuando el lenguaje no lo dice de una forma que FlowBrain
      lea: sirve para que una pantalla alcance los menús y datos que importa.
+   - **Componentes y usos** unen un sistema de diseño (o cualquier librería de interfaz) con las pantallas que lo
+     dibujan, también entre repos y entre cerebros. \`componentes\`: lo que exporta la librería, en la línea donde se
+     declara. \`usos\`: lo que un archivo toma de otro paquete, en la línea donde lo usa, con \`paquete\` igual al nombre
+     del manifiesto de la librería (\`package.json\`, \`pubspec.yaml\`, \`go.mod\`…) y \`desde\` el símbolo que lo dibuja.
+     En TypeScript, Vue, Svelte y Astro ya lo hace el parser (librería = paquete con \`main\`, \`exports\` o \`types\`);
+     escribilo para lo demás (Flutter, Kotlin, SwiftUI) o si la librería no se reconoce sola.
    - Un **acceso** va en la línea donde ocurre, dentro del método que lo hace; \`columnas\` solo las que se ven en el
      código. Si el parser ya detectó ese acceso (mismo archivo, línea, tabla y verbo), el tuyo le suma las columnas.
      Si tu extractor solo busca columnas y no puede asegurar que cada nombre sea una tabla real (una CTE, una
@@ -426,7 +434,12 @@ $ARGUMENTS
    otro nodo: aparece en el índice, en el mapa 3D con un color propio y en el impacto en las dos direcciones. No uses
    un tipo propio para algo que ya tiene tipo: lo que es un endpoint o una tabla va con el suyo.
 
-6. **Unir los cerebros.** Con los índices completos, seguí con \`/${NOMBRE_COMANDO}\` (a qué servicio va cada llamada) y
+6. **Unir los cerebros.** Lo que se importa por nombre de paquete ya queda unido solo: FlowBrain lee los manifiestos de
+   cada repo (\`package.json\`, \`go.mod\`, \`pubspec.yaml\`, \`composer.json\`…), sabe qué paquete publica cada uno y quién
+   lo declara como dependencia, y une las pantallas con los componentes del sistema de diseño que dibujan
+   (\`flowbrain connections\`, en \`porPaquetes\`). Si un repo usa una librería de otro y no aparece ahí, mirá por qué (un
+   alias, un paquete sin nombre, un lenguaje que el parser no lee) y completalo con \`componentes\` y \`usos\`. Con los
+   índices completos, seguí con \`/${NOMBRE_COMANDO}\` (a qué servicio va cada llamada) y
    \`/${NOMBRE_FUNCIONALIDADES}\` (las funcionalidades de producto). Al final, \`flowbrain brains viewer\`.
 
 7. **Informar al usuario**, corto:

@@ -1,6 +1,6 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, CompileError, crucesDelRegistro, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
+import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, CompileError, crucesDelRegistro, usosEntreCerebros, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
 import { draftDir } from "@flowbrain/indexer";
 import { escribirIndex, fusionar, IGNORAR, indexar, leerRepo, PARSERS, slug } from "@flowbrain/parsers";
 import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@flowbrain/viewer";
@@ -343,6 +343,6 @@ export async function escribirVisor(registro: Registro): Promise<string | null> 
   const cruces: Cruce[] = crucesDelRegistro([...livianos.values()], registro.comunicados, registro.conexiones).cruces;
   const conexiones = resumenConexiones(cruces, registro.conexiones.filter((x) => registro.comunicados(x.desde.cerebro, x.hacia.cerebro)));
   const archivo = join(registro.carpeta, ARCHIVO_VISOR);
-  await writeFile(archivo, await visorDeCerebros(visibles, cruces, conexiones, trazasCruzadas(fuentes, cruces)), "utf8");
+  await writeFile(archivo, await visorDeCerebros(visibles, cruces, conexiones, trazasCruzadas(fuentes, cruces), usosEntreCerebros([...livianos.values()])), "utf8");
   return archivo;
 }

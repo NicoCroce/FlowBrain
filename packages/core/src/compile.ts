@@ -30,7 +30,8 @@ import {
 } from "./schema.js";
 import { aristasDeExtracciones, fichasDeFuncionalidades, tablasSinPagina, RUTA_FUNCIONALIDADES, type EstructuraArchivo, type Ficha } from "./funcionalidades.js";
 import { aristasFinas } from "./finas.js";
-import { grafoDePantallas } from "./pantallas.js";
+import { alcancePorPantalla, grafoDePantallas } from "./pantallas.js";
+import { componentesDelCerebro } from "./componentes.js";
 
 /** Un archivo de entrada. `ruta` es relativa a la raíz del brain, con `/`. */
 export interface Fuente {
@@ -228,6 +229,8 @@ export function compile(entradas: Entradas): Salidas {
   // ---------- 3. Árboles de archivos ----------
   /** Símbolos, imports e invocaciones por `repo:ruta`: alimentan las fichas de funcionalidades y las relaciones finas del grafo. */
   const estructura = new Map<string, EstructuraArchivo>();
+  /** Por repo: lo que hace falta para unir componentes entre paquetes cuando ya se leyeron todos. */
+  const leidos: Parameters<typeof componentesDelCerebro>[0] = [];
   for (const f of archivosIn) {
     const data = parseJson(f, errores);
     if (data === undefined) continue;
@@ -284,24 +287,34 @@ export function compile(entradas: Entradas): Salidas {
       }
     }
     // Pantallas del front: cada una es del servicio cuya raíz contiene su componente (o del repo, si no tiene).
+    const svcs = paginas.filter((q) => q.fm.tipo === "svc" && (q.fm.vive_en ?? []).includes(a.repo));
+    const dueñoDe = (archivo: string) => {
+      const precisos = svcs.filter((q) => {
+        const r = raizDeServicio(q.fm.puntos_de_entrada);
+        return r !== null && (r === "" || archivo === r || archivo.startsWith(`${r}/`));
+      });
+      const elegido = (precisos.length ? precisos : svcs).map((q) => q.fm.id).sort(cmp)[0];
+      return elegido ?? a.repo;
+    };
+    let pantallasDelRepo: Array<{ id: string; atributos: { componentes: string[] } }> = [];
     if (a.pantallas?.length) {
-      const svcs = paginas.filter((q) => q.fm.tipo === "svc" && (q.fm.vive_en ?? []).includes(a.repo));
-      const dueñoDe = (archivo: string) => {
-        const precisos = svcs.filter((q) => {
-          const r = raizDeServicio(q.fm.puntos_de_entrada);
-          return r !== null && (r === "" || archivo === r || archivo.startsWith(`${r}/`));
-        });
-        const elegido = (precisos.length ? precisos : svcs).map((q) => q.fm.id).sort(cmp)[0];
-        return elegido ?? a.repo;
-      };
       const pg = grafoDePantallas(a.repo, a.pantallas, a.navegaciones ?? [], estructura, dueñoDe);
       for (const n of pg.nodos) {
         agregarNodo({ ...generado(n.id, "pantalla", n.nombre, n.atributos as unknown as Record<string, unknown>), aliases: n.aliases }, f.ruta, null);
         aristas.push(arista(n.id.slice(0, n.id.indexOf(":pantalla:")), "contiene", n.id, "parser", { evidencia: n.atributos.evidencia }));
       }
       for (const e of pg.aristas) aristas.push(arista(e.desde, "navega_a", e.hasta, "parser", { evidencia: e.evidencia }));
+      pantallasDelRepo = pg.nodos;
     }
+    leidos.push({ repo: a.repo, archivos: a.archivos, paquetes: a.paquetes ?? [], dueñoDe, alcance: () => alcancePorPantalla(a.repo, pantallasDelRepo, estructura) });
   }
+
+  // ---------- 3b. Componentes y dependencias entre paquetes del cerebro ----------
+  // Un sistema de diseño (o cualquier librería) en un repo y quien lo importa en otro: cada componente que exporta es
+  // un nodo, y cada pantalla que lo dibuja lo `usa`. Lo que se importa de un paquete de otro cerebro se une al consultar.
+  const comps = componentesDelCerebro(leidos);
+  for (const n of comps.nodos) agregarNodo({ ...generado(n.id, "componente", n.nombre, n.atributos), aliases: n.aliases }, "_build/files", null);
+  for (const e of comps.aristas) if (nodos.has(e.desde) && nodos.has(e.hasta) && verboAdmite(e.verbo, nodos.get(e.desde)!.tipo, nodos.get(e.hasta)!.tipo)) aristas.push(arista(e.desde, e.verbo, e.hasta, "parser", { evidencia: e.evidencia, ...(e.dato ? { dato: e.dato } : {}) }));
 
   // ---------- 4. Aristas de páginas ----------
   for (const p of paginas) {

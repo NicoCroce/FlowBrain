@@ -3,10 +3,10 @@ import { z } from "zod";
 /** Constantes y validaciones de SCHEMA.md. Cualquier cambio acá tiene que reflejarse allá. */
 
 export const TIPOS_PAGINA = ["repo", "svc", "lib", "db", "queue", "ext", "tabla", "feat", "team", "decision"] as const;
-export const TIPOS_GENERADOS = ["contrato", "endpoint", "archivo", "pantalla"] as const;
+export const TIPOS_GENERADOS = ["contrato", "endpoint", "archivo", "pantalla", "componente"] as const;
 export type TipoConocido = (typeof TIPOS_PAGINA)[number];
 /**
- * Tipo de una página: uno de los conocidos o uno propio del proyecto (`job`, `topic`, `componente`, `webhook`…), en
+ * Tipo de una página: uno de los conocidos o uno propio del proyecto (`job`, `topic`, `worker`, `webhook`…), en
  * minúsculas. Un tipo propio va en `technology/` o en `product/`, acepta las relaciones de datos y de dependencia con
  * cualquier pieza, y fluye igual al impacto, al visor y a las consultas.
  */
@@ -15,7 +15,7 @@ export type Tipo = TipoPagina | (typeof TIPOS_GENERADOS)[number];
 export const TIPO_PROPIO = /^[a-z][a-z0-9_]{1,30}$/;
 export const esTipoPropio = (t: string) => !(TIPOS_PAGINA as readonly string[]).includes(t) && !(TIPOS_GENERADOS as readonly string[]).includes(t);
 /** Verbos que acepta un tipo propio, de un lado o del otro. */
-const VERBOS_TIPO_PROPIO = new Set(["llama_a", "publica_en", "consume_de", "lee_de", "escribe_en", "depende_de", "implementa", "decidido_por", "pertenece_a"]);
+const VERBOS_TIPO_PROPIO = new Set(["llama_a", "publica_en", "consume_de", "lee_de", "escribe_en", "depende_de", "usa", "implementa", "decidido_por", "pertenece_a"]);
 /** Carpeta de una página: la de su tipo; un tipo propio puede ir en cualquiera de las dos. */
 export const carpetasDeTipo = (t: string): Array<"product" | "technology"> => (esTipoPropio(t) ? ["technology", "product"] : [CARPETA_POR_TIPO[t as TipoConocido]]);
 
@@ -53,6 +53,7 @@ export const VERBOS = [
   "expone",
   "contiene",
   "navega_a",
+  "usa",
 ] as const;
 export type Verbo = (typeof VERBOS)[number];
 
@@ -108,8 +109,11 @@ export const DOMINIO: Record<Verbo, ReadonlyArray<readonly [readonly Tipo[], rea
     [["repo"], ["archivo"]],
     [["svc"], ["endpoint"]],
     [["svc", "repo"], ["pantalla"]],
+    [["svc", "repo"], ["componente"]],
   ],
   navega_a: [[["pantalla"], ["pantalla"]]],
+  /** Un componente de una librería (un sistema de diseño) que otra pieza dibuja. */
+  usa: [[["pantalla", "svc", "repo", "lib", "componente"], ["componente"]]],
 };
 
 export function verboAdmite(verbo: Verbo, desde: Tipo, hasta: Tipo): boolean {
@@ -253,6 +257,10 @@ export const ArchivosSchema = z
             .array(z.object({ desde: z.string(), archivo: z.string(), simbolo: z.string(), linea: z.number().int().positive(), via: z.string().optional() }).strict())
             .optional(),
           sinResolver: z.array(z.object({ desde: z.string(), linea: z.number().int().positive(), llamada: z.string(), candidatos: z.array(z.string()).optional() }).strict()).optional(),
+          componentes: z.array(z.object({ nombre: z.string().min(1), linea: z.number().int().positive() }).strict()).optional(),
+          usaPaquetes: z
+            .array(z.object({ desde: z.string().nullable(), paquete: z.string().min(1), simbolo: z.string().min(1), linea: z.number().int().positive() }).strict())
+            .optional(),
         })
         .strict(),
     ),
@@ -280,6 +288,19 @@ export const ArchivosSchema = z
             desde: z.string().nullable(),
             ruta: z.string().startsWith("/"),
             tipo: z.enum(["navega", "enlace", "redirige"]),
+          })
+          .strict(),
+      )
+      .optional(),
+    /** Nombre con el que se publica cada paquete del repo, según su manifiesto. */
+    paquetes: z
+      .array(
+        z
+          .object({
+            carpeta: z.string(),
+            manifiesto: z.string().optional(),
+            nombre: z.string().min(1).optional(),
+            dependeDe: z.array(z.object({ nombre: z.string().min(1), linea: z.number().int().positive() }).strict()).optional(),
           })
           .strict(),
       )

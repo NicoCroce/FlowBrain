@@ -19,7 +19,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
   var color = function (v) { return css.getPropertyValue("--" + v).trim() || "#888888"; };
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
 
-  var TIPOS = [["feat", "Funcionalidades", "Funcionalidad"], ["pantalla", "Pantallas", "Pantalla"], ["endpoint", "Endpoints", "Endpoint"], ["tabla", "Tablas", "Tabla"], ["svc", "Servicios", "Servicio"],
+  var TIPOS = [["feat", "Funcionalidades", "Funcionalidad"], ["pantalla", "Pantallas", "Pantalla"], ["componente", "Componentes", "Componente"], ["endpoint", "Endpoints", "Endpoint"], ["tabla", "Tablas", "Tabla"], ["svc", "Servicios", "Servicio"],
     ["repo", "Repositorios", "Repositorio"], ["lib", "Librerías", "Librería"], ["ext", "Externos", "Externo"], ["queue", "Colas", "Cola"], ["db", "Bases de datos", "Base de datos"],
     ["team", "Equipos", "Equipo"], ["decision", "Decisiones", "Decisión"], ["archivo", "Archivos", "Archivo"]];
   var TIPO = {};
@@ -31,7 +31,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     TIPO[n.t] = { label: nom, uno: nom };
     TIPOS.push([n.t, nom, nom]);
   });
-  var ORDEN_VERBOS = ["implementa", "navega_a", "llama_a", "lee_de", "escribe_en", "publica_en", "consume_de", "depende_de", "contiene", "vive_en", "recorrido", "pertenece_a", "decidido_por"];
+  var ORDEN_VERBOS = ["implementa", "navega_a", "usa", "llama_a", "lee_de", "escribe_en", "publica_en", "consume_de", "depende_de", "contiene", "vive_en", "recorrido", "pertenece_a", "decidido_por"];
   var colores = {};
   /** Color de un tipo: la variable del tema; si el tema no la tiene (un tipo nuevo), uno estable sacado de su nombre. */
   var PALETA_EXTRA = ["#E0A458", "#7FB7BE", "#D3826F", "#A3C46C", "#B48EAD", "#88C0D0", "#EBCB8B", "#C97B84"];
