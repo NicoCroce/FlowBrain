@@ -147,28 +147,29 @@ export interface Cruces {
 
 const segmentos = (r: string) => r.split("/").filter(Boolean);
 
-/** Endpoints de `destino` que atienden `metodo ruta`: los de ruta idéntica; si no hay, los que terminan igual (la base de la URL aporta el prefijo). */
-function candidatos(destino: CerebroLiviano, metodo: string, ruta: string, svcs: Set<string> | null) {
+/**
+ * Endpoints de `destino` que atienden `metodo ruta`: los de ruta idéntica; si no hay, los que terminan igual (la base
+ * de la URL aporta el prefijo). Como un router, gana la que acierta más segmentos literales, y tiene que acertar al
+ * menos uno: `GET /clubes` no es `GET /v1/pagos/{id}` aunque `{id}` acepte cualquier cosa. `puntaje` sirve para
+ * desempatar entre cerebros: una coincidencia exacta vale más que una por sufijo, y más literales, más.
+ */
+function candidatosConPuntaje(destino: CerebroLiviano, metodo: string, ruta: string, svcs: Set<string> | null) {
   const eps = destino.endpoints.filter((e) => e.metodo === metodo && (!svcs || svcs.has(e.svc)));
   const s = segmentos(ruta);
-  // Como un router: entre varias rutas que coinciden gana la que acierta más segmentos literales. `/login` es
-  // `/api/login` y no `/api/image/{userId}`. Si empatan, siguen siendo varias.
-  const masLiterales = <T extends { ruta: string }>(cs: T[]): T[] => {
-    if (cs.length < 2) return cs;
-    const puntos = (e: T) => {
-      const t = segmentos(e.ruta).slice(-s.length);
-      return t.filter((x, i) => x === s[i]).length;
-    };
-    const mejor = Math.max(...cs.map(puntos));
-    return cs.filter((e) => puntos(e) === mejor);
+  const puntos = (e: { ruta: string }) => segmentos(e.ruta).slice(-s.length).filter((x, i) => x === s[i]).length;
+  const mejores = <T extends { ruta: string }>(cs: T[]): T[] => {
+    const max = Math.max(0, ...cs.map(puntos));
+    return max === 0 ? [] : cs.filter((e) => puntos(e) === max);
   };
-  const exactos = eps.filter((e) => rutaCoincide(e.ruta, ruta));
-  if (exactos.length) return masLiterales(exactos);
-  return masLiterales(eps.filter((e) => {
+  const exactos = mejores(eps.filter((e) => rutaCoincide(e.ruta, ruta)));
+  if (exactos.length) return { eps: exactos, puntaje: 1000 + puntos(exactos[0]!) };
+  const sufijo = mejores(eps.filter((e) => {
     const t = segmentos(e.ruta);
     return t.length > s.length && rutaCoincide(`/${t.slice(t.length - s.length).join("/")}`, ruta);
   }));
+  return { eps: sufijo, puntaje: sufijo.length ? puntos(sufijo[0]!) : 0 };
 }
+const candidatos = (destino: CerebroLiviano, metodo: string, ruta: string, svcs: Set<string> | null) => candidatosConPuntaje(destino, metodo, ruta, svcs).eps;
 
 /**
  * Llamadas pendientes de `origen` que atiende algún endpoint de sus `destinos` (los cerebros con los que se comunica).
@@ -191,16 +192,19 @@ export function crucesDesde(origen: CerebroLiviano, destinos: CerebroLiviano[], 
   for (const p of origen.pendientes) {
     const propias = declaradas.filter((c) => c.desde.svc === p.desde);
     const aplicables = propias.filter((c) => c.por === null || p.base.includes(c.por));
-    const unicos: Array<{ destino: string; endpoint: string }> = [];
+    let unicos: Array<{ destino: string; endpoint: string; puntaje: number }> = [];
     let varios = false;
     for (const d of destinos) {
       const aca = aplicables.filter((c) => c.hacia.cerebro === d.nombre);
       // Con algo declarado que aplica, solo esos destinos; si este cerebro tiene declaradas y ninguna aplica, no es para acá.
       if (aplicables.length ? !aca.length : propias.some((c) => c.hacia.cerebro === d.nombre)) continue;
-      const cs = candidatos(d, p.metodo, p.ruta, aca.length ? new Set(aca.map((c) => c.hacia.svc)) : null);
-      if (cs.length === 1) unicos.push({ destino: d.nombre, endpoint: cs[0]!.id });
+      const { eps: cs, puntaje } = candidatosConPuntaje(d, p.metodo, p.ruta, aca.length ? new Set(aca.map((c) => c.hacia.svc)) : null);
+      if (cs.length === 1) unicos.push({ destino: d.nombre, endpoint: cs[0]!.id, puntaje });
       else if (cs.length > 1) varios = true;
     }
+    // Entre cerebros también gana la coincidencia más específica; si empatan, sigue en disputa.
+    const mejor = Math.max(0, ...unicos.map((u) => u.puntaje));
+    unicos = unicos.filter((u) => u.puntaje === mejor);
     if (varios) ambiguas++;
     else if (unicos.length === 1) out.push({ desde: { cerebro: origen.nombre, svc: p.desde, evidencia: p.evidencia, pantallas: p.pantallas }, hacia: { cerebro: unicos[0]!.destino, endpoint: unicos[0]!.endpoint }, declarada: aplicables.length > 0 });
     else if (unicos.length > 1) entreCerebros.push({ cerebro: origen.nombre, svc: p.desde, evidencia: p.evidencia, metodo: p.metodo, ruta: p.ruta, base: p.base, candidatos: unicos.map((u) => `${u.destino}/${u.endpoint}`) });
@@ -376,19 +380,43 @@ export function trazasCruzadas(fuentes: FuenteTraza[], cruces: Cruce[]): TrazasC
       if (endpoints.length) out.pantallas[`${f.nombre}/${n.id}`] = { pasos, endpoints };
     }
   }
-  // El otro lado del HTTP: lo que ejecuta cada endpoint cruzado, una vez.
-  const porDestino = new Map<string, Set<string>>();
-  for (const c of cruces) if (c.desde.pantallas.length && fuente.has(c.hacia.cerebro)) (porDestino.get(c.hacia.cerebro) ?? porDestino.set(c.hacia.cerebro, new Set()).get(c.hacia.cerebro)!).add(c.hacia.endpoint);
-  for (const [nombre, eps] of porDestino) {
+  // El otro lado del HTTP: lo que ejecuta cada endpoint cruzado, una vez. Si ese back llama a su vez a otro cerebro
+  // (una API que cobra en el servicio de pagos), la llamada es un toque hacia ese endpoint, que también se recorre.
+  const recorredores = new Map<string, { rec: ReturnType<typeof crearRecorredor>; propio: (id: string) => string; salen: Cruce[] }>();
+  const recDe = (nombre: string) => {
+    if (recorredores.has(nombre)) return recorredores.get(nombre)!;
     const f = fuente.get(nombre)!;
     const ids = new Set(f.graph.nodes.map((n) => n.id));
-    const propio = (id: string) => (ids.has(id) ? `${nombre}/${id}` : id);
-    const rec = crearRecorredor(f.graph, estructuraDe(f.archivos), aristasDeExtracciones(f.extracciones), tablasSinPagina(f.extracciones), LIMITES_BACK);
-    for (const ep of [...eps].sort(cmp)) {
-      const r = rec.desdeEndpoint(ep);
-      const pasos = r.pasos.map((p) => ({ ...p, toca: p.toca.map((t) => ({ ...t, hasta: t.sinPagina ? t.hasta : propio(t.hasta), endpoint: t.endpoint ? propio(t.endpoint) : null })) }));
-      out.backs[`${nombre}/${ep}`] = r.truncado ? { pasos, truncado: true } : { pasos };
-    }
+    const salen = cruces.filter((c) => c.desde.cerebro === nombre && fuente.has(c.hacia.cerebro));
+    const marcas: AristaExtraccion[] = salen.map((c, i) => ({ desde: c.desde.svc, verbo: "llama_a", hasta: `${MARCA}${i}`, endpoint: null, evidencia: c.desde.evidencia }));
+    const r = { rec: crearRecorredor(f.graph, estructuraDe(f.archivos), [...aristasDeExtracciones(f.extracciones), ...marcas], tablasSinPagina(f.extracciones), LIMITES_BACK), propio: (id: string) => (ids.has(id) ? `${nombre}/${id}` : id), salen };
+    recorredores.set(nombre, r);
+    return r;
+  };
+  const cola: string[] = [];
+  for (const c of cruces) if (c.desde.pantallas.length && fuente.has(c.hacia.cerebro)) cola.push(`${c.hacia.cerebro}/${c.hacia.endpoint}`);
+  const vistos = new Set<string>();
+  const TOPE_BACKS = 3000;
+  for (let i = 0; i < cola.length && vistos.size < TOPE_BACKS; i++) {
+    const k = cola[i]!;
+    if (vistos.has(k)) continue;
+    vistos.add(k);
+    const nombre = k.slice(0, k.indexOf("/")), ep = k.slice(k.indexOf("/") + 1);
+    const { rec, propio, salen } = recDe(nombre);
+    const r = rec.desdeEndpoint(ep);
+    const pasos = r.pasos.map((p) => ({
+      ...p,
+      toca: p.toca.map((t) => {
+        if (!t.hasta.startsWith(MARCA)) return { ...t, hasta: t.sinPagina ? t.hasta : propio(t.hasta), endpoint: t.endpoint ? propio(t.endpoint) : null };
+        const c = salen[Number(t.hasta.slice(1))]!;
+        const destino = `${c.hacia.cerebro}/${c.hacia.endpoint}`;
+        if (!vistos.has(destino)) cola.push(destino);
+        return { verbo: "llama_a", hasta: `${c.hacia.cerebro}/${c.hacia.endpoint.slice(0, c.hacia.endpoint.indexOf(":"))}`, endpoint: destino };
+      }),
+    }));
+    out.backs[k] = r.truncado ? { pasos, truncado: true } : { pasos };
   }
+  // Las claves en orden, para que el resultado no dependa del orden en que se descubrieron.
+  out.backs = Object.fromEntries(Object.entries(out.backs).sort(([a], [b]) => cmp(a, b)));
   return out;
 }

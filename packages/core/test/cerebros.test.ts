@@ -104,6 +104,33 @@ describe("cruces entre cerebros", () => {
     expect(trazasCruzadas(fuentes, [])).toEqual({ pantallas: {}, backs: {} });
   });
 
+  it("la traza sigue de un back a otro: la API que cobra en el servicio de pagos llega a la tabla de pagos", () => {
+    const api: Graph = { version: 1, nodes: [nodo("svc-api", "svc"), nodo("svc-api:GET:/pedidos", "endpoint", { metodo: "GET", ruta: "/pedidos", evidencia: "repo-api:src/pedidos.py#L3" })], edges: [] };
+    const archivosApi = JSON.stringify({ repo: "repo-api", archivos: [{ ruta: "src/pedidos.py", simbolos: [{ nombre: "listar", tipo: "funcion", linea: 3, fin: 6 }] }] });
+    const extraccionApi = JSON.stringify({ pendientes: [{ verbo: "llama_a", desde: "svc-api", evidencia: "repo-api:src/pedidos.py#L5", llamada: { metodo: "POST", ruta: "/v1/cobros", base: "PAGOS_URL" } }] });
+    const pagos: Graph = { version: 1, nodes: [nodo("svc-pagos", "svc"), nodo("svc-pagos:POST:/v1/cobros", "endpoint", { metodo: "POST", ruta: "/v1/cobros", evidencia: "repo-pagos:handlers.go#L10" }), nodo("svc-pagos:GET:/v1/pagos/{id}", "endpoint", { metodo: "GET", ruta: "/v1/pagos/{id}" }), nodo("tabla-pagos", "tabla")], edges: [] };
+    const archivosPagos = JSON.stringify({ repo: "repo-pagos", archivos: [{ ruta: "handlers.go", simbolos: [{ nombre: "Cobrar", tipo: "funcion", linea: 10, fin: 14 }] }] });
+    const extraccionPagos = JSON.stringify({ accesos: [{ desde: "svc-pagos", verbo: "escribe_en", hasta: "tabla-pagos", endpoint: null, evidencia: "repo-pagos:handlers.go#L12" }] });
+    const frontApi = JSON.stringify({ pendientes: [pendiente("repo-web:src/hooks/usePedidos.ts#L3", "GET"), { verbo: "llama_a", desde: "svc-web", evidencia: "repo-web:src/hooks/usePedidos.ts#L4", llamada: { metodo: "GET", ruta: "/clubes", base: "API_URL" } }] });
+    const livianos = [cerebroLiviano("front", front, [frontApi], [archivos]), cerebroLiviano("api", api, [extraccionApi], [archivosApi]), cerebroLiviano("pagos", pagos, [extraccionPagos], [archivosPagos])];
+    const { cruces, entreCerebros } = crucesDelRegistro(livianos, () => true, []);
+    // `GET /clubes` no es `GET /v1/pagos/{id}`: un parámetro solo no alcanza para unir una llamada.
+    expect(cruces.map((c) => `${c.desde.cerebro} → ${c.hacia.cerebro}/${c.hacia.endpoint}`).sort()).toEqual(["api → pagos/svc-pagos:POST:/v1/cobros", "front → api/svc-api:GET:/pedidos"]);
+    expect(entreCerebros).toEqual([]);
+    const t = trazasCruzadas(
+      [
+        { nombre: "front", graph: front, extracciones: [frontApi], archivos: [archivos] },
+        { nombre: "api", graph: api, extracciones: [extraccionApi], archivos: [archivosApi] },
+        { nombre: "pagos", graph: pagos, extracciones: [extraccionPagos], archivos: [archivosPagos] },
+      ],
+      cruces,
+    );
+    const linea = (p: { nivel: number; simbolo: string; toca: Array<{ verbo: string; hasta: string; endpoint: string | null }> }) => `${p.nivel} ${p.simbolo}${p.toca.map((x) => ` → ${x.verbo} ${x.endpoint ?? x.hasta}`).join("")}`;
+    expect(Object.keys(t.backs)).toEqual(["api/svc-api:GET:/pedidos", "pagos/svc-pagos:POST:/v1/cobros"]);
+    expect(t.backs["api/svc-api:GET:/pedidos"]!.pasos.map(linea)).toEqual(["0 listar → llama_a pagos/svc-pagos:POST:/v1/cobros"]);
+    expect(t.backs["pagos/svc-pagos:POST:/v1/cobros"]!.pasos.map(linea)).toEqual(["0 Cobrar → escribe_en pagos/tabla-pagos"]);
+  });
+
   it("entre dos rutas que coinciden gana la más literal, como en un router", () => {
     const g: Graph = { version: 1, nodes: [nodo("svc-api", "svc"), nodo("svc-api:POST:/api/login", "endpoint", { metodo: "POST", ruta: "/api/login" }), nodo("svc-api:POST:/api/imagen/{id}", "endpoint", { metodo: "POST", ruta: "/api/imagen/{id}" })], edges: [] };
     const llama = (ruta: string) => JSON.stringify({ pendientes: [{ verbo: "llama_a", desde: "svc-web", evidencia: "repo-web:src/api.ts#L1", llamada: { metodo: "POST", ruta, base: "API" } }] });

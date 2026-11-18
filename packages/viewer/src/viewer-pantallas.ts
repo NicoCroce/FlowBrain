@@ -84,21 +84,25 @@ export const PANTALLAS_JS = String.raw`
     var hoja = function (n, t) {
       filas.push({ n: n, t: t.verbo === "llama_a" ? "ext" : t.verbo === "lee_de" || t.verbo === "escribe_en" ? "tabla" : "cola", label: nombre(t.hasta), sub: (VERBO[t.verbo] || t.verbo) + (t.columnas && t.columnas.length ? ": " + t.columnas.join(", ") : "") + (t.sinPagina ? " · sin página" : "") });
     };
+    // Una llamada HTTP y, debajo, lo que ejecuta el back que la atiende; si ese back llama a otro, sigue en cascada.
+    var llamada = function (nivel, t) {
+      var b = backDe[t.endpoint], ya = vistos[t.endpoint];
+      filas.push({ n: nivel, t: "http", label: nombre(t.endpoint), sub: "HTTP → " + nombre(t.hasta), nota: ya ? "ya mostrado arriba" : b ? "" : "no se encontró el método que lo atiende" });
+      if (!b || ya) return;
+      vistos[t.endpoint] = true;
+      b.r.pasos.forEach(function (bp) {
+        var n = nivel + 1 + bp.nivel;
+        filas.push({ n: n, t: "back", label: bp.simbolo, sub: sinRepo(bp.evidencia), nota: bp.repite ? (bp.repite === "ciclo" ? "recursivo" : "ya recorrido arriba") : bp.aviso || "" });
+        if (!bp.repite) bp.toca.forEach(function (bt) { if (bt.verbo === "llama_a" && bt.endpoint && backDe[bt.endpoint]) llamada(n + 1, bt); else hoja(n + 1, bt); });
+      });
+      if (b.r.truncado) filas.push({ n: nivel + 1, t: "back", label: "…", sub: "recortado", nota: 'completo: flowbrain flow "' + nombre(t.endpoint) + '"' });
+    };
     x.recorrido.pasos.forEach(function (p) {
       filas.push({ n: p.nivel, t: "front", label: p.simbolo, sub: sinRepo(p.evidencia), nota: p.repite ? (p.repite === "ciclo" ? "recursivo" : "ya recorrido arriba") : "" });
       if (p.repite) return;
       p.toca.forEach(function (t) {
         if (!(t.verbo === "llama_a" && t.endpoint)) return hoja(p.nivel + 1, t);
-        var b = backDe[t.endpoint], ya = vistos[t.endpoint];
-        filas.push({ n: p.nivel + 1, t: "http", label: nombre(t.endpoint), sub: "HTTP → " + nombre(t.hasta), nota: ya ? "ya mostrado arriba" : b ? "" : "no se encontró el método que lo atiende" });
-        if (!b || ya) return;
-        vistos[t.endpoint] = true;
-        b.r.pasos.forEach(function (bp) {
-          var n = p.nivel + 2 + bp.nivel;
-          filas.push({ n: n, t: "back", label: bp.simbolo, sub: sinRepo(bp.evidencia), nota: bp.repite ? (bp.repite === "ciclo" ? "recursivo" : "ya recorrido arriba") : bp.aviso || "" });
-          if (!bp.repite) bp.toca.forEach(function (bt) { hoja(n + 1, bt); });
-        });
-        if (b.r.truncado) filas.push({ n: p.nivel + 2, t: "back", label: "…", sub: "recortado", nota: 'completo: flowbrain flow "' + nombre(t.endpoint) + '"' });
+        llamada(p.nivel + 1, t);
       });
     });
     return filas;
