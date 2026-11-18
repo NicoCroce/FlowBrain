@@ -22,7 +22,7 @@ export interface Parser {
 | `endpoints` | Método, ruta, tipos de request, response y query | ts-parser, php-parser, openapi-parser |
 | `llamadas` | Llamadas HTTP salientes con su URL analizada | ts-parser, php-parser |
 | `tablas`, `modelos` | Accesos a tablas y modelos de ORM | ts-parser, php-parser |
-| `pantallas`, `navegaciones` | Rutas del front y navegación entre ellas (React Router v5 a v7, objetos de rutas, React Navigation) | ts-parser |
+| `pantallas`, `navegaciones` | Rutas del front y navegación entre ellas (React Router v5 a v7, objetos de rutas, React Navigation, vue-router con componentes .vue, .svelte y .astro) | ts-parser |
 | `eventos` | Mensajes publicados y consumidos | ts-parser |
 | `esquema` | Tablas con columnas y claves foráneas | esquema-parser |
 | `infra` | Imágenes, compose, pipelines, variables, proxy | infra-parser |

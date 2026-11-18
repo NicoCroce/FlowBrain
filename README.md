@@ -1,0 +1,88 @@
+# FlowBrain
+
+Grafo de conocimiento de un sistema de software, hecho para que un agente de código entienda el producto antes de tocarlo: qué funcionalidades tiene, qué pantallas las forman, qué endpoints llaman, qué métodos ejecutan, qué tablas tocan y **qué se rompe si algo cambia**, también entre repositorios y servicios distintos.
+
+- **Agnóstico a la tecnología.** Los parsers leen TypeScript/JavaScript (React, React Native, Vue, Svelte, Astro, Next, Nest, Express…), PHP, OpenAPI, esquemas de base de datos e infraestructura. Lo que un parser no entiende (Go, Python, Dart, Ruby, un framework propio) lo completa un modelo: estudia el repo y escribe *extractores* del proyecto que corren en cada indexación y que FlowBrain verifica dato por dato.
+- **Determinístico.** Ninguna consulta llama a un LLM. Todo dato cita su evidencia (`repo:ruta#Ln`).
+- **Para agentes y para personas.** Servidor MCP, hooks de Claude Code, CLI y un visor HTML con mapa 3D.
+
+## Qué responde
+
+| Pregunta | MCP | CLI |
+|---|---|---|
+| ¿Qué hace esta funcionalidad de producto? | `funcionalidad` | `flowbrain feature <id>` |
+| Esta pantalla, de punta a punta | `pantalla` | `flowbrain screen </ruta>` |
+| Qué ejecuta un endpoint, paso a paso | `recorrido` | `flowbrain flow "POST /x"` |
+| Qué se rompe si cambio esto (y de qué depende) | `impacto` | `flowbrain impact <pieza>` |
+| Qué tan riesgoso es este diff | `riesgo` | `git diff \| flowbrain risk --diff -` |
+| Quién llama a este método | `quien_llama` | `flowbrain callers <Clase.metodo>` |
+| Por dónde viaja un dato entre servicios | `trazar` | `flowbrain trace --from <x>` |
+| Qué recibe y devuelve un endpoint | `contrato_de` | `flowbrain contract <nodo>` |
+| Llamadas sin endpoint y endpoints sin uso | `deriva` | `flowbrain drift` |
+| Qué falta migrar de un servicio a otro | `paridad` | `flowbrain parity <viejo> <nuevo>` |
+| Cómo se construye y despliega | `infra` | `flowbrain infra` |
+| Qué llamadas cruzan entre cerebros | `conexiones` | `flowbrain connections` |
+| Buscar un nodo / recorrer el grafo | `buscar_nodo`, `recorrer_grafo` | `flowbrain search`, `flowbrain traverse` |
+
+El impacto sigue la dirección de las relaciones (una tabla → los métodos y endpoints que la usan → las pantallas y funcionalidades que los llaman) y cruza de cerebro en cerebro hasta cuatro saltos: cambiar una tabla de un servicio en Go llega a la pantalla del front en Vue que, pasando por una API en Python, termina escribiendo en ella.
+
+## Instalación
+
+Requiere Node ≥ 20, pnpm y Claude Code.
+
+```bash
+git clone <este-repo> flowbrain && cd flowbrain
+pnpm install
+cd /ruta/al/proyecto
+pnpm -s -C /ruta/a/flowbrain flowbrain install "$PWD"
+```
+
+`install` deja el comando `flowbrain` en el PATH, los hooks de Claude Code y los comandos `/flowbrain-study`, `/flowbrain-index` y `/flowbrain-features`; crea `.flowbrain/` en el proyecto, pregunta dónde están los repositorios y si va un cerebro por repo o uno solo, indexa todo y deja el visor en `.flowbrain/flowbrain.html`. Al final imprime la línea del servidor MCP:
+
+```bash
+claude mcp add --scope user flowbrain -- flowbrain serve --sync
+```
+
+Volver a correr `flowbrain install` actualiza. Detalle completo, instalación a mano y CI en [docs/INSTALACION.md](docs/INSTALACION.md).
+
+## Cómo se completa un proyecto
+
+Con Claude Code abierto en la carpeta del proyecto:
+
+1. **`/flowbrain-study`**: el modelo estudia cómo está hecho cada repo, escribe `profile.md`, extractores en `.flowbrain/<cerebro>/extractors/<repo-id>/` para lo que los parsers no ven, y controles (`checks.yaml`) que tienen que seguir cumpliéndose. `flowbrain coverage` mide el avance.
+2. **`/flowbrain-index`**: decide a qué servicio va cada llamada entre repos (por base de URL, configuración e infraestructura) y lo declara con evidencia.
+3. **`/flowbrain-features`**: deduce las funcionalidades de producto, las explica y las une con sus pantallas, endpoints y tablas.
+4. **`flowbrain brains viewer`**: regenera el visor.
+
+Todo lo que el modelo escribe queda en `.flowbrain/`, legible y versionable junto al proyecto; lo derivado (`_build/`, el visor) queda fuera de git.
+
+## Estructura
+
+| Paquete | Qué hace |
+|---|---|
+| `packages/core` | Esquema, compilación de páginas a `graph.json`, consultas, impacto y cruces entre cerebros |
+| `packages/parsers` | Parsers (TypeScript, PHP, OpenAPI, esquema, infra), extractores del proyecto e indexador |
+| `packages/indexer` | Borradores de páginas a partir del código |
+| `packages/mcp` | Servidor MCP |
+| `packages/hooks` | Hooks de Claude Code (contexto en cada prompt, notas al cerrar la sesión) |
+| `packages/viewer` | Visor HTML: catálogo, pantallas, trazas, impacto y mapa 3D |
+| `packages/cli` | Comando `flowbrain` y las guías de los comandos para el modelo |
+| `packages/flowbrain` | Paquete npm publicable (un solo archivo armado con esbuild) |
+
+Documentación: [SCHEMA.md](SCHEMA.md) (contrato del grafo), [docs/PARSERS.md](docs/PARSERS.md) (cómo sumar un parser), [docs/DECISIONS.md](docs/DECISIONS.md) (cada decisión, con fecha y motivo), [docs/PRD.es.md](docs/PRD.es.md).
+
+## Desarrollo
+
+```bash
+pnpm install
+pnpm typecheck
+pnpm test
+pnpm build          # packages/flowbrain/dist/flowbrain.mjs
+pnpm flowbrain help # la CLI desde el código, sin armar
+```
+
+Las pruebas usan proyectos sintéticos en `fixtures/` y en directorios temporales; ninguna depende de código real ni de la red.
+
+## Licencia
+
+[Apache-2.0](LICENSE)

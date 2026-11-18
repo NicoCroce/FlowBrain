@@ -1,20 +1,23 @@
 # flowbrain
 
-Grafo de conocimiento determinístico para agentes de código. Las páginas Markdown las escriben humanos, el JSON lo generan parsers de TypeScript, PHP y OpenAPI, y todo se sirve por MCP, por hooks de Claude Code y por CLI. Ninguna consulta llama a un LLM.
+Grafo de conocimiento de un sistema de software para agentes de código: funcionalidades, pantallas, endpoints, métodos y tablas de todos los repos de un proyecto, cómo se conectan entre servicios y qué se rompe si algo cambia. Se sirve por MCP, por hooks de Claude Code y por CLI. Ninguna consulta llama a un LLM y cada dato cita su evidencia.
 
 ```bash
-npx flowbrain init mi-brain --claude-code   # crea el brain, lo compila y registra los hooks
-claude mcp add --scope user flowbrain -- npx -y flowbrain@0.1.0 serve --root "$PWD/mi-brain"
+cd /ruta/al/proyecto
+npx flowbrain install
+claude mcp add --scope user flowbrain -- npx -y flowbrain serve --sync
 ```
 
-Después:
+`install` crea `.flowbrain/` en el proyecto, pregunta dónde están los repositorios, indexa todo, deja el visor en `.flowbrain/flowbrain.html` y los comandos de Claude Code `/flowbrain-study` (estudia cada repo y escribe los extractores que completan el índice), `/flowbrain-index` (la comunicación real entre servicios) y `/flowbrain-features` (las funcionalidades de producto).
+
+Consultas frecuentes:
 
 ```bash
-npx flowbrain draft /ruta/a/un/repo --root mi-brain   # borradores en _drafts/ a partir del código
-npx flowbrain index /ruta/a/un/repo --root mi-brain   # contratos y archivos
-npx flowbrain compile --root mi-brain                 # graph.json y _build/viewer.html
-npx flowbrain verify --root mi-brain --repos /ruta/a/los/clones
-npx flowbrain gen claude --root mi-brain --repo /ruta/a/un/repo --write
+flowbrain impact tabla-pedidos          # qué se ve afectado si cambia
+git diff | flowbrain risk --diff -      # alcance de un cambio
+flowbrain screen /pedidos/{id}          # una pantalla de punta a punta
+flowbrain feature feat-checkout         # una funcionalidad de producto
+flowbrain coverage                      # cuánto del código quedó conectado
 ```
 
 Requiere Node ≥ 20. El contrato del grafo está en `SCHEMA.md`.
