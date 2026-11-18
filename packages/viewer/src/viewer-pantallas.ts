@@ -103,21 +103,48 @@ export const PANTALLAS_JS = String.raw`
     });
     return filas;
   }
-  var LEYENDA = [["front", "Front"], ["http", "Llamada HTTP"], ["back", "Back"], ["tabla", "Tabla"], ["ext", "Servicio o externo"]];
-  function trazaHtml(filas) {
-    var total = Math.min(filas.length, TOPE_TRAZA), tablas = {}, eps = 0;
-    filas.forEach(function (f) { if (f.t === "tabla") tablas[f.label] = true; if (f.t === "http") eps++; });
-    var cuerpo = filas.slice(0, total).map(function (f, i) {
-      var fin = i + 1;
-      while (fin < total && filas[fin].n > f.n) fin++;
-      return '<div class="tz-fila tz-' + f.t + '"><div class="tz-nom" style="padding-left:' + Math.min(f.n, 14) * 14 + 'px" title="' + esc(f.label + " · " + f.sub) + '"><span class="tz-pt"></span><strong>' + esc(f.label) + "</strong> <small>" + esc(f.sub) + (f.nota ? " · " + esc(f.nota) : "") + "</small></div>" +
-        '<div class="tz-pista"><span class="tz-barra" style="left:' + (100 * i / total).toFixed(2) + "%;width:" + Math.max(0.8, 100 * (fin - i) / total).toFixed(2) + '%"></span></div></div>';
+  var LEYENDA = [["front", "Front"], ["http", "Llamada HTTP"], ["back", "Back"], ["tabla", "Tabla"], ["ext", "Servicio o externo"], ["cola", "Cola"]];
+  // Con un filtro se ven todas las filas de esos tipos, no solo las del principio: hasta este tope.
+  var TOPE_FILTRADA = 3000, TRAZAS = [];
+  function filasHtml(filas, tipos) {
+    var todas = filas.length, filtro = tipos && tipos.length;
+    var idx = [];
+    for (var i = 0; i < todas && idx.length < (filtro ? TOPE_FILTRADA : TOPE_TRAZA); i++) if (!filtro || tipos.indexOf(filas[i].t) >= 0) idx.push(i);
+    // Sin filtro, la barra se mide sobre lo que se ve; con filtro, sobre la traza entera: dice en qué parte de la ejecución ocurre.
+    var base = filtro ? todas : idx.length;
+    var cuerpo = idx.map(function (i) {
+      var f = filas[i], fin = i + 1;
+      while (fin < todas && filas[fin].n > f.n) fin++;
+      if (!filtro) fin = Math.min(fin, base);
+      return '<div class="tz-fila tz-' + f.t + '"><div class="tz-nom" style="padding-left:' + (filtro ? 0 : Math.min(f.n, 14) * 14) + 'px" title="' + esc(f.label + " · " + f.sub) + '"><span class="tz-pt"></span><strong>' + esc(f.label) + "</strong> <small>" + esc(f.sub) + (f.nota ? " · " + esc(f.nota) : "") + "</small></div>" +
+        '<div class="tz-pista"><span class="tz-barra" style="left:' + (100 * i / base).toFixed(2) + "%;width:" + Math.max(0.8, 100 * (fin - i) / base).toFixed(2) + '%"></span></div></div>';
     }).join("");
-    return '<div class="tz-resumen"><span>' + plural(total, "paso", "pasos") + "</span><span>" + plural(eps, "llamada al back", "llamadas al back") + "</span><span>" + plural(Object.keys(tablas).length, "tabla", "tablas") + "</span>" +
-      LEYENDA.map(function (l) { return '<span class="tz-ley tz-' + l[0] + '"><span class="tz-pt"></span>' + l[1] + "</span>"; }).join("") + "</div>" +
-      '<div class="traza">' + cuerpo + "</div>" +
-      (filas.length > total ? '<p class="vacio">La traza sigue: se muestran los primeros ' + total + " pasos de " + filas.length + ".</p>" : "");
+    var hay = 0;
+    for (var j = 0; j < todas; j++) if (!filtro || tipos.indexOf(filas[j].t) >= 0) hay++;
+    var nota = hay > idx.length
+      ? '<p class="vacio">Se muestran ' + idx.length + " de " + hay + (filtro ? " filas de esos tipos." : " pasos. Tocá un tipo en la leyenda para ver todos los de ese tipo.") + "</p>"
+      : "";
+    return '<div class="traza">' + (cuerpo || '<p class="vacio" style="padding:10px">Ningún paso de esos tipos.</p>') + "</div>" + nota;
   }
+  function trazaHtml(filas) {
+    var tablas = {}, eps = 0, cuenta = {};
+    filas.forEach(function (f) { if (f.t === "tabla") tablas[f.label] = true; if (f.t === "http") eps++; cuenta[f.t] = (cuenta[f.t] || 0) + 1; });
+    var k = TRAZAS.push(filas) - 1;
+    return '<div class="tz-bloque" data-traza="' + k + '"><div class="tz-resumen"><span>' + plural(filas.length, "paso", "pasos") + "</span><span>" + plural(eps, "llamada al back", "llamadas al back") + "</span><span>" + plural(Object.keys(tablas).length, "tabla", "tablas") + "</span>" +
+      LEYENDA.filter(function (l) { return cuenta[l[0]]; }).map(function (l) { return '<button type="button" class="tz-ley tz-' + l[0] + '" data-t="' + l[0] + '" aria-pressed="false" title="Mostrar solo este tipo (se pueden combinar)"><span class="tz-pt"></span>' + l[1] + " <b>" + cuenta[l[0]] + "</b></button>"; }).join("") + "</div>" +
+      '<div class="tz-filas">' + filasHtml(filas, []) + "</div></div>";
+  }
+  // La leyenda filtra: cada tipo se prende o apaga; sin ninguno prendido, la traza completa.
+  document.addEventListener("click", function (ev) {
+    var b = ev.target.closest && ev.target.closest(".tz-ley[data-t]");
+    if (!b) return;
+    var bloque = b.closest(".tz-bloque"), filas = TRAZAS[Number(bloque.dataset.traza)];
+    b.classList.toggle("on");
+    b.setAttribute("aria-pressed", b.classList.contains("on"));
+    var tipos = [].map.call(bloque.querySelectorAll(".tz-ley.on"), function (x) { return x.dataset.t; });
+    bloque.classList.toggle("filtrada", tipos.length > 0);
+    bloque.querySelector(".tz-filas").innerHTML = filasHtml(filas, tipos);
+  });
   function puntaAPunta(x) {
     if (!x.recorrido) return '<p class="vacio">Esta pantalla no está en ninguna funcionalidad: su recorrido no se calculó.</p>';
     var r = x.recorrido;

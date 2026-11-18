@@ -186,10 +186,14 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .tz-pt { flex: none; width: 8px; height: 8px; border-radius: 2px; background: var(--tz); }
 .tz-pista { position: relative; height: 28px; border-left: 1px solid #1A1F2B; background: repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 1px), #141925 calc(10% - 1px), #141925 10%); }
 .tz-barra { position: absolute; top: 8px; height: 12px; border-radius: 3px; background: var(--tz); opacity: .9; }
-.tz-front { --tz: #8FA6FF; } .tz-http { --tz: #F5B94A; } .tz-back { --tz: #5EDBB0; } .tz-tabla { --tz: #F28BB3; } .tz-ext { --tz: #B79CFF; } .tz-cola { --tz: #6FD3F7; }
-.tz-http .tz-nom strong { color: #F5B94A; } .tz-tabla .tz-nom strong { color: #F28BB3; }
+/* Los mismos colores que el grafo: el front es de la pantalla, la llamada va a un endpoint, el back es el servicio. */
+.tz-front { --tz: var(--pantalla); } .tz-http { --tz: var(--endpoint); } .tz-back { --tz: var(--svc); } .tz-tabla { --tz: var(--tabla); } .tz-ext { --tz: var(--ext); } .tz-cola { --tz: var(--queue); }
+.tz-http .tz-nom strong, .tz-tabla .tz-nom strong { color: var(--tz); }
 .tz-resumen { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 8px 0 0; font-size: 12px; color: var(--medio); }
-.tz-ley { display: inline-flex; align-items: center; gap: 5px; color: var(--suave); } .tz-ley:first-of-type { margin-left: auto; }
+.tz-ley { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 9px; border: 1px solid var(--borde2); border-radius: 999px; background: #121620; color: var(--suave); font: 500 12px var(--sans); cursor: pointer; }
+.tz-ley b { color: var(--medio); font-weight: 600; } .tz-ley:hover { color: #FFFFFF; border-color: #3B4560; }
+.tz-ley.on { background: #1D2740; border-color: var(--tz); color: #FFFFFF; } .tz-ley:first-of-type { margin-left: auto; }
+.tz-bloque.filtrada .tz-ley:not(.on) { opacity: .55; }
 .pasos { list-style: none; margin: 10px 0 2px; padding: 0; }
 .pasos li { padding: 4px 0; }
 .pasos .flecha { color: var(--suave); }
