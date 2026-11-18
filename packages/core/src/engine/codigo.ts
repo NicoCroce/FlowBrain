@@ -399,7 +399,7 @@ function resolverPantalla(ctx: Contexto, ref: string): GraphNode | null {
   if (n) return n.tipo === "pantalla" ? n : null;
   const pantallas = ctx.graph.nodes.filter((x) => x.tipo === "pantalla");
   if (!pantallas.length) return null;
-  const explicita = /^pantalla\s+(\S+)$/i.exec(ref.trim());
+  const explicita = /^pantalla\s+(\/.*)$/i.exec(ref.trim());
   const ruta = explicita ? normalizarRuta(explicita[1]!) : ref.startsWith("/") && !ENDPOINT_REF.test(ref) ? normalizarRuta(ref) : null;
   if (ruta) {
     if (!explicita && resolverEndpoints(ctx, ruta).length) return null;
@@ -925,6 +925,45 @@ export interface PorResolverParams {
  * llamadas que el parser no pudo atribuir (receptor sin tipo declarado). Cada una trae sus candidatos, para que quien
  * lea el código (una persona o un modelo) declare a cuál va en `calls.yaml`.
  */
+/**
+ * Llamadas HTTP (con ruta) a las que se llega desde el árbol de componentes de una pantalla: las unidas a un endpoint y
+ * las pendientes de otro cerebro. Sirve para comprobar que una pantalla sigue llegando a lo que se verificó a mano.
+ */
+export function llamadasDePantalla(ctx: Contexto, pantalla: string): Array<{ metodo: string; ruta: string }> {
+  const ix = ctx.codigo;
+  const n = ctx.nodo.get(pantalla);
+  if (!ix || !n) return [];
+  const vistos = new Set<string>((n.atributos as { componentes?: string[] }).componentes ?? []);
+  const cola = [...vistos];
+  while (cola.length && vistos.size < 5000) {
+    const k = cola.pop()!;
+    const { archivo, simbolo } = partes(k);
+    const repo = archivo.slice(0, archivo.indexOf(":"));
+    for (const i of ix.estructura.get(archivo)?.invoca ?? []) {
+      const sig = `${repo}:${i.archivo}#${i.simbolo}`;
+      if (i.desde === simbolo && !vistos.has(sig)) {
+        vistos.add(sig);
+        cola.push(sig);
+      }
+    }
+  }
+  const simboloEn = (archivo: string, linea: number) => {
+    const dentro = (ix.estructura.get(archivo)?.simbolos ?? []).filter((s) => s.fin !== undefined && s.linea <= linea && linea <= s.fin);
+    return dentro.length ? dentro.reduce((a, b) => (b.linea >= a.linea ? b : a)).nombre : null;
+  };
+  const out: Array<{ metodo: string; ruta: string }> = [];
+  for (const [ep, xs] of ix.llamanEndpoint) {
+    const e = ctx.nodo.get(ep);
+    if (e && xs.some((x) => vistos.has(x.clave))) out.push({ metodo: String(e.atributos["metodo"]).toUpperCase(), ruta: String(e.atributos["ruta"]) });
+  }
+  for (const l of ix.llamadasPendientes) {
+    const m = l.llamada?.ruta ? /^(.*)#L(\d+)$/.exec(l.evidencia) : null;
+    const s = m ? simboloEn(m[1]!, Number(m[2])) : null;
+    if (m && s && vistos.has(`${m[1]}#${s}`)) out.push({ metodo: l.llamada!.metodo, ruta: l.llamada!.ruta! });
+  }
+  return out;
+}
+
 export function llamadasPorResolver(ctx: Contexto, p: PorResolverParams = {}) {
   const ix = indice(ctx);
   let total = 0;

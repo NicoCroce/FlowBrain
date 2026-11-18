@@ -358,6 +358,12 @@ $ARGUMENTS
      Si tu extractor solo busca columnas y no puede asegurar que cada nombre sea una tabla real (una CTE, una
      subconsulta con nombre), agregá \`"soloColumnas": true\`: completa los accesos que ya existen y no crea tablas
      nuevas. Mirá primero en qué línea cita el parser cada acceso (\`_build/extraction/<repo>.json\`) y citá la misma.
+   - **Corregir al parser.** Una \`llamada\` tuya en una línea reemplaza a las que el parser dejó en esa línea (con
+     la ruta, el método o la base mal leídos). Una \`pantalla\` con una ruta que ya existe le reemplaza el componente
+     y las \`envuelta\` (un layout tomado por la página). Para borrar lo que el parser inventó, \`quitar\`:
+     \`[{ "tipo": "llamada", "archivo": "src/api.ts", "linea": 30 }, { "tipo": "pantalla", "ruta": "/{path}/config" }]\`
+     (también \`navegacion\`). Solo se corrige lo que leyó un parser, nunca lo que sumó otro extractor; un \`quitar\`
+     que no coincide con nada se rechaza. Lo mismo vale para \`http\` en \`calls.yaml\`.
    - FlowBrain verifica cada dato: el archivo existe, la línea existe, los símbolos existen. Lo que no pasa se descarta.
 
    Probá cada extractor suelto antes de indexar:
@@ -383,9 +389,11 @@ $ARGUMENTS
      - { tipo: pantalla, ruta: "/login" }
      - { tipo: llamada, archivo: "src/features/auth/api.ts", metodo: POST, ruta: "/login" }
      - { tipo: traza, endpoint: "POST /api/login", tabla: "user", nota: "el login actualiza el token del usuario" }
+     - { tipo: alcanza, pantalla: "/login", metodo: POST, ruta: "/login", nota: "la pantalla llega a la llamada" }
    \`\`\`
 
    Dejá al menos cinco por cerebro, y que incluyan trazas completas: son las que prueban que todo el camino existe.
+   En un back, \`traza\` (endpoint → tabla); en un front, \`alcanza\` (pantalla → llamada).
 
 6. **Unir los cerebros.** Con los índices completos, seguí con \`/${NOMBRE_COMANDO}\` (a qué servicio va cada llamada) y
    \`/${NOMBRE_FUNCIONALIDADES}\` (las funcionalidades de producto). Al final, \`flowbrain brains viewer\`.

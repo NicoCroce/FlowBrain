@@ -849,6 +849,34 @@ function extraer(repo: RepoFuente): Extraccion {
     }
     return undefined;
   };
+  /**
+   * Lo que dibuja una ruta, sin los marcos que lo envuelven: `<Marco titulo="x"><Pagina /></Marco>` o
+   * `{() => <Proveedor><Pagina /></Proveedor>}`. La pantalla es la página de adentro; el marco y el proveedor son
+   * envolturas. Solo se baja mientras haya un único hijo dibujado: con varios, no se sabe cuál es la página.
+   */
+  const capas = (e: ts.Expression | undefined): { comp: RefSimbolo | null; marcos: RefSimbolo[] } => {
+    const abrir = (x: ts.Expression): ts.Expression => {
+      while (ts.isParenthesizedExpression(x) || ((ts.isArrowFunction(x) || ts.isFunctionExpression(x)) && !ts.isBlock(x.body))) x = ts.isParenthesizedExpression(x) ? x.expression : (x.body as ts.Expression);
+      return x;
+    };
+    if (!e) return { comp: null, marcos: [] };
+    let x = abrir(e);
+    const marcos: RefSimbolo[] = [];
+    while (ts.isJsxElement(x)) {
+      const hijos = x.children.filter((c) => ts.isJsxElement(c) || ts.isJsxSelfClosingElement(c) || (ts.isJsxExpression(c) && !!c.expression) || ts.isJsxFragment(c));
+      if (hijos.length !== 1) break;
+      const h = hijos[0]!;
+      const dentro = ts.isJsxExpression(h) ? abrir(h.expression!) : (h as ts.Expression);
+      if (!ts.isJsxElement(dentro) && !ts.isJsxSelfClosingElement(dentro)) break;
+      const marco = componenteDe(x.openingElement.tagName as ts.Expression);
+      if (marco) marcos.push(marco);
+      x = dentro;
+    }
+    const comp = componenteDe(x);
+    // Si adentro no hay un componente del repo (`<div>`), la pantalla es el último marco.
+    if (!comp) return { comp: marcos.pop() ?? componenteDe(e), marcos };
+    return { comp, marcos };
+  };
   /** `<Redirect>`/`<Navigate>` (o una función que los devuelve): no es una pantalla. */
   const esRedireccion = (e: ts.Expression): boolean => {
     let x: ts.Node = e;
@@ -862,6 +890,13 @@ function extraer(repo: RepoFuente): Extraccion {
     let comp: RefSimbolo | null = null;
     let marca = false;
     let envolturaPropia: RefSimbolo | null = null;
+    let marcos: RefSimbolo[] = [];
+    const tomar = (v: ts.Expression | undefined) => {
+      if (comp) return;
+      const c = capas(v);
+      comp = c.comp;
+      if (comp) marcos = c.marcos;
+    };
     // Una ruta con hijas es un layout (`AppShell`): envuelve a sus pantallas, no es una.
     if (ts.isObjectLiteralExpression(n) && esObjetoRuta(n) && !propiedad(n, "children")) {
       const pe = propiedad(n, "path");
@@ -870,7 +905,7 @@ function extraer(repo: RepoFuente): Extraccion {
         const v = propiedad(n, m);
         if (v) {
           marca = true;
-          comp ??= componenteDe(v);
+          tomar(v);
         }
       }
     } else if (ts.isJsxSelfClosingElement(n) || ts.isJsxOpeningElement(n)) {
@@ -885,7 +920,7 @@ function extraer(repo: RepoFuente): Extraccion {
         for (const v of [...["element", "Component", "component", "render"].map((m) => valor(attr(m))), hijo]) {
           if (!v || esRedireccion(v)) continue;
           marca = true;
-          comp ??= componenteDe(v);
+          tomar(v);
         }
         // `<LayoutRoute component={X}>`: la envoltura propia dibuja la pantalla dentro de su layout o guarda.
         if (tag !== "Route") envolturaPropia = componenteDe(n.tagName as ts.Expression);
@@ -894,7 +929,7 @@ function extraer(repo: RepoFuente): Extraccion {
         if (!nombre) return;
         path = "/" + nombre.replace(/^\//, "");
         marca = true;
-        for (const v of [valor(attr("component")), valor(attr("getComponent")), hijo]) comp ??= componenteDe(v);
+        for (const v of [valor(attr("component")), valor(attr("getComponent")), hijo]) tomar(v);
       } else return;
     } else return;
     if (path === null || !marca) return;
@@ -937,6 +972,7 @@ function extraer(repo: RepoFuente): Extraccion {
       if (padre.path !== null && !completa.startsWith("/")) completa = `${padre.path.replace(/\/$/, "")}/${completa}`;
     }
     if (envolturaPropia) envuelta.push(envolturaPropia);
+    envuelta.push(...marcos);
     out.pantallas.push({ paquete, ruta: normalizarRuta(completa || "/"), archivo, linea: linea(n), componente: comp, envuelta });
   };
   const NAVEGA = new Set(["navigate", "push", "replace", "redirect", "navigateByUrl"]);
@@ -983,7 +1019,9 @@ function extraer(repo: RepoFuente): Extraccion {
     let cuerpo: ts.Expression | undefined;
     if (ts.isIdentifier(c) && c.text === "fetch" && !resolver(c)?.declarations?.length) {
       url = call.arguments[0];
-      const init = call.arguments[1];
+      let init = call.arguments[1];
+      // `fetch(url, { method: "POST", body } as any)`: las opciones también vienen envueltas en un cast.
+      while (init && (ts.isAsExpression(init) || ts.isParenthesizedExpression(init) || ts.isSatisfiesExpression(init) || ts.isTypeAssertionExpression(init))) init = init.expression;
       if (init && ts.isObjectLiteralExpression(init)) {
         const m = propiedad(init, "method");
         if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
@@ -1004,7 +1042,30 @@ function extraer(repo: RepoFuente): Extraccion {
       if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
       cuerpo = propiedad(cfg, "data");
     } else return null;
+    // `_method` en el cuerpo de un POST (Symfony, Laravel, Rails): el back lo atiende como ese método.
+    if (metodo === "POST" && cuerpo) metodo = metodoSobrescrito(cuerpo, call) ?? metodo;
     return url ? { url, base, metodo, cuerpo } : null;
+  };
+  /** `{ _method: "PUT" }`, o un `FormData` al que la misma función le hace `.append("_method", "PUT")`. */
+  const metodoSobrescrito = (cuerpo: ts.Expression, call: ts.Node): string | null => {
+    let c: ts.Expression = cuerpo;
+    while (ts.isAsExpression(c) || ts.isParenthesizedExpression(c)) c = c.expression;
+    const lit = (e: ts.Expression | undefined) => (e && ts.isStringLiteralLike(e) && /^(put|patch|delete)$/i.test(e.text) ? e.text.toUpperCase() : null);
+    if (ts.isObjectLiteralExpression(c)) return lit(propiedad(c, "_method"));
+    if (!ts.isIdentifier(c)) return null;
+    let f: ts.Node | undefined = call.parent;
+    while (f && !ts.isFunctionLike(f) && !ts.isSourceFile(f)) f = f.parent;
+    let m: string | null = null;
+    const ver = (n: ts.Node): void => {
+      if (m) return;
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && /^(append|set)$/.test(n.expression.name.text) && ts.isIdentifier(n.expression.expression) && n.expression.expression.text === (c as ts.Identifier).text) {
+        const [k, v] = n.arguments;
+        if (k && ts.isStringLiteralLike(k) && k.text === "_method") m = lit(v);
+      }
+      ts.forEachChild(n, ver);
+    };
+    if (f) ver(f);
+    return m;
   };
   /** Si la expresión es un parámetro de una función con nombre, esa función (su declaración) y la posición del parámetro. */
   const parametroDe = (e: ts.Expression): { fn: ts.Node; idx: number } | null => {

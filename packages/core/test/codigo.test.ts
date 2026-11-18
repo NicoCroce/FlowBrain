@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, archivosDeDiff, buscarNodo, crearContexto, deriva, paridad, riesgo, type Graph, type GraphEdge, type GraphNode, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, archivosDeDiff, buscarNodo, crearContexto, deriva, paridad, riesgo, type Graph, type GraphEdge, type GraphNode, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, cobertura, leerControles, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -159,6 +159,24 @@ describe("consultas de código", () => {
     // `recorrido` acepta la pantalla, y una ruta del front que no es un endpoint.
     expect(recorrido(ctx, { desde: "pantalla /checkout", budget_tokens: null })).toMatchObject({ inicio: "svc-web:pantalla:/checkout" });
     expect(() => pantalla(ctx, { ruta: "/nada" })).toThrow(ConsultaError);
+  });
+
+  it("control `alcanza`: la pantalla sigue llegando a la llamada que se verificó a mano", () => {
+    const { controles } = leerControles(
+      [
+        "controles:",
+        '  - { tipo: alcanza, pantalla: "/checkout", metodo: POST, ruta: "/checkout" }',
+        '  - { tipo: alcanza, pantalla: "/checkout", metodo: DELETE, ruta: "/checkout" }',
+        '  - { tipo: alcanza, pantalla: "/nada", metodo: POST, ruta: "/checkout" }',
+      ].join("\n"),
+    );
+    expect(controles).toHaveLength(3);
+    const r = cobertura(ctx, { controles });
+    expect(r.controles.fallan.map((c) => `${c.pantalla} ${c.metodo}`)).toEqual(["/checkout DELETE", "/nada POST"]);
+  });
+
+  it("pantalla con espacios en la ruta (React Navigation nombra pantallas con espacios)", () => {
+    expect(() => pantalla(ctx, { ruta: "/mi cuenta" })).toThrow(/no hay una pantalla con la ruta \/mi cuenta$/);
   });
 
   it("quien_llama sube por las invocaciones y dice qué endpoints y funcionalidades alcanza", () => {

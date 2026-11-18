@@ -335,9 +335,9 @@ Un registro (`flowbrain.yaml` en una carpeta) agrupa hasta 8 cerebros. Cada cere
 Además de las páginas y de lo que extraen los parsers, un brain puede tener, en su raíz:
 
 - **`profile.md`:** cómo está hecho cada repo (framework, rutas, pantallas, llamadas; capas, endpoints, acceso a datos), con archivo y línea de ejemplo. Lo escribe quien estudia el repo; es lo que justifica cada extractor.
-- **`extractors/<repo-id>/`:** programas que completan lo que los parsers no entienden. Reciben la ruta del repo, imprimen un JSON (`simbolos`, `invocaciones`, `endpoints`, `llamadas`, `pantallas`, `navegaciones`, `accesos` con `columnas`) y corren en cada indexación, en orden alfabético, sin red y sin escribir en el disco. Cada dato cita archivo y línea reales; lo que no se comprueba se descarta. El informe de cada corrida queda en `_build/extractors/<repo>.json`.
-- **`calls.yaml`:** casos sueltos resueltos a mano: `llamadas` entre métodos y `http` salientes.
-- **`checks.yaml`:** `controles` (`endpoint`, `pantalla`, `llamada`, `traza`): hechos verificados que tienen que seguir saliendo.
+- **`extractors/<repo-id>/`:** programas que completan lo que los parsers no entienden. Reciben la ruta del repo, imprimen un JSON (`simbolos`, `invocaciones`, `endpoints`, `llamadas`, `pantallas`, `navegaciones`, `accesos` con `columnas`) y corren en cada indexación, en orden alfabético, sin red y sin escribir en el disco. Cada dato cita archivo y línea reales; lo que no se comprueba se descarta. Un extractor también corrige lo que leyó un parser: su llamada reemplaza a las del parser en la misma línea, su pantalla con una ruta existente reemplaza el componente y las envolturas, y `quitar` (`tipo`: `llamada`, `pantalla` o `navegacion`, con `archivo` y `linea` o `ruta`) borra lo inventado; lo que sumó otro extractor no se toca. El informe de cada corrida queda en `_build/extractors/<repo>.json`.
+- **`calls.yaml`:** casos sueltos resueltos a mano: `llamadas` entre métodos y `http` salientes. Una `http` reemplaza a las llamadas que haya en su línea; dos en la misma línea conviven.
+- **`checks.yaml`:** `controles` (`endpoint`, `pantalla`, `llamada`, `traza` de endpoint a tabla, `alcanza` de pantalla a llamada): hechos verificados que tienen que seguir saliendo.
 
 `flowbrain coverage` mide cuánto quedó conectado (pantallas con llamadas, llamadas con ruta, endpoints con método y que llegan a una tabla, accesos con columnas), cómo anduvo cada extractor y qué controles fallan. Un acceso a una tabla puede llevar `columnas`: las que ese acceso lee o escribe.
 

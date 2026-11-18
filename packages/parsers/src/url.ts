@@ -15,7 +15,16 @@ export function analizarUrl(partes: Parte[]): UrlAnalizada | null {
   if (unidas.length === 0) return null;
   const texto = unidas.map((p) => ("lit" in p ? p.lit : `\${${p.din}}`)).join("");
   const aRuta = (ps: Parte[]): string | null => {
-    const t = ps
+    // El query string pegado a la ruta no es un segmento: `/items${query}`, `/items${qs ? `?${qs}` : ""}`. Se corta en la
+    // parte dinámica que arma un `?`, o en la última si va pegada a una palabra (después de una barra es un parámetro).
+    const corte = ps.findIndex((p, i) => {
+      if ("lit" in p) return false;
+      if (/[`'"]\?/.test(p.din)) return true;
+      const prev = ps[i - 1], resto = ps.slice(i + 1);
+      const ultima = resto.every((q) => "lit" in q && (q.lit === "" || /^[?#]/.test(q.lit)));
+      return ultima && !!prev && "lit" in prev && /[A-Za-z0-9]$/.test(prev.lit);
+    });
+    const t = (corte >= 0 ? ps.slice(0, corte) : ps)
       .map((p) => ("lit" in p ? p.lit : "{param}"))
       .join("")
       .replace(/[?#].*$/, "");

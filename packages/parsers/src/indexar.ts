@@ -260,9 +260,14 @@ export async function indexar(
   // Lo que alguien resolvió leyendo el código y dejó en `calls.yaml`: llamadas HTTP que el parser no vio o no pudo
   // rutear (acá, antes de unirlas a endpoints) y llamadas entre métodos (más abajo). Sobrevive a reindexar.
   const declaradas = await readFile(join(raizBrain, ARCHIVO_LLAMADAS), "utf8").then(leerLlamadasDeclaradas, () => null);
+  const corregidas = new Set<string>();
   for (const h of declaradas ? httpDeclaradasDe(x.archivos, repoId, declaradas.http).validas : []) {
-    // Reemplaza a la que el parser haya dejado en esa línea sin ruta.
-    x.llamadas = x.llamadas.filter((l) => !(l.archivo === h.archivo && l.linea === h.linea && l.url.ruta === null));
+    // Reemplaza a las que haya en esa línea, con o sin ruta: quien la declaró la leyó mejor. Dos declaradas en la misma
+    // línea (una URL con dos ramas) conviven.
+    if (!corregidas.has(`${h.archivo}#${h.linea}`)) {
+      corregidas.add(`${h.archivo}#${h.linea}`);
+      x.llamadas = x.llamadas.filter((l) => !(l.archivo === h.archivo && l.linea === h.linea));
+    }
     if (x.llamadas.some((l) => l.archivo === h.archivo && l.linea === h.linea && l.metodo === h.metodo && l.url.ruta === h.ruta)) continue;
     x.llamadas.push({ paquete: paqueteDe(repo, h.archivo), archivo: h.archivo, linea: h.linea, metodo: h.metodo, url: { base: h.base ? "dinamica" : "relativa", host: null, ruta: h.ruta, texto: h.base ? `\${${h.base}}${h.ruta}` : h.ruta }, dato: null });
   }

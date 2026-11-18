@@ -1158,3 +1158,93 @@ describe("extractores del proyecto", () => {
     await rm(join(brain, "extractors/repo-pedidos/30-travieso.mjs"));
   });
 });
+
+describe("lo que el parser leía mal: layouts, query string, método", () => {
+  let dir: string, brain: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "brain-ts-correcciones-"));
+    brain = join(dir, "brain");
+    const repo = join(dir, "web");
+    await mkdir(join(repo, "src"), { recursive: true });
+    await writeFile(join(repo, "package.json"), '{ "name": "panel-web", "dependencies": { "axios": "1", "react-router-dom": "5" } }\n');
+    await writeFile(join(repo, "tsconfig.json"), '{ "compilerOptions": { "jsx": "react-jsx", "allowJs": true } }\n');
+    await writeFile(
+      join(repo, "src/api.ts"),
+      [
+        'import axios from "axios";',
+        "const B = process.env.API_URL;",
+        "export const listar = (qs: string) => axios.get(`${B}/usuarios${qs ? `?${qs}` : \"\"}`);",
+        "export const opciones = (query: string) => axios.get(`${B}/opciones${query}`);",
+        "export const borrar = (id: string) => fetch(`${B}/usuarios/${id}`, { method: \"DELETE\" } as any);",
+        "export const editar = (id: string) => { const fd = new FormData(); fd.append(\"_method\", \"PUT\"); return axios.post(`${B}/usuarios/${id}`, fd); };",
+        "export const mal = (x: string) => axios.get(`${B}/mal/${x}`);",
+        "",
+      ].join("\n"),
+    );
+    await writeFile(join(repo, "src/Marco.tsx"), ["export function Marco(p: { titulo: string; children: unknown }) {", "  return <section>{p.children as never}</section>;", "}", ""].join("\n"));
+    await writeFile(join(repo, "src/Usuarios.tsx"), ['import { listar } from "./api";', "export function Usuarios() {", '  listar("");', "  return <div />;", "}", ""].join("\n"));
+    await writeFile(join(repo, "src/Viejo.tsx"), ["export function Viejo() {", "  return <div />;", "}", ""].join("\n"));
+    await writeFile(
+      join(repo, "src/App.tsx"),
+      [
+        'import { Route, Switch } from "react-router-dom";',
+        'import { Marco } from "./Marco";',
+        'import { Usuarios } from "./Usuarios";',
+        'import { Viejo } from "./Viejo";',
+        "export function App() {",
+        "  return (",
+        "    <Switch>",
+        '      <Route path="/admin/usuarios"><Marco titulo="Usuarios"><Usuarios /></Marco></Route>',
+        '      <Route path="/viejo"><Viejo /></Route>',
+        '      <Route path="/{path}/config"><Viejo /></Route>',
+        "    </Switch>",
+        "  );",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await mkdir(join(brain, "extractors/repo-web"), { recursive: true });
+    await mkdir(join(brain, "technology"), { recursive: true });
+    await mkdir(join(brain, "product"), { recursive: true });
+    await writeFile(
+      join(brain, "extractors/repo-web/10-correcciones.mjs"),
+      `console.log(JSON.stringify(${JSON.stringify({
+        // La línea 7 llama a `/bien/{x}`: reemplaza a lo que leyó el parser, con ruta o sin ella.
+        llamadas: [{ archivo: "src/api.ts", linea: 7, metodo: "GET", ruta: "/bien/{x}", base: "API_URL" }],
+        // `/viejo` en realidad dibuja `Usuarios`.
+        pantallas: [{ ruta: "/viejo", archivo: "src/App.tsx", linea: 9, componente: { archivo: "src/Usuarios.tsx", simbolo: "Usuarios" } }],
+        quitar: [
+          { tipo: "pantalla", ruta: "/{path}/config" },
+          { tipo: "llamada", archivo: "src/api.ts", linea: 1 },
+        ],
+      })}));\n`,
+    );
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("la página de adentro es la pantalla y el layout queda como envoltura", async () => {
+    const x = await tsParser.extract(leerRepo(join(dir, "web")));
+    const p = x.pantallas.find((y) => y.ruta === "/admin/usuarios");
+    expect(p?.componente?.simbolo).toBe("Usuarios");
+    expect(p?.envuelta.map((e) => e.simbolo)).toEqual(["Marco"]);
+  });
+
+  it("el query string no es un segmento; el método sale de las opciones o de `_method`", async () => {
+    const x = await tsParser.extract(leerRepo(join(dir, "web")));
+    expect(x.llamadas.map((l) => `L${l.linea} ${l.metodo} ${l.url.ruta}`).sort()).toEqual(["L3 GET /usuarios", "L4 GET /opciones", "L5 DELETE /usuarios/{param}", "L6 PUT /usuarios/{param}", "L7 GET /mal/{param}"]);
+  });
+
+  it("un extractor corrige la llamada, el componente de una pantalla, y quita lo que el parser inventó", async () => {
+    const r = await indexar(join(dir, "web"), brain, { permitirRepoNuevo: true, repo: "repo-web" });
+    const inf = r.extractores[0]!;
+    expect(inf.aceptados).toMatchObject({ llamadas: 1, pantallas: 1, quitar: 1 });
+    // La segunda entrada de `quitar` no coincide con nada leído por un parser: se rechaza, no se borra a ciegas.
+    expect(inf.rechazados).toBe(1);
+    expect(inf.motivos[0]).toMatch(/no coincide con nada/);
+    const ix = r.archivos as unknown as { pantallas: Array<{ ruta: string; componente: { simbolo: string } | null }>; llamadas?: unknown };
+    expect(ix.pantallas.map((p) => `${p.ruta} ${p.componente?.simbolo}`).sort()).toEqual(["/admin/usuarios Usuarios", "/viejo Usuarios"]);
+    const todas = JSON.stringify(r);
+    expect(todas).not.toContain("/mal/");
+    expect(todas).toContain("/bien/{x}");
+  });
+});

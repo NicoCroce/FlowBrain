@@ -1,5 +1,5 @@
 import { parse } from "yaml";
-import { llamadasPorResolver, type PorResolverParams } from "./codigo.js";
+import { llamadasDePantalla, llamadasPorResolver, type PorResolverParams } from "./codigo.js";
 import type { Contexto } from "./contexto.js";
 import { ConsultaError, normalizar, rutaCoincide } from "./herramientas.js";
 
@@ -14,12 +14,14 @@ import { ConsultaError, normalizar, rutaCoincide } from "./herramientas.js";
  *   - { tipo: pantalla, ruta: "/login" }
  *   - { tipo: llamada, archivo: "src/features/auth/api.ts", metodo: POST, ruta: "/login" }
  *   - { tipo: traza, endpoint: "POST /api/login", tabla: "user", nota: "el login actualiza el token del usuario" }
+ *   - { tipo: alcanza, pantalla: "/login", metodo: POST, ruta: "/login", nota: "la traza de un front: pantalla → llamada" }
  * ```
  */
 export const ARCHIVO_CONTROLES = "checks.yaml";
 
 export interface Control {
-  tipo: "endpoint" | "pantalla" | "llamada" | "traza";
+  tipo: "endpoint" | "pantalla" | "llamada" | "traza" | "alcanza";
+  pantalla?: string;
   metodo?: string;
   ruta?: string;
   archivo?: string;
@@ -39,9 +41,9 @@ export function leerControles(texto: string): { controles: Control[]; malFormado
   const t = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
   const lista = (doc as { controles?: unknown } | null)?.controles;
   (Array.isArray(lista) ? lista : []).forEach((x: Record<string, unknown>, i) => {
-    const c = { tipo: t(x?.["tipo"]), metodo: t(x?.["metodo"])?.toUpperCase(), ruta: t(x?.["ruta"]), archivo: t(x?.["archivo"]), endpoint: t(x?.["endpoint"]), tabla: t(x?.["tabla"]), nota: t(x?.["nota"]) };
+    const c = { tipo: t(x?.["tipo"]), pantalla: t(x?.["pantalla"]), metodo: t(x?.["metodo"])?.toUpperCase(), ruta: t(x?.["ruta"]), archivo: t(x?.["archivo"]), endpoint: t(x?.["endpoint"]), tabla: t(x?.["tabla"]), nota: t(x?.["nota"]) };
     const ok =
-      (c.tipo === "endpoint" && c.metodo && c.ruta) || (c.tipo === "pantalla" && c.ruta) || (c.tipo === "llamada" && c.archivo && c.metodo && c.ruta) || (c.tipo === "traza" && c.endpoint && /^[A-Za-z]+ \//.test(c.endpoint) && c.tabla);
+      (c.tipo === "endpoint" && c.metodo && c.ruta) || (c.tipo === "pantalla" && c.ruta) || (c.tipo === "llamada" && c.archivo && c.metodo && c.ruta) || (c.tipo === "traza" && c.endpoint && /^[A-Za-z]+ \//.test(c.endpoint) && c.tabla) || (c.tipo === "alcanza" && c.pantalla && c.metodo && c.ruta?.startsWith("/"));
     if (ok) controles.push(Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined)) as unknown as Control);
     else malFormados.push(`control ${i + 1}: tipo desconocido o faltan campos (${JSON.stringify(x).slice(0, 120)})`);
   });
@@ -91,6 +93,15 @@ export function cobertura(ctx: Contexto, p: CoberturaParams = {}) {
         if (n && String(n.atributos["metodo"]).toUpperCase() === c.metodo && String(n.atributos["ruta"]).endsWith(c.ruta!) && xs.some((x) => enArchivo(x.evidencia))) return true;
       }
       return false;
+    }
+    if (c.tipo === "alcanza") {
+      // La ruta del control puede ser la del front (`/login`) o la del endpoint (`/api/login`): alcanza con que una
+      // termine en la otra, segmento a segmento.
+      const igual = (a: string, b: string) => {
+        const x = a.split("/").filter(Boolean), y = b.split("/").filter(Boolean), k = Math.min(x.length, y.length);
+        return k > 0 && (rutaCoincide(x.slice(-k).join("/"), y.slice(-k).join("/")) || rutaCoincide(y.slice(-k).join("/"), x.slice(-k).join("/")));
+      };
+      return ctx.graph.nodes.filter((n) => n.tipo === "pantalla" && n.atributos["ruta"] === c.pantalla).some((n) => llamadasDePantalla(ctx, n.id).some((l) => l.metodo === c.metodo && igual(l.ruta, c.ruta!)));
     }
     const [metodo, ...resto] = c.endpoint!.split(" ");
     const ep = epDe(metodo!.toUpperCase(), resto.join(" "));
