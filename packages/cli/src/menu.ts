@@ -5,8 +5,8 @@ import { emitKeypressEvents } from "node:readline";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { buscarRegistro, leerRegistro } from "@flowbrain/core";
+import { AGENTES, agentesConMcp, analizarCon, CONFIGS_MCP, conectarMcp, elegirAgente, type Agente } from "./agentes.js";
 import { ARCHIVO_VISOR } from "./cerebros.js";
-import { mcpRegistrado } from "./estado.js";
 import { comandoBrain, VERSION } from "./init.js";
 import { asistente } from "./asistente.js";
 
@@ -34,8 +34,11 @@ export interface ContextoMenu {
   faltaIndice: string[];
   faltaAnalisis: string[];
   visor: string | null;
+  /** Si algún agente ya tiene el servidor MCP de FlowBrain, y cuáles. */
   mcp: boolean;
-  claude: boolean;
+  mcpEn: Agente["id"][];
+  /** Agentes de código instalados (ver `AGENTES`). */
+  agentes: Agente["id"][];
   git: boolean;
   version: string;
 }
@@ -75,6 +78,7 @@ export async function contextoMenu(cwd: string, entorno: { hayComando(nombre: st
   }
   const cerebros = lista.map((c) => c.nombre);
   const visor = registro && existsSync(join(registro, ARCHIVO_VISOR)) ? join(registro, ARCHIVO_VISOR) : null;
+  const mcpEn = await agentesConMcp(entorno.mcpConfig ?? CONFIGS_MCP());
   return {
     proyecto: registro ? dirname(registro) : resolve(cwd),
     registro,
@@ -82,8 +86,9 @@ export async function contextoMenu(cwd: string, entorno: { hayComando(nombre: st
     faltaIndice: lista.filter((c) => !existsSync(join(c.raiz, "_build/graph.json"))).map((c) => c.nombre),
     faltaAnalisis: lista.filter((c) => !existsSync(join(c.raiz, "profile.md"))).map((c) => c.nombre),
     visor,
-    mcp: !!(await mcpRegistrado(entorno.mcpConfig)),
-    claude: entorno.hayComando("claude"),
+    mcp: mcpEn.length > 0,
+    mcpEn,
+    agentes: AGENTES.filter((a) => entorno.hayComando(a.comando)).map((a) => a.id),
     git: entorno.hayComando("git"),
     version: VERSION,
   };
@@ -98,16 +103,22 @@ export function opciones(c: ContextoMenu): Opcion[] {
     {
       clave: "analizar",
       titulo: "Analizar el proyecto completo",
-      detalle: c.claude
-        ? `Claude Code estudia cada repo, une los servicios y completa las funcionalidades${listo ? "" : " (antes lo configura)"}`
-        : "necesita Claude Code (el comando claude) instalado",
+      detalle: c.agentes.length
+        ? `el agente que elijas estudia cada repo, une los servicios y completa las funcionalidades${listo ? "" : " (antes lo configura)"}`
+        : "no encontré Claude Code, Codex ni OpenCode: te doy las instrucciones para el agente que uses",
     },
   ];
   if (listo) out.push({ clave: "reindexar", titulo: "Reindexar", detalle: "vuelve a correr parsers y extractores y regenera el visor" });
   if (c.visor) out.push({ clave: "visor", titulo: "Abrir el visor", detalle: "funcionalidades, pantallas, trazas, impacto y mapa 3D" });
   if (listo) out.push({ clave: "estado", titulo: "Ver estado", detalle: "repos al día, conteos y huecos conocidos de cada cerebro" });
   out.push(
-    { clave: "mcp", titulo: c.mcp ? "Volver a conectar Claude Code (MCP)" : "Conectar Claude Code (MCP)", detalle: c.mcp ? "el servidor ya está registrado; lo registra de nuevo" : "registra el servidor MCP de FlowBrain para todos tus proyectos" },
+    {
+      clave: "mcp",
+      titulo: "Conectar un agente (MCP)",
+      detalle: c.mcp
+        ? `conectado en ${AGENTES.filter((a) => c.mcpEn.includes(a.id)).map((a) => a.nombre).join(", ")}; suma otro o lo registra de nuevo`
+        : "registra el servidor MCP de FlowBrain en Claude Code, Codex u OpenCode, para todos tus proyectos",
+    },
     { clave: "actualizar", titulo: "Actualizar FlowBrain", detalle: c.version === "dev" ? "trae la última versión del repo de FlowBrain y la instala" : `versión ${c.version}: instala la última publicada` },
     { clave: "salir", titulo: "Salir", detalle: "" },
   );
@@ -123,7 +134,7 @@ export function siguiente(c: ContextoMenu): { clave: Clave; motivo: string } | n
   if (!c.registro || !c.cerebros.length) return { clave: "configurar", motivo: "el proyecto no está configurado" };
   if (c.faltaIndice.length) return { clave: "reindexar", motivo: `falta indexar ${nombres(c.faltaIndice)}` };
   if (c.faltaAnalisis.length) return { clave: "analizar", motivo: `falta el análisis completo en ${nombres(c.faltaAnalisis)}` };
-  if (!c.mcp) return { clave: "mcp", motivo: "Claude Code todavía no consulta FlowBrain" };
+  if (!c.mcp) return { clave: "mcp", motivo: "ningún agente consulta FlowBrain todavía" };
   return null;
 }
 
@@ -190,10 +201,6 @@ export async function accion(o: Opcion, c: ContextoMenu, e: Entorno): Promise<bo
       mostrar(await e.flowbrain(["install"], c.proyecto));
       break;
     case "analizar": {
-      if (!c.claude) {
-        e.escribir("No encontré el comando claude. Instalá Claude Code (https://claude.com/claude-code) y volvé a intentar.\n");
-        break;
-      }
       if (!c.registro) {
         // El análisis necesita los cerebros y el índice: el asistente los arma y ofrece el análisis al final.
         e.escribir("Antes de analizar hay que configurar el proyecto.\n");
@@ -204,8 +211,7 @@ export async function accion(o: Opcion, c: ContextoMenu, e: Entorno): Promise<bo
         e.escribir("Primero indexo lo que falta…\n");
         mostrar(await e.flowbrain(["brains", "apply"], c.proyecto));
       }
-      e.escribir("Abriendo Claude Code con el análisis completo. Va a tardar: estudia cada repo de punta a punta.\n");
-      await e.correr("claude", [PROMPT_ANALISIS], c.proyecto);
+      await analizarCon(await elegirAgente(c, e, "analizar"), PROMPT_ANALISIS, c, e);
       break;
     }
     case "reindexar":
@@ -219,18 +225,9 @@ export async function accion(o: Opcion, c: ContextoMenu, e: Entorno): Promise<bo
     case "estado":
       mostrar(await e.flowbrain(["status"], c.proyecto));
       break;
-    case "mcp": {
-      const linea = `claude mcp add --scope user flowbrain -- ${comandoBrain()} serve --sync`;
-      if (!c.claude) {
-        e.escribir(`No encontré el comando claude. Cuando lo instales, corré:\n  ${linea}\n`);
-        break;
-      }
-      if (!si(await e.preguntar(`Voy a registrar el servidor MCP de FlowBrain en Claude Code (para todos tus proyectos):\n  ${linea}\n¿Sigo? (s/N) `))) break;
-      if (c.mcp) await e.correr("claude", ["mcp", "remove", "--scope", "user", "flowbrain"], c.proyecto);
-      const codigo = await e.correr("sh", ["-c", linea], c.proyecto);
-      e.escribir(codigo === 0 ? "Listo: abrí Claude Code de nuevo para que lo tome.\n" : "No se pudo registrar: revisá el mensaje de arriba.\n");
+    case "mcp":
+      await conectarMcp(c, e);
       break;
-    }
     case "actualizar":
       await actualizar(c, e);
       break;

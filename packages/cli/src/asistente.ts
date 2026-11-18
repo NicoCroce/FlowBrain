@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { CARPETA_PROYECTO, MAX_CEREBROS } from "@flowbrain/core";
 import { asegurarGitignore, crearRegistro, detectarRepo, encontrarRepos, lenguajesDeCarpeta, type RepoDetectado } from "./cerebros.js";
+import { AGENTES, analizarCon, conectarMcp, elegirAgente } from "./agentes.js";
 import { accion, contextoMenu, si, siPorDefecto, PROMPT_ANALISIS, type ContextoMenu, type Entorno } from "./menu.js";
 
 /**
@@ -11,7 +12,7 @@ import { accion, contextoMenu, si, siPorDefecto, PROMPT_ANALISIS, type ContextoM
  * mira primero si ya está hecho, así que cortarlo a la mitad y volver a empezar sigue desde el primero pendiente.
  */
 
-export const PASOS = ["Requisitos", "Repositorios", "Índice", "Claude Code (MCP)", "Análisis completo", "Visor"] as const;
+export const PASOS = ["Requisitos", "Repositorios", "Índice", "Agente (MCP)", "Análisis completo", "Visor"] as const;
 
 const NEGRITA = "\x1b[1m", TENUE = "\x1b[2m", VERDE = "\x1b[32m", FIN = "\x1b[0m";
 
@@ -47,7 +48,10 @@ export async function asistente(c0: ContextoMenu, e: Entorno): Promise<void> {
   // 1. Requisitos: la máquina lista (comando, hooks y comandos de Claude Code) y qué falta instalar.
   paso(0);
   if (!c.git) e.escribir("No encontré git: FlowBrain sabe si un repo cambió por su commit. Instalalo cuando puedas.\n");
-  if (!c.claude) e.escribir("No encontré Claude Code (el comando claude). Sigo con lo que no lo necesita; el análisis queda para cuando lo instales (https://claude.com/claude-code).\n");
+  if (!c.agentes.length)
+    e.escribir(
+      `No encontré ${AGENTES.map((a) => `${a.nombre} (${a.comando})`).join(", ")}. Sigo igual: para el análisis te doy las instrucciones y las pegás en el agente de código que uses.\n`,
+    );
   const setup = await e.flowbrain(["setup"], c.proyecto);
   if (setup.codigo !== 0) {
     mostrar(setup);
@@ -69,7 +73,7 @@ export async function asistente(c0: ContextoMenu, e: Entorno): Promise<void> {
         e.escribir(
           `\nNo encontré código en ${carpeta}. FlowBrain se arma sobre código que ya existe: cuando el proyecto tenga código, volvé a escribir flowbrain y sigo desde acá.\n`,
         );
-        if (!c.mcp && c.claude && siPorDefecto(await e.preguntar("Mientras tanto, ¿conecto Claude Code con FlowBrain (MCP)? (S/n) "))) await accion({ clave: "mcp", titulo: "", detalle: "" }, { ...c, mcp: false }, { ...e, preguntar: async () => "s" });
+        if (!c.mcp && c.agentes.length && siPorDefecto(await e.preguntar("Mientras tanto, ¿conecto tu agente con FlowBrain (MCP)? (S/n) "))) await conectarMcp(c, e, false);
         return;
       }
       rutas = [carpeta];
@@ -124,31 +128,27 @@ export async function asistente(c0: ContextoMenu, e: Entorno): Promise<void> {
   }
   hechos[2] = true;
 
-  // 4. MCP: antes del análisis, así Claude Code ya consulta FlowBrain mientras analiza.
-  if (!c.mcp && c.claude) {
+  // 4. MCP: antes del análisis, así el agente ya consulta FlowBrain mientras analiza.
+  if (!c.mcp && c.agentes.length) {
     paso(3);
-    e.escribir("Con el MCP, Claude Code consulta FlowBrain en cualquier proyecto: impacto, pantallas, recorridos.\n");
+    e.escribir("Con el MCP, tu agente de código consulta FlowBrain en cualquier proyecto: impacto, pantallas, recorridos.\n");
     if (siPorDefecto(await e.preguntar("¿Lo conecto? (S/n) "))) {
-      await accion({ clave: "mcp", titulo: "", detalle: "" }, c, { ...e, preguntar: async () => "s" });
+      await conectarMcp(c, e, false);
       c = await recargar(c.proyecto);
     }
   }
   hechos[3] = c.mcp;
 
-  // 5. Análisis completo: siempre profundo. Es lo que más tarda, así que se pide el ok.
+  // 5. Análisis completo: siempre profundo, con el agente que la persona elija. Es lo que más tarda: se pide el ok.
   if (c.faltaAnalisis.length) {
     paso(4);
-    if (!c.claude) {
-      e.escribir("El análisis lo hace Claude Code, que no está instalado. Cuando lo instales, escribí flowbrain y elegí Analizar el proyecto completo.\n");
-    } else {
-      e.escribir(
-        "Claude Code estudia cada repo de punta a punta, escribe los extractores que completan lo que los parsers no ven, une los servicios entre sí y completa las funcionalidades de producto. Tarda: según el tamaño, de varios minutos a más de una hora.\n",
-      );
-      if (si(await e.preguntar("¿Lo arranco ahora? (s/N) "))) {
-        await e.correr("claude", [PROMPT_ANALISIS], c.proyecto);
-        c = await recargar(c.proyecto);
-      } else e.escribir("Queda pendiente: escribí flowbrain cuando quieras y es el siguiente paso.\n");
-    }
+    e.escribir(
+      "Un agente de código estudia cada repo de punta a punta, escribe los extractores que completan lo que los parsers no ven, une los servicios entre sí y completa las funcionalidades de producto. Tarda: según el tamaño, de varios minutos a más de una hora.\n",
+    );
+    if (si(await e.preguntar("¿Lo arranco ahora? (s/N) "))) {
+      await analizarCon(await elegirAgente(c, e, "analizar"), PROMPT_ANALISIS, c, e);
+      c = await recargar(c.proyecto);
+    } else e.escribir("Queda pendiente: escribí flowbrain cuando quieras y es el siguiente paso.\n");
   }
   hechos[4] = !c.faltaAnalisis.length;
 

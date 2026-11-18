@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
+import { agentesConMcp, partir } from "../src/agentes.js";
 import { asistente } from "../src/asistente.js";
 import { ejecutar } from "../src/main.js";
 import { accion, contextoMenu, dibujar, elegir, opciones, PROMPT_ANALISIS, siguiente, type ContextoMenu, type Entorno } from "../src/menu.js";
@@ -36,7 +37,7 @@ function falso(teclas: string[] = [], respuestas: string[] = []) {
   return { e, corridas, salida };
 }
 
-const base: ContextoMenu = { proyecto: "/p", registro: null, cerebros: [], faltaIndice: [], faltaAnalisis: [], visor: null, mcp: false, claude: true, git: true, version: "dev" };
+const base: ContextoMenu = { proyecto: "/p", registro: null, cerebros: [], faltaIndice: [], faltaAnalisis: [], visor: null, mcp: false, mcpEn: [], agentes: ["claude"], git: true, version: "dev" };
 
 describe("menú", () => {
   it("sin configurar: primero configurar; reindexar, visor y estado no aparecen", () => {
@@ -60,8 +61,8 @@ describe("menú", () => {
     const c = await contextoMenu(join(dir, "web/src"), { hayComando: () => false, mcpConfig: [] });
     expect(c.proyecto).toBe(dir);
     expect(c.cerebros).toEqual(["web"]);
-    expect(c.claude).toBe(false);
-    expect(opciones(c).find((o) => o.clave === "analizar")!.detalle).toContain("necesita Claude Code");
+    expect(c.agentes).toEqual([]);
+    expect(opciones(c).find((o) => o.clave === "analizar")!.detalle).toContain("te doy las instrucciones");
   });
 
   it("se elige con flechas, con el número o se sale con q", async () => {
@@ -79,6 +80,52 @@ describe("menú", () => {
     expect(PROMPT_ANALISIS).toMatch(/coverage --guide[\s\S]*evidence --guide[\s\S]*feature --guide/);
   });
 
+  it("el análisis se hace con el agente elegido, o con las instrucciones para pegar en cualquiera", async () => {
+    const c = { ...base, registro: "/p/.flowbrain", cerebros: ["web"], faltaAnalisis: ["web"], agentes: ["claude", "codex", "opencode"] as ContextoMenu["agentes"] };
+    const analizar = opciones(c)[1]!;
+    const codex = falso([], ["2"]);
+    await accion(analizar, c, codex.e);
+    expect(codex.corridas).toEqual([`codex ${PROMPT_ANALISIS.slice(0, 40)} @/p`]);
+    const oc = falso([], ["3"]);
+    await accion(analizar, c, oc.e);
+    expect(oc.corridas).toEqual([`opencode --prompt ${PROMPT_ANALISIS.slice(0, 31)} @/p`]);
+    // "Otro" (y sin ningún agente instalado): no corre nada, imprime el pedido completo.
+    for (const [ctx, resp] of [[c, "4"], [{ ...c, agentes: [] }, ""]] as Array<[ContextoMenu, string]>) {
+      const otro = falso([], [resp]);
+      await accion(analizar, ctx, otro.e);
+      expect(otro.corridas).toEqual([]);
+      expect(otro.salida.join("")).toContain(PROMPT_ANALISIS);
+    }
+  });
+
+  it("MCP en Codex corre su comando; en OpenCode, y en otro, muestra qué pegar", async () => {
+    const c = { ...base, agentes: ["claude", "codex", "opencode"] as ContextoMenu["agentes"], mcpEn: ["codex"] as ContextoMenu["mcpEn"], mcp: true };
+    const mcp = opciones(c).find((o) => o.clave === "mcp")!;
+    expect(mcp.detalle).toContain("conectado en Codex (OpenAI)");
+    const codex = falso([], ["2", "s"]);
+    await accion(mcp, c, codex.e);
+    // Ya estaba conectado: lo quita y lo vuelve a registrar.
+    expect(codex.corridas[0]).toBe("codex mcp remove flowbrain @/p");
+    expect(codex.corridas[1]).toMatch(/^sh -c codex mcp add flowbrain -- /);
+    const oc = falso([], ["3"]);
+    await accion(mcp, c, oc.e);
+    expect(oc.corridas).toEqual([]);
+    expect(oc.salida.join("")).toMatch(/opencode\.json[\s\S]*"type": "local"[\s\S]*"serve",\s*"--sync"/);
+    const otro = falso([], ["4"]);
+    await accion(mcp, c, otro.e);
+    expect(otro.salida.join("")).toMatch(/Claude Code:[\s\S]*Codex \(OpenAI\):[\s\S]*OpenCode, en[\s\S]*serve --sync {2}\(stdio\)/);
+  });
+
+  it("detecta en qué agentes está registrado el MCP y separa el comando en palabras", async () => {
+    await mkdir(join(dir, ".codex"), { recursive: true });
+    await writeFile(join(dir, ".codex/config.toml"), 'model = "x"\n\n[mcp_servers.flowbrain]\ncommand = "flowbrain"\n');
+    await writeFile(join(dir, "opencode.json"), '{ "mcp": { "otro": {}, "flowbrain": { "type": "local" } } }');
+    await writeFile(join(dir, "claude.json"), '{ "mcpServers": {} }');
+    expect(await agentesConMcp([join(dir, "claude.json"), join(dir, ".codex/config.toml"), join(dir, "opencode.json"), join(dir, "no-existe.json")])).toEqual(["codex", "opencode"]);
+    expect(partir(`'/a b/tsx' /c/main.ts`)).toEqual(["/a b/tsx", "/c/main.ts"]);
+    expect(partir(`'it'\\''s' x`)).toEqual(["it's", "x"]);
+  });
+
   it("el siguiente paso sigue el orden repos → índice → análisis → MCP, y el menú arranca parado en él", async () => {
     const c = { ...base, registro: "/p/.flowbrain", cerebros: ["web", "api"] };
     expect(siguiente(base)?.clave).toBe("configurar");
@@ -93,10 +140,10 @@ describe("menú", () => {
 
   it("conectar el MCP pide confirmación; sin un sí no corre nada", async () => {
     const mcp = opciones(base).find((o) => o.clave === "mcp")!;
-    const no = falso([], ["n"]);
+    const no = falso([], ["1", "n"]);
     await accion(mcp, base, no.e);
     expect(no.corridas).toEqual([]);
-    const si = falso([], ["s"]);
+    const si = falso([], ["1", "s"]);
     await accion(mcp, base, si.e);
     expect(si.corridas).toHaveLength(1);
     expect(si.corridas[0]).toMatch(/^sh -c claude mcp add --scope user flowbrain/);
@@ -151,7 +198,7 @@ describe("asistente de un proyecto nuevo", () => {
 
   it("deja afuera los repos elegidos y, con un sí, arranca el análisis completo", async () => {
     const p = await proyecto();
-    const f = entorno(["", "2", "", "n", "s", "n"]);
+    const f = entorno(["", "2", "", "n", "s", "1", "n"]);
     await asistente(await f.e.contexto!(p), f.e);
     expect(existsSync(join(p, ".flowbrain/flowbrain.yaml"))).toBe(true);
     const c = await f.e.contexto!(p);

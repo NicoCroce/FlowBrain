@@ -24,11 +24,11 @@ Volver a correrlo actualiza. Para reagrupar repos o apagar la comunicación se e
 
 En un proyecto sin `.flowbrain/`, `flowbrain` arranca un **asistente** con los pasos en el único orden que funciona, porque cada uno usa lo que deja el anterior:
 
-1. **Requisitos:** deja la máquina lista (`flowbrain setup`) y avisa si faltan git o Claude Code (sin Claude Code sigue con lo que no lo necesita).
+1. **Requisitos:** deja la máquina lista (`flowbrain setup`) y avisa si falta git o si no hay ningún agente de código conocido (Claude Code, Codex, OpenCode); sin ninguno sigue igual.
 2. **Repositorios:** pregunta la carpeta, muestra los subrepositorios con su tecnología y lo que se ve a primera vista, deja elegir cuáles quedan afuera y si va un cerebro por repo o uno solo, y escribe `.flowbrain/` recién al confirmar. Sin código en la carpeta no crea nada.
 3. **Índice:** corren los parsers.
-4. **Claude Code (MCP):** lo conecta si se acepta.
-5. **Análisis completo:** pide el ok, porque es lo que más tarda.
+4. **Agente (MCP):** lo conecta, en el agente que elijas, si se acepta.
+5. **Análisis completo:** pide el ok, porque es lo que más tarda, y pregunta con qué agente (ver abajo).
 6. **Visor.**
 
 Cada paso mira primero si ya está hecho (`flowbrain.yaml`, `_build/graph.json` y `profile.md` de cada cerebro), así que cortarlo y volver a escribir `flowbrain` sigue desde el primero pendiente; el menú marca ese paso como **Siguiente paso** y arranca parado en él.
@@ -36,12 +36,25 @@ Cada paso mira primero si ya está hecho (`flowbrain.yaml`, `_build/graph.json` 
 Ya configurado, `flowbrain` sin argumentos (o `flowbrain menu`, que lo abre siempre), en una terminal, abre un menú con lo que se puede hacer en el proyecto donde estás parado (lo encuentra también desde un subrepo):
 
 - **Configurar este proyecto** (sin `.flowbrain/`): lo mismo que `flowbrain install`. Con el proyecto ya configurado, **Actualizar la configuración** deja al día el comando, los hooks y los comandos de Claude Code, y reindexa.
-- **Analizar el proyecto completo:** abre Claude Code con el análisis de punta a punta, en orden: estudio de cada repo y extractores (`flowbrain coverage --guide`), comunicación entre servicios (`flowbrain evidence --guide`) y funcionalidades de producto (`flowbrain feature --guide`). Si el proyecto no está configurado, lo configura antes. El análisis es siempre completo: no hay una versión rápida.
+- **Analizar el proyecto completo:** pregunta con qué agente y lo abre con el análisis de punta a punta, en orden: estudio de cada repo y extractores (`flowbrain coverage --guide`), comunicación entre servicios (`flowbrain evidence --guide`) y funcionalidades de producto (`flowbrain feature --guide`). Si el proyecto no está configurado, lo configura antes. El análisis es siempre completo: no hay una versión rápida.
 - **Reindexar**, **Abrir el visor** y **Ver estado** (todos los cerebros).
-- **Conectar Claude Code (MCP):** registra el servidor para todos tus proyectos; pregunta antes.
+- **Conectar un agente (MCP):** registra el servidor para todos tus proyectos en el agente que elijas; pregunta antes.
 - **Actualizar FlowBrain:** desde el repo, `git pull --ff-only`, `pnpm install` y `flowbrain setup`; con el paquete publicado, `npm install -g flowbrain@latest`. Pregunta antes.
 
 `flowbrain setup` deja lista la máquina (comando, hooks y comandos de Claude Code) sin tocar ningún proyecto. Sin terminal, `flowbrain` sin argumentos imprime la ayuda.
+
+### Con qué agente
+
+FlowBrain no trae ni elige un modelo: los parsers no usan IA, y lo que no entienden lo completa el agente de código que uses, con el modelo que tenga configurado. Las instrucciones son las mismas para todos (las imprime `flowbrain coverage --guide`, `evidence --guide` y `feature --guide`) y FlowBrain verifica lo que el agente escribe. El menú ofrece los que encuentra instalados:
+
+| Agente | Análisis | MCP |
+|---|---|---|
+| Claude Code | `claude "<pedido>"` | `claude mcp add --scope user flowbrain -- flowbrain serve --sync` |
+| Codex (OpenAI) | `codex "<pedido>"` | `codex mcp add flowbrain -- flowbrain serve --sync` |
+| OpenCode | `opencode --prompt "<pedido>"` | entrada `mcp.flowbrain` (`type: local`) en `~/.config/opencode/opencode.json`: el menú la muestra para pegar |
+| Otro | el menú imprime el pedido para pegarlo en el agente que uses (tiene que poder correr comandos) | `flowbrain serve --sync` por stdio, en cualquier cliente MCP |
+
+Los comandos `/flowbrain-*` y los hooks son de Claude Code; con otros agentes, el pedido del análisis ya lleva todo lo que hace falta.
 
 ### Que un modelo analice la comunicación real
 

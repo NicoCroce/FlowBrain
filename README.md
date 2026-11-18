@@ -28,7 +28,7 @@ El impacto sigue la dirección de las relaciones (una tabla → los métodos y e
 
 ## Instalación
 
-Requiere Node ≥ 20, pnpm y Claude Code.
+Requiere Node ≥ 20, pnpm y un agente de código que pueda correr comandos (Claude Code, Codex, OpenCode u otro): FlowBrain no trae ni elige un modelo, el análisis lo hace el que uses.
 
 ```bash
 git clone <este-repo> flowbrain && cd flowbrain
@@ -51,13 +51,13 @@ Después, en cualquier proyecto (o en cualquiera de sus subrepos), alcanza con e
 flowbrain
 ```
 
-En un proyecto sin configurar arranca un asistente que hace todo en orden: prepara la máquina, te muestra los subrepositorios que encontró (con su tecnología) para que elijas cuáles entran y cómo se agrupan, indexa, conecta el MCP y ofrece el análisis completo con Claude Code. Si lo cortás, la próxima vez sigue desde el primer paso pendiente. Ya configurado, abre un menú en la terminal (flechas y Enter, o el número) con lo que se puede hacer ahí: configurar el proyecto (detecta los subrepositorios y arma los cerebros), analizarlo completo con Claude Code, reindexar, abrir el visor, ver el estado, conectar el MCP y actualizar FlowBrain. Las opciones dependen del estado: sin `.flowbrain/`, lo primero es configurarlo. Cada opción corre los mismos comandos que se pueden escribir a mano.
+En un proyecto sin configurar arranca un asistente que hace todo en orden: prepara la máquina, te muestra los subrepositorios que encontró (con su tecnología) para que elijas cuáles entran y cómo se agrupan, indexa, conecta el MCP y ofrece el análisis completo con el agente que elijas (Claude Code, Codex, OpenCode, u otro: te da el pedido para pegarlo). Si lo cortás, la próxima vez sigue desde el primer paso pendiente. Ya configurado, abre un menú en la terminal (flechas y Enter, o el número) con lo que se puede hacer ahí: configurar el proyecto (detecta los subrepositorios y arma los cerebros), analizarlo completo con el agente que elijas, reindexar, abrir el visor, ver el estado, conectar el MCP a un agente y actualizar FlowBrain. Las opciones dependen del estado: sin `.flowbrain/`, lo primero es configurarlo. Cada opción corre los mismos comandos que se pueden escribir a mano.
 
 Volver a correr `flowbrain install` actualiza. Detalle completo, instalación a mano y CI en [docs/INSTALACION.md](docs/INSTALACION.md).
 
 ## Cómo se completa un proyecto
 
-Con Claude Code abierto en la carpeta del proyecto:
+Con Claude Code abierto en la carpeta del proyecto (con otro agente, el menú da un único pedido que recorre los mismos pasos con `flowbrain coverage --guide`, `evidence --guide` y `feature --guide`):
 
 1. **`/flowbrain-study`**: el modelo estudia cómo está hecho cada repo, escribe `profile.md`, extractores en `.flowbrain/<cerebro>/extractors/<repo-id>/` para lo que los parsers no ven, y controles (`checks.yaml`) que tienen que seguir cumpliéndose. `flowbrain coverage` mide el avance.
 2. **`/flowbrain-index`**: decide a qué servicio va cada llamada entre repos (por base de URL, configuración e infraestructura) y lo declara con evidencia.
