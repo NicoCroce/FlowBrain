@@ -481,3 +481,15 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Dos patrones que la auditoría encontró y el parser ya resuelve solo.** Llamar a una propiedad de un objeto que apunta a una función (`api = { crear, listar: traerPedidos }`) es llamar a esa función. Antes se cortaba ahí.
    - **Medido en el proyecto real.** La auditoría marcó una funcionalidad con tres pantallas y ninguna llamada; con el arreglo del parser y dos rutas declaradas quedó unida al back. Pantallas del front sin llamadas: 13 → 11 de 74.
 
+158. **Estudiar primero, y un extractor por cada cosa entendida (2026-11-17).** Cada patrón que los parsers no entendían se arreglaba de a uno, después de que alguien notara el hueco. El método pasa a ser otro: un modelo estudia cómo está hecho cada repo y escribe los extractores que lo completan, en cualquier lenguaje.
+   - **Perfil.** `profile.md` por brain: framework, rutas, pantallas y llamadas en un front; capas, endpoints, servicios, repositorios y acceso a datos en un back, cada punto con archivo y línea. Sin perfil no hay extractor.
+   - **Extractores.** `extractors/<repo-id>/*.{mjs,js,py,sh,rb,php}`: reciben la ruta del repo e imprimen un JSON con símbolos, invocaciones, endpoints, llamadas, pantallas, navegaciones y accesos. Corren en cada indexación después de los parsers, que siguen siendo la base.
+   - **No se les cree.** Cada dato cita un archivo del repo y una línea que existe; una invocación une dos símbolos que existen, con la línea dentro del que llama. Lo que no pasa se descarta y queda en el informe con el motivo.
+   - **Aislados.** En macOS corren sin red, sin poder escribir en el disco y sin leer archivos de entorno reales; en todos los sistemas, con el entorno recortado y tope de tiempo. Un extractor que falla no rompe la indexación.
+   - **Columnas.** Un acceso a una tabla puede decir qué columnas lee o escribe; viajan hasta el recorrido y la traza. `soloColumnas` completa accesos que ya existen sin crear tablas (los nombres de CTE o subconsultas no son tablas).
+   - **Cobertura.** `flowbrain coverage`: pantallas con llamadas, llamadas con ruta, endpoints con método y que llegan a una tabla, accesos con columnas. Es el número a subir y el que avisa cuando algo se rompe.
+   - **Controles y caída.** `checks.yaml` guarda hechos verificados a mano (incluye trazas completas de endpoint a tabla); `coverage` avisa si alguno deja de cumplirse, o si un extractor devuelve bastante menos que la vez anterior.
+   - **Guía.** `/flowbrain-study` (también `flowbrain coverage --guide`); `/flowbrain-index` empieza mirando la cobertura y deriva ahí si el índice tiene huecos.
+   - **Sigue siendo determinístico.** El modelo interviene al escribir; después cada indexación corre el mismo código, sin tokens.
+   - **Probado en el proyecto real.** Estudiado el back en TypeScript (SQL a mano con alias), un extractor de columnas llevó los accesos con columnas de 0 a 999 de 1.920 (52 %), con 0 datos rechazados y 5 controles en verde. La primera versión creó cinco tablas falsas a partir de nombres de CTE: de ahí salió `soloColumnas`.
+

@@ -48,6 +48,8 @@ export interface IndiceCodigo {
   llamanEndpoint: Map<string, Array<{ clave: string; evidencia: string }>>;
   /** Tabla → métodos que la leen o escriben, con su evidencia. */
   tocanTabla: Map<string, Array<{ clave: string; verbo: string; evidencia: string }>>;
+  /** Accesos a tablas del índice, y cuántos dicen qué columnas leen o escriben. */
+  accesos: { total: number; conColumnas: number };
   /** Llamadas HTTP que el índice no pudo unir a un endpoint (`pendientes` de la extracción). */
   llamadasPendientes: Array<{ desde: string; referencia: string; motivo: string; evidencia: string; candidatos: number; llamada?: { metodo: string; ruta: string | null; base: string } }>;
 }
@@ -94,7 +96,12 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
   }
   const llamanEndpoint = new Map<string, Array<{ clave: string; evidencia: string }>>();
   const tocanTabla = new Map<string, Array<{ clave: string; verbo: string; evidencia: string }>>();
+  const accesos = { total: 0, conColumnas: 0 };
   for (const a of aristas) {
+    if (a.verbo === "lee_de" || a.verbo === "escribe_en") {
+      accesos.total++;
+      if (a.columnas?.length) accesos.conColumnas++;
+    }
     if (a.verbo === "llama_a" && a.endpoint) {
       const m = /^([^#]+)#L(\d+)/.exec(a.evidencia);
       const e = m ? estructura.get(m[1]!) : undefined;
@@ -123,7 +130,7 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
     }
   }
   llamadasPendientes.sort((a, b) => cmp(a.evidencia, b.evidencia) || cmp(a.referencia, b.referencia));
-  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, porNombre, atiende, llamanEndpoint, tocanTabla, llamadasPendientes };
+  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, porNombre, atiende, accesos, llamanEndpoint, tocanTabla, llamadasPendientes };
 }
 
 /** Lee el HEAD actual de cada clon indexado, para avisar si el índice quedó atrás. Barato: unas lecturas de `.git`. */

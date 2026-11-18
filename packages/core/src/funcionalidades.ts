@@ -20,6 +20,8 @@ export interface AristaExtraccion {
   /** Presentes en la extracción de `flowbrain index`; ausentes en índices viejos. */
   origen?: string;
   dato?: string | null;
+  /** Columnas leídas o escritas, en los accesos a tablas donde se conocen. */
+  columnas?: string[];
 }
 
 export interface Uso {
@@ -116,6 +118,8 @@ export interface Toque {
   endpoint: string | null;
   /** La tabla existe en el código pero no tiene página en el brain: `hasta` es su nombre físico. */
   sinPagina?: true;
+  /** Columnas de la tabla que ese paso lee o escribe, si el índice las conoce. */
+  columnas?: string[];
 }
 
 /** Accesos a tablas que el índice no pudo resolver porque la tabla no tiene página (`pendientes` de la extracción). */
@@ -310,7 +314,7 @@ export function crearRecorredor(
     if (!VERBOS_TOQUE.has(a.verbo)) continue;
     const m = EV.exec(a.evidencia);
     if (!m?.[2]) continue;
-    toques.set(m[1]!, [...(toques.get(m[1]!) ?? []), { linea: Number(m[2]), toque: { verbo: a.verbo, hasta: a.hasta, endpoint: a.endpoint } }]);
+    toques.set(m[1]!, [...(toques.get(m[1]!) ?? []), { linea: Number(m[2]), toque: { verbo: a.verbo, hasta: a.hasta, endpoint: a.endpoint, ...(a.columnas?.length ? { columnas: a.columnas } : {}) } }]);
   }
   for (const p of sinPagina) {
     const m = EV.exec(p.evidencia);
@@ -351,7 +355,10 @@ export function crearRecorredor(
       const toca: Toque[] = [];
       for (const t of toques.get(archivo) ?? []) {
         if (t.linea < desdeL || t.linea > hastaL) continue;
-        if (!toca.some((x) => mismoToque(x, t.toque))) toca.push(t.toque);
+        const ya = toca.find((x) => mismoToque(x, t.toque));
+        // Dos accesos a la misma tabla en el mismo método: un toque, con las columnas de los dos.
+        if (!ya) toca.push({ ...t.toque });
+        else if (t.toque.columnas?.length) ya.columnas = [...new Set([...(ya.columnas ?? []), ...t.toque.columnas])].sort();
       }
       toca.sort(ordenToque);
       const desdeI = pasos.length;

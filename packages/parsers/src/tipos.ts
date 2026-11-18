@@ -85,6 +85,8 @@ export interface AccesoTabla {
   linea: number;
   modelo: string;
   verbo: "lee_de" | "escribe_en";
+  /** Columnas que ese acceso lee o escribe, si se pudieron determinar. */
+  columnas?: string[];
 }
 
 export interface ModeloCrudo {

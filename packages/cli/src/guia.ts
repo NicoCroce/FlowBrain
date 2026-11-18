@@ -31,6 +31,11 @@ $ARGUMENTS
 
 ## Pasos
 
+0. **¿Está completo el índice?** \`flowbrain coverage --brain <cerebro>\` por cada cerebro. Si un cerebro no tiene
+   \`profile.md\` o su cobertura es baja (pantallas sin llamadas, endpoints que no llegan a una tabla), primero hay que
+   estudiarlo y completarlo con \`/flowbrain-study\`: decidir la comunicación sobre un índice con huecos da un mapa con
+   huecos.
+
 1. **Indexar.** Parado en la carpeta del proyecto:
    - Si no existe \`.flowbrain/flowbrain.yaml\`: \`flowbrain install\` (si pregunta, un cerebro por repo).
    - Si existe: \`flowbrain brains apply\` para reindexar todo.
@@ -251,4 +256,145 @@ $ARGUMENTS
 5. **Informar al usuario**, corto: cuántas funcionalidades quedaron por cerebro, qué uniste o descartaste y por qué,
    las preguntas abiertas que necesitan respuesta de una persona, y cómo verlas:
    \`open .flowbrain/flowbrain.html#/funcionalidades\`.
+`;
+
+/**
+ * Guía para que un modelo estudie cómo está hecho cada repo y escriba los extractores que completan el índice. Es el
+ * texto del comando `/flowbrain-study` y lo que imprime `flowbrain coverage --guide`. La idea: entender primero
+ * (framework, rutas, pantallas, llamadas; en el back: endpoints, capas, repositorios, tablas y columnas), y recién
+ * entonces escribir un extractor por cada cosa entendida. El modelo interviene una vez; después cada indexación corre
+ * el mismo código.
+ */
+export const NOMBRE_ESTUDIO = "flowbrain-study";
+
+export const GUIA_ESTUDIO = `---
+description: Estudia cómo está hecho cada repo y escribe los extractores que completan el índice de FlowBrain
+---
+
+Vas a estudiar cómo está hecho cada repo de este proyecto y a escribir, para cada uno, los extractores que hagan falta
+para que FlowBrain lo entienda entero: de la pantalla a la tabla, con las columnas que se leen y se escriben. No importa
+el lenguaje ni el framework: si los parsers de FlowBrain no lo entienden, lo enseñás vos con un extractor.
+
+$ARGUMENTS
+
+## Reglas
+
+- **Entender antes de extraer.** No escribas un extractor hasta haber leído cómo lo hace este repo y haberlo anotado en
+  el perfil. Un extractor escrito por analogía con otro proyecto devuelve basura convincente.
+- **Nunca abras archivos de entorno reales** (\`.env\`, \`.env.local\`, \`.env.production\`, \`env.prod\`). Los extractores
+  tampoco pueden leerlos.
+- **No modifiques los repositorios.** Todo lo que escribís va en \`.flowbrain/<cerebro>/\`.
+- **Un extractor no adivina.** Cada dato cita un archivo y una línea reales. Si para un caso no podés determinar el
+  destino con una regla, dejalo afuera y resolvelo a mano en \`calls.yaml\`; no lo inventes.
+- **Determinístico.** Mismo repo, misma salida: sin red, sin fechas, sin azar, con la salida ordenada.
+- **No escatimes en la lectura.** Un índice incompleto es peor que gastar más en entender el código.
+- Respondé en el idioma del usuario.
+
+## Pasos
+
+1. **Punto de partida.** Si no existe \`.flowbrain/flowbrain.yaml\`, \`flowbrain install\`. Después, por cada cerebro,
+   \`flowbrain coverage --brain <cerebro>\`: ese es el número a subir. Anotá de dónde parte cada uno.
+
+2. **Estudiar cada repo y escribir su perfil** en \`.flowbrain/<cerebro>/profile.md\`. Leé el código de verdad:
+   manifiestos, el punto de entrada, dos o tres módulos completos de punta a punta. El perfil responde, con archivo y
+   línea de ejemplo para cada respuesta:
+
+   **Si es un front (web o móvil):**
+   - Lenguaje, framework y librerías que definen la arquitectura (router, estado, datos remotos).
+   - **Cómo enruta:** dónde se declaran las rutas, con qué forma (objeto, JSX, archivos por convención, navegadores
+     anidados), cómo se anidan layouts y guardas, y cómo se arma la ruta final de una pantalla.
+   - **Pantallas:** qué es una pantalla acá, cómo se llega del registro de rutas al componente (import directo, lazy,
+     un mapa de nombres), y cómo se navega entre ellas.
+   - **Llamadas a servicios:** el cliente HTTP y todas sus envolturas; dónde se definen las rutas (constantes, una
+     tabla, funciones que las arman); cómo se elige la base (una variable por backend, un proxy); cómo llega una
+     pantalla a la llamada (hooks, stores, sagas, queries por referencia, eventos).
+
+   **Si es un back:**
+   - Lenguaje, framework y arquitectura: qué capas hay y cómo se llaman acá (controlador, caso de uso, servicio,
+     repositorio, modelo), y cómo se conectan (inyección de dependencias, contenedor, fábricas, llamadas estáticas).
+   - **Endpoints:** dónde se declaran (decoradores, archivo de rutas, convención de nombres), cómo se arma la ruta
+     final (prefijos globales, grupos, versiones) y cómo se llega al método que la atiende.
+   - **Servicios y repositorios:** cómo llama una capa a la otra y por qué el tipo del receptor puede no estar
+     declarado.
+   - **Tablas:** el ORM o el acceso a datos (entidades, query builder, SQL a mano, procedimientos); cómo se sabe qué
+     tabla toca cada acceso, si lee o escribe, y **qué columnas**: las del \`select\`, las que se asignan antes de
+     guardar, las de un \`update\`, las de un \`where\`.
+
+   Cerrá el perfil con **"Lo que FlowBrain ya entiende"** y **"Lo que falta"**, comparando lo que leíste con
+   \`flowbrain coverage\`, \`flowbrain calls --brain <cerebro>\` y una muestra: elegí cinco pantallas (o endpoints) al azar,
+   seguilas a mano en el código y compará con \`flowbrain screen <ruta>\` o \`flowbrain flow "<MÉTODO /ruta>"\`.
+
+3. **Escribir un extractor por cada cosa que falta**, en \`.flowbrain/<cerebro>/extractors/<repo-id>/\` (el id del repo
+   es el que muestra \`flowbrain status\`). Uno por tema, con nombre que lo diga: \`10-rutas.mjs\`, \`20-pantallas.mjs\`,
+   \`30-llamadas.mjs\`, \`40-endpoints.mjs\`, \`50-capas.mjs\`, \`60-tablas.mjs\`. Corren en orden alfabético, después de los
+   parsers de FlowBrain, y cada uno puede usar los símbolos que declaró el anterior.
+
+   **Contrato.** El programa recibe la ruta del repo como primer argumento, corre parado en ella e imprime **un JSON**
+   por la salida estándar. Puede ser \`.mjs\`/\`.js\` (Node), \`.py\`, \`.sh\`, \`.rb\` o \`.php\`: usá lo que mejor lea ese
+   código. Corre sin red, sin poder escribir en el disco y con tope de tiempo. Todas las secciones son opcionales:
+
+   \`\`\`json
+   {
+     "simbolos":     [{ "archivo": "src/pedidos/handler.go", "nombre": "PedidosHandler.Crear", "tipo": "metodo", "linea": 20, "fin": 41 }],
+     "invocaciones": [{ "desde": { "archivo": "src/pedidos/handler.go", "simbolo": "PedidosHandler.Crear" },
+                        "hacia": { "archivo": "src/pedidos/repo.go", "simbolo": "PedidosRepo.Guardar" }, "linea": 27 }],
+     "endpoints":    [{ "metodo": "POST", "ruta": "/api/pedidos", "archivo": "src/rutas.go", "linea": 12 }],
+     "llamadas":     [{ "archivo": "src/api/pedidos.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" }],
+     "pantallas":    [{ "ruta": "/pedidos", "archivo": "src/rutas.tsx", "linea": 8,
+                        "componente": { "archivo": "src/pedidos/Pedidos.tsx", "simbolo": "Pedidos" } }],
+     "navegaciones": [{ "archivo": "src/pedidos/Pedidos.tsx", "linea": 14, "desde": "/pedidos", "ruta": "/pedidos/{id}", "tipo": "navega" }],
+     "accesos":      [{ "archivo": "src/pedidos/repo.go", "linea": 33, "tabla": "pedidos", "verbo": "escribe", "columnas": ["estado", "total"] }]
+   }
+   \`\`\`
+
+   - Rutas de archivo relativas a la raíz del repo; líneas desde 1; segmentos variables de una ruta como \`{param}\`.
+   - Un **símbolo** es una función, método o componente con su rango (\`linea\`–\`fin\`): es lo que permite saber que una
+     llamada o un acceso ocurre *dentro* de ese método. Declará los que los parsers no tengan.
+   - Una **invocación** une dos símbolos que ya existen; la \`linea\` cae dentro del que llama.
+   - El **endpoint** cita la línea donde se declara la ruta o la del método que la atiende: tiene que haber un símbolo
+     con rango que contenga esa línea, o empezar hasta 40 líneas después.
+   - Un **acceso** va en la línea donde ocurre, dentro del método que lo hace; \`columnas\` solo las que se ven en el
+     código. Si el parser ya detectó ese acceso (mismo archivo, línea, tabla y verbo), el tuyo le suma las columnas.
+     Si tu extractor solo busca columnas y no puede asegurar que cada nombre sea una tabla real (una CTE, una
+     subconsulta con nombre), agregá \`"soloColumnas": true\`: completa los accesos que ya existen y no crea tablas
+     nuevas. Mirá primero en qué línea cita el parser cada acceso (\`_build/extraction/<repo>.json\`) y citá la misma.
+   - FlowBrain verifica cada dato: el archivo existe, la línea existe, los símbolos existen. Lo que no pasa se descarta.
+
+   Probá cada extractor suelto antes de indexar:
+   \`node .flowbrain/<cerebro>/extractors/<repo-id>/30-llamadas.mjs /ruta/al/repo | head -c 2000\`.
+
+4. **Indexar y medir.** \`flowbrain brains apply <cerebro>\` y \`flowbrain coverage --brain <cerebro>\`:
+   - \`extractores\` dice cuánto aceptó de cada uno y cuánto rechazó, con el motivo: corregí el extractor hasta que no
+     rechace nada.
+   - Los porcentajes tienen que subir. Si uno no se mueve, el extractor no está encontrando lo que creés: volvé a leer.
+   - \`flowbrain calls --brain <cerebro>\` muestra lo que sigue cortado: endpoints que no llegan a una tabla,
+     funcionalidades sin llamadas, llamadas sin ruta. Cada patrón repetido es un extractor que falta; un caso suelto
+     que no entra en una regla va a \`.flowbrain/<cerebro>/calls.yaml\`.
+   Repetí los pasos 3 y 4 hasta que la cobertura deje de subir o lo que quede no se pueda determinar leyendo código.
+
+5. **Verificar que lo extraído es cierto, no solo que es mucho.** Por cada extractor, elegí al azar diez datos de su
+   salida y comprobá cada uno abriendo el archivo en esa línea. Si alguno está mal, la regla está mal: corregila.
+   Después dejá **controles** en \`.flowbrain/<cerebro>/checks.yaml\`: hechos que verificaste a mano y que tienen que
+   seguir saliendo en cada indexación. \`coverage\` avisa cuando uno deja de cumplirse.
+
+   \`\`\`yaml
+   controles:
+     - { tipo: endpoint, metodo: POST, ruta: "/api/login" }
+     - { tipo: pantalla, ruta: "/login" }
+     - { tipo: llamada, archivo: "src/features/auth/api.ts", metodo: POST, ruta: "/login" }
+     - { tipo: traza, endpoint: "POST /api/login", tabla: "user", nota: "el login actualiza el token del usuario" }
+   \`\`\`
+
+   Dejá al menos cinco por cerebro, y que incluyan trazas completas: son las que prueban que todo el camino existe.
+
+6. **Unir los cerebros.** Con los índices completos, seguí con \`/${NOMBRE_COMANDO}\` (a qué servicio va cada llamada) y
+   \`/${NOMBRE_FUNCIONALIDADES}\` (las funcionalidades de producto). Al final, \`flowbrain brains viewer\`.
+
+7. **Informar al usuario**, corto:
+   - Por cerebro: la cobertura antes y después, en una tabla.
+   - Qué entendiste de cada repo que FlowBrain no sabía, en dos o tres líneas, y qué extractores escribiste.
+   - Lo que quedó sin determinar y por qué.
+   - Los patrones que valdría la pena sumar a los parsers de FlowBrain, cada uno con un ejemplo mínimo.
+   - Que los extractores, el perfil y los controles quedaron en \`.flowbrain/<cerebro>/\`, se pueden leer y versionar, y
+     corren solos en cada indexación; \`coverage\` avisa si alguno queda viejo.
 `;

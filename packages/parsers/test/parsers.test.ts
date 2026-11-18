@@ -1089,3 +1089,72 @@ describe("ts-parser: funciones que envuelven la llamada HTTP", () => {
     expect(a?.invoca?.map((i) => `${i.desde} → ${i.simbolo}@${i.linea}`)).toEqual(["useVotos → contar@4", "useVotos → traerVotos@3"]);
   });
 });
+
+describe("extractores del proyecto", () => {
+  let dir: string, repo: string, brain: string;
+  const extractor = (nombre: string, salida: unknown) => writeFile(join(brain, "extractors/repo-pedidos", nombre), `console.log(JSON.stringify(${JSON.stringify(salida)}));\n`);
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "brain-extractores-"));
+    repo = join(dir, "pedidos");
+    brain = join(dir, "brain");
+    // Un back en un lenguaje que FlowBrain no conoce: los parsers no ven nada.
+    await mkdir(join(repo, "src"), { recursive: true });
+    await writeFile(join(repo, "src/rutas.go"), ["package main", "", 'r.POST("/api/pedidos", h.Crear)', ""].join("\n"));
+    await writeFile(join(repo, "src/handler.go"), ["package main", "", "func (h *PedidosHandler) Crear(c *gin.Context) {", "  h.repo.Guardar(p)", "}", ""].join("\n"));
+    await writeFile(join(repo, "src/repo.go"), ["package main", "", "func (r *PedidosRepo) Guardar(p Pedido) {", '  r.db.Exec("UPDATE pedidos SET estado = ?, total = ? WHERE id = ?")', "}", ""].join("\n"));
+    await mkdir(join(brain, "extractors/repo-pedidos"), { recursive: true });
+    await mkdir(join(brain, "technology"), { recursive: true });
+    await mkdir(join(brain, "product"), { recursive: true });
+    await extractor("10-capas.mjs", {
+      simbolos: [
+        { archivo: "src/handler.go", nombre: "PedidosHandler.Crear", tipo: "metodo", linea: 3, fin: 5 },
+        { archivo: "src/repo.go", nombre: "PedidosRepo.Guardar", tipo: "metodo", linea: 3, fin: 5 },
+        { archivo: "src/no-existe.go", nombre: "Fantasma", tipo: "metodo", linea: 1 },
+      ],
+      invocaciones: [
+        { desde: { archivo: "src/handler.go", simbolo: "PedidosHandler.Crear" }, hacia: { archivo: "src/repo.go", simbolo: "PedidosRepo.Guardar" }, linea: 4 },
+        { desde: { archivo: "src/handler.go", simbolo: "PedidosHandler.Crear" }, hacia: { archivo: "src/repo.go", simbolo: "PedidosRepo.Guardar" }, linea: 40 },
+      ],
+      endpoints: [{ metodo: "post", ruta: "/api/pedidos", archivo: "src/handler.go", linea: 3 }],
+      accesos: [
+        { archivo: "src/repo.go", linea: 4, tabla: "pedidos", verbo: "escribe", columnas: ["total", "estado"] },
+        { archivo: "src/repo.go", linea: 400, tabla: "pedidos", verbo: "escribe" },
+        // Solo quiere completar columnas de un acceso que ya exista: como no existe, no crea la tabla.
+        { archivo: "src/repo.go", linea: 4, tabla: "resumen_cte", verbo: "lee", columnas: ["x"], soloColumnas: true },
+      ],
+    });
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("lo que cita archivo y línea reales entra al índice; lo demás se rechaza con el motivo", async () => {
+    const r = await indexar(repo, brain, { permitirRepoNuevo: true, repo: "repo-pedidos" });
+    expect(r.extractores).toHaveLength(1);
+    const inf = r.extractores[0]!;
+    expect(inf.error).toBeUndefined();
+    expect(inf.aceptados).toMatchObject({ simbolos: 2, invocaciones: 1, endpoints: 1, accesos: 1 });
+    expect(inf.rechazados).toBe(3);
+    expect(inf.omitidos).toBe(1);
+    expect(r.pendientes.some((p) => p.objetivo === "resumen_cte")).toBe(false);
+    expect(inf.motivos.join("\n")).toMatch(/el archivo no existe en el repo[\s\S]*la línea no está dentro del símbolo que llama[\s\S]*la línea no existe en ese archivo/);
+    const handler = r.archivos.archivos.find((a) => a.ruta === "src/handler.go");
+    expect(handler?.simbolos).toEqual([{ linea: 3, nombre: "PedidosHandler.Crear", tipo: "metodo", fin: 5 }]);
+    expect(handler?.invoca).toEqual([{ desde: "PedidosHandler.Crear", archivo: "src/repo.go", simbolo: "PedidosRepo.Guardar", linea: 4 }]);
+    // El acceso existe aunque todavía no haya página de la tabla: queda pendiente, a nombre de `pedidos`.
+    expect(r.pendientes.filter((p) => p.verbo === "escribe_en").map((p) => `${p.evidencia} ${p.objetivo}`)).toEqual(["repo-pedidos:src/repo.go#L4 pedidos"]);
+  });
+
+  it("un extractor que falla no rompe la indexación: queda anotado", async () => {
+    await writeFile(join(brain, "extractors/repo-pedidos/20-roto.mjs"), "process.exit(3);\n");
+    const r = await indexar(repo, brain, { permitirRepoNuevo: true, repo: "repo-pedidos" });
+    expect(r.extractores.map((e) => `${e.extractor} ${e.error ? "error" : "ok"}`)).toEqual(["10-capas.mjs ok", "20-roto.mjs error"]);
+    await rm(join(brain, "extractors/repo-pedidos/20-roto.mjs"));
+  });
+
+  it("sin red y sin escribir en el disco (macOS)", async () => {
+    if (process.platform !== "darwin") return;
+    await writeFile(join(brain, "extractors/repo-pedidos/30-travieso.mjs"), ['import { writeFileSync } from "node:fs";', "let escribio = true;", 'try { writeFileSync(process.argv[2] + "/pisado.txt", "x"); } catch { escribio = false; }', "console.log(JSON.stringify({ endpoints: escribio ? [{ metodo: 'GET', ruta: '/escribio', archivo: 'src/rutas.go', linea: 1 }] : [] }));", ""].join("\n"));
+    const r = await indexar(repo, brain, { permitirRepoNuevo: true, repo: "repo-pedidos" });
+    expect(r.extractores.find((e) => e.extractor === "30-travieso.mjs")).toMatchObject({ aceptados: { endpoints: 0 } });
+    await rm(join(brain, "extractors/repo-pedidos/30-travieso.mjs"));
+  });
+});

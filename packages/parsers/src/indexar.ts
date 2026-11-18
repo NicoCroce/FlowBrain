@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
+import { correrExtractores, RUTA_INFORME_EXTRACTORES, type InformeExtractor } from "./extractores.js";
 import { leerRepo } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
 import { tsParser } from "./ts-parser.js";
@@ -30,6 +31,8 @@ export interface AristaExtraida {
   hasta: string;
   origen: "parser" | "inferido";
   verbo: "llama_a" | "lee_de" | "escribe_en" | "publica_en" | "consume_de";
+  /** Columnas leídas o escritas, en los accesos a tablas donde se conocen. */
+  columnas?: string[];
 }
 
 export interface EsquemaTabla {
@@ -64,6 +67,8 @@ export interface Pendiente {
 }
 
 export interface ResultadoIndex {
+  /** Qué hizo cada extractor del proyecto en esta corrida. */
+  extractores: InformeExtractor[];
   repo: string;
   /** El repo no tiene página en el brain (solo con `permitirRepoNuevo`). */
   repoNuevo: boolean;
@@ -249,6 +254,8 @@ export async function indexar(
   if (!repoNuevo && porId.get(repoId)?.tipo !== "repo") throw new ConsultaError("nodo_inexistente", `repo inexistente en el brain: ${repoId}`);
 
   const x = fusionar(await Promise.all(PARSERS.filter((p) => p.detect(repo)).map((p) => p.extract(repo))));
+  // Extractores escritos para este repo (`extractors/<repo>/`): completan lo que los parsers no entienden.
+  const extractores = await correrExtractores(raizBrain, repoId, repo, x);
   const ev = (archivo: string, linea: number) => `${repoId}:${archivo}#L${linea}`;
   // Lo que alguien resolvió leyendo el código y dejó en `calls.yaml`: llamadas HTTP que el parser no vio o no pudo
   // rutear (acá, antes de unirlas a endpoints) y llamadas entre métodos (más abajo). Sobrevive a reindexar.
@@ -379,7 +386,7 @@ export async function indexar(
     const hits = [...new Set(claves.flatMap((k) => destinosPorClave(k, ["tabla"]).map((n) => n.id)))].sort(cmp);
     for (const desde of svcsDe.get(t.paquete) ?? []) {
       const evidencia = ev(t.archivo, t.linea);
-      if (hits.length === 1) aristas.push({ dato: t.modelo, desde, endpoint: null, evidencia, hasta: hits[0]!, origen: "parser", verbo: t.verbo });
+      if (hits.length === 1) aristas.push({ dato: t.modelo, desde, endpoint: null, evidencia, hasta: hits[0]!, origen: "parser", verbo: t.verbo, ...(t.columnas?.length ? { columnas: t.columnas } : {}) });
       else
         pendientes.push({
           candidatos: hits.map((h) => ({ endpoint: null, hasta: h })),
@@ -461,6 +468,7 @@ export async function indexar(
   if (declaradas) aplicarLlamadasDeclaradas(x.archivos, repoId, declaradas.llamadas);
 
   return {
+    extractores,
     repo: repoId,
     repoNuevo,
     servicios,
@@ -494,6 +502,7 @@ export async function escribirIndex(raizBrain: string, r: ResultadoIndex): Promi
     [rutas.extraccion]: stringifyCanonical({ accesos: r.accesos, aristas: r.aristas, pendientes: r.pendientes, repo: r.repo, servicios: r.servicios }),
   };
   for (const c of r.contratos) salidas[rutas.contrato(c.svc)] = stringifyCanonical(c);
+  if (r.extractores.length) salidas[RUTA_INFORME_EXTRACTORES(r.repo)] = stringifyCanonical({ extractores: r.extractores, repo: r.repo });
   const escritos: string[] = [];
   for (const ruta of Object.keys(salidas).sort(cmp)) {
     const destino = join(raizBrain, ruta);

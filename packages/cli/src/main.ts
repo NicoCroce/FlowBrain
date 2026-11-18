@@ -1,6 +1,6 @@
 import { compileDirConVisor } from "@flowbrain/viewer";
 import { realpathSync } from "node:fs";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,10 @@ import { parseArgs } from "node:util";
 import {
   buscarNodo,
   ARCHIVO_REGISTRO,
+  ARCHIVO_CONTROLES,
+  cobertura,
+  leerControles,
+  type InformeExtractorBreve,
   ARCHIVO_LLAMADAS,
   leerLlamadasDeclaradas,
   llamadasPorResolver,
@@ -47,7 +51,7 @@ import { draftDir } from "@flowbrain/indexer";
 import { aplicar, ARCHIVO_VISOR, crearRegistro, encontrarRepos, escribirVisor, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { evidencia } from "./evidencia.js";
-import { GUIA_ANALISIS, GUIA_FUNCIONALIDADES, NOMBRE_COMANDO, NOMBRE_FUNCIONALIDADES } from "./guia.js";
+import { GUIA_ANALISIS, GUIA_ESTUDIO, GUIA_FUNCIONALIDADES, NOMBRE_COMANDO, NOMBRE_ESTUDIO, NOMBRE_FUNCIONALIDADES } from "./guia.js";
 import { comandoBrain, comillas, init, instalarComando, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
 import { escribirIndex, indexar } from "@flowbrain/parsers";
@@ -96,6 +100,9 @@ Comandos:
   risk [archivo...] [--diff <archivo|->]  alcance de un cambio: desde un diff (git diff | flowbrain risk --diff -) o archivos
          [--repo <repo-id>]                 tocados, qué funcionalidades, endpoints, pantallas, tablas y repos alcanza
   parity <svc-viejo> <svc-nuevo>           qué falta migrar de un servicio a otro: endpoints, pantallas y tablas
+  coverage                                  cuánto del código quedó conectado: pantallas con llamadas, llamadas con
+                                            ruta, endpoints con método y que llegan a una tabla, accesos con columnas;
+                                            más el informe de los extractores del proyecto y los controles (checks.yaml)
   calls [--limit n]                         dónde se cortan los recorridos: endpoints que no llegan a una tabla y las
                                             llamadas sin tipo que hay en su camino, con candidatos; se resuelven
                                             declarándolas en calls.yaml (raíz del brain) y reindexando
@@ -227,11 +234,15 @@ export async function ejecutar(
       await writeFile(comandoCC, GUIA_ANALISIS, "utf8");
       const comandoFeat = join(dirname(settings), "commands", `${NOMBRE_FUNCIONALIDADES}.md`);
       await writeFile(comandoFeat, GUIA_FUNCIONALIDADES, "utf8");
+      // Y el que estudia cada repo y escribe los extractores que completan el índice.
+      const comandoEstudio = join(dirname(settings), "commands", `${NOMBRE_ESTUDIO}.md`);
+      await writeFile(comandoEstudio, GUIA_ESTUDIO, "utf8");
       const lineas = [
         ...(bin ? [`Comando flowbrain en ${bin.archivo}${bin.enPath ? "" : ` (esa carpeta no está en tu PATH: agregá export PATH="${dirname(bin.archivo)}:$PATH" a tu ~/.zshrc)`}.`] : []),
         `Hooks de Claude Code ${cambio ? "registrados" : "ya estaban registrados"} en ${settings} (UserPromptSubmit y SessionEnd).`,
         `Comando /${NOMBRE_COMANDO} para Claude Code en ${comandoCC}: indexa el proyecto y analiza la comunicación real entre servicios.`,
         `Comando /${NOMBRE_FUNCIONALIDADES} en ${comandoFeat}: deduce y completa las funcionalidades de producto de cada cerebro.`,
+        `Comando /${NOMBRE_ESTUDIO} en ${comandoEstudio}: estudia cómo está hecho cada repo y escribe los extractores que completan el índice.`,
         "",
       ];
       const reg = join(proyecto, CARPETA_PROYECTO);
@@ -317,6 +328,7 @@ export async function ejecutar(
     // Con un registro de cerebros, el resto de los comandos trabaja sobre uno: el pedido, o el del repo actual.
     // El hook elige el suyo más abajo, por el directorio que le manda Claude Code, y nunca falla.
     const raizRegistro = (await esRegistro(raiz)) ? raiz : null;
+    if (comando === "coverage" && o.guide) return { codigo: 0, stdout: GUIA_ESTUDIO, stderr: "" };
     if (comando === "feature" && o.guide) return { codigo: 0, stdout: GUIA_FUNCIONALIDADES, stderr: "" };
     if (comando === "evidence") {
       // Con --guide, las instrucciones para el modelo que va a analizar; sin él, el informe.
@@ -546,6 +558,21 @@ export async function ejecutar(
           ...llamadasPorResolver(ctx, { ...opt("limite", entero(o.limit, "--limit")), ...(decl ? { declaradas: decl.llamadas } : {}) }),
           ...(decl?.http.length ? { httpDeclaradas: decl.http.length } : {}),
           ...(decl?.rechazadas.length ? { malFormadas: decl.rechazadas } : {}),
+        };
+        break;
+      }
+      case "coverage": {
+        // Qué parte del código quedó conectada, cómo anduvo cada extractor del proyecto y si los controles siguen saliendo.
+        const controles = await readFile(join(raiz, ARCHIVO_CONTROLES), "utf8").then(leerControles, () => null);
+        const dirE = join(raiz, "_build/extractors");
+        const extractores = (
+          await Promise.all((await readdir(dirE).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort().map((n) => readFile(join(dirE, n), "utf8").then((t) => JSON.parse(t) as { repo: string; extractores: Array<Omit<InformeExtractorBreve, "repo">> })))
+        ).flatMap((j) => j.extractores.map((e) => ({ ...e, repo: j.repo })));
+        const decl = await readFile(join(raiz, ARCHIVO_LLAMADAS), "utf8").then(leerLlamadasDeclaradas, () => null);
+        resultado = {
+          ...cobertura(ctx, { ...(controles ? { controles: controles.controles } : {}), extractores, ...(decl ? { declaradas: decl.llamadas } : {}) }),
+          ...(decl ? { declaradasEnCalls: { llamadas: decl.llamadas.length, http: decl.http.length } } : {}),
+          ...(controles?.malFormados.length ? { controlesMalFormados: controles.malFormados } : {}),
         };
         break;
       }
