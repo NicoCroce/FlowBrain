@@ -85,8 +85,39 @@ const OPS_KYSELY: Record<string, "lee_de" | "escribe_en"> = {
 const OPS_PRISMA_LECTURA = new Set(["findMany", "findUnique", "findUniqueOrThrow", "findFirst", "findFirstOrThrow", "count", "aggregate", "groupBy"]);
 const DECORADORES_NEST: Record<string, string> = { Get: "GET", Post: "POST", Put: "PUT", Patch: "PATCH", Delete: "DELETE", Head: "HEAD", Options: "OPTIONS" };
 
-const esFuenteTs = (a: string) => EXT_TS.test(a) && !a.endsWith(".d.ts");
-const lenguajeDe = (a: string) => (/\.(ts|tsx|mts|cts)$/.test(a) ? "typescript" : "javascript");
+const esFuenteTs = (a: string) => (EXT_TS.test(a) && !a.endsWith(".d.ts")) || EXT_SFC.test(a);
+/** Componentes de un solo archivo (Vue, Svelte, Astro): se analiza su `<script>`, con las mismas líneas. */
+const EXT_SFC = /\.(vue|svelte|astro)$/;
+/** Nombre con el que el compilador ve un componente de un solo archivo (`X.vue` → `X.vue.ts`). */
+const SUFIJO_SFC = ".ts";
+/**
+ * El código de un componente de un solo archivo como TypeScript: el contenido de sus `<script>` (y el frontmatter de
+ * Astro) en su lugar, y todo lo demás en blanco, conservando los saltos de línea para que la evidencia apunte bien.
+ */
+export function scriptDeSfc(texto: string): string {
+  const out = texto.replace(/[^\n]/g, " ").split("");
+  const copiar = (desde: number, hasta: number) => {
+    for (let i = desde; i < hasta; i++) out[i] = texto[i]!;
+  };
+  for (const m of texto.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)) {
+    const ini = m.index! + m[0].indexOf(">") + 1;
+    copiar(ini, ini + m[1]!.length);
+  }
+  const astro = /^---\r?\n([\s\S]*?)\r?\n---/.exec(texto);
+  if (astro) copiar(4, 4 + astro[1]!.length);
+  // Siempre un módulo (un `<script setup>` sin imports sería un script suelto y no se podría importar), al final para no mover líneas.
+  return out.join("") + "\nexport {};";
+}
+const lenguajeDe = (a: string) => (EXT_SFC.test(a) ? a.slice(a.lastIndexOf(".") + 1) : /\.(ts|tsx|mts|cts)$/.test(a) ? "typescript" : "javascript");
+/** Nombre del componente de un archivo `.vue`/`.svelte`/`.astro`: el del archivo (`ReservasView`), o el de su carpeta si el archivo es `index` o `+page`. */
+export function nombreSfc(archivo: string): string {
+  const partes = archivo.split("/");
+  let base = partes.pop()!.replace(EXT_SFC, "");
+  if (/^(index|\+page|\+layout|\+error|page|layout)$/i.test(base)) base = (partes.pop() ?? "raiz").replace(/[[\]()+.]/g, "") + (base.replace("+", "").charAt(0).toUpperCase() + base.replace("+", "").slice(1));
+  return base.replace(/[^\w$]/g, "_");
+}
+/** `X.vue.ts` (como lo ve el compilador) → `X.vue` (el archivo del repo). */
+const sfcReal = (r: string) => (r.endsWith(SUFIJO_SFC) && EXT_SFC.test(r.slice(0, -SUFIJO_SFC.length)) ? r.slice(0, -SUFIJO_SFC.length) : r);
 
 export const tsParser: Parser = {
   nombre: "ts-parser",
@@ -143,7 +174,30 @@ function crearPrograma(repo: RepoFuente): ts.Program {
       return r;
     });
   };
-  const archivos = repo.archivos.filter(esFuenteTs).map((a) => join(repo.raiz, a));
+  // Los componentes de un solo archivo entran como `X.vue.ts` con solo su `<script>`; los imports de `./X.vue` van ahí.
+  const original = host.getSourceFile.bind(host);
+  host.getSourceFile = (nombre, idioma, onError, crear) => {
+    if (nombre.endsWith(SUFIJO_SFC) && EXT_SFC.test(nombre.slice(0, -SUFIJO_SFC.length))) {
+      const texto = ts.sys.readFile(nombre.slice(0, -SUFIJO_SFC.length));
+      return texto === undefined ? undefined : ts.createSourceFile(nombre, scriptDeSfc(texto), idioma, true, ts.ScriptKind.TS);
+    }
+    return original(nombre, idioma, onError, crear);
+  };
+  const existe = host.fileExists.bind(host);
+  host.fileExists = (f) => (f.endsWith(SUFIJO_SFC) && EXT_SFC.test(f.slice(0, -SUFIJO_SFC.length)) ? existe(f.slice(0, -SUFIJO_SFC.length)) : existe(f));
+  const resolverConAlias = host.resolveModuleNameLiterals;
+  host.resolveModuleNameLiterals = (literales, contenedor, redir, opts, ...resto) => {
+    const base = resolverConAlias!(literales, contenedor, redir, opts, ...resto);
+    return literales.map((lit, i) => {
+      if (!EXT_SFC.test(lit.text) || base[i]?.resolvedModule) return base[i]!;
+      // `./X.vue` relativo, o con un alias (`@/components/X.vue`): se busca el archivo real y se apunta a su versión `.ts`.
+      const relContenedor = contenedor.startsWith(repo.raiz + "/") ? contenedor.slice(repo.raiz.length + 1) : "";
+      const o = lit.text.startsWith(".") ? opts : (opcionesPorPaquete.get(paqueteDe(repo, relContenedor)) ?? opts);
+      const r = ts.resolveModuleName(lit.text + SUFIJO_SFC, contenedor, { ...o, allowImportingTsExtensions: true }, host).resolvedModule;
+      return r && r.resolvedFileName.startsWith(repo.raiz + "/") ? { resolvedModule: { resolvedFileName: r.resolvedFileName, extension: ts.Extension.Ts, isExternalLibraryImport: false } } : base[i]!;
+    });
+  };
+  const archivos = repo.archivos.filter(esFuenteTs).map((a) => join(repo.raiz, a) + (EXT_SFC.test(a) ? SUFIJO_SFC : ""));
   return ts.createProgram(archivos, opciones, host);
 }
 
@@ -154,7 +208,7 @@ function extraer(repo: RepoFuente): Extraccion {
   const deSql = new Set<object>();
   const programa = crearPrograma(repo);
   const checker = programa.getTypeChecker();
-  const rel = (sf: ts.SourceFile) => sf.fileName.slice(repo.raiz.length + 1).split("\\").join("/");
+  const rel = (sf: ts.SourceFile) => sfcReal(sf.fileName.slice(repo.raiz.length + 1).split("\\").join("/"));
   const linea = (n: ts.Node) => n.getSourceFile().getLineAndCharacterOfPosition(n.getStart()).line + 1;
 
   // ---------- Prisma ----------
@@ -782,11 +836,20 @@ function extraer(repo: RepoFuente): Extraccion {
     const partes = evaluar(e);
     if (!partes.length || !("lit" in partes[0]!)) return null;
     const t = partes.map((p) => ("lit" in p ? p.lit : `{${/^[A-Za-z_]\w*$/.test(p.din.split(/\W+/).filter(Boolean).pop() ?? "") ? p.din.split(/\W+/).filter(Boolean).pop() : "param"}}`)).join("");
-    return /^[/\w{]/.test(t) && !/^https?:/.test(t) && !/\s/.test(t) ? t.split(/[?#]/)[0]! : null;
+    // Vacía (`path: ""`, la hija por defecto) o relativa con parámetro (`path: ":id"`): valen como ruta hija.
+    if (t === "") return "";
+    return /^[/\w{:]/.test(t) && !/^https?:/.test(t) && !/\s/.test(t) ? t.split(/[?#]/)[0]! : null;
   };
   const MARCAS_PANTALLA = ["element", "Component", "component", "lazy", "loadComponent"];
   const esObjetoRuta = (o: ts.ObjectLiteralExpression) => !!propiedad(o, "path") || propiedad(o, "index")?.kind === ts.SyntaxKind.TrueKeyword;
   /** Componente (función o clase del repo) de una expresión: `<X />`, `X`, `lazy(() => import("./x"), m => m.X)`. */
+  /** Si el módulo es un componente de un solo archivo del repo, su función sintética. */
+  const componenteSfc = (modulo: ts.Symbol): RefSimbolo | null => {
+    const sf = modulo.valueDeclaration ?? modulo.declarations?.[0];
+    if (!sf || !ts.isSourceFile(sf) || !delRepo(sf)) return null;
+    const archivo = rel(sf);
+    return EXT_SFC.test(archivo) ? { archivo, simbolo: nombreSfc(archivo) } : null;
+  };
   const componenteDe = (e: ts.Expression | undefined): RefSimbolo | null => {
     if (!e) return null;
     let x: ts.Expression = e;
@@ -802,6 +865,14 @@ function extraer(repo: RepoFuente): Extraccion {
       return ts.isIdentifier(tag) || ts.isPropertyAccessExpression(tag) ? componenteDe(tag) : null;
     }
     if (ts.isIdentifier(x) || ts.isPropertyAccessExpression(x)) {
+      // `import ReservasView from "./ReservasView.vue"`: el componente es el archivo.
+      const imp = checker.getSymbolAtLocation(ts.isIdentifier(x) ? x : x.name)?.declarations?.[0];
+      const decl = imp && (ts.isImportClause(imp) ? imp.parent : ts.isImportSpecifier(imp) ? imp.parent.parent.parent : null);
+      if (decl && ts.isImportDeclaration(decl)) {
+        const m = checker.getSymbolAtLocation(decl.moduleSpecifier);
+        const c = m ? componenteSfc(m) : null;
+        if (c) return c;
+      }
       const d = declDe(x);
       if (d && (esFuncion(d) || ts.isClassDeclaration(d))) return destinos(d)[0] ?? null;
       // `lazy: zoneScreen` con `const zoneScreen = lazyScreen(…)`: se mira su valor.
@@ -821,6 +892,8 @@ function extraer(repo: RepoFuente): Extraccion {
     };
     ver(x);
     if (!modulo) return null;
+    const sfcDe = componenteSfc(modulo);
+    if (sfcDe) return sfcDe;
     const exp = checker.getExportsOfModule(modulo).find((s) => s.name === (elegido ?? "default"));
     const d = real(exp)?.declarations?.[0];
     if (!d) return null;
@@ -975,7 +1048,7 @@ function extraer(repo: RepoFuente): Extraccion {
     envuelta.push(...marcos);
     out.pantallas.push({ paquete, ruta: normalizarRuta(completa || "/"), archivo, linea: linea(n), componente: comp, envuelta });
   };
-  const NAVEGA = new Set(["navigate", "push", "replace", "redirect", "navigateByUrl"]);
+  const NAVEGA = new Set(["navigate", "push", "replace", "redirect", "navigateByUrl", "navigateTo", "goto"]);
   const navegaciones = (n: ts.Node, archivo: string, paquete: string) => {
     const agregar = (destinos: string[], tipo: "navega" | "enlace" | "redirige") => {
       for (let destino of new Set(destinos)) {
@@ -1168,6 +1241,28 @@ function extraer(repo: RepoFuente): Extraccion {
       }
       const forma = formaDe(st);
       if (forma && !(forma.nombre in formas)) formas[forma.nombre] = forma.forma;
+    }
+    // Un componente de un solo archivo es una función con el nombre del archivo, que abarca todo el archivo: tiene las
+    // funciones de su `<script>` y hace lo que su código suelto hace (`onMounted(() => cargar())`). Así una pantalla
+    // que lo dibuja llega a sus llamadas y navegaciones.
+    if (EXT_SFC.test(archivo)) {
+      const comp = nombreSfc(archivo);
+      simbolos.push({ linea: 1, nombre: comp, tipo: "funcion", fin: sf.getLineAndCharacterOfPosition(sf.getEnd()).line });
+      for (const st of sf.statements) {
+        const propia = (ts.isFunctionDeclaration(st) && st.name) || (ts.isVariableStatement(st) && st.declarationList.declarations.some((d) => funcionLiteral(d.initializer)));
+        if (!propia && !ts.isImportDeclaration(st)) invocacionesDe(st, comp, archivo, invoca, sinResolver);
+      }
+      // Las funciones del `<script>` que el código suelto no llama las usa el template (`@click="guardar"`): también son suyas.
+      const llamadas = new Set([...invoca.values()].filter((i) => i.desde === comp && i.archivo === archivo).map((i) => i.simbolo));
+      for (const f of simbolos) if (f.nombre !== comp && !llamadas.has(f.nombre) && (f.tipo === "funcion" || f.tipo === "objeto")) invoca.set(`${comp}\u0000${archivo}\u0000${f.nombre}`, { desde: comp, archivo, simbolo: f.nombre, linea: f.linea });
+      // Navegaciones del template (fuera del `<script>`): enlaces y llamadas al router en los eventos.
+      const original = readFileSync(join(repo.raiz, archivo), "utf8").split("\n");
+      const script = scriptDeSfc(original.join("\n")).split("\n");
+      original.forEach((l, i) => {
+        if (script[i]!.trim()) return;
+        for (const m of l.matchAll(/(?:^|\s)(:?to|href)\s*=\s*"\s*'?(\/[^"'\s{]*)/g)) out.navegaciones.push({ paquete, archivo, linea: i + 1, desde: comp, ruta: normalizarRuta(m[2]!), tipo: "enlace" });
+        for (const m of l.matchAll(/\b(?:\$?router\.(?:push|replace)|navigateTo|goto)\(\s*['"`](\/[^'"`$]*)['"`]/g)) out.navegaciones.push({ paquete, archivo, linea: i + 1, desde: comp, ruta: normalizarRuta(m[1]!), tipo: "navega" });
+      });
     }
     simbolos.sort((a, b) => a.linea - b.linea || cmp(a.nombre, b.nombre));
     const arc: ArchivoCrudo = { lenguaje: lenguajeDe(archivo), ruta: archivo, simbolos };

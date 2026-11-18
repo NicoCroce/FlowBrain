@@ -667,6 +667,64 @@ describe("ts-parser: pantallas y navegación del front", () => {
   });
 });
 
+describe("ts-parser: Vue 3 con vue-router y componentes de un solo archivo", () => {
+  let dir: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "brain-vue-"));
+    const w = async (p: string, t: string[]) => {
+      await mkdir(dirname(join(dir, p)), { recursive: true });
+      await writeFile(join(dir, p), t.join("\n"));
+    };
+    await w("package.json", ['{ "name": "web", "dependencies": { "vue": "3.4.0", "vue-router": "4.3.0", "axios": "1.6.0" } }']);
+    await w("src/api/http.ts", ['import axios from "axios";', "export const http = axios.create({ baseURL: import.meta.env.VITE_API_URL });"]);
+    await w("src/api/reservas.ts", ['import { http } from "./http";', "export const reservasApi = {", "  listar: () => http.get(`/reservas`),", "  crear: (r: unknown) => http.post(`/reservas`, r),", "};"]);
+    await w("src/router/index.ts", [
+      'import { createRouter, createWebHistory } from "vue-router";',
+      'import Inicio from "../views/Inicio.vue";',
+      "export const router = createRouter({ history: createWebHistory(), routes: [",
+      '  { path: "/", component: Inicio },',
+      '  { path: "/reservas", component: () => import("../views/ReservasView.vue"), children: [',
+      '    { path: ":id", component: () => import("../views/reservas/index.vue") },',
+      "  ] },",
+      "] });",
+    ]);
+    await w("src/views/Inicio.vue", ["<template>", '  <router-link to="/reservas">Reservar</router-link>', "</template>", '<script setup lang="ts">', "const x = 1;", "</script>"]);
+    await w("src/views/ReservasView.vue", [
+      "<template>",
+      '  <button @click="$router.push(\'/reservas/1\')">Ver</button>',
+      "</template>",
+      '<script setup lang="ts">',
+      'import { onMounted } from "vue";',
+      'import { reservasApi } from "../api/reservas";',
+      "const cargar = async () => { await reservasApi.listar(); };",
+      "onMounted(() => cargar());",
+      "</script>",
+    ]);
+    await w("src/views/reservas/index.vue", ["<script setup>", 'import { reservasApi } from "../../api/reservas";', "reservasApi.crear({});", "</script>"]);
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("pantallas con su componente .vue, navegaciones del template y llamadas desde el script", () => {
+    const x = tsParser.extract(leerRepo(dir)) as Extraccion;
+    expect(x.pantallas.find((p) => p.ruta === "/reservas/{id}")!.envuelta).toEqual([{ archivo: "src/views/ReservasView.vue", simbolo: "ReservasView" }]);
+    expect(x.pantallas.map((p) => `${p.ruta} ${p.componente?.archivo}#${p.componente?.simbolo}`).sort()).toEqual([
+      "/ src/views/Inicio.vue#Inicio",
+      // `/reservas` tiene hijas: es el layout que las envuelve, no una pantalla.
+      "/reservas/{id} src/views/reservas/index.vue#reservasIndex",
+    ]);
+    expect(x.navegaciones.map((n) => `${n.archivo}#${n.linea} ${n.desde} ${n.ruta} ${n.tipo}`).sort()).toEqual([
+      "src/views/Inicio.vue#2 Inicio /reservas enlace",
+      "src/views/ReservasView.vue#2 ReservasView /reservas/1 navega",
+    ]);
+    expect(x.llamadas.map((l) => `${l.archivo}#${l.linea} ${l.metodo} ${l.url.texto}`).sort()).toEqual(["src/api/reservas.ts#3 GET ${env:VITE_API_URL}/reservas", "src/api/reservas.ts#4 POST ${env:VITE_API_URL}/reservas"]);
+    // El componente llega a la función que llama a la API.
+    const vista = x.archivos.find((a) => a.ruta === "src/views/ReservasView.vue")!;
+    expect(vista.lenguaje).toBe("vue");
+    expect(vista.invoca?.map((i) => `${i.desde} → ${i.archivo}#${i.simbolo}`).sort()).toEqual(["ReservasView → src/views/ReservasView.vue#cargar", "cargar → src/api/reservas.ts#reservasApi.listar"]);
+    expect(x.archivos.find((a) => a.ruta === "src/views/reservas/index.vue")!.invoca?.map((i) => `${i.desde} → ${i.simbolo}`)).toEqual(["reservasIndex → reservasApi.crear"]);
+  });
+});
+
 describe("ts-parser: pantallas de React Router v5", () => {
   let dir: string;
   beforeAll(async () => {
