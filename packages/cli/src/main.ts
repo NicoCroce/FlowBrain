@@ -56,7 +56,9 @@ import { comandoBrain, comillas, init, instalarComando, instalarHooksClaudeCode,
 import { promover } from "./promover.js";
 import { escribirIndex, indexar } from "@flowbrain/parsers";
 
-const AYUDA = `brain <comando> [opciones]
+const AYUDA = `flowbrain <comando> [opciones]
+
+Grafo de conocimiento del sistema para agentes de código. Empezá con "flowbrain install" parado en el proyecto.
 
 Comandos:
   init [dir] [--claude-code]                crea un brain en dir (por defecto el actual) y lo compila;
@@ -189,6 +191,7 @@ export async function ejecutar(
   const { values: o, positionals } = parsed;
   const [comando, arg] = positionals;
   if (o.version) return { codigo: 0, stdout: `${VERSION}\n`, stderr: "" };
+  if (comando === "help") return { codigo: 0, stdout: AYUDA, stderr: "" };
   if (o.help || !comando) return { codigo: comando || o.help ? 0 : 2, stdout: AYUDA, stderr: "" };
   // Sin --root ni $FLOWBRAIN_ROOT: el `.flowbrain` del proyecto donde se está parado (en esta carpeta o por encima).
   const explicita = o.root ?? env.FLOWBRAIN_ROOT;
