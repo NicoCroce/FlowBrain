@@ -82,25 +82,25 @@ export function cobertura(ctx: Contexto, p: CoberturaParams = {}) {
   // ---------- Controles: hechos verificados a mano que tienen que seguir saliendo ----------
   const endpoints = ctx.graph.nodes.filter((n) => n.tipo === "endpoint");
   const epDe = (metodo: string, ruta: string) => endpoints.find((n) => String(n.atributos["metodo"]).toUpperCase() === metodo && rutaCoincide(String(n.atributos["ruta"]), ruta) && String(n.atributos["ruta"]).split("/").length === ruta.split("/").length);
+  // La ruta de un control puede ser la del front (`/login`) o la completa (`/api/login`): alcanza con que una termine en
+  // la otra, segmento a segmento.
+  const igual = (a: string, b: string) => {
+    const x = a.split("/").filter(Boolean), y = b.split("/").filter(Boolean), k = Math.min(x.length, y.length);
+    return k > 0 && (rutaCoincide(x.slice(-k).join("/"), y.slice(-k).join("/")) || rutaCoincide(y.slice(-k).join("/"), x.slice(-k).join("/")));
+  };
   const cumple = (c: Control): boolean => {
     if (c.tipo === "endpoint") return !!epDe(c.metodo!, c.ruta!);
     if (c.tipo === "pantalla") return ctx.graph.nodes.some((n) => n.tipo === "pantalla" && n.atributos["ruta"] === c.ruta);
     if (c.tipo === "llamada") {
       const enArchivo = (ev: string) => ev.replace(/#L\d+$/, "").endsWith(c.archivo!);
-      if (pendientes.some((l) => enArchivo(l.evidencia) && l.llamada!.metodo === c.metodo && l.llamada!.ruta === c.ruta)) return true;
+      if (pendientes.some((l) => enArchivo(l.evidencia) && l.llamada!.metodo === c.metodo && !!l.llamada!.ruta && igual(l.llamada!.ruta, c.ruta!))) return true;
       for (const [ep, xs] of ix.llamanEndpoint) {
         const n = ctx.nodo.get(ep);
-        if (n && String(n.atributos["metodo"]).toUpperCase() === c.metodo && String(n.atributos["ruta"]).endsWith(c.ruta!) && xs.some((x) => enArchivo(x.evidencia))) return true;
+        if (n && String(n.atributos["metodo"]).toUpperCase() === c.metodo && igual(String(n.atributos["ruta"]), c.ruta!) && xs.some((x) => enArchivo(x.evidencia))) return true;
       }
       return false;
     }
     if (c.tipo === "alcanza") {
-      // La ruta del control puede ser la del front (`/login`) o la del endpoint (`/api/login`): alcanza con que una
-      // termine en la otra, segmento a segmento.
-      const igual = (a: string, b: string) => {
-        const x = a.split("/").filter(Boolean), y = b.split("/").filter(Boolean), k = Math.min(x.length, y.length);
-        return k > 0 && (rutaCoincide(x.slice(-k).join("/"), y.slice(-k).join("/")) || rutaCoincide(y.slice(-k).join("/"), x.slice(-k).join("/")));
-      };
       return ctx.graph.nodes.filter((n) => n.tipo === "pantalla" && n.atributos["ruta"] === c.pantalla).some((n) => llamadasDePantalla(ctx, n.id).some((l) => l.metodo === c.metodo && igual(l.ruta, c.ruta!)));
     }
     const [metodo, ...resto] = c.endpoint!.split(" ");

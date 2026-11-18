@@ -12,9 +12,8 @@ export function leerRepo(raiz: string): RepoFuente {
   const recorrer = (rel: string) => {
     const nombres = readdirSync(join(abs, rel)).sort(cmp);
     for (const n of nombres) {
-      // Nombres con `#`, `:` o saltos de línea no se pueden citar como evidencia (repo:ruta#Ln): se omiten. Los espacios
-      // sí (`Pantalla copy.jsx`): la evidencia se parte por el primer `:` y el último `#`.
-      if (IGNORAR.has(n) || /[#:\n\r\t]/.test(n)) continue;
+      // Nombres con espacios, `#` o `:` no se pueden citar como evidencia (repo:ruta#Ln): se omiten.
+      if (IGNORAR.has(n) || /[\s#:]/.test(n)) continue;
       const r = rel ? `${rel}/${n}` : n;
       const st = statSync(join(abs, r));
       if (st.isDirectory()) recorrer(r);
