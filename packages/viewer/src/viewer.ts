@@ -140,6 +140,14 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .columnas section { padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
 .resumen-impacto { margin: 4px 0 14px; }
 .resumen-impacto .chip { font-size: 13px; color: var(--text); }
+.grupos-impacto { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 16px; }
+.grupos-impacto.uno { grid-template-columns: 1fr; }
+.grupo-impacto { padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); min-width: 0; }
+.grupo-impacto[hidden], .grupo-impacto li[hidden], .grupo-impacto .vacio[hidden] { display: none; }
+.grupo-impacto h2 { display: flex; align-items: center; gap: 8px; }
+.grupo-impacto .cuenta { color: var(--suave); font-weight: 500; }
+.grupo-impacto .buscar-grupo { margin: 4px 0 12px; }
+.grupos-impacto:not(.uno) .grupo-impacto .lista { max-height: 420px; overflow-y: auto; }
 .ficha { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; }
 .ficha .texto { line-height: 1.6; }
 .ficha .texto blockquote { margin: 0; padding: 8px 14px; border-radius: 10px; background: var(--tarjeta); color: var(--medio); }

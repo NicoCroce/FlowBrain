@@ -17,8 +17,8 @@ export const MAPA_JS =
   var nombre = function (id) { return porId[id] ? porId[id].n : id; };
   var tipo = function (id) { return porId[id] ? porId[id].t : ""; };
   var plural = function (n, uno, varios) { return n + " " + (n === 1 ? uno : varios); };
-  var TIPO = { feat: "funcionalidad", tabla: "tabla", endpoint: "endpoint", svc: "servicio", ext: "servicio externo", db: "base de datos", queue: "cola", lib: "librería", repo: "repo" };
-  var TIPOS = { feat: "funcionalidades", tabla: "tablas", endpoint: "endpoints", svc: "servicios", ext: "servicios externos", db: "bases de datos", queue: "colas", lib: "librerías", repo: "repos" };
+  var TIPO = { feat: "funcionalidad", pantalla: "pantalla", tabla: "tabla", endpoint: "endpoint", svc: "servicio", ext: "servicio externo", db: "base de datos", queue: "cola", lib: "librería", repo: "repo" };
+  var TIPOS = { feat: "funcionalidades", pantalla: "pantallas", tabla: "tablas", endpoint: "endpoints", svc: "servicios", ext: "servicios externos", db: "bases de datos", queue: "colas", lib: "librerías", repo: "repos" };
   var VERBO = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de" };
   var puntoT = function (t) { return '<span class="punto" style="background:' + color(t) + '"></span>'; };
   var punto = function (id) { return puntoT(tipo(id)); };
@@ -27,7 +27,7 @@ export const MAPA_JS =
   var vistas = { producto: document.getElementById("producto"), impacto: document.getElementById("impacto"), grafo: document.getElementById("app") };
 
   // ---------- Impacto ----------
-  var raizImpacto = vistas.impacto, copia = "";
+  var raizImpacto = vistas.impacto, copia = "", filtroImpacto = "todos";
   var candidatos = D.nodes.filter(function (n) { return entran[n.id] || salen[n.id] || porFicha[n.id]; });
   function buscarPiezas(q) {
     q = q.trim().toLowerCase();
@@ -75,15 +75,28 @@ export const MAPA_JS =
     var todos = [].concat.apply([], niveles);
     var feats = todos.filter(function (x) { return porFicha[x.id]; });
     var tecnicas = todos.filter(function (x) { return !porFicha[x.id]; });
-    var cuenta = {};
-    todos.forEach(function (x) { var t = tipo(x.id); cuenta[t] = (cuenta[t] || 0) + 1; });
-    var orden = ["feat", "svc", "endpoint", "tabla", "ext", "queue", "db", "lib", "repo"];
-    var chips = Object.keys(cuenta).sort(function (a, b) { return (orden.indexOf(a) + 1 || 99) - (orden.indexOf(b) + 1 || 99); }).map(function (t) { return '<span class="chip">' + puntoT(t) + " " + cuenta[t] + " " + esc((cuenta[t] === 1 ? TIPO[t] : TIPOS[t]) || t) + "</span>"; }).join("");
+    // Un grupo por tipo de pieza, cada uno con su buscador; los chips de arriba filtran qué grupo se ve.
+    var porTipo = {};
+    todos.forEach(function (x) { var t = tipo(x.id); (porTipo[t] = porTipo[t] || []).push(x); });
+    var orden = ["feat", "pantalla", "svc", "endpoint", "tabla", "ext", "queue", "db", "lib", "repo"];
+    var tipos = Object.keys(porTipo).sort(function (a, b) { return (orden.indexOf(a) + 1 || 99) - (orden.indexOf(b) + 1 || 99); });
+    var titulo = function (t, k) { return esc((k === 1 ? TIPO[t] : TIPOS[t]) || t); };
+    if (filtroImpacto !== "todos" && !porTipo[filtroImpacto]) filtroImpacto = "todos";
+    var chips = '<button class="chip' + (filtroImpacto === "todos" ? " on" : "") + '" data-tipo="todos">Todo · ' + todos.length + "</button>" +
+      tipos.map(function (t) { return '<button class="chip' + (filtroImpacto === t ? " on" : "") + '" data-tipo="' + t + '">' + puntoT(t) + " " + porTipo[t].length + " " + titulo(t, porTipo[t].length) + "</button>"; }).join("");
     var item = function (x) {
       var destino = porFicha[x.id] ? "#/f/" + encodeURIComponent(x.id) : "#/impacto/" + encodeURIComponent(x.id);
-      return '<li><a href="' + destino + '">' + punto(x.id) + " " + esc(nombre(x.id)) + "</a> <small>· " + esc(TIPO[tipo(x.id)] || tipo(x.id)) + (x.nivel > 1 ? " · nivel " + x.nivel : " · directo") + "</small><br><small>" + esc(porque(x)) + "</small></li>";
+      var texto = (nombre(x.id) + " " + x.id + " " + porque(x)).toLowerCase();
+      return '<li data-texto="' + esc(texto) + '"><a href="' + destino + '">' + punto(x.id) + " " + esc(nombre(x.id)) + "</a> <small>· " + (x.nivel > 1 ? "nivel " + x.nivel : "directo") + "</small><br><small>" + esc(porque(x)) + "</small></li>";
     };
     var porNivel = function (xs) { return xs.slice().sort(function (a, b) { return a.nivel - b.nivel || (nombre(a.id) < nombre(b.id) ? -1 : 1); }); };
+    var grupo = function (t) {
+      var xs = porTipo[t];
+      return '<section class="grupo-impacto" data-tipo="' + t + '"' + (filtroImpacto !== "todos" && filtroImpacto !== t ? " hidden" : "") + ">" +
+        "<h2>" + puntoT(t) + " " + titulo(t, 2).replace(/^./, function (c) { return c.toUpperCase(); }) + ' <small class="cuenta">' + xs.length + "</small></h2>" +
+        '<input type="search" class="buscar-grupo" placeholder="Buscar en ' + titulo(t, 2) + '" autocomplete="off">' +
+        '<ul class="lista">' + porNivel(xs).map(item).join("") + '</ul><p class="vacio" hidden>Nada coincide.</p></section>';
+    };
     var plano = function (x) { return "- " + nombre(x.id) + " (" + (TIPO[tipo(x.id)] || tipo(x.id)) + ", " + (x.nivel > 1 ? "nivel " + x.nivel : "directo") + "): " + porque(x); };
     copia = "Impacto de cambiar " + nombre(id) + " (" + id + ")\n\n" +
       (feats.length ? "Funcionalidades:\n" + porNivel(feats).map(plano).join("\n") + "\n\n" : "") +
@@ -94,9 +107,26 @@ export const MAPA_JS =
       '<p class="subtitulo">' + esc(TIPO[n.t] || n.t) + " · <code>" + esc(id) + "</code>" + (porFicha[id] ? ' · <a href="#/f/' + encodeURIComponent(id) + '">ficha</a>' : "") + ' · <a href="#/grafo/' + encodeURIComponent(id) + '">mapa 3D</a></p>' +
       (todos.length
         ? '<div class="chips resumen-impacto">' + chips + '</div><p><button class="boton" id="copiar-impacto">Copiar como lista</button></p>' +
-          '<div class="columnas"><section><h2>Funcionalidades afectadas (' + feats.length + ")</h2>" + (feats.length ? '<ul class="lista">' + porNivel(feats).map(item).join("") + "</ul>" : '<p class="vacio">Ninguna.</p>') + "</section>" +
-          "<section><h2>Piezas técnicas afectadas (" + tecnicas.length + ")</h2>" + (tecnicas.length ? '<ul class="lista">' + porNivel(tecnicas).map(item).join("") + "</ul>" : '<p class="vacio">Ninguna.</p>') + "</section></div>"
+          '<div class="grupos-impacto' + (filtroImpacto === "todos" ? "" : " uno") + '">' + tipos.map(grupo).join("") + "</div>"
         : '<p class="aviso">Nada depende de esta pieza en el grafo: cambiarla no afecta a otras funcionalidades ni servicios conocidos.</p>');
+    var contenedor = raizImpacto.querySelector(".grupos-impacto");
+    raizImpacto.querySelectorAll(".resumen-impacto .chip").forEach(function (c) {
+      c.addEventListener("click", function () {
+        // Volver a tocar el elegido muestra todo otra vez.
+        filtroImpacto = filtroImpacto === c.dataset.tipo ? "todos" : c.dataset.tipo;
+        raizImpacto.querySelectorAll(".resumen-impacto .chip").forEach(function (o) { o.classList.toggle("on", o.dataset.tipo === filtroImpacto); });
+        raizImpacto.querySelectorAll(".grupo-impacto").forEach(function (g) { g.hidden = filtroImpacto !== "todos" && g.dataset.tipo !== filtroImpacto; });
+        contenedor.classList.toggle("uno", filtroImpacto !== "todos");
+      });
+    });
+    raizImpacto.querySelectorAll(".buscar-grupo").forEach(function (input) {
+      input.addEventListener("input", function () {
+        var q = input.value.trim().toLowerCase(), g = input.parentNode, visibles = 0;
+        g.querySelectorAll("li").forEach(function (li) { var ok = !q || li.dataset.texto.indexOf(q) >= 0; li.hidden = !ok; if (ok) visibles++; });
+        g.querySelector(".vacio").hidden = visibles > 0;
+        g.querySelector(".cuenta").textContent = q ? visibles + " de " + g.querySelectorAll("li").length : String(g.querySelectorAll("li").length);
+      });
+    });
     var b = document.getElementById("copiar-impacto");
     if (b) b.addEventListener("click", function () {
       var listo = function () { b.textContent = "Copiado"; setTimeout(function () { b.textContent = "Copiar como lista"; }, 1500); };

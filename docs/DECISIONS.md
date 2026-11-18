@@ -515,3 +515,8 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Reemplaza a `llamadoDesdeOtrosCerebros` en `impacto`**, que listaba hasta 10 llamadas y solo de los endpoints que entraban en la respuesta recortada. Las demás herramientas lo siguen trayendo.
    - **Tamaño.** Hasta 30 funcionalidades, 10 pantallas y 3 servicios por cerebro, con los totales. En el proyecto real: la tabla de usuarios del back NestJS alcanza 23 funcionalidades y 57 pantallas de la web; `POST /api/login` del back PHP, 3 funcionalidades y 7 pantallas en cada front.
    - **Requiere** la comunicación activa entre los cerebros; apagada, no aparece.
+162. **Impacto por grupos, con filtro y buscador (2026-11-18).** El detalle de Impacto mostraba chips con la cuenta por tipo (funcionalidades, pantallas, servicios, endpoints, tablas) pero listaba solo dos columnas, funcionalidades y "piezas técnicas" mezcladas, sin forma de ir a un tipo. Ahora:
+   - **Un grupo por tipo**, cada uno con todas sus piezas, ordenadas por nivel. Las pantallas tienen nombre propio (antes no estaban en los textos del visor).
+   - **Los chips filtran:** tocar uno deja visible solo ese grupo, a todo el ancho; volver a tocarlo, o "Todo", muestra todos. Con todos visibles, cada lista tiene alto máximo y desplazamiento propio. El filtro se mantiene al pasar a otra pieza si esa pieza tiene ese tipo.
+   - **Buscador arriba de cada grupo:** filtra por nombre, id o el porqué, y la cuenta pasa a "4 de 935".
+   - "Copiar como lista" sigue copiando todo.
