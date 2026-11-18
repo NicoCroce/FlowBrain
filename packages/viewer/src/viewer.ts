@@ -46,6 +46,9 @@ export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = []) {
       r: n.resumen,
       t: n.tipo,
       ver: n.verificado,
+      // Atributos para la ficha técnica (columnas de una tabla, método y ruta de un endpoint, infraestructura de un
+      // servicio). Los archivos no tienen ficha y las pantallas ya vienen en `pantallas`.
+      ...(n.tipo !== "archivo" && n.tipo !== "pantalla" && Object.keys(n.atributos).length ? { at: n.atributos } : {}),
     })),
     tiposIniciales: TIPOS_INICIALES,
   };
@@ -148,6 +151,18 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .grupo-impacto .cuenta { color: var(--suave); font-weight: 500; }
 .grupo-impacto .buscar-grupo { margin: 4px 0 12px; }
 .grupos-impacto:not(.uno) .grupo-impacto .lista { max-height: 420px; overflow-y: auto; }
+.ficha-tecnica { display: grid; gap: 16px; max-width: 980px; }
+.ficha-tecnica section { padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); overflow-x: auto; }
+.ficha-tecnica h2, .titulo-rel { margin: 0 0 10px; font-size: 15px; }
+.titulo-rel { margin-top: 28px; }
+.kv, .datos { border-collapse: collapse; width: 100%; font-size: 13px; }
+.kv th { width: 150px; text-align: left; vertical-align: top; color: var(--suave); font-weight: 500; padding: 4px 12px 4px 0; }
+.kv td, .datos td { padding: 4px 12px 4px 0; vertical-align: top; word-break: break-word; }
+.datos th { text-align: left; color: var(--suave); font-weight: 500; padding: 4px 12px 6px 0; border-bottom: 1px solid var(--borde); }
+.datos tr + tr td { border-top: 1px solid var(--borde); }
+.kv pre { margin: 0; white-space: pre-wrap; font-size: 12px; }
+.resumen { max-width: 820px; color: var(--claro); }
+.pasos li { border-left: 2px solid var(--borde2); margin-bottom: 6px; }
 .ficha { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 32px; }
 .ficha .texto { line-height: 1.6; }
 .ficha .texto blockquote { margin: 0; padding: 8px 14px; border-radius: 10px; background: var(--tarjeta); color: var(--medio); }

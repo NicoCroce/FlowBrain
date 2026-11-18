@@ -2,7 +2,7 @@ import { IMPACTO_JS } from "@flowbrain/core";
 
 /**
  * "Impacto" (si cambia esta pieza, qué se ve afectado, por niveles y con el porqué) y el enrutador de todo el visor:
- * `#/funcionalidades`, `#/f/<id>`, `#/impacto[/<id>]`, `#/grafo[/<id>]`. Los enlaces viejos `#/mapa[/<id>]` (la vista
+ * `#/funcionalidades`, `#/f/<id>`, `#/impacto[/<id>]`, `#/n/<id>` (ficha técnica de cualquier pieza), `#/grafo[/<id>]`. Los enlaces viejos `#/mapa[/<id>]` (la vista
  * de dependencias, que se quitó) abren el mapa 3D. JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
 export const MAPA_JS =
@@ -85,9 +85,8 @@ export const MAPA_JS =
     var chips = '<button class="chip' + (filtroImpacto === "todos" ? " on" : "") + '" data-tipo="todos">Todo · ' + todos.length + "</button>" +
       tipos.map(function (t) { return '<button class="chip' + (filtroImpacto === t ? " on" : "") + '" data-tipo="' + t + '">' + puntoT(t) + " " + porTipo[t].length + " " + titulo(t, porTipo[t].length) + "</button>"; }).join("");
     var item = function (x) {
-      var destino = porFicha[x.id] ? "#/f/" + encodeURIComponent(x.id) : "#/impacto/" + encodeURIComponent(x.id);
       var texto = (nombre(x.id) + " " + x.id + " " + porque(x)).toLowerCase();
-      return '<li data-texto="' + esc(texto) + '"><a href="' + destino + '">' + punto(x.id) + " " + esc(nombre(x.id)) + "</a> <small>· " + (x.nivel > 1 ? "nivel " + x.nivel : "directo") + "</small><br><small>" + esc(porque(x)) + "</small></li>";
+      return '<li data-texto="' + esc(texto) + '">' + ligado(x.id) + " <small>· " + (x.nivel > 1 ? "nivel " + x.nivel : "directo") + ' · <a href="#/impacto/' + encodeURIComponent(x.id) + '">su impacto</a></small><br><small>' + esc(porque(x)) + "</small></li>";
     };
     var porNivel = function (xs) { return xs.slice().sort(function (a, b) { return a.nivel - b.nivel || (nombre(a.id) < nombre(b.id) ? -1 : 1); }); };
     var grupo = function (t) {
@@ -104,7 +103,7 @@ export const MAPA_JS =
     var n = porId[id];
     raizImpacto.innerHTML = '<a class="volver" href="#/impacto">← Otra pieza</a>' +
       "<h1>Si cambia " + esc(n.n) + "</h1>" +
-      '<p class="subtitulo">' + esc(TIPO[n.t] || n.t) + " · <code>" + esc(id) + "</code>" + (porFicha[id] ? ' · <a href="#/f/' + encodeURIComponent(id) + '">ficha</a>' : "") + ' · <a href="#/grafo/' + encodeURIComponent(id) + '">mapa 3D</a></p>' +
+      '<p class="subtitulo">' + esc(TIPO[n.t] || n.t) + " · <code>" + esc(id) + "</code>" + (porFicha[id] ? ' · <a href="#/f/' + encodeURIComponent(id) + '">ficha de producto</a>' : "") + ' · <a href="#/n/' + encodeURIComponent(id) + '">ficha técnica</a> · <a href="#/grafo/' + encodeURIComponent(id) + '">mapa 3D</a></p>' +
       (todos.length
         ? '<div class="chips resumen-impacto">' + chips + '</div><p><button class="boton" id="copiar-impacto">Copiar como lista</button></p>' +
           '<div class="grupos-impacto' + (filtroImpacto === "todos" ? "" : " uno") + '">' + tipos.map(grupo).join("") + "</div>"
@@ -119,6 +118,124 @@ export const MAPA_JS =
         contenedor.classList.toggle("uno", filtroImpacto !== "todos");
       });
     });
+    conectarBuscadoresDeGrupo();
+    var b = document.getElementById("copiar-impacto");
+    if (b) b.addEventListener("click", function () {
+      var listo = function () { b.textContent = "Copiado"; setTimeout(function () { b.textContent = "Copiar como lista"; }, 1500); };
+      if (navigator.clipboard) navigator.clipboard.writeText(copia).then(listo, function () { b.textContent = "No se pudo copiar"; });
+    });
+  }
+
+  // ---------- Ficha técnica: qué es una pieza, sus datos y con qué se conecta ----------
+  var CEREBROS = D.cerebros || [];
+  var enlaceFicha = function (id) { return porFicha[id] ? "#/f/" + encodeURIComponent(id) : "#/n/" + encodeURIComponent(id); };
+  var ligado = function (id) { return '<a href="' + enlaceFicha(id) + '">' + punto(id) + " " + esc(nombre(id)) + "</a>"; };
+  var ev = function (x) { return x ? "<code>" + esc(x) + "</code>" : ""; };
+  var fila = function (k, v) { return v ? "<tr><th>" + esc(k) + "</th><td>" + v + "</td></tr>" : ""; };
+  var tablaKV = function (filas) { filas = filas.join(""); return filas ? '<table class="kv">' + filas + "</table>" : ""; };
+  var seccion = function (titulo, html) { return html ? "<section><h2>" + titulo + "</h2>" + html + "</section>" : ""; };
+  // Todos los pasos conocidos (recorridos de endpoints y trazas de pantallas), para columnas usadas y recorridos.
+  var pasosDe = function (f) { return [].concat.apply([], (f.recorridos || []).map(function (r) { return r.pasos || []; }).concat((f.pantallas || []).map(function (p) { return (p.recorrido && p.recorrido.pasos) || []; }))); };
+  function columnasUsadas(id) {
+    var cols = {};
+    fichas.forEach(function (f) {
+      pasosDe(f).forEach(function (p) {
+        (p.toca || []).forEach(function (t) {
+          if (t.hasta !== id || !t.columnas) return;
+          t.columnas.forEach(function (c) { var x = cols[c] = cols[c] || { lee: {}, escribe: {} }; (t.verbo === "escribe_en" ? x.escribe : x.lee)[p.evidencia] = true; });
+        });
+      });
+    });
+    return Object.keys(cols).sort().map(function (c) { return { c: c, lee: Object.keys(cols[c].lee).length, escribe: Object.keys(cols[c].escribe).length }; });
+  }
+  function recorridoDe(id) {
+    for (var i = 0; i < fichas.length; i++) for (var j = 0; j < (fichas[i].recorridos || []).length; j++) if (fichas[i].recorridos[j].endpoint === id) return fichas[i].recorridos[j];
+    return null;
+  }
+  function relaciones(id) {
+    var salen = {}, entran = {};
+    D.edges.forEach(function (e) {
+      var otro, grupo;
+      if (e.s === id) { otro = e.h; grupo = salen; }
+      else if (e.h === id || e.p === id) { otro = e.s; grupo = entran; }
+      else return;
+      if (tipo(otro) === "archivo" || otro === id) return;
+      var g = grupo[e.v] = grupo[e.v] || {};
+      (g[otro] = g[otro] || []).push(e.ev);
+    });
+    var lista = function (porVerbo, titulo) {
+      return Object.keys(porVerbo).sort().map(function (v) {
+        var otros = Object.keys(porVerbo[v]).sort(function (a, b) { return nombre(a) < nombre(b) ? -1 : 1; });
+        return '<section class="grupo-impacto"><h2>' + titulo(v) + ' <small class="cuenta">' + otros.length + "</small></h2>" +
+          (otros.length > 8 ? '<input type="search" class="buscar-grupo" placeholder="Buscar" autocomplete="off">' : "") +
+          '<ul class="lista">' + otros.map(function (o) {
+            var evs = porVerbo[v][o].filter(Boolean);
+            return '<li data-texto="' + esc((nombre(o) + " " + o).toLowerCase()) + '">' + ligado(o) + " <small>· " + esc(TIPO[tipo(o)] || tipo(o)) + (evs.length > 1 ? " · " + evs.length + " lugares" : "") + "</small>" + (evs[0] ? "<br><small>" + ev(evs[0]) + "</small>" : "") + "</li>";
+          }).join("") + '</ul><p class="vacio" hidden>Nada coincide.</p></section>';
+      }).join("");
+    };
+    var VERBO_OUT = { usa: "Usa", escribe_en: "Escribe en", lee_de: "Lee", llama_a: "Llama a", implementa: "Implementa", vive_en: "Vive en", publica_en: "Publica en", consume_de: "Consume de", depende_de: "Depende de", expone: "Expone", navega_a: "Navega a", contiene: "Contiene" };
+    var VERBO_IN = { usa: "La usan", escribe_en: "Escriben en ella", lee_de: "La leen", llama_a: "La llaman", implementa: "La implementan", vive_en: "Viven acá", publica_en: "Publican acá", consume_de: "Consumen de acá", depende_de: "Dependen de ella", expone: "La expone", navega_a: "Llegan desde", contiene: "Está dentro de" };
+    var mayus = function (x) { return x.charAt(0).toUpperCase() + x.slice(1); };
+    return lista(salen, function (v) { return VERBO_OUT[v] || mayus(v.replace(/_/g, " ")); }) + lista(entran, function (v) { return VERBO_IN[v] || mayus(v.replace(/_/g, " ")) + " (entrantes)"; });
+  }
+  function mostrarFicha(id) {
+    var n = porId[id];
+    if (!n) { raizImpacto.innerHTML = '<a class="volver" href="#/impacto">← Impacto</a><h1>No existe esa pieza</h1><p class="vacio"><code>' + esc(id) + "</code></p>"; return; }
+    var at = n.at || {}, t = n.t, partes = [];
+    var cerebro = CEREBROS.length > 1 && n.c !== undefined ? CEREBROS[n.c].nombre : null;
+    var resumen = n.r && !/^Borrador:/.test(n.r) ? n.r : null;
+    partes.push(tablaKV([
+      fila("Tipo", esc(TIPO[t] || t)),
+      fila("Id", ev(id)),
+      cerebro ? fila("Cerebro", esc(cerebro)) : "",
+      n.a && n.a.length ? fila("También se llama", esc(n.a.join(", "))) : "",
+      fila("Origen", esc(n.o === "curado" ? "curado (revisado)" : n.o === "parser" ? "leído del código" : n.o || "")),
+      n.e && n.e !== "vigente" ? fila("Estado", esc(n.e)) : "",
+      n.p ? fila("Página", ev(n.p)) : "",
+    ]));
+    if (t === "endpoint") {
+      partes.push(seccion("Contrato", tablaKV([
+        fila("Método", esc(at.metodo || "")), fila("Ruta", ev(at.ruta)), fila("Definido en", ev(at.evidencia)),
+        at.request ? fila("Recibe", "<pre>" + esc(JSON.stringify(at.request, null, 2)) + "</pre>") : "",
+        at.response ? fila("Devuelve", "<pre>" + esc(JSON.stringify(at.response, null, 2)) + "</pre>") : "",
+      ])));
+      var r = recorridoDe(id);
+      if (r && r.pasos.length) partes.push(seccion("Qué ejecuta", '<ul class="lista pasos">' + r.pasos.map(function (p) {
+        var toca = (p.toca || []).map(function (x) { return esc(VERBO[x.verbo] || x.verbo) + " " + (porId[x.hasta] ? ligado(x.hasta) : esc(x.hasta)) + (x.columnas && x.columnas.length ? " <small>(" + esc(x.columnas.join(", ")) + ")</small>" : ""); }).join(" · ");
+        return '<li style="padding-left:' + (p.nivel * 16) + 'px"><code>' + esc(p.simbolo) + "</code> <small>· " + esc(p.capa) + "</small>" + (toca ? "<br>" + toca : "") + "<br><small>" + ev(p.evidencia) + "</small></li>";
+      }).join("") + "</ul>" + (r.truncado ? '<p class="vacio">El recorrido se cortó por tamaño.</p>' : "")));
+    } else if (t === "tabla") {
+      var cols = at.columnas || [];
+      partes.push(seccion("Columnas del esquema", cols.length
+        ? '<table class="datos"><tr><th>Columna</th><th>Tipo</th><th></th></tr>' + cols.map(function (c) { return "<tr><td><code>" + esc(c.nombre) + "</code></td><td>" + esc(c.tipo) + "</td><td><small>" + (c.pk ? "clave primaria" : "") + (c.nulo ? (c.pk ? " · " : "") + "admite nulo" : "") + "</small></td></tr>"; }).join("") + "</table>" + (at.esquema ? "<p><small>Definido en " + ev(at.esquema) + "</small></p>" : "")
+        : '<p class="vacio">No se encontró la definición de la tabla (migración, entidad o esquema).</p>'));
+      var usadas = columnasUsadas(id);
+      if (usadas.length) partes.push(seccion("Columnas que usa el código", '<p><small>Leídas de los accesos a la tabla en los recorridos conocidos; cuenta lugares distintos del código.</small></p><table class="datos"><tr><th>Columna</th><th>Lee</th><th>Escribe</th></tr>' + usadas.map(function (u) { return "<tr><td><code>" + esc(u.c) + "</code></td><td>" + (u.lee || "") + "</td><td>" + (u.escribe || "") + "</td></tr>"; }).join("") + "</table>"));
+    } else if (t === "pantalla") {
+      var pa = (D.pantallas || []).filter(function (x) { return x.id === id; })[0] || {};
+      partes.push(seccion("Pantalla", tablaKV([
+        fila("Ruta", ev(pa.ruta)), fila("Componentes", (pa.componentes || []).map(ev).join("<br>")), fila("Definida en", ev(pa.evidencia)),
+        fila("Navegación", '<a href="#/p/' + encodeURIComponent(id) + '">de dónde se llega, a dónde lleva y la traza hasta la tabla</a>'),
+      ])));
+    } else if (t === "svc") {
+      var pe = at.puntos_de_entrada || [], infra = at.infra || [];
+      if (pe.length) partes.push(seccion("Puntos de entrada", '<ul class="lista">' + pe.map(function (x) { return "<li>" + (typeof x === "string" ? ev(x) : esc(JSON.stringify(x))) + "</li>"; }).join("") + "</ul>"));
+      if (infra.length) partes.push(seccion("Infraestructura", '<ul class="lista">' + infra.map(function (x) { return "<li><b>" + esc(x.clase || "") + "</b> " + esc(x.nombre || "") + (x.detalle && x.detalle.length ? "<br><small>" + x.detalle.map(esc).join("<br>") + "</small>" : "") + "<br><small>" + ev(x.evidencia) + "</small></li>"; }).join("") + "</ul>"));
+    } else {
+      var claves = Object.keys(at);
+      if (claves.length) partes.push(seccion("Datos", tablaKV(claves.map(function (k) { var v = at[k]; return fila(k, typeof v === "string" ? esc(v) : "<pre>" + esc(JSON.stringify(v, null, 2)) + "</pre>"); }))));
+    }
+    var rel = relaciones(id);
+    raizImpacto.innerHTML = '<a class="volver" href="javascript:history.back()">← Volver</a>' +
+      '<h1>' + puntoT(t) + " " + esc(n.n) + "</h1>" +
+      '<p class="subtitulo">' + esc(TIPO[t] || t) + (porFicha[id] ? ' · <a href="#/f/' + encodeURIComponent(id) + '">ficha de producto</a>' : "") + ' · <a href="#/impacto/' + encodeURIComponent(id) + '">impacto</a> · <a href="#/grafo/' + encodeURIComponent(id) + '">mapa 3D</a></p>' +
+      (resumen ? '<p class="resumen">' + esc(resumen) + "</p>" : "") +
+      '<div class="ficha-tecnica">' + partes.join("") + "</div>" +
+      (rel ? '<h2 class="titulo-rel">Relaciones</h2><div class="grupos-impacto">' + rel + "</div>" : '<p class="vacio">Sin relaciones en el grafo.</p>');
+    conectarBuscadoresDeGrupo();
+  }
+  function conectarBuscadoresDeGrupo() {
     raizImpacto.querySelectorAll(".buscar-grupo").forEach(function (input) {
       input.addEventListener("input", function () {
         var q = input.value.trim().toLowerCase(), g = input.parentNode, visibles = 0;
@@ -126,11 +243,6 @@ export const MAPA_JS =
         g.querySelector(".vacio").hidden = visibles > 0;
         g.querySelector(".cuenta").textContent = q ? visibles + " de " + g.querySelectorAll("li").length : String(g.querySelectorAll("li").length);
       });
-    });
-    var b = document.getElementById("copiar-impacto");
-    if (b) b.addEventListener("click", function () {
-      var listo = function () { b.textContent = "Copiado"; setTimeout(function () { b.textContent = "Copiar como lista"; }, 1500); };
-      if (navigator.clipboard) navigator.clipboard.writeText(copia).then(listo, function () { b.textContent = "No se pudo copiar"; });
     });
   }
 
@@ -143,7 +255,7 @@ export const MAPA_JS =
       return;
     }
     if (/^\/grafo/.test(h)) vista = "grafo";
-    else if (/^\/impacto/.test(h)) vista = "impacto";
+    else if (/^\/(impacto|n\/)/.test(h)) vista = "impacto";
     else if (h === "" && !fichas.length) vista = "grafo";
     else vista = "producto";
     // La navegación entre pantallas se dibuja en el mismo contenedor que las funcionalidades.
@@ -152,6 +264,7 @@ export const MAPA_JS =
     Object.keys(vistas).forEach(function (k) { vistas[k].classList.toggle("oculto", k !== vista); });
     document.getElementById("presets").classList.toggle("oculto", vista !== "grafo");
     if (vista === "grafo") { V.mostrarMapa(); if ((m = /^\/grafo\/(.+)$/.exec(h))) V.enfocar(m[1]); return; }
+    if (vista === "impacto" && (m = /^\/n\/(.+)$/.exec(h))) { mostrarFicha(m[1]); window.scrollTo(0, 0); return; }
     if (vista === "impacto") { m = /^\/impacto\/(.+)$/.exec(h); mostrarImpacto(m ? m[1] : null); window.scrollTo(0, 0); return; }
     if (pestana === "pantallas") window.brainPantallas.mostrar(h); else P.mostrar(h);
     window.scrollTo(0, 0);

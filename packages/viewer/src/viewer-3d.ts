@@ -680,6 +680,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     var n = porId[sel.id];
     var enlaces = [];
     if (sel.tipo === "feat") enlaces.push('<a href="#/f/' + encodeURIComponent(sel.id) + '">Abrir la ficha</a>');
+    enlaces.push('<a href="#/n/' + encodeURIComponent(sel.id) + '">Ficha técnica</a>');
     enlaces.push('<a href="#/impacto/' + encodeURIComponent(sel.id) + '">¿Qué se ve afectado si cambia?</a>');
     if (n.p) enlaces.push('<a href="../' + esc(n.p) + '">Página</a>');
     raiz.innerHTML =

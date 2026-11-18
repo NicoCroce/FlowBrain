@@ -27,6 +27,9 @@ describe("visor de varios cerebros", () => {
     const d = datosDeCerebros(cerebros, cruces, []);
     expect(d.cerebros).toEqual([{ nombre: "front", sinRevisar: false, nodos: 3 }, { nombre: "back", sinRevisar: true, nodos: 3 }]);
     expect(d.nodes.map((n) => `${n.c} ${n.id}`)).toEqual(["0 front/repo-tienda", "0 front/svc-web", "0 front/svc-web:/pedidos", "1 back/repo-tienda", "1 back/svc-api", "1 back/svc-api:GET:/pedidos"]);
+    // La ficha técnica lee los atributos del nodo; las pantallas ya vienen aparte.
+    expect(d.nodes.find((n) => n.id === "back/svc-api:GET:/pedidos")?.at).toEqual({ metodo: "GET", ruta: "/pedidos" });
+    expect(d.nodes.find((n) => n.id === "front/svc-web:/pedidos")).not.toHaveProperty("at");
     // Dos llamadas al mismo endpoint son una relación entre cerebros, con sus veces.
     expect(d.mapa3d.aristas.filter((a) => a[0].startsWith("front/") && a[1].startsWith("back/"))).toEqual([["front/svc-web:/pedidos", "back/svc-api:GET:/pedidos", "llama_a", 1], ["front/svc-web", "back/svc-api:GET:/pedidos", "llama_a", 2]]);
     expect(d.edges.filter((e) => e.s === "front/svc-web" && e.h === "back/svc-api").map((e) => e.p)).toEqual(["back/svc-api:GET:/pedidos"]);
