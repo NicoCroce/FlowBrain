@@ -11,6 +11,7 @@ import {
   leerRegistro,
   pistas,
   resumenConexiones,
+  riesgo,
   type CerebroLiviano,
   type Contexto,
   type Cruce,
@@ -71,13 +72,70 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
   };
 
   /** Todos los cruces del registro, con los cerebros que estén compilados. Una llamada se cruza contra todos los vecinos de su cerebro a la vez. */
-  const crucesDe = async (r: Registro) => {
+  const crucesDe = async (r: Registro) => (await todoDe(r)).cruces;
+  const todoDe = async (r: Registro) => {
     const ls: CerebroLiviano[] = [];
     for (const x of r.cerebros) {
       const l = await liviano(x.nombre, x.raiz);
       if (l) ls.push(l);
     }
-    return crucesDelRegistro(ls, r.comunicados, r.conexiones);
+    return { cruces: crucesDelRegistro(ls, r.comunicados, r.conexiones), livianos: ls };
+  };
+
+  /**
+   * El impacto de unos endpoints de `cerebro`, siguiendo a quien los llama de cerebro en cerebro. Una llamada desde una
+   * pantalla deja afectadas la pantalla y sus funcionalidades; una llamada desde otro back (sin pantalla) deja afectado
+   * lo que, en ese cerebro, llega a la línea que llama (sus endpoints, pantallas y funcionalidades), y desde esos
+   * endpoints sigue el salto siguiente. Hasta `SALTOS` saltos, sin repetir un endpoint.
+   */
+  const SALTOS = 4;
+  const impactoEnCadena = async (r: Registro, cerebro: string, endpoints: string[]) => {
+    const { cruces, livianos } = await todoDe(r);
+    const out: Array<Record<string, unknown>> = [];
+    const vistos = new Set(endpoints.map((e) => `${cerebro}/${e}`));
+    let frente: Array<{ cerebro: string; endpoints: string[]; via: string | null }> = [{ cerebro, endpoints, via: null }];
+    for (let salto = 1; salto <= SALTOS && frente.length; salto++) {
+      const siguiente: typeof frente = [];
+      for (const f of frente) {
+        for (const x of impactoCruzado(f.cerebro, f.endpoints, cruces.cruces, livianos.filter((l) => l.nombre !== f.cerebro))) {
+          // Lo que alcanza, en su cerebro, cada llamada que no sale de una pantalla: quién llega a esa línea.
+          const alcance = { endpoints: new Set<string>(), funcionalidades: new Set<string>(), pantallas: new Set<string>() };
+          const reg = r.cerebros.find((y) => y.nombre === x.cerebro);
+          if (reg && x.servicios.length) {
+            const ctxX = await cargador(reg.raiz)();
+            for (const sv of x.servicios) {
+              const m = /^(repo-[a-z0-9-]+):([^#]+)#L(\d+)/.exec(sv.ev);
+              if (!m) continue;
+              try {
+                const rr = riesgo(ctxX, { diff: `--- a/${m[2]}\n+++ b/${m[2]}\n@@ -${m[3]} +${m[3]} @@\n`, repo: m[1]!, budget_tokens: null }) as { endpoints?: string[]; funcionalidades?: string[]; pantallas?: string[] };
+                for (const e of rr.endpoints ?? []) alcance.endpoints.add(e);
+                for (const e of rr.funcionalidades ?? []) alcance.funcionalidades.add(e);
+                for (const e of rr.pantallas ?? []) alcance.pantallas.add(e);
+              } catch {
+                /* la línea ya no está en el índice: queda solo el servicio */
+              }
+            }
+          }
+          const nuevos = [...alcance.endpoints].filter((e) => !vistos.has(`${x.cerebro}/${e}`));
+          for (const e of nuevos) vistos.add(`${x.cerebro}/${e}`);
+          if (nuevos.length) siguiente.push({ cerebro: x.cerebro, endpoints: nuevos, via: f.cerebro });
+          out.push({
+            salto,
+            cerebro: x.cerebro,
+            ...(f.via ? { porQue: `llama a endpoints de ${f.cerebro} alcanzados desde ${f.via}` } : {}),
+            funcionalidades: x.funcionalidades.slice(0, 30),
+            ...(x.funcionalidades.length > 30 ? { masFuncionalidades: x.funcionalidades.length - 30 } : {}),
+            pantallas: { total: x.pantallas.length, primeras: x.pantallas.slice(0, 10).map((p) => ({ id: p.id, endpoints: p.endpoints.slice(0, 2), ...(p.endpoints.length > 2 ? { masEndpoints: p.endpoints.length - 2 } : {}), ev: p.ev })) },
+            ...(x.servicios.length ? { servicios: { total: x.servicios.length, primeros: x.servicios.slice(0, 3) } } : {}),
+            ...(alcance.endpoints.size || alcance.funcionalidades.size
+              ? { alcanceDeLosServicios: { endpoints: [...alcance.endpoints].sort(cmp).slice(0, 20), funcionalidades: [...alcance.funcionalidades].sort(cmp).slice(0, 20), pantallas: [...alcance.pantallas].sort(cmp).slice(0, 10) } }
+              : {}),
+          });
+        }
+      }
+      frente = siguiente;
+    }
+    return out;
   };
 
   return {
@@ -86,7 +144,8 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       "Este servidor tiene varios cerebros, cada uno con sus repos. Por defecto se consulta el del repo donde estás; pasá `cerebro` para consultar otro. Cada respuesta dice de qué `cerebro` salió.",
       "Si la respuesta trae `otrosCerebros`, hay algo con el mismo nombre en otro cerebro: decíselo al usuario en una línea (qué cerebro y qué encontraste) y consultalo solo si la tarea lo necesita o si te lo pide.",
       "`llamadoDesdeOtrosCerebros` son llamadas HTTP reales desde otro cerebro a un endpoint de la respuesta: contalas como afectadas por un cambio; si traen `pantallas`, son las pantallas del otro cerebro que dependen de ese endpoint. `sinRevisar: true` marca un cerebro indexado sin revisión humana: decilo al citar sus datos.",
-      "En `impacto`, `enOtrosCerebros` sigue el cambio a los cerebros que llaman a los endpoints alcanzados: sus funcionalidades y pantallas también quedan afectadas. `servicios` son llamadas que no salen de una pantalla (un job, otro back): para ver hasta dónde llega, consultá `impacto` en ese cerebro sobre ese servicio.",
+      "En `impacto`, `enOtrosCerebros` sigue el cambio a los cerebros que llaman a los endpoints alcanzados: sus funcionalidades y pantallas también quedan afectadas. `servicios` son llamadas que no salen de una pantalla (un job, otro back); `alcanceDeLosServicios` es lo que, en ese cerebro, llega a esas llamadas, y desde ahí el impacto sigue al salto siguiente (`salto` 2, 3…).",
+      "`llamaAOtrosCerebros` son los endpoints de otro cerebro que llaman las pantallas de la respuesta: la otra mitad de la pantalla o de la funcionalidad; para ver qué ejecutan, `recorrido` con ese endpoint y `cerebro`.",
       "`conexiones` resume qué servicios de un cerebro llaman a servicios de otro.",
     ].join("\n"),
     async resolver(nombre?: string): Promise<CerebroResuelto> {
@@ -107,21 +166,26 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
           if (herramienta === "impacto" && typeof pieza === "string") {
             const completo = impactoDe(ctx, { pieza, budget_tokens: null }) as { pieza: string; tipo: string; tecnicas: Array<{ id: string; tipo: string }> };
             const eps = [...(completo.tipo === "endpoint" ? [completo.pieza] : []), ...completo.tecnicas.filter((t) => t.tipo === "endpoint").map((t) => t.id)];
-            const cruzado = eps.length ? impactoCruzado(c.nombre, eps, (await crucesDe(r)).cruces, vecinos) : [];
-            if (cruzado.length) {
-              extra["enOtrosCerebros"] = cruzado.map((x) => ({
-                cerebro: x.cerebro,
-                funcionalidades: x.funcionalidades.slice(0, 30),
-                pantallas: { total: x.pantallas.length, primeras: x.pantallas.slice(0, 10).map((p) => ({ id: p.id, endpoints: p.endpoints.slice(0, 2), ...(p.endpoints.length > 2 ? { masEndpoints: p.endpoints.length - 2 } : {}), ev: p.ev })) },
-                ...(x.servicios.length ? { servicios: { total: x.servicios.length, primeros: x.servicios.slice(0, 3) } } : {}),
-                ...(x.funcionalidades.length > 30 ? { masFuncionalidades: x.funcionalidades.length - 30 } : {}),
-              }));
-            }
+            const cruzado = eps.length ? await impactoEnCadena(r, c.nombre, eps) : [];
+            if (cruzado.length) extra["enOtrosCerebros"] = cruzado;
             return extra;
           }
           // Llamadas desde otros cerebros a endpoints que aparecen en esta respuesta.
           const texto = JSON.stringify(resultado);
-          const entrantes: Cruce[] = (await crucesDe(r)).cruces.filter((x) => x.hacia.cerebro === c.nombre && texto.includes(JSON.stringify(x.hacia.endpoint)));
+          const todos = (await crucesDe(r)).cruces;
+          const entrantes: Cruce[] = todos.filter((x) => x.hacia.cerebro === c.nombre && texto.includes(JSON.stringify(x.hacia.endpoint)));
+          // Y la otra mitad: lo que las pantallas de la respuesta (una pantalla, las de una funcionalidad) llaman en otro cerebro.
+          const salientes = todos.filter((x) => x.desde.cerebro === c.nombre && x.desde.pantallas.some((p) => texto.includes(JSON.stringify(p))));
+          if (salientes.length) {
+            const porEndpoint = new Map<string, { cerebro: string; endpoint: string; ev: string; pantallas: Set<string> }>();
+            for (const x of salientes) {
+              const k = `${x.hacia.cerebro}/${x.hacia.endpoint}`;
+              const v = porEndpoint.get(k) ?? porEndpoint.set(k, { cerebro: x.hacia.cerebro, endpoint: x.hacia.endpoint, ev: x.desde.evidencia, pantallas: new Set() }).get(k)!;
+              for (const p of x.desde.pantallas) if (texto.includes(JSON.stringify(p))) v.pantallas.add(p);
+            }
+            const lista = [...porEndpoint.values()].sort((a, b) => cmp(a.cerebro + a.endpoint, b.cerebro + b.endpoint));
+            extra["llamaAOtrosCerebros"] = { total: lista.length, llamadas: lista.slice(0, 30).map((v) => ({ cerebro: v.cerebro, endpoint: v.endpoint, ev: v.ev, pantallas: [...v.pantallas].sort(cmp).slice(0, 3) })) };
+          }
           if (entrantes.length) {
             extra["llamadoDesdeOtrosCerebros"] = { total: entrantes.length, llamadas: entrantes.slice(0, 10).map((x) => ({ endpoint: x.hacia.endpoint, cerebro: x.desde.cerebro, desde: x.desde.svc, ev: x.desde.evidencia, ...(x.desde.pantallas.length ? { pantallas: x.desde.pantallas.slice(0, 3) } : {}) })) };
           }

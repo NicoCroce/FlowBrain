@@ -159,7 +159,7 @@ describe("varios cerebros por MCP", () => {
     // Desde el back: el impacto de su endpoint dice quién lo llama desde otro cerebro.
     // La llamada del front no sale de ninguna pantalla: queda como servicio afectado, sin funcionalidades.
     const imp = (await llamar("impacto", { pieza: "GET /pedidos", cerebro: "back" })) as Record<string, unknown>;
-    expect(imp["enOtrosCerebros"]).toEqual([{ cerebro: "front", funcionalidades: [], pantallas: { total: 0, primeras: [] }, servicios: { total: 1, primeros: [{ svc: "svc-tienda-web", endpoint: "svc-tienda-api:GET:/pedidos", ev: "repo-tienda-web:src/api.ts#L3" }] } }]);
+    expect(imp["enOtrosCerebros"]).toEqual([{ salto: 1, cerebro: "front", funcionalidades: [], pantallas: { total: 0, primeras: [] }, servicios: { total: 1, primeros: [{ svc: "svc-tienda-web", endpoint: "svc-tienda-api:GET:/pedidos", ev: "repo-tienda-web:src/api.ts#L3" }] } }]);
     expect(imp).not.toHaveProperty("llamadoDesdeOtrosCerebros");
 
     // Se apaga la comunicación en el registro: sin reiniciar ni reindexar, deja de haber pistas y cruces.
