@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { compileDir, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
 import { renderViewerCerebros, type CerebroVisor } from "./cerebros.js";
 import { renderViewer } from "./viewer.js";
@@ -14,21 +12,17 @@ export * from "./cerebros.js";
  */
 export const RUTA_VIEWER = "_build/viewer.html";
 
-let cytoscape: Promise<string> | null = null;
-/** Cytoscape minificado, leído una vez desde node_modules (se embebe en el visor). */
-const cytoscapeJs = () => (cytoscape ??= readFile(createRequire(import.meta.url).resolve("cytoscape/dist/cytoscape.min.js"), "utf8"));
-
 /** Salida extra de `compile`: el visor autocontenido. */
 export async function visor(s: Salidas): Promise<Record<string, string>> {
-  return { [RUTA_VIEWER]: renderViewer(s.graph, await cytoscapeJs(), s.funcionalidades) };
+  return { [RUTA_VIEWER]: renderViewer(s.graph, s.funcionalidades) };
 }
 
 /** `flowbrain compile` completo: grafo, índices, páginas y el visor. */
 export const compileDirConVisor = (raiz: string) => compileDir(raiz, visor);
 
-/** Página del visor para varios cerebros, con Cytoscape embebido. */
+/** Página del visor para varios cerebros. */
 export async function visorDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas?: TrazasCruzadas): Promise<string> {
-  return renderViewerCerebros(cerebros, cruces, conexiones, await cytoscapeJs(), trazas);
+  return renderViewerCerebros(cerebros, cruces, conexiones, trazas);
 }
 export { GRAFO3D_JS } from "./viewer-3d.js";
 export { ORDEN_CEREBROS_JS } from "./orden-cerebros.js";

@@ -35,23 +35,45 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
   const svcDe = (ep: string) => ep.slice(0, ep.indexOf(":"));
   // Lo que viaja entre cerebros: una arista por (quién llama, endpoint que atiende), con cuántas llamadas. Quién llama
   // es cada pantalla que llega a la llamada; si no es de ninguna pantalla (un job, un back), el servicio.
-  const viajan = new Map<string, { a: string; b: string; ev: string; veces: number }>();
+  const viajan = new Map<string, { a: string; b: string; ev: string; veces: number; sinPantalla: boolean }>();
   for (const x of cruces) {
     const b = `${x.hacia.cerebro}/${x.hacia.endpoint}`;
     for (const origen of x.desde.pantallas.length ? x.desde.pantallas : [x.desde.svc]) {
       const a = `${x.desde.cerebro}/${origen}`;
       const v = viajan.get(`${a}\u0000${b}`);
       if (v) v.veces++;
-      else viajan.set(`${a}\u0000${b}`, { a, b, ev: x.desde.evidencia, veces: 1 });
+      else viajan.set(`${a}\u0000${b}`, { a, b, ev: x.desde.evidencia, veces: 1, sinPantalla: !x.desde.pantallas.length });
     }
   }
   const cruzan = [...viajan.values()].sort((x, y) => (x.a + x.b < y.a + y.b ? -1 : 1));
+  // El impacto y las relaciones entre funcionalidades también cruzan de cerebro: la pantalla de un front llama al
+  // endpoint de un back, y la funcionalidad de esa pantalla usa a la que implementa el endpoint. Sin esto, cambiar una
+  // tabla del back no llegaba nunca a las pantallas que la muestran.
+  const implementadaPor = new Map<string, string[]>();
+  for (const d of partes.flatMap((p) => p.dependencias)) if (d[2] === "implementa") (implementadaPor.get(d[1]) ?? implementadaPor.set(d[1], []).get(d[1])!).push(d[0]);
+  // Solo las que salen de una pantalla: una llamada a nombre del servicio entero, a través de él, alcanzaría a todas las
+  // funcionalidades del front, y eso no dice nada.
+  const desdePantallas = cruzan.filter((x) => !x.sinPantalla);
+  const usaEntre = new Map<string, { a: string; b: string; endpoints: Set<string> }>();
+  for (const x of desdePantallas) {
+    for (const fa of implementadaPor.get(x.a) ?? []) {
+      for (const fb of implementadaPor.get(x.b) ?? []) {
+        if (fa === fb) continue;
+        const k = `${fa}\u0000${fb}`;
+        (usaEntre.get(k) ?? usaEntre.set(k, { a: fa, b: fb, endpoints: new Set() }).get(k)!).endpoints.add(x.b);
+      }
+    }
+  }
+  const depsCruzadas: Array<[string, string, string, number]> = [
+    ...desdePantallas.map((x) => [x.a, x.b, "llama_a", x.veces] as [string, string, string, number]),
+    ...[...usaEntre.values()].sort((x, y) => (x.a + x.b < y.a + y.b ? -1 : 1)).map((u) => [u.a, u.b, "usa", u.endpoints.size] as [string, string, string, number]),
+  ];
   return {
     cerebros: cerebros.map((c, i) => ({ nombre: c.nombre, sinRevisar: c.sinRevisar, nodos: partes[i]!.nodes.length })),
     conexiones,
     // Trazas de punta a punta que cruzan de un cerebro a otro; ya vienen con los ids prefijados.
     cruzado: trazas,
-    dependencias: partes.flatMap((p) => p.dependencias),
+    dependencias: [...partes.flatMap((p) => p.dependencias), ...depsCruzadas],
     funcionalidades: partes.flatMap((p) => p.funcionalidades),
     pantallas: partes.flatMap((p) => p.pantallas),
     mapa3d: {
@@ -68,6 +90,6 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
   };
 }
 
-export function renderViewerCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], cytoscapeJs: string, trazas?: TrazasCruzadas): string {
-  return paginaDelVisor(datosDeCerebros(cerebros, cruces, conexiones, trazas), cytoscapeJs);
+export function renderViewerCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas?: TrazasCruzadas): string {
+  return paginaDelVisor(datosDeCerebros(cerebros, cruces, conexiones, trazas));
 }

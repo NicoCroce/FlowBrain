@@ -8,7 +8,6 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@flowbrain/core": "workspace:*",
-    "cytoscape": "3.34.4"
+    "@flowbrain/core": "workspace:*"
   }
 }

@@ -30,17 +30,19 @@ describe("visor de varios cerebros", () => {
     // Dos llamadas al mismo endpoint son una relación entre cerebros, con sus veces.
     expect(d.mapa3d.aristas.filter((a) => a[0].startsWith("front/") && a[1].startsWith("back/"))).toEqual([["front/svc-web:/pedidos", "back/svc-api:GET:/pedidos", "llama_a", 1], ["front/svc-web", "back/svc-api:GET:/pedidos", "llama_a", 2]]);
     expect(d.edges.filter((e) => e.s === "front/svc-web" && e.h === "back/svc-api").map((e) => e.p)).toEqual(["back/svc-api:GET:/pedidos"]);
+    // El impacto también cruza: cambiar el endpoint del back llega a la pantalla del front que lo llama.
+    expect(d.dependencias.filter((x) => x[2] === "llama_a" && x[0].startsWith("front/"))).toEqual([["front/svc-web:/pedidos", "back/svc-api:GET:/pedidos", "llama_a", 1]]);
     // Sin cruces (comunicación apagada) no hay relaciones entre cerebros.
     expect(datosDeCerebros(cerebros, [], []).mapa3d.aristas.filter((a) => a[0].startsWith("front/") && a[1].startsWith("back/"))).toEqual([]);
   });
 
   it("la página embebe los cerebros y los interruptores, y el código del mapa es JavaScript válido", () => {
-    const html = renderViewerCerebros(cerebros, cruces, [], "/* lib */");
+    const html = renderViewerCerebros(cerebros, cruces, []);
     expect(html).toContain('"cerebros":[{"nombre":"front"');
     expect(html).toContain('id="m3-cerebros"');
     // Las trazas entre cerebros viajan en los datos, y la ficha las dibuja en cascada.
     const traza = { pantallas: { "front/svc-web:/pedidos": { pasos: [], endpoints: ["back/svc-api:GET:/pedidos"] } }, backs: {} };
-    expect(renderViewerCerebros(cerebros, cruces, [], "/* lib */", traza)).toContain('"cruzado":{"pantallas":{"front/svc-web:/pedidos"');
+    expect(renderViewerCerebros(cerebros, cruces, [], traza)).toContain('"cruzado":{"pantallas":{"front/svc-web:/pedidos"');
     expect(html).toContain('"cruzado":{"pantallas":{},"backs":{}}');
     expect(html).toContain("function filasTraza");
     // El borde del panel de detalle se arrastra para ensancharlo.

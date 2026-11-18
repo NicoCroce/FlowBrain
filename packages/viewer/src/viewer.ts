@@ -7,7 +7,7 @@ import { PRODUCTO_JS } from "./viewer-producto.js";
 
 /**
  * Visor estático (`_build/viewer.html`): un único HTML con el grafo embebido, sin servidor ni red. Vistas:
- * funcionalidades, mapa 3D del grafo entero (`viewer-3d.ts`), dependencias (Cytoscape.js) e impacto.
+ * funcionalidades, mapa 3D del grafo entero (`viewer-3d.ts`) e impacto.
  * Determinístico: depende solo del grafo, las funcionalidades y la versión de Cytoscape.
  */
 
@@ -53,12 +53,12 @@ export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = []) {
 
 export type DatosVisor = ReturnType<typeof datosDelVisor>;
 
-export function renderViewer(graph: Graph, cytoscapeJs: string, funcionalidades: Ficha[] = []): string {
-  return paginaDelVisor(datosDelVisor(graph, funcionalidades), cytoscapeJs);
+export function renderViewer(graph: Graph, funcionalidades: Ficha[] = []): string {
+  return paginaDelVisor(datosDelVisor(graph, funcionalidades));
 }
 
 /** La página autocontenida, a partir de los datos (de un brain, o de varios cerebros ya unidos). */
-export function paginaDelVisor(datos: unknown, cytoscapeJs: string): string {
+export function paginaDelVisor(datos: unknown): string {
   return `<!doctype html>
 <html lang="es">
 <head>
@@ -172,20 +172,6 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .pasos .flecha { color: var(--suave); }
 .toca { margin: 4px 0 0 0; }
 
-/* Dependencias */
-#deps { display: grid; grid-template-columns: minmax(0, 1fr) 340px; height: calc(100vh - 56px); min-height: 600px; }
-#deps main { position: relative; min-width: 0; background: var(--fondo); }
-#cy-deps { position: absolute; inset: 0; }
-.deps-busca { width: 280px; }
-.deps-busca input { height: 36px; background: rgba(14,17,24,.86); border-color: #262C3A; }
-.deps-busca svg { top: 10px; }
-#detalle-deps { gap: 18px; }
-.deps-seccion { display: flex; flex-direction: column; gap: 2px; }
-.deps-seccion .lbl { padding: 0 4px 6px; }
-.deps-impacto { margin: 0; padding: 12px 14px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); font-size: 13px; color: #C9CFDB; line-height: 1.5; }
-.deps-impacto strong { color: #FFFFFF; }
-.deps-pasos { margin: 2px 0 6px; padding: 8px 10px; border-radius: 8px; background: var(--tarjeta); font-size: 12px; color: var(--medio); }
-.deps-pasos code { display: block; color: var(--claro); margin-bottom: 2px; }
 a.nb { text-decoration: none; }
 
 /* Mapa 3D */
@@ -266,8 +252,7 @@ a.nb { text-decoration: none; }
 
 @media (max-width: 900px) {
   .ficha { grid-template-columns: 1fr; }
-  #app, #deps { grid-template-columns: 1fr; grid-template-rows: auto 70vh auto; height: auto; }
-  #deps { grid-template-rows: 70vh auto; }
+  #app { grid-template-columns: 1fr; grid-template-rows: auto 70vh auto; height: auto; }
   #m3-asa { display: none; }
   .m3-izq, .m3-der, .derecha { border: 0; border-bottom: 1px solid #1A1F2B; }
   #presets { margin-left: 0; }
@@ -277,32 +262,11 @@ a.nb { text-decoration: none; }
 <body>
 <header id="cabecera">
   <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>FlowBrain</div>
-  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/mapa" data-vista="deps">Dependencias</a></nav>
+  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/impacto" data-vista="impacto">Impacto</a></nav>
   <div id="presets" class="oculto"></div>
 </header>
 <div id="producto" class="pagina"></div>
 <div id="impacto" class="pagina oculto"></div>
-<div id="deps" class="oculto">
-  <main>
-    <div id="cy-deps" role="img" aria-label="Mapa de dependencias entre funcionalidades"></div>
-    <div class="m3-barra">
-      <div>
-        <div class="m3-busca deps-busca">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A93A6" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
-          <input id="buscar-deps" type="search" placeholder="Ir a una funcionalidad (Enter)" aria-label="Ir a una funcionalidad" autocomplete="off">
-        </div>
-        <button type="button" class="ov" id="ajustar-deps"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path></svg>Centrar</button>
-      </div>
-      <div>
-        <button type="button" class="ov" id="ver-tablas" aria-pressed="false"><span class="sw" style="background: var(--tabla)"></span>Tablas</button>
-        <button type="button" class="ov" id="ver-ext" aria-pressed="false"><span class="sw" style="background: var(--ext)"></span>Externos</button>
-        <button type="button" class="ov" id="ver-sueltas" aria-pressed="false">Sin relaciones <span id="cuenta-sueltas" class="vb"></span></button>
-      </div>
-    </div>
-    <div class="m3-guia"><span><b>Flecha</b> usa a</span><span><b>Grosor</b> endpoints que usa</span><span><b>Tamaño</b> cuántas la usan</span><span><b>Clic</b> ver sus relaciones</span></div>
-  </main>
-  <aside id="detalle-deps" class="m3-panel m3-der"></aside>
-</div>
 <div id="app" class="oculto">
   <aside class="m3-panel m3-izq">
     <div class="m3-busca">
@@ -366,7 +330,6 @@ a.nb { text-decoration: none; }
   </main>
   <aside class="m3-panel m3-der"><div id="m3-detalle"></div></aside>
 </div>
-<script>${seguroEnScript(cytoscapeJs)}</script>
 <script type="application/json" id="datos">${seguroEnScript(JSON.stringify(datos))}</script>
 <script>${seguroEnScript(GRAFO3D_JS)}</script>
 <script>${seguroEnScript(PRODUCTO_JS)}</script>

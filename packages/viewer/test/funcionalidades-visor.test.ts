@@ -38,12 +38,12 @@ function conFuncionalidades(codigoCheckout = "repo-tienda:apps/bff/src/routes"):
 describe("visor: funcionalidades, dependencias y mapa 3D", () => {
   it("el visor embebe las fichas de las funcionalidades", () => {
     const { graph, funcionalidades } = compile(conFuncionalidades());
-    expect(renderViewer(graph, "/* lib */", funcionalidades)).toContain('"usaFuncionalidades"');
+    expect(renderViewer(graph, funcionalidades)).toContain('"usaFuncionalidades"');
   });
 
   it("el visor embebe las dependencias y las vistas de mapa e impacto", () => {
     const { graph, funcionalidades } = compile(conFuncionalidades());
-    const html = renderViewer(graph, "/* lib */", funcionalidades);
+    const html = renderViewer(graph, funcionalidades);
     expect(html).toContain('"dependencias":[[');
     expect(html).toContain('href="#/impacto"');
     expect(html).toContain('href="#/grafo"');

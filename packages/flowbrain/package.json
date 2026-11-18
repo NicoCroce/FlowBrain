@@ -28,7 +28,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
-    "cytoscape": "3.34.4",
     "tree-sitter-php": "0.24.2",
     "typescript": "5.9.3",
     "web-tree-sitter": "0.25.10",
