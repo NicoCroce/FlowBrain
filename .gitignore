@@ -13,3 +13,11 @@ packages/*/src/**/*.d.ts
 packages/*/test/**/*.js
 packages/*/test/**/*.d.ts
 *.tsbuildinfo
+
+# Locales de cada máquina: el índice del propio repo, la configuración del editor y de Claude Code
+/.flowbrain/
+/.claude/
+/.vscode/
+.env
+.env.*
+!.env.example
