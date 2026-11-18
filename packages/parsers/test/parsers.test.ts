@@ -885,6 +885,9 @@ describe("esquema-parser: tablas, columnas y claves foráneas desde DDL en cualq
     await w(brain, "technology/repo-agenda.md", pagina("repo-agenda", "repo"));
     await w(brain, "technology/tabla-turno.md", pagina("tabla-turno", "tabla", ["aliases: [turno]"]));
     await w(brain, "technology/tabla-paciente.md", pagina("tabla-paciente", "tabla", ["aliases: [paciente]"]));
+    // La página usa el nombre de la clase; la tabla física, snake_case.
+    await w(brain, "technology/tabla-salaespera.md", pagina("tabla-salaespera", "tabla", ["aliases: [SalaEspera]"]));
+    await w(repo, "db/002_sala.sql", ["CREATE TABLE sala_espera (id INT PRIMARY KEY, capacidad INT);"]);
     await w(repo, "db/001_inicial.sql", [
       "CREATE TABLE paciente (",
       "  id INT NOT NULL AUTO_INCREMENT,",
@@ -942,6 +945,7 @@ describe("esquema-parser: tablas, columnas y claves foráneas desde DDL en cualq
     const texto = (x.esquema ?? []).map((t) => `${t.tabla} @ ${t.archivo}#L${t.linea}: ${t.columnas.map((c) => `${c.nombre} ${c.tipo}${c.pk ? " pk" : ""}${c.nulo ? " null" : ""}`).join(" | ")}`);
     expect(texto).toEqual([
       "paciente @ db/001_inicial.sql#L1: id int pk | nombre varchar(120) | email varchar(255) null",
+      "sala_espera @ db/002_sala.sql#L1: id int pk | capacidad int null",
       "turno @ db/001_inicial.sql#L7: id bigint pk | paciente_id int | inicio timestamp with time zone | importe decimal(10, 2) null | sala_id int | sala_nombre varchar(80) null | nota text null",
     ]);
     expect(x.esquema!.find((t) => t.tabla === "turno")!.fks).toEqual([{ columnas: ["paciente_id"], tabla: "paciente", columnasRef: ["id"], archivo: "db/001_inicial.sql", linea: 12 }]);
@@ -952,6 +956,7 @@ describe("esquema-parser: tablas, columnas y claves foráneas desde DDL en cualq
     const { salidas } = await compileDir(brain);
     const g = salidas.graph;
     expect((g.nodes.find((n) => n.id === "tabla-turno")!.atributos["columnas"] as Array<{ nombre: string }>).map((c) => c.nombre)).toEqual(["id", "paciente_id", "inicio", "importe", "sala_id", "sala_nombre", "nota"]);
+    expect((g.nodes.find((n) => n.id === "tabla-salaespera")!.atributos["columnas"] as Array<{ nombre: string }>).map((c) => c.nombre)).toEqual(["id", "capacidad"]);
     expect(g.edges.filter((e) => e.desde === "tabla-turno").map((e) => `${e.verbo} ${e.hasta} (${e.dato}) ${e.evidencia}`)).toEqual(["depende_de tabla-paciente (paciente_id → id) repo-agenda:db/001_inicial.sql#L12"]);
     const ctx = await cargarContexto(brain);
     expect(buscarNodo(ctx, { texto: "sala_id" }).nodos.map((n) => `${n.id} ${n.coincidencia}`)).toEqual(["tabla-turno columna"]);
@@ -1162,6 +1167,25 @@ describe("extractores del proyecto", () => {
     expect(handler?.invoca).toEqual([{ desde: "PedidosHandler.Crear", archivo: "src/repo.go", simbolo: "PedidosRepo.Guardar", linea: 4 }]);
     // El acceso existe aunque todavía no haya página de la tabla: queda pendiente, a nombre de `pedidos`.
     expect(r.pendientes.filter((p) => p.verbo === "escribe_en").map((p) => `${p.evidencia} ${p.objetivo}`)).toEqual(["repo-pedidos:src/repo.go#L4 pedidos"]);
+  });
+
+  it("un extractor aporta el esquema de una tabla que ningún parser entiende; lo que no aparece en el archivo se rechaza", async () => {
+    await writeFile(join(repo, "src/modelo.go"), ["package main", "", "type Pedido struct {", "  ID int", "  Estado string", "}", ""].join("\n"));
+    await writeFile(join(brain, "technology/tabla-pedidos.md"), ["---", "id: tabla-pedidos", "tipo: tabla", "nombre: pedidos", "resumen: Pedidos.", "aliases: [pedidos]", "---", "# Pedidos", ""].join("\n"));
+    await extractor("40-esquema.mjs", {
+      esquema: [
+        { tabla: "pedidos", archivo: "src/modelo.go", linea: 3, columnas: [{ nombre: "id", tipo: "int", pk: true }, { nombre: "estado", tipo: "text", nulo: true }] },
+        { tabla: "facturas", archivo: "src/modelo.go", linea: 3, columnas: [{ nombre: "cae", tipo: "text" }] },
+        { tabla: "vacia", archivo: "src/modelo.go", linea: 3, columnas: [] },
+      ],
+    });
+    const r = await indexar(repo, brain, { permitirRepoNuevo: true, repo: "repo-pedidos" });
+    const inf = r.extractores.find((e) => e.extractor === "40-esquema.mjs")!;
+    expect([inf.aceptados.esquema, inf.rechazados]).toEqual([1, 2]);
+    expect(inf.motivos.join("\n")).toMatch(/ni la tabla ni sus columnas aparecen en ese archivo[\s\S]*faltan `columnas`/);
+    expect(r.archivos.esquema).toEqual([{ tabla: "tabla-pedidos", evidencia: "repo-pedidos:src/modelo.go#L3", columnas: [{ nombre: "id", tipo: "int", nulo: false, pk: true }, { nombre: "estado", tipo: "text", nulo: true, pk: false }], fks: [] }]);
+    await rm(join(brain, "extractors/repo-pedidos/40-esquema.mjs"));
+    await rm(join(brain, "technology/tabla-pedidos.md"));
   });
 
   it("un extractor que falla no rompe la indexación: queda anotado", async () => {

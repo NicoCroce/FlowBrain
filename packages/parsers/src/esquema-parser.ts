@@ -1,18 +1,21 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cmp } from "@flowbrain/core";
+import { aplicarOrm, type Aplicador } from "./esquema-orm.js";
 import { extraccionVacia, paqueteDe, type ColumnaCruda, type Extraccion, type Parser, type RepoFuente, type TablaEsquema } from "./tipos.js";
 
 /**
  * Esquema de base de datos: tablas, columnas y claves foráneas. No depende del lenguaje: busca DDL (`CREATE TABLE`,
  * `ALTER TABLE`, `DROP TABLE`) en archivos `.sql` y dentro del texto de cualquier archivo de código (las migraciones
  * suelen llevar el SQL en un string), y modelos en `schema.prisma`. Las sentencias se aplican en orden de ruta, que en
- * migraciones con fecha o número es el cronológico; el resultado es el esquema final.
+ * migraciones con fecha o número es el cronológico; el resultado es el esquema final. También lee los tipos de Kysely.
  */
 
-const CON_DDL = /\.(sql|php|ts|js|mjs|cjs|py|rb|go|java|kt|cs|ex|exs)$/i;
+const CON_DDL = /\.(sql|php|tsx?|jsx?|mjs|cjs|mts|cts|py|rb|go|java|kt|cs|ex|exs)$/i;
 const ES_PRISMA = /(^|\/)[^/]*\.prisma$/;
 const HAY_DDL = /\b(CREATE|ALTER|DROP)\s+TABLE\b/i;
+const ES_TS = /\.(d\.)?[cm]?ts$/;
+const USA_KYSELY = /\bfrom\s+["']kysely["']/;
 const ID = "[`\"\\[]?([A-Za-z_][\\w$]*)[`\"\\]]?";
 const NOMBRE = `(?:${ID}\\s*\\.\\s*)?${ID}`;
 const limpio = (s: string) => s.replace(/[`"[\]]/g, "").trim();
@@ -57,7 +60,27 @@ function columna(def: string): ColumnaCruda | null {
 }
 
 interface Estado {
+  /** El esquema real: DDL, migraciones, Prisma, Drizzle, Kysely. */
   tablas: Map<string, TablaEsquema>;
+  /** Tablas descritas por modelos de un ORM: solo completan las que el esquema real no trae. */
+  modelos: Map<string, TablaEsquema>;
+}
+
+function aplicador(e: Estado): Aplicador {
+  return {
+    crear: (t) => void e.tablas.set(t.tabla, { paquete: "", ...t }),
+    agregar(tabla, cols, archivo, linea) {
+      const t = e.tablas.get(tabla) ?? { paquete: "", tabla, archivo, linea, columnas: [], fks: [] };
+      for (const c of cols) t.columnas = [...t.columnas.filter((x) => x.nombre !== c.nombre), c];
+      e.tablas.set(tabla, t);
+    },
+    quitar(tabla, columnas) {
+      const t = e.tablas.get(tabla);
+      if (t) t.columnas = t.columnas.filter((c) => !columnas.includes(c.nombre));
+    },
+    borrar: (tabla) => void e.tablas.delete(tabla),
+    modelo: (t) => void (e.modelos.has(t.tabla) || e.modelos.set(t.tabla, { paquete: "", ...t })),
+  };
 }
 
 function aplicarDefinicion(t: TablaEsquema, def: string, archivo: string, linea: number) {
@@ -88,7 +111,21 @@ function aplicarDefinicion(t: TablaEsquema, def: string, archivo: string, linea:
  */
 const ROLLBACK = /\b(?:function\s+down\s*\(|(?:async\s+)?down\s*\([^)]*\)\s*(?::\s*[^{=;]+)?\{|down\s*[:=]\s*(?:async\s*)?(?:function\s*)?\([^)]*\)\s*(?:=>\s*)?\{|down\s*[:=]\s*(?:async\s+)?function\b)/g;
 export function sinRollback(texto: string): string {
-  let out = texto;
+  let out = sinRollbackPorSangria(texto);
+  // `exports.down = (knex) => knex.schema.dropTable('x');`: una flecha sin llaves, hasta el fin de la sentencia.
+  for (const m of out.matchAll(/\bdown\s*[:=]\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>\s*(?!\s*\{)/g)) {
+    const desde = m.index! + m[0].length;
+    let nivel = 0, i = desde;
+    for (; i < out.length; i++) {
+      const c = out[i]!;
+      if (c === "(" || c === "{" || c === "[") nivel++;
+      else if (c === ")" || c === "}" || c === "]") { if (--nivel < 0) break; }
+      else if ((c === ";" || c === ",") && nivel === 0) break;
+      else if (c === "\n" && nivel === 0 && /^\S/.test(out.slice(i + 1, i + 2))) break;
+    }
+    out = out.slice(0, desde) + out.slice(desde, i).replace(/[^\n]/g, " ") + out.slice(i);
+  }
+  texto = out;
   for (let m = ROLLBACK.exec(texto); m; m = ROLLBACK.exec(texto)) {
     const abre = texto.indexOf("{", m.index);
     if (abre < 0) continue;
@@ -102,6 +139,23 @@ export function sinRollback(texto: string): string {
     ROLLBACK.lastIndex = i;
   }
   return out;
+}
+
+/** Ruby (`def down … end`) y Python (`def downgrade():` de Alembic): el cuerpo es lo que está más indentado que el `def`. */
+function sinRollbackPorSangria(texto: string): string {
+  if (!/^[ \t]*def\s+(down|downgrade)\b/m.test(texto)) return texto;
+  const lineas = texto.split("\n");
+  for (let i = 0; i < lineas.length; i++) {
+    const m = /^([ \t]*)def\s+(down|downgrade)\b/.exec(lineas[i]!);
+    if (!m) continue;
+    const sangria = m[1]!.length;
+    for (let j = i + 1; j < lineas.length; j++) {
+      const l = lineas[j]!;
+      if (l.trim() && l.length - l.trimStart().length <= sangria) break;
+      lineas[j] = l.replace(/[^\n]/g, " ");
+    }
+  }
+  return lineas.join("\n");
 }
 
 function aplicarDdl(e: Estado, textoOriginal: string, archivo: string) {
@@ -158,6 +212,63 @@ function aplicarDdl(e: Estado, textoOriginal: string, archivo: string) {
   }
 }
 
+/** Cuerpo de cada `interface X { … }` del archivo, con la línea donde empieza. */
+function interfaces(texto: string): Map<string, { cuerpo: string; inicio: number; linea: number }> {
+  const out = new Map<string, { cuerpo: string; inicio: number; linea: number }>();
+  const re = /(?:^|\n)\s*(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)\s*(?:<[^>{]*>)?\s*\{/g;
+  for (let m = re.exec(texto); m; m = re.exec(texto)) {
+    const abre = m.index + m[0].length - 1;
+    let nivel = 0, i = abre;
+    for (; i < texto.length; i++) {
+      if (texto[i] === "{") nivel++;
+      else if (texto[i] === "}" && --nivel === 0) break;
+    }
+    if (i >= texto.length) continue;
+    out.set(m[1]!, { cuerpo: texto.slice(abre + 1, i), inicio: abre + 1, linea: texto.slice(0, m.index + m[0].indexOf("interface")).split("\n").length + (m[0].startsWith("\n") ? 1 : 0) - (m[0].startsWith("\n") ? 1 : 0) });
+  }
+  return out;
+}
+
+/** `nombre: tipo;` de nivel cero en el cuerpo de una interfaz, sin comentarios. */
+function miembros(cuerpo: string): Array<{ nombre: string; tipo: string }> {
+  const limpioDeComentarios = cuerpo.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  const out: Array<{ nombre: string; tipo: string }> = [];
+  for (const l of limpioDeComentarios.split("\n")) {
+    const m = /^\s*(?:readonly\s+)?(["']?)([^"':\s?]+)\1\??\s*:\s*(.+?);?\s*$/.exec(l);
+    if (m) out.push({ nombre: m[2]!, tipo: m[3]!.trim() });
+  }
+  return out;
+}
+
+/**
+ * Tipos de Kysely (`kysely-codegen` o escritos a mano): una interfaz cuyos miembros son, todos, otras interfaces del
+ * archivo es la base (`DB { user: User }`); cada miembro es una tabla y los campos de su interfaz, las columnas.
+ * `Generated<T>` y `ColumnType<S, …>` se leen como `T` y `S`; `| null`, como columna que admite nulo. Kysely no dice
+ * cuál es la clave primaria: queda sin marcar.
+ */
+function aplicarKysely(e: Estado, texto: string, archivo: string) {
+  const ifs = interfaces(texto);
+  for (const [, base] of ifs) {
+    const ms = miembros(base.cuerpo);
+    if (ms.length < 1 || !ms.every((m) => ifs.has(m.tipo))) continue;
+    for (const m of ms) {
+      const def = ifs.get(m.tipo)!;
+      const tabla = m.nombre.split(".").pop()!;
+      const columnas: ColumnaCruda[] = miembros(def.cuerpo).map((c) => {
+        const alternativas = c.tipo.split("|").map((x) => x.trim());
+        const nulo = alternativas.includes("null");
+        let tipo = alternativas.filter((x) => x !== "null").join(" | ");
+        for (let g = /^(?:Generated|GeneratedAlways)<(.+)>$/.exec(tipo); g; g = /^(?:Generated|GeneratedAlways)<(.+)>$/.exec(tipo)) tipo = g[1]!.trim();
+        const ct = /^ColumnType<\s*([^,>]+)/.exec(tipo);
+        if (ct) tipo = ct[1]!.trim();
+        if (/^(["'][^"']*["']\s*\|?\s*)+$/.test(tipo)) tipo = "enum(" + tipo.split("|").map((x) => x.trim().replace(/^["']|["']$/g, "")).join(", ") + ")";
+        return { nombre: c.nombre, tipo: tipo.length > 80 ? tipo.slice(0, 77) + "…" : tipo, nulo, pk: false };
+      });
+      if (columnas.length) e.tablas.set(tabla, { paquete: "", tabla, archivo, linea: def.linea, columnas, fks: [] });
+    }
+  }
+}
+
 /** Modelos de Prisma: campos escalares como columnas, `@relation(fields, references)` como clave foránea, `@@map` como nombre. */
 function aplicarPrisma(e: Estado, texto: string, archivo: string) {
   const lineas = texto.split("\n");
@@ -195,7 +306,8 @@ export const esquemaParser: Parser = {
   detect: (repo) => repo.archivos.some((a) => CON_DDL.test(a) || ES_PRISMA.test(a)),
   extract(repo: RepoFuente): Extraccion {
     const out = extraccionVacia("esquema-parser");
-    const e: Estado = { tablas: new Map() };
+    const e: Estado = { tablas: new Map(), modelos: new Map() };
+    const ap = aplicador(e);
     for (const archivo of repo.archivos) {
       const prisma = ES_PRISMA.test(archivo);
       if (!prisma && !CON_DDL.test(archivo)) continue;
@@ -207,7 +319,10 @@ export const esquemaParser: Parser = {
       }
       if (prisma) aplicarPrisma(e, texto, archivo);
       else if (HAY_DDL.test(texto)) aplicarDdl(e, texto, archivo);
+      if (ES_TS.test(archivo) && USA_KYSELY.test(texto)) aplicarKysely(e, texto, archivo);
+      if (!prisma) aplicarOrm(sinRollback(texto), archivo, ap);
     }
+    for (const [k, t] of e.modelos) if (!e.tablas.has(k)) e.tablas.set(k, t);
     out.esquema = [...e.tablas.values()]
       .filter((t) => t.columnas.length > 0)
       .map((t) => ({ ...t, paquete: paqueteDe(repo, t.archivo) }))

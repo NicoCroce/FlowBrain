@@ -319,6 +319,10 @@ $ARGUMENTS
    - **Tablas:** el ORM o el acceso a datos (entidades, query builder, SQL a mano, procedimientos); cómo se sabe qué
      tabla toca cada acceso, si lee o escribe, y **qué columnas**: las del \`select\`, las que se asignan antes de
      guardar, las de un \`update\`, las de un \`where\`.
+   - **Esquema:** dónde está la definición vigente de cada tabla (migraciones SQL o como código, modelos del ORM,
+     tipos generados desde la base, un \`schema.*\`) y qué columnas tiene. FlowBrain ya lee DDL, Prisma, Drizzle,
+     Kysely, Knex, Laravel, Rails, TypeORM, MikroORM, Sequelize, Mongoose, Doctrine, JPA, GORM, Django y SQLAlchemy;
+     \`flowbrain coverage\` muestra en \`tablas.sinColumnas\` las que quedaron sin definición.
 
    Cerrá el perfil con **"Lo que FlowBrain ya entiende"** y **"Lo que falta"**, comparando lo que leíste con
    \`flowbrain coverage\`, \`flowbrain calls --brain <cerebro>\` y una muestra: elegí cinco pantallas (o endpoints) al azar,
@@ -343,7 +347,9 @@ $ARGUMENTS
      "pantallas":    [{ "ruta": "/pedidos", "archivo": "src/rutas.tsx", "linea": 8,
                         "componente": { "archivo": "src/pedidos/Pedidos.tsx", "simbolo": "Pedidos" } }],
      "navegaciones": [{ "archivo": "src/pedidos/Pedidos.tsx", "linea": 14, "desde": "/pedidos", "ruta": "/pedidos/{id}", "tipo": "navega" }],
-     "accesos":      [{ "archivo": "src/pedidos/repo.go", "linea": 33, "tabla": "pedidos", "verbo": "escribe", "columnas": ["estado", "total"] }]
+     "accesos":      [{ "archivo": "src/pedidos/repo.go", "linea": 33, "tabla": "pedidos", "verbo": "escribe", "columnas": ["estado", "total"] }],
+     "esquema":      [{ "tabla": "pedidos", "archivo": "src/pedidos/modelo.go", "linea": 5,
+                        "columnas": [{ "nombre": "id", "tipo": "int", "pk": true }, { "nombre": "nota", "tipo": "text", "nulo": true }] }]
    }
    \`\`\`
 
@@ -358,6 +364,9 @@ $ARGUMENTS
      Si tu extractor solo busca columnas y no puede asegurar que cada nombre sea una tabla real (una CTE, una
      subconsulta con nombre), agregá \`"soloColumnas": true\`: completa los accesos que ya existen y no crea tablas
      nuevas. Mirá primero en qué línea cita el parser cada acceso (\`_build/extraction/<repo>.json\`) y citá la misma.
+   - El **esquema** de una tabla cita la línea donde se define (la migración, el modelo, el tipo generado), con el
+     nombre físico de la tabla y todas sus columnas vigentes. Reemplaza lo que un parser haya leído para esa tabla:
+     usalo para un ORM o una convención que FlowBrain no conozca, o para corregir un esquema mal leído.
    - **Corregir al parser.** Una \`llamada\` tuya en una línea reemplaza a las que el parser dejó en esa línea (con
      la ruta, el método o la base mal leídos). Una \`pantalla\` con una ruta que ya existe le reemplaza el componente
      y las \`envuelta\` (un layout tomado por la página). Para borrar lo que el parser inventó, \`quitar\`:

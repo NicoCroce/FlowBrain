@@ -433,8 +433,12 @@ export async function indexar(
   }
 
   // ---------- Esquema: solo tablas con página; una clave foránea queda si su destino también la tiene ----------
+  // El nombre físico (`action_has_subtag`) y el de la página (`ActionHasSubtag`) suelen diferir solo en la convención:
+  // sin coincidencia exacta, se comparan sin `_` ni `-`, y solo vale si queda un único candidato.
+  const compacta = (k: string) => k.replace(/[_-]/g, "");
   const tablaDe = (nombre: string) => {
-    const hits = destinosPorClave(normalizar(nombre), ["tabla"]);
+    let hits = destinosPorClave(normalizar(nombre), ["tabla"]);
+    if (!hits.length) hits = nodos.filter((n) => n.tipo === "tabla" && [...clavesDe(n)].some((k) => compacta(k) === compacta(normalizar(nombre))));
     return hits.length === 1 ? hits[0]!.id : null;
   };
   const esquema: EsquemaTabla[] = [];

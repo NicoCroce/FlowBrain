@@ -109,6 +109,8 @@ export function cobertura(ctx: Contexto, p: CoberturaParams = {}) {
     return !!ep && ix.recorredor.desdeEndpoint(ep.id).pasos.some((x) => x.toca.some((t) => (t.verbo === "lee_de" || t.verbo === "escribe_en") && [t.hasta, t.hasta.replace(/^tabla-/, ""), ctx.nodo.get(t.hasta)?.nombre ?? ""].some((k) => normalizar(k) === tabla)));
   };
   const fallan = (p.controles ?? []).filter((c) => !cumple(c));
+  const tablas = ctx.graph.nodes.filter((n) => n.tipo === "tabla");
+  const sinColumnas = tablas.filter((n) => !(n.atributos["columnas"] as unknown[] | undefined)?.length).sort((a, b) => (a.nombre < b.nombre ? -1 : 1));
   const extractores = p.extractores ?? [];
   const avisos = [
     ...extractores.filter((e) => e.error).map((e) => `el extractor ${e.repo}/${e.extractor} no corrió: ${e.error}`),
@@ -127,6 +129,8 @@ export function cobertura(ctx: Contexto, p: CoberturaParams = {}) {
     endpointsConLlamadasPorResolver: r.conLlamadasPorResolver,
     llamadasSinResolver: r.sinResolverEnTotal,
     accesosATablas: { total: ix.accesos.total, conColumnas: ix.accesos.conColumnas, pct: pct(ix.accesos.conColumnas, ix.accesos.total) },
+    // Tablas con su definición (columnas): las que faltan son un ORM o una convención que hay que enseñarle con un extractor.
+    tablas: { total: tablas.length, conColumnas: tablas.length - sinColumnas.length, pct: pct(tablas.length - sinColumnas.length, tablas.length), sinColumnas: sinColumnas.slice(0, 30).map((n) => n.nombre) },
     extractores: extractores.map((e) => ({ extractor: `${e.repo}/${e.extractor}`, aceptados: Object.fromEntries(Object.entries(e.aceptados).filter(([, n]) => n)), rechazados: e.rechazados, ...(e.error ? { error: e.error } : {}), ...(e.caida ? { caida: true } : {}) })),
     controles: { total: (p.controles ?? []).length, fallan: fallan.slice(0, 20) },
     avisos,

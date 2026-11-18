@@ -25,13 +25,15 @@ import { paqueteDe, type Extraccion, type RepoFuente } from "./tipos.js";
  *   "pantallas":    [{ "ruta": "/pedidos", "archivo": "src/rutas.tsx", "linea": 8, "componente": { "archivo": "…", "simbolo": "Pedidos" } }],
  *   "navegaciones": [{ "archivo": "…", "linea": 14, "desde": "/pedidos", "ruta": "/pedidos/{id}", "tipo": "navega" }],
  *   "accesos":      [{ "archivo": "src/repo.go", "linea": 33, "tabla": "pedidos", "verbo": "escribe", "columnas": ["estado", "total"] }],
+ *   "esquema":      [{ "tabla": "pedidos", "archivo": "src/models.go", "linea": 5, "columnas": [{ "nombre": "id", "tipo": "int", "pk": true }, { "nombre": "nota", "tipo": "text", "nulo": true }] }],
  *   "quitar":       [{ "tipo": "llamada", "archivo": "src/api.ts", "linea": 30 }, { "tipo": "pantalla", "ruta": "/{path}/config" }]
  * }
  * ```
  *
  * Un extractor también corrige lo que el parser leyó mal: una llamada en una línea reemplaza a las que el parser dejó en
  * esa misma línea (con o sin ruta), una pantalla con una ruta que ya existe le reemplaza el componente y las envolturas,
- * y `quitar` borra lo que el parser inventó (una llamada, una pantalla o una navegación). Solo se corrige lo que vino de
+ * `esquema` reemplaza las columnas que un parser haya leído para esa tabla (un ORM que FlowBrain no conoce, una convención
+ * de nombres propia), y `quitar` borra lo que el parser inventó (una llamada, una pantalla o una navegación). Solo se corrige lo que vino de
  * un parser: lo que sumó otro extractor no se toca.
  */
 export const CARPETA_EXTRACTORES = "extractors";
@@ -39,7 +41,7 @@ export const RUTA_INFORME_EXTRACTORES = (repo: string) => `_build/extractors/${r
 
 const INTERPRETES: Record<string, string> = { ".mjs": "node", ".js": "node", ".cjs": "node", ".py": "python3", ".sh": "sh", ".rb": "ruby", ".php": "php" };
 const TIEMPO_MS = 180_000;
-const TIPOS = ["simbolos", "invocaciones", "endpoints", "llamadas", "pantallas", "navegaciones", "accesos", "quitar"] as const;
+const TIPOS = ["simbolos", "invocaciones", "endpoints", "llamadas", "pantallas", "navegaciones", "accesos", "esquema", "quitar"] as const;
 type Tipo = (typeof TIPOS)[number];
 
 export interface InformeExtractor {
@@ -103,7 +105,7 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
   const corregidas = new Set<string>();
 
   for (const nombre of programas) {
-    const inf: InformeExtractor = { extractor: nombre, ms: 0, aceptados: { simbolos: 0, invocaciones: 0, endpoints: 0, llamadas: 0, pantallas: 0, navegaciones: 0, accesos: 0, quitar: 0 }, rechazados: 0, motivos: [] };
+    const inf: InformeExtractor = { extractor: nombre, ms: 0, aceptados: { simbolos: 0, invocaciones: 0, endpoints: 0, llamadas: 0, pantallas: 0, navegaciones: 0, accesos: 0, esquema: 0, quitar: 0 }, rechazados: 0, motivos: [] };
     informes.push(inf);
     const t0 = Date.now();
     let salida: Record<string, unknown>;
@@ -262,6 +264,33 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
       if (tipo === "navegacion") x.navegaciones = x.navegaciones.filter((y) => !(delParser.navegaciones.has(y) && coincide(y)));
       if (x.llamadas.length + x.pantallas.length + x.navegaciones.length === antes) rechazar("quitar", d, "no coincide con nada que haya leído un parser");
       else inf.aceptados.quitar++;
+    }
+    for (const d of lista(salida["esquema"])) {
+      const cols = Array.isArray(d["columnas"]) ? (d["columnas"] as unknown[]).filter((c): c is Record<string, unknown> => !!c && typeof c === "object" && esTexto((c as Record<string, unknown>)["nombre"])) : [];
+      const m = cita(d["archivo"], d["linea"]) ?? (!esTexto(d["tabla"]) ? "falta `tabla`" : !cols.length ? "faltan `columnas` con `nombre`" : null);
+      if (m) {
+        rechazar("esquema", d, m);
+        continue;
+      }
+      // La tabla o alguna de sus columnas tiene que aparecer en el archivo citado.
+      const texto = readFileSync(join(repo.raiz, d["archivo"] as string), "utf8").toLowerCase();
+      if (![d["tabla"] as string, ...cols.map((c) => c["nombre"] as string)].some((n) => texto.includes(n.toLowerCase()))) {
+        rechazar("esquema", d, "ni la tabla ni sus columnas aparecen en ese archivo");
+        continue;
+      }
+      const tabla = d["tabla"] as string;
+      x.esquema = [
+        {
+          paquete: paqueteDe(repo, d["archivo"] as string),
+          tabla,
+          archivo: d["archivo"] as string,
+          linea: d["linea"] as number,
+          columnas: cols.map((c) => ({ nombre: c["nombre"] as string, tipo: esTexto(c["tipo"]) ? c["tipo"] : "?", nulo: c["nulo"] === true, pk: c["pk"] === true })),
+          fks: [],
+        },
+        ...(x.esquema ?? []).filter((t) => t.tabla !== tabla),
+      ];
+      inf.aceptados.esquema++;
     }
     for (const k of Object.keys(salida)) if (!(TIPOS as readonly string[]).includes(k)) rechazar("simbolos", k, `sección desconocida: ${k}`);
 
