@@ -539,3 +539,11 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Dos pestañas:** "Si cambia, afecta a" (el impacto de siempre: quién depende de la pieza) y "Depende de" (lo que la pieza necesita: si cambia algo de eso, la afecta). Cada una con sus chips, grupos y buscadores. Sin nada que dependa de la pieza, se abre en "Depende de". Enlazables: `#/impacto/<id>/afecta` y `#/impacto/<id>/depende`.
    - **Recorrido hacia adelante** con las mismas reglas que el impacto: `implementa` solo desde el origen y un servicio alcanzado no se expande (sería todo lo que toca). En el proyecto real, Competiciones de la web: 7 funcionalidades, 3 pantallas, 11 endpoints y 81 tablas.
    - **Piezas de otro cerebro llevan su nombre** ("Competiciones (nestjs-api)"): dos funcionalidades pueden llamarse igual en cerebros distintos.
+
+168. **El mapa 3D muestra el recorrido de punta a punta de lo elegido (2026-11-18).** Al elegir una funcionalidad del front se veían solo sus vecinos directos (sus pantallas): las líneas hacia el back salían recién al elegir cada pantalla, y ahí se cortaban en el endpoint.
+   - **Qué se resalta.** Desde una funcionalidad, sus pantallas y endpoints; desde ahí, cada llamada (también las que cruzan a otro cerebro) y, desde cada endpoint, lo que llama y las tablas que lee o escribe. Lo mismo al elegir una pantalla o un endpoint. Los impulsos corren por ese recorrido y "Aislar" lo deja solo.
+   - **Dónde se corta.** Se sigue el sentido del flujo (`llama_a`, `lee_de`, `escribe_en`, `publica_en`, `consume_de`) y solo a través de pantallas y endpoints. Un servicio, una tabla o una cola cierran el camino: seguir desde ahí alcanzaría a medio sistema y no diría nada.
+   - **En el panel.** "Recorrido de punta a punta": qué alcanza en cada cerebro, por tipo, y las tablas a las que llega (hasta 12). Si hay tipos apagados que forman parte del recorrido, lo avisa.
+   - **Sin datos nuevos.** Usa las aristas que el mapa ya tenía; no cambia lo que recibe el agente, que ya tiene `pantalla`, `recorrido` e `impacto` para esto.
+   - **Medido en el proyecto real:** la funcionalidad de staff del front llega a 2 pantallas, 8 endpoints del back y 33 tablas. **No se miró en un navegador.**
+

@@ -122,6 +122,35 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     return Math.min(0.9, (0.02 + 0.5 * e.v * pico * dens) * k);
   }
   var isoSet = null;
+  /**
+   * Recorrido de punta a punta de lo elegido: desde una funcionalidad, sus pantallas y endpoints; desde una pantalla,
+   * los endpoints que llama (aunque estén en otro cerebro); desde un endpoint, lo que llama y las tablas que lee o
+   * escribe. Se sigue solo el sentido del flujo y solo a través de pantallas y endpoints: un servicio o una tabla
+   * cierran el camino, porque seguir desde ahí alcanzaría a medio sistema.
+   */
+  var FLUJO = { llama_a: 1, lee_de: 1, escribe_en: 1, publica_en: 1, consume_de: 1 };
+  var rutaN = null, rutaE = null, rutaL = [];
+  function computeRuta(id) {
+    var n = by[id];
+    rutaN = rutaE = null; rutaL = [];
+    if (!n || (n.tipo !== "feat" && n.tipo !== "pantalla" && n.tipo !== "endpoint")) return;
+    var pasa = function (x) { return x.tipo === "pantalla" || x.tipo === "endpoint"; };
+    var ns = new Set([n]), es = new Set(), cola = [n];
+    if (n.tipo === "feat") n.adj.forEach(function (a) {
+      if (a.e.verbo !== "implementa" || a.e.b !== n || !pasa(a.n)) return;
+      es.add(a.e);
+      if (!ns.has(a.n)) { ns.add(a.n); cola.push(a.n); }
+    });
+    while (cola.length && ns.size < 800) {
+      var x = cola.shift();
+      x.adj.forEach(function (a) {
+        if (a.e.a !== x || !FLUJO[a.e.verbo]) return;
+        es.add(a.e);
+        if (!ns.has(a.n)) { ns.add(a.n); if (pasa(a.n)) cola.push(a.n); }
+      });
+    }
+    if (es.size) { rutaN = ns; rutaE = es; rutaL = Array.from(es); }
+  }
   function visible(n) { return base(n) && (!S.isolate || !isoSet || isoSet.has(n)); }
   function computeIso(id) {
     var n = by[id || S.selId];
@@ -129,6 +158,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     var s = new Set([n]);
     desc(n).forEach(function (c) { s.add(c); });
     n.adj.forEach(function (a) { s.add(a.n); });
+    if (rutaN && by[S.selId] === n) rutaN.forEach(function (x) { s.add(x); });
     isoSet = s;
   }
   // Un nodo que se prende por primera vez aparece junto a su padre, no en un lugar al azar.
@@ -407,7 +437,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     var q = S.query.trim().toLowerCase(), match = null;
     if (q) { match = new Set(); N.forEach(function (n) { if (n.nombre.toLowerCase().indexOf(q) >= 0 || n.id.toLowerCase().indexOf(q) >= 0) match.add(n); }); }
     var vecinos = null;
-    if (sel) { vecinos = new Set(); sel.adj.forEach(function (a) { vecinos.add(a.n); }); }
+    if (sel) { vecinos = new Set(); sel.adj.forEach(function (a) { vecinos.add(a.n); }); if (rutaN) rutaN.forEach(function (x) { vecinos.add(x); }); }
     var P = [], pm = new Map();
     for (var i = 0; i < N.length; i++) {
       var n = N[i];
@@ -431,9 +461,10 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
       vis.push(e);
       var xc = cruza(e);
       if (xc) visCruce.push(e);
-      var hl = (sel && (e.a === sel || e.b === sel)) || (hov && (e.a === hov || e.b === hov));
+      var enRuta = sel && rutaE && rutaE.has(e);
+      var hl = enRuta || (sel && (e.a === sel || e.b === sel)) || (hov && (e.a === hov || e.b === hov));
       var al = Math.min(pa.a, pb.a) * (hl ? 0.85 : xc ? brilloCruce(e) : 0.13);
-      ctx.strokeStyle = hl ? rgba(col((e.a === sel || e.a === hov) ? e.b.tipo : e.a.tipo), al) : xc ? "rgba(255,214,140," + al + ")" : "rgba(120,146,255," + al + ")";
+      ctx.strokeStyle = hl ? rgba(col(enRuta || e.a === sel || e.a === hov ? e.b.tipo : e.a.tipo), al) : xc ? "rgba(255,214,140," + al + ")" : "rgba(120,146,255," + al + ")";
       ctx.lineWidth = hl ? 1.6 : xc ? 1.3 : 1;
       ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy);
       ctx.quadraticCurveTo((pa.sx + pb.sx) / 2 - (pb.sy - pa.sy) * e.c, (pa.sy + pb.sy) / 2 + (pb.sx - pa.sx) * e.c, pb.sx, pb.sy); ctx.stroke();
@@ -448,7 +479,9 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
         var cand = vis[Math.floor(Math.random() * vis.length)];
         // Lo que viaja entre cerebros se ve seguido, aunque sean pocas relaciones entre miles.
         if (visCruce.length && Math.random() < 0.35) cand = visCruce[Math.floor(Math.random() * visCruce.length)];
-        if (foco && Math.random() < 0.6) { var fa = foco.adj[Math.floor(Math.random() * foco.adj.length)]; if (fa && pm.get(fa.n) && !S.hiddenVerbs[fa.e.verbo]) cand = fa.e; }
+        // Con un recorrido elegido, los impulsos lo siguen de punta a punta.
+        if (sel && rutaL.length && Math.random() < 0.75) { var re = rutaL[Math.floor(Math.random() * rutaL.length)]; if (pm.get(re.a) && pm.get(re.b) && !S.hiddenVerbs[re.verbo]) cand = re; }
+        else if (foco && Math.random() < 0.6) { var fa = foco.adj[Math.floor(Math.random() * foco.adj.length)]; if (fa && pm.get(fa.n) && !S.hiddenVerbs[fa.e.verbo]) cand = fa.e; }
         lanzar(cand, 0);
       }
     } else if (!I) pulsos.length = 0;
@@ -502,7 +535,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     ctx.font = "500 11.5px " + color("sans"); ctx.textBaseline = "middle"; ctx.lineJoin = "round";
     for (var l = 0; l < P.length; l++) {
       var p3 = P[l], n3 = p3.n;
-      var show = n3 === sel || n3 === hov || S.labels === "todas" || (S.labels === "grandes" && p3.r > 8.5) || (match && match.has(n3));
+      var show = n3 === sel || n3 === hov || (sel && rutaN && rutaN.has(n3) && (rutaN.size <= 40 || n3.tipo === "tabla" || n3.c !== sel.c)) || S.labels === "todas" || (S.labels === "grandes" && p3.r > 8.5) || (match && match.has(n3));
       if (S.labels === "ninguna" && n3 !== sel && n3 !== hov) show = false;
       if (!show || p3.a < 0.3) continue;
       ctx.globalAlpha = Math.min(1, p3.a + 0.15); ctx.lineWidth = 3.5; ctx.strokeStyle = "rgba(10,12,17,.9)";
@@ -565,7 +598,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     if (!P) return;
     if (P.cerebro >= 0) { medirCerebros(false); return; }
     if (P.hit) seleccionar(P.hit.id);
-    else if (P.moved < 5) { S.selId = null; S.isolate = false; ui(); }
+    else if (P.moved < 5) { S.selId = null; S.isolate = false; computeRuta(null); ui(); }
     else if (P.hit) ui();
   }
   canvas.addEventListener("pointerup", soltar);
@@ -579,7 +612,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
   var $ = function (id) { return document.getElementById(id); };
   var sw = function (t) { return '<span class="sw" style="background:' + col(t) + '"></span>'; };
   var on = function (b) { return b ? " on" : ""; };
-  function seleccionar(id) { if (S.selId !== id) { S.todas = {}; S.tabC = null; } S.selId = id; computeIso(id); ui(); }
+  function seleccionar(id) { if (S.selId !== id) { S.todas = {}; S.tabC = null; } S.selId = id; computeRuta(id); computeIso(id); ui(); }
   function irA(id) {
     var n = by[id];
     if (!n) return;
@@ -597,6 +630,27 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     return opciones.map(function (o) { return '<button type="button" class="sb' + on(actual === o[0]) + '" aria-pressed="' + (actual === o[0]) + '" data-' + nombre + '="' + o[0] + '">' + o[1] + "</button>"; }).join("");
   }
   function fila(n, extra, marca) { return '<button type="button" class="nb" data-pick="' + esc(n.id) + '" title="' + esc(n.nombre) + '">' + sw(n.tipo) + '<span class="corta">' + esc(n.nombre) + '</span><span class="vb">' + esc(extra) + "</span>" + (marca || "") + "</button>"; }
+  /** Resumen del recorrido de punta a punta: qué alcanza lo elegido en cada cerebro, y las tablas a las que llega. */
+  function recorridoDe(sel) {
+    if (!rutaN) return "";
+    var porC = {}, tablas = [];
+    rutaN.forEach(function (n) {
+      if (n === sel) return;
+      (porC[n.c] = porC[n.c] || {})[n.tipo] = ((porC[n.c] || {})[n.tipo] || 0) + 1;
+      if (n.tipo === "tabla") tablas.push(n);
+    });
+    var cs = Object.keys(porC).map(Number).sort(function (a, b) { return (a === sel.c ? -1 : 0) - (b === sel.c ? -1 : 0) || a - b; });
+    if (!cs.length) return "";
+    tablas.sort(function (a, b) { return a.c - b.c || (a.nombre < b.nombre ? -1 : 1); });
+    var ocultos = TIPOS.filter(function (t) { return S.hiddenTypes[t[0]] && cs.some(function (c) { return porC[c][t[0]]; }); }).map(function (t) { return t[1].toLowerCase(); });
+    return '<div class="m3-caja"><span class="lbl">Recorrido de punta a punta</span>' +
+      cs.map(function (c) {
+        var partes = TIPOS.filter(function (t) { return porC[c][t[0]]; }).map(function (t) { return porC[c][t[0]] + " " + (porC[c][t[0]] === 1 ? t[2] : t[1]).toLowerCase(); });
+        return '<div class="nb m3-rc">' + (MULTI ? puntoC(c) + '<span class="corta">' + esc(CEREBROS[c].nombre) + "</span>" : "") + '<span class="vb">' + esc(partes.join(" · ")) + "</span></div>";
+      }).join("") +
+      (tablas.length ? '<span class="lbl m3-sub">Tablas a las que llega</span>' + tablas.slice(0, 12).map(function (n) { return fila(n, "", MULTI && n.c !== sel.c ? '<span class="mc" style="color:' + colorC(n.c) + ";border-color:" + colorC(n.c) + '">' + esc(CEREBROS[n.c].nombre) + "</span>" : ""); }).join("") + (tablas.length > 12 ? '<p class="vacio">y ' + (tablas.length - 12) + " más: hacé clic en un endpoint para ver las suyas.</p>" : "") : '<p class="vacio">No llega a ninguna tabla indexada.</p>') +
+      (ocultos.length ? '<p class="vacio">Hay ' + ocultos.join(" y ") + " apagados en el panel izquierdo: esa parte del recorrido no se dibuja.</p>" : "") + "</div>";
+  }
   /** Conexiones del nodo elegido, todas: primero las de su cerebro y después un grupo por cada otro cerebro, con su color. */
   var TOPE_GRUPO = 30;
   function conexionesDe(sel) {
@@ -691,7 +745,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
       '<button type="button" class="btn' + on(S.isolate) + '" aria-pressed="' + S.isolate + '" data-acc="iso">Aislar</button><button type="button" class="btn" data-acc="hide">Ocultar</button>' +
       (sel.pin ? '<button type="button" class="btn ancho" data-acc="unpin">Volver a su lugar</button>' : "") + "</div>" +
       '<div class="m3-enlaces">' + enlaces.join("") + "</div>" +
-      conexionesDe(sel) +
+      recorridoDe(sel) + conexionesDe(sel) +
       '<button type="button" class="btn" data-acc="close">Cerrar detalle</button>';
   }
   function resultados() {
@@ -742,9 +796,9 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     else if (d.acc === "sep" && sel) separar(sel);
     else if (d.acc === "focus" && sel) focus(sel);
     else if (d.acc === "iso") { computeIso(); S.isolate = !S.isolate; }
-    else if (d.acc === "hide" && sel) { S.hiddenIds[sel.id] = true; S.selId = null; S.isolate = false; actualizarActivos(); }
+    else if (d.acc === "hide" && sel) { S.hiddenIds[sel.id] = true; S.selId = null; S.isolate = false; computeRuta(null); actualizarActivos(); }
     else if (d.acc === "unpin" && sel) { [sel].concat(desc(sel)).forEach(function (n) { n.pin = false; }); reacomodar(0.6); }
-    else if (d.acc === "close") { S.selId = null; S.isolate = false; }
+    else if (d.acc === "close") { S.selId = null; S.isolate = false; computeRuta(null); }
     else return;
     ui();
   });

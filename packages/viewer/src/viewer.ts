@@ -252,6 +252,8 @@ a.nb { text-decoration: none; }
 #m3-detalle { display: flex; flex-direction: column; gap: 18px; }
 .m3-vacio { display: flex; flex-direction: column; gap: 14px; padding: 6px 4px; }
 .m3-vacio p { margin: 0; font-size: 14px; line-height: 1.55; color: #C9CFDB; }
+.m3-rc { cursor: default; min-height: 28px; } .m3-rc .vb { white-space: normal; text-align: right; }
+.m3-sub { margin-top: 8px; }
 .m3-caja { display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
 .m3-cab { display: flex; flex-direction: column; gap: 8px; padding: 0 4px; }
 .m3-tipo { display: flex; align-items: center; gap: 8px; } .m3-tipo .lbl { color: var(--medio); }
