@@ -145,6 +145,11 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .resumen-impacto .chip { font-size: 13px; color: var(--text); }
 .grupos-impacto { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 16px; }
 .grupos-impacto.uno { grid-template-columns: 1fr; }
+.pestanas { display: flex; gap: 4px; margin: 6px 0 16px; border-bottom: 1px solid var(--borde); }
+.pestana { padding: 8px 14px; border-bottom: 2px solid transparent; color: var(--medio); text-decoration: none; font: 500 13px var(--sans); }
+.pestana b { color: var(--suave); font-weight: 600; margin-left: 4px; }
+.pestana:hover { color: #FFFFFF; } .pestana.on { color: #FFFFFF; border-bottom-color: var(--primario); } .pestana.on b { color: var(--acento); }
+.explica { color: var(--medio); margin: 0 0 8px; }
 .grupo-impacto { padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); min-width: 0; }
 .grupo-impacto[hidden], .grupo-impacto li[hidden], .grupo-impacto .vacio[hidden] { display: none; }
 .grupo-impacto h2 { display: flex; align-items: center; gap: 8px; }

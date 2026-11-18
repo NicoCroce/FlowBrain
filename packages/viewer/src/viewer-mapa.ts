@@ -11,7 +11,7 @@ export const MAPA_JS =
 (function () {
   "use strict";
   var V = window.brainVisor, P = window.brainProducto, D = V.D, porId = V.porId, esc = V.esc, color = V.color;
-  var fichas = D.funcionalidades || [], deps = D.dependencias || [];
+  var fichas = D.funcionalidades || [], deps = D.dependencias || [], CEREBROS = D.cerebros || [];
   var porFicha = {};
   fichas.forEach(function (f) { porFicha[f.id] = f; });
   var nombre = function (id) { return porId[id] ? porId[id].n : id; };
@@ -63,61 +63,116 @@ export const MAPA_JS =
       buscador() + '<div class="columnas">' + bloque("Funcionalidades más usadas", masDependidas("feat", 8)) + bloque("Tablas más compartidas", masDependidas("tabla", 8)) + bloque("Endpoints más llamados", masDependidas("endpoint", 8)) + "</div>";
     conectarBuscador();
   }
-  function mostrarImpacto(id) {
-    if (!id || !porId[id]) return inicioImpacto();
-    var niveles = impacto(deps, id), info = {};
-    niveles.forEach(function (nv, i) { nv.forEach(function (x) { x.nivel = i + 1; info[x.id] = x; }); });
-    var porque = function (x) {
-      var partes = [];
-      for (var c = x; c; c = info[c.via]) partes.push((VERBO[c.verbo] || c.verbo) + " " + nombre(c.via));
-      return partes.join(", que ");
-    };
-    var todos = [].concat.apply([], niveles);
-    var feats = todos.filter(function (x) { return porFicha[x.id]; });
-    var tecnicas = todos.filter(function (x) { return !porFicha[x.id]; });
-    // Un grupo por tipo de pieza, cada uno con su buscador; los chips de arriba filtran qué grupo se ve.
+  /**
+   * La otra dirección del impacto: de qué depende una pieza (lo que, si cambia, la afecta a ella). Desde una
+   * funcionalidad: sus pantallas y servicio, lo que llaman, las tablas que tocan y las funcionalidades que usa.
+   * Igual que en el impacto, "implementa" solo se sigue desde el origen, y un servicio alcanzado no se expande: sería
+   * todo lo que ese servicio toca.
+   */
+  function dependeDe(origen) {
+    var visto = {}, niveles = [], frente = [origen];
+    visto[origen] = true;
+    while (frente.length && niveles.length < 8) {
+      var nivel = [];
+      frente.forEach(function (id) {
+        if (id !== origen && tipo(id) === "svc") return;
+        (salen[id] || []).forEach(function (d) {
+          if (d[2] === "implementa" && id !== origen) return;
+          if (visto[d[1]]) return;
+          visto[d[1]] = true;
+          nivel.push({ id: d[1], via: id, verbo: d[2] });
+        });
+      });
+      if (!nivel.length) break;
+      niveles.push(nivel);
+      frente = nivel.map(function (x) { return x.id; });
+    }
+    return niveles;
+  }
+  var VERBO_IDA = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "se apoya en", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de" };
+  /** Chips por tipo y un grupo por tipo con su buscador, para una lista de piezas con nivel. */
+  function gruposHtml(todos, porque, enlaceExtra) {
     var porTipo = {};
     todos.forEach(function (x) { var t = tipo(x.id); (porTipo[t] = porTipo[t] || []).push(x); });
     var orden = ["feat", "pantalla", "svc", "endpoint", "tabla", "ext", "queue", "db", "lib", "repo"];
     var tipos = Object.keys(porTipo).sort(function (a, b) { return (orden.indexOf(a) + 1 || 99) - (orden.indexOf(b) + 1 || 99); });
     var titulo = function (t, k) { return esc((k === 1 ? TIPO[t] : TIPOS[t]) || t); };
-    if (filtroImpacto !== "todos" && !porTipo[filtroImpacto]) filtroImpacto = "todos";
-    var chips = '<button class="chip' + (filtroImpacto === "todos" ? " on" : "") + '" data-tipo="todos">Todo · ' + todos.length + "</button>" +
-      tipos.map(function (t) { return '<button class="chip' + (filtroImpacto === t ? " on" : "") + '" data-tipo="' + t + '">' + puntoT(t) + " " + porTipo[t].length + " " + titulo(t, porTipo[t].length) + "</button>"; }).join("");
+    var filtro = filtroImpacto !== "todos" && porTipo[filtroImpacto] ? filtroImpacto : "todos";
+    var chips = '<button class="chip' + (filtro === "todos" ? " on" : "") + '" data-tipo="todos">Todo · ' + todos.length + "</button>" +
+      tipos.map(function (t) { return '<button class="chip' + (filtro === t ? " on" : "") + '" data-tipo="' + t + '">' + puntoT(t) + " " + porTipo[t].length + " " + titulo(t, porTipo[t].length) + "</button>"; }).join("");
     var item = function (x) {
       var texto = (nombre(x.id) + " " + x.id + " " + porque(x)).toLowerCase();
-      return '<li data-texto="' + esc(texto) + '">' + ligado(x.id) + " <small>· " + (x.nivel > 1 ? "nivel " + x.nivel : "directo") + ' · <a href="#/impacto/' + encodeURIComponent(x.id) + '">su impacto</a></small><br><small>' + esc(porque(x)) + "</small></li>";
+      return '<li data-texto="' + esc(texto) + '">' + ligado(x.id) + " <small>· " + (x.nivel > 1 ? "nivel " + x.nivel : "directo") + enlaceExtra(x) + "</small><br><small>" + esc(porque(x)) + "</small></li>";
     };
     var porNivel = function (xs) { return xs.slice().sort(function (a, b) { return a.nivel - b.nivel || (nombre(a.id) < nombre(b.id) ? -1 : 1); }); };
     var grupo = function (t) {
       var xs = porTipo[t];
-      return '<section class="grupo-impacto" data-tipo="' + t + '"' + (filtroImpacto !== "todos" && filtroImpacto !== t ? " hidden" : "") + ">" +
+      return '<section class="grupo-impacto" data-tipo="' + t + '"' + (filtro !== "todos" && filtro !== t ? " hidden" : "") + ">" +
         "<h2>" + puntoT(t) + " " + titulo(t, 2).replace(/^./, function (c) { return c.toUpperCase(); }) + ' <small class="cuenta">' + xs.length + "</small></h2>" +
         '<input type="search" class="buscar-grupo" placeholder="Buscar en ' + titulo(t, 2) + '" autocomplete="off">' +
         '<ul class="lista">' + porNivel(xs).map(item).join("") + '</ul><p class="vacio" hidden>Nada coincide.</p></section>';
     };
+    return '<div class="chips resumen-impacto">' + chips + "</div>" + '<div class="grupos-impacto' + (filtro === "todos" ? "" : " uno") + '">' + tipos.map(grupo).join("") + "</div>";
+  }
+  function conectarChips(panel) {
+    var contenedor = panel.querySelector(".grupos-impacto");
+    panel.querySelectorAll(".resumen-impacto .chip").forEach(function (c) {
+      c.addEventListener("click", function () {
+        // Volver a tocar el elegido muestra todo otra vez.
+        var actual = panel.querySelector(".resumen-impacto .chip.on");
+        filtroImpacto = actual && actual.dataset.tipo === c.dataset.tipo ? "todos" : c.dataset.tipo;
+        panel.querySelectorAll(".resumen-impacto .chip").forEach(function (o) { o.classList.toggle("on", o.dataset.tipo === filtroImpacto); });
+        panel.querySelectorAll(".grupo-impacto").forEach(function (g) { g.hidden = filtroImpacto !== "todos" && g.dataset.tipo !== filtroImpacto; });
+        contenedor.classList.toggle("uno", filtroImpacto !== "todos");
+      });
+    });
+  }
+  function conNivel(niveles) {
+    var info = {};
+    niveles.forEach(function (nv, i) { nv.forEach(function (x) { x.nivel = i + 1; info[x.id] = x; }); });
+    return { todos: [].concat.apply([], niveles), info: info };
+  }
+  function mostrarImpacto(id, pestana) {
+    if (!id || !porId[id]) return inicioImpacto();
+    cerebroActual = cerebroDe(id);
+    var imp = conNivel(impacto(deps, id)), dep = conNivel(dependeDe(id));
+    // Afectados: "lee Club, que …" (de la pieza hacia atrás). Dependencias: "se apoya en /x, que llama a …" (de la pieza hacia adelante).
+    var porque = function (x) {
+      var partes = [];
+      for (var c = x; c; c = imp.info[c.via]) partes.push((VERBO[c.verbo] || c.verbo) + " " + nombreEn(c.via));
+      return partes.join(", que ");
+    };
+    var camino = function (x) {
+      var pasos = [];
+      for (var c = x; c; c = dep.info[c.via]) pasos.unshift(c);
+      return pasos.map(function (c, i) { return (i === 0 ? nombre(id) + " " : "que ") + (VERBO_IDA[c.verbo] || c.verbo) + " " + nombreEn(c.id); }).join(", ");
+    };
+    var todos = imp.todos;
+    var feats = todos.filter(function (x) { return porFicha[x.id]; });
+    var tecnicas = todos.filter(function (x) { return !porFicha[x.id]; });
+    var porNivel = function (xs) { return xs.slice().sort(function (a, b) { return a.nivel - b.nivel || (nombre(a.id) < nombre(b.id) ? -1 : 1); }); };
     var plano = function (x) { return "- " + nombre(x.id) + " (" + (TIPO[tipo(x.id)] || tipo(x.id)) + ", " + (x.nivel > 1 ? "nivel " + x.nivel : "directo") + "): " + porque(x); };
     copia = "Impacto de cambiar " + nombre(id) + " (" + id + ")\n\n" +
       (feats.length ? "Funcionalidades:\n" + porNivel(feats).map(plano).join("\n") + "\n\n" : "") +
       (tecnicas.length ? "Piezas técnicas:\n" + porNivel(tecnicas).map(plano).join("\n") + "\n" : "");
+    // Sin nada que dependa de la pieza, se abre en lo que ella necesita.
+    var activa = pestana === "depende" || (pestana !== "afecta" && !todos.length && dep.todos.length) ? "depende" : "afecta";
     var n = porId[id];
+    var enlaceImp = function (x) { return ' · <a href="#/impacto/' + encodeURIComponent(x.id) + '">su impacto</a>'; };
+    var panelAfecta = todos.length
+      ? '<p class="explica">Lo que se rompe o hay que revisar si cambia ' + esc(n.n) + '.</p><p><button class="boton" id="copiar-impacto">Copiar como lista</button></p>' + gruposHtml(todos, porque, enlaceImp)
+      : '<p class="aviso">Nada depende de ' + esc(n.n) + " en el grafo: cambiarla no rompe otras funcionalidades ni servicios conocidos." + (dep.todos.length ? ' Mirá <a href="#/impacto/' + encodeURIComponent(id) + '/depende">de qué depende</a>: si cambia alguna de esas piezas, sí la afecta.' : "") + "</p>";
+    var panelDepende = dep.todos.length
+      ? '<p class="explica">Lo que ' + esc(n.n) + " necesita: si cambia alguna de estas piezas, " + esc(n.n) + " puede verse afectada.</p>" + gruposHtml(dep.todos, camino, enlaceImp)
+      : '<p class="aviso">' + esc(n.n) + " no depende de otras piezas en el grafo.</p>";
+    var tab = function (k, texto, cuenta) { return '<a class="pestana' + (activa === k ? " on" : "") + '" href="#/impacto/' + encodeURIComponent(id) + "/" + k + '">' + texto + " <b>" + cuenta + "</b></a>"; };
     raizImpacto.innerHTML = '<a class="volver" href="#/impacto">← Otra pieza</a>' +
-      "<h1>Si cambia " + esc(n.n) + "</h1>" +
+      "<h1>" + esc(n.n) + "</h1>" +
       '<p class="subtitulo">' + esc(TIPO[n.t] || n.t) + " · <code>" + esc(id) + "</code>" + (porFicha[id] ? ' · <a href="#/f/' + encodeURIComponent(id) + '">ficha de producto</a>' : "") + ' · <a href="#/n/' + encodeURIComponent(id) + '">ficha técnica</a> · <a href="#/grafo/' + encodeURIComponent(id) + '">mapa 3D</a></p>' +
-      (todos.length
-        ? '<div class="chips resumen-impacto">' + chips + '</div><p><button class="boton" id="copiar-impacto">Copiar como lista</button></p>' +
-          '<div class="grupos-impacto' + (filtroImpacto === "todos" ? "" : " uno") + '">' + tipos.map(grupo).join("") + "</div>"
-        : '<p class="aviso">Nada depende de esta pieza en el grafo: cambiarla no afecta a otras funcionalidades ni servicios conocidos.</p>');
-    var contenedor = raizImpacto.querySelector(".grupos-impacto");
-    raizImpacto.querySelectorAll(".resumen-impacto .chip").forEach(function (c) {
-      c.addEventListener("click", function () {
-        // Volver a tocar el elegido muestra todo otra vez.
-        filtroImpacto = filtroImpacto === c.dataset.tipo ? "todos" : c.dataset.tipo;
-        raizImpacto.querySelectorAll(".resumen-impacto .chip").forEach(function (o) { o.classList.toggle("on", o.dataset.tipo === filtroImpacto); });
-        raizImpacto.querySelectorAll(".grupo-impacto").forEach(function (g) { g.hidden = filtroImpacto !== "todos" && g.dataset.tipo !== filtroImpacto; });
-        contenedor.classList.toggle("uno", filtroImpacto !== "todos");
-      });
-    });
+      '<nav class="pestanas">' + tab("afecta", "Si cambia, afecta a", todos.length) + tab("depende", "Depende de", dep.todos.length) + "</nav>" +
+      '<div class="panel-impacto">' + (activa === "afecta" ? panelAfecta : panelDepende) + "</div>";
+    var panel = raizImpacto.querySelector(".panel-impacto");
+    if (panel.querySelector(".grupos-impacto")) conectarChips(panel);
     conectarBuscadoresDeGrupo();
     var b = document.getElementById("copiar-impacto");
     if (b) b.addEventListener("click", function () {
@@ -127,9 +182,12 @@ export const MAPA_JS =
   }
 
   // ---------- Ficha técnica: qué es una pieza, sus datos y con qué se conecta ----------
-  var CEREBROS = D.cerebros || [];
   var enlaceFicha = function (id) { return porFicha[id] ? "#/f/" + encodeURIComponent(id) : "#/n/" + encodeURIComponent(id); };
-  var ligado = function (id) { return '<a href="' + enlaceFicha(id) + '">' + punto(id) + " " + esc(nombre(id)) + "</a>"; };
+  // Con varios cerebros, una pieza de otro cerebro lleva su nombre: dos funcionalidades pueden llamarse igual.
+  var cerebroActual = null;
+  var cerebroDe = function (id) { return CEREBROS.length > 1 && id.indexOf("/") > 0 ? id.slice(0, id.indexOf("/")) : null; };
+  var nombreEn = function (id) { var c = cerebroDe(id); return nombre(id) + (c && cerebroActual && c !== cerebroActual ? " (" + c + ")" : ""); };
+  var ligado = function (id) { return '<a href="' + enlaceFicha(id) + '">' + punto(id) + " " + esc(nombreEn(id)) + "</a>"; };
   var ev = function (x) { return x ? "<code>" + esc(x) + "</code>" : ""; };
   var fila = function (k, v) { return v ? "<tr><th>" + esc(k) + "</th><td>" + v + "</td></tr>" : ""; };
   var tablaKV = function (filas) { filas = filas.join(""); return filas ? '<table class="kv">' + filas + "</table>" : ""; };
@@ -181,6 +239,7 @@ export const MAPA_JS =
   }
   function mostrarFicha(id) {
     var n = porId[id];
+    cerebroActual = cerebroDe(id);
     if (!n) { raizImpacto.innerHTML = '<a class="volver" href="#/impacto">← Impacto</a><h1>No existe esa pieza</h1><p class="vacio"><code>' + esc(id) + "</code></p>"; return; }
     var at = n.at || {}, t = n.t, partes = [];
     var cerebro = CEREBROS.length > 1 && n.c !== undefined ? CEREBROS[n.c].nombre : null;
@@ -265,7 +324,7 @@ export const MAPA_JS =
     document.getElementById("presets").classList.toggle("oculto", vista !== "grafo");
     if (vista === "grafo") { V.mostrarMapa(); if ((m = /^\/grafo\/(.+)$/.exec(h))) V.enfocar(m[1]); return; }
     if (vista === "impacto" && (m = /^\/n\/(.+)$/.exec(h))) { mostrarFicha(m[1]); window.scrollTo(0, 0); return; }
-    if (vista === "impacto") { m = /^\/impacto\/(.+)$/.exec(h); mostrarImpacto(m ? m[1] : null); window.scrollTo(0, 0); return; }
+    if (vista === "impacto") { m = /^\/impacto\/(.+?)(?:\/(afecta|depende))?$/.exec(h); mostrarImpacto(m ? m[1] : null, m ? m[2] : null); window.scrollTo(0, 0); return; }
     if (pestana === "pantallas") window.brainPantallas.mostrar(h); else P.mostrar(h);
     window.scrollTo(0, 0);
   }
