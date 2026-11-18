@@ -6,6 +6,8 @@ import {
   cmp,
   ConsultaError,
   crucesDelRegistro,
+  impactoCruzado,
+  impactoDe,
   leerRegistro,
   pistas,
   resumenConexiones,
@@ -84,6 +86,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       "Este servidor tiene varios cerebros, cada uno con sus repos. Por defecto se consulta el del repo donde estás; pasá `cerebro` para consultar otro. Cada respuesta dice de qué `cerebro` salió.",
       "Si la respuesta trae `otrosCerebros`, hay algo con el mismo nombre en otro cerebro: decíselo al usuario en una línea (qué cerebro y qué encontraste) y consultalo solo si la tarea lo necesita o si te lo pide.",
       "`llamadoDesdeOtrosCerebros` son llamadas HTTP reales desde otro cerebro a un endpoint de la respuesta: contalas como afectadas por un cambio; si traen `pantallas`, son las pantallas del otro cerebro que dependen de ese endpoint. `sinRevisar: true` marca un cerebro indexado sin revisión humana: decilo al citar sus datos.",
+      "En `impacto`, `enOtrosCerebros` sigue el cambio a los cerebros que llaman a los endpoints alcanzados: sus funcionalidades y pantallas también quedan afectadas. `servicios` son llamadas que no salen de una pantalla (un job, otro back): para ver hasta dónde llega, consultá `impacto` en ese cerebro sobre ese servicio.",
       "`conexiones` resume qué servicios de un cerebro llaman a servicios de otro.",
     ].join("\n"),
     async resolver(nombre?: string): Promise<CerebroResuelto> {
@@ -93,12 +96,29 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
         ctx,
         nombre: c.nombre,
         sinRevisar: !c.curado,
-        async anotar(_herramienta, args, resultado) {
+        async anotar(herramienta, args, resultado) {
           const { propio, vecinos } = await vecindario(r, c.nombre, c.raiz);
           if (!propio || !vecinos.length) return {};
           const extra: Record<string, unknown> = {};
           const ps = pistas(args, vecinos);
           if (ps.length) extra["otrosCerebros"] = ps;
+          // El impacto sigue en los cerebros que llaman a los endpoints alcanzados: sus pantallas y funcionalidades.
+          const pieza = (resultado as { pieza?: unknown } | null)?.pieza;
+          if (herramienta === "impacto" && typeof pieza === "string") {
+            const completo = impactoDe(ctx, { pieza, budget_tokens: null }) as { pieza: string; tipo: string; tecnicas: Array<{ id: string; tipo: string }> };
+            const eps = [...(completo.tipo === "endpoint" ? [completo.pieza] : []), ...completo.tecnicas.filter((t) => t.tipo === "endpoint").map((t) => t.id)];
+            const cruzado = eps.length ? impactoCruzado(c.nombre, eps, (await crucesDe(r)).cruces, vecinos) : [];
+            if (cruzado.length) {
+              extra["enOtrosCerebros"] = cruzado.map((x) => ({
+                cerebro: x.cerebro,
+                funcionalidades: x.funcionalidades.slice(0, 30),
+                pantallas: { total: x.pantallas.length, primeras: x.pantallas.slice(0, 10).map((p) => ({ id: p.id, endpoints: p.endpoints.slice(0, 2), ...(p.endpoints.length > 2 ? { masEndpoints: p.endpoints.length - 2 } : {}), ev: p.ev })) },
+                ...(x.servicios.length ? { servicios: { total: x.servicios.length, primeros: x.servicios.slice(0, 3) } } : {}),
+                ...(x.funcionalidades.length > 30 ? { masFuncionalidades: x.funcionalidades.length - 30 } : {}),
+              }));
+            }
+            return extra;
+          }
           // Llamadas desde otros cerebros a endpoints que aparecen en esta respuesta.
           const texto = JSON.stringify(resultado);
           const entrantes: Cruce[] = (await crucesDe(r)).cruces.filter((x) => x.hacia.cerebro === c.nombre && texto.includes(JSON.stringify(x.hacia.endpoint)));

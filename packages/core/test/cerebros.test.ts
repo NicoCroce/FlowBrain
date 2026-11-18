@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cerebroLiviano, crucesDelRegistro, crucesEntre, resumenConexiones, trazasCruzadas, type Graph, type GraphNode } from "../src/index.js";
+import { cerebroLiviano, crucesDelRegistro, crucesEntre, impactoCruzado, resumenConexiones, trazasCruzadas, type Graph, type GraphNode } from "../src/index.js";
 
 const nodo = (id: string, tipo: GraphNode["tipo"], atributos: Record<string, unknown> = {}): GraphNode => ({ actualizado: null, aliases: [], atributos, estado: "vigente", id, nombre: id, origen: "parser", pagina: null, resumen: null, tecnologia: [], tipo, verificado: null });
 
@@ -36,6 +36,23 @@ describe("cruces entre cerebros", () => {
       "repo-web:src/hooks/usePedidos.ts#L3 [svc-web:/pedidos] → svc-api:GET:/pedidos",
     ]);
     expect(resumenConexiones(cruces, []).map((r) => [r.llamadas, r.endpoints, r.pantallas])).toEqual([[2, 2, 1]]);
+  });
+
+  it("el impacto cruza de cerebro: las pantallas que llaman a un endpoint alcanzado y sus funcionalidades; la llamada sin pantalla queda como servicio", () => {
+    const conFeat: Graph = { ...front, nodes: [...front.nodes, { ...nodo("feat-pedidos", "feat"), nombre: "Pedidos" }], edges: [{ desde: "svc-web:/pedidos", verbo: "implementa", hasta: "feat-pedidos" } as Graph["edges"][number]] };
+    const f = cerebroLiviano("front", conFeat, [extraccion], [archivos]), b = cerebroLiviano("back", back, []);
+    const { cruces } = crucesEntre(f, b, []);
+    expect(impactoCruzado("back", ["svc-api:GET:/pedidos", "svc-api:POST:/pedidos"], cruces, [f, b])).toEqual([
+      {
+        cerebro: "front",
+        funcionalidades: [{ id: "feat-pedidos", nombre: "Pedidos", pantallas: 1 }],
+        pantallas: [{ id: "svc-web:/pedidos", endpoints: ["svc-api:GET:/pedidos"], ev: "repo-web:src/hooks/usePedidos.ts#L3" }],
+        servicios: [{ svc: "svc-web", endpoint: "svc-api:POST:/pedidos", ev: "repo-web:scripts/carga.ts#L2" }],
+      },
+    ]);
+    // Un endpoint que nadie de afuera llama no alcanza nada; tampoco cuentan los cruces hacia otro cerebro.
+    expect(impactoCruzado("back", ["svc-api:DELETE:/pedidos"], cruces, [f, b])).toEqual([]);
+    expect(impactoCruzado("otro", ["svc-api:GET:/pedidos"], cruces, [f, b])).toEqual([]);
   });
 
   it("sin la estructura de archivos no se inventan pantallas", () => {

@@ -157,14 +157,16 @@ describe("varios cerebros por MCP", () => {
     expect(c.conexiones.map((x) => `${x["desde"]} → ${x["hacia"]}: ${x["llamadas"]} llamadas, ${x["endpoints"]} endpoints, declarada ${x["declarada"]}`)).toEqual(["front/svc-tienda-web → back/svc-tienda-api: 2 llamadas, 2 endpoints, declarada false"]);
     expect(c.avisos).toEqual(["llamadas detectadas sin conexión declarada: front/svc-tienda-web → back/svc-tienda-api (2)", "comunicación desactivada con: legado"]);
     // Desde el back: el impacto de su endpoint dice quién lo llama desde otro cerebro.
-    const imp = (await llamar("impacto", { pieza: "GET /pedidos", cerebro: "back" })) as { llamadoDesdeOtrosCerebros: { total: number; llamadas: unknown[] } };
-    expect(imp.llamadoDesdeOtrosCerebros).toEqual({ total: 1, llamadas: [{ endpoint: "svc-tienda-api:GET:/pedidos", cerebro: "front", desde: "svc-tienda-web", ev: "repo-tienda-web:src/api.ts#L3" }] });
+    // La llamada del front no sale de ninguna pantalla: queda como servicio afectado, sin funcionalidades.
+    const imp = (await llamar("impacto", { pieza: "GET /pedidos", cerebro: "back" })) as Record<string, unknown>;
+    expect(imp["enOtrosCerebros"]).toEqual([{ cerebro: "front", funcionalidades: [], pantallas: { total: 0, primeras: [] }, servicios: { total: 1, primeros: [{ svc: "svc-tienda-web", endpoint: "svc-tienda-api:GET:/pedidos", ev: "repo-tienda-web:src/api.ts#L3" }] } }]);
+    expect(imp).not.toHaveProperty("llamadoDesdeOtrosCerebros");
 
     // Se apaga la comunicación en el registro: sin reiniciar ni reindexar, deja de haber pistas y cruces.
     await new Promise((r) => setTimeout(r, 20));
     await registro(["comunicacion:", "  - { entre: [front, back], activa: false }"]);
     expect(await llamar("buscar_nodo", { texto: "/pedidos" })).not.toHaveProperty("otrosCerebros");
-    expect(await llamar("impacto", { pieza: "GET /pedidos", cerebro: "back" })).not.toHaveProperty("llamadoDesdeOtrosCerebros");
+    expect(await llamar("impacto", { pieza: "GET /pedidos", cerebro: "back" })).not.toHaveProperty("enOtrosCerebros");
   });
 
   it("una conexión declarada con `por` decide a cuál de dos servicios con las mismas rutas va cada llamada", async () => {

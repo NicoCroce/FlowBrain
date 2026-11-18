@@ -18,6 +18,8 @@ export interface CerebroLiviano {
   endpoints: Array<{ id: string; svc: string; metodo: string; ruta: string }>;
   /** Llamadas HTTP que el índice no pudo unir a un endpoint del propio cerebro, con las pantallas que llegan a cada una. */
   pendientes: Array<{ desde: string; evidencia: string; metodo: string; ruta: string; base: string; pantallas: string[] }>;
+  /** Funcionalidades que implementa cada pantalla (`implementa` pantalla → feat), con su nombre. */
+  funcionalidadesDe?: Record<string, Array<{ id: string; nombre: string }>>;
 }
 
 /**
@@ -76,7 +78,13 @@ export function cerebroLiviano(nombre: string, graph: Graph, extracciones: strin
   }
   pendientes.sort((a, b) => cmp(a.evidencia, b.evidencia));
   pantallasPorPendiente(graph, archivos, pendientes.map((p) => p.evidencia)).forEach((ps, i) => (pendientes[i]!.pantallas = ps));
-  return { nombre, nombres, endpoints, pendientes };
+  const nodo = new Map(graph.nodes.map((n) => [n.id, n]));
+  const funcionalidadesDe: Record<string, Array<{ id: string; nombre: string }>> = {};
+  for (const e of graph.edges) {
+    if (e.verbo !== "implementa" || nodo.get(e.desde)?.tipo !== "pantalla" || nodo.get(e.hasta)?.tipo !== "feat") continue;
+    (funcionalidadesDe[e.desde] ??= []).push({ id: e.hasta, nombre: nodo.get(e.hasta)!.nombre });
+  }
+  return { nombre, nombres, endpoints, pendientes, funcionalidadesDe };
 }
 
 export interface Pista {
@@ -198,6 +206,50 @@ export function crucesDesde(origen: CerebroLiviano, destinos: CerebroLiviano[], 
     else if (unicos.length > 1) entreCerebros.push({ cerebro: origen.nombre, svc: p.desde, evidencia: p.evidencia, metodo: p.metodo, ruta: p.ruta, base: p.base, candidatos: unicos.map((u) => `${u.destino}/${u.endpoint}`) });
   }
   return { cruces: out, ambiguas, entreCerebros };
+}
+
+/** Lo que alcanza en otro cerebro un cambio que toca estos endpoints: sus pantallas, sus funcionalidades y los servicios que los llaman sin pantalla. */
+export interface ImpactoCruzado {
+  cerebro: string;
+  funcionalidades: Array<{ id: string; nombre: string; pantallas: number }>;
+  pantallas: Array<{ id: string; endpoints: string[]; ev: string }>;
+  /** Llamadas que no salen de ninguna pantalla (un job, otro back): afectadas, pero su alcance sigue en ese cerebro. */
+  servicios: Array<{ svc: string; endpoint: string; ev: string }>;
+}
+
+/**
+ * El impacto cruza de cerebro: si un cambio alcanza endpoints de `cerebro`, cada llamada real desde otro cerebro a esos
+ * endpoints también queda afectada, con las pantallas que llegan a ella y las funcionalidades de esas pantallas. Es la
+ * misma regla que usa el visor; un solo salto: lo que siga desde un servicio que llama se consulta en su cerebro.
+ */
+export function impactoCruzado(cerebro: string, endpoints: Iterable<string>, cruces: Cruce[], cerebros: CerebroLiviano[]): ImpactoCruzado[] {
+  const eps = new Set(endpoints);
+  const por = new Map<string, { pantallas: Map<string, { endpoints: Set<string>; ev: string }>; servicios: Map<string, { svc: string; endpoint: string; ev: string }> }>();
+  for (const x of cruces) {
+    if (x.hacia.cerebro !== cerebro || !eps.has(x.hacia.endpoint) || x.desde.cerebro === cerebro) continue;
+    const b = por.get(x.desde.cerebro) ?? por.set(x.desde.cerebro, { pantallas: new Map(), servicios: new Map() }).get(x.desde.cerebro)!;
+    if (!x.desde.pantallas.length) {
+      const k = `${x.desde.svc}\u0000${x.hacia.endpoint}`;
+      if (!b.servicios.has(k)) b.servicios.set(k, { svc: x.desde.svc, endpoint: x.hacia.endpoint, ev: x.desde.evidencia });
+    }
+    for (const p of x.desde.pantallas) {
+      const v = b.pantallas.get(p) ?? b.pantallas.set(p, { endpoints: new Set(), ev: x.desde.evidencia }).get(p)!;
+      v.endpoints.add(x.hacia.endpoint);
+    }
+  }
+  return [...por.entries()]
+    .sort(([a], [b]) => cmp(a, b))
+    .map(([nombre, b]) => {
+      const de = cerebros.find((c) => c.nombre === nombre)?.funcionalidadesDe ?? {};
+      const feats = new Map<string, { id: string; nombre: string; pantallas: number }>();
+      for (const p of b.pantallas.keys()) for (const f of de[p] ?? []) (feats.get(f.id) ?? feats.set(f.id, { ...f, pantallas: 0 }).get(f.id)!).pantallas++;
+      return {
+        cerebro: nombre,
+        funcionalidades: [...feats.values()].sort((x, y) => y.pantallas - x.pantallas || cmp(x.id, y.id)),
+        pantallas: [...b.pantallas.entries()].map(([id, v]) => ({ id, endpoints: [...v.endpoints].sort(cmp), ev: v.ev })).sort((x, y) => y.endpoints.length - x.endpoints.length || cmp(x.id, y.id)),
+        servicios: [...b.servicios.values()].sort((x, y) => cmp(x.svc + x.endpoint, y.svc + y.endpoint)),
+      };
+    });
 }
 
 /** Lo mismo contra un solo cerebro. */
