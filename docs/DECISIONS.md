@@ -468,3 +468,9 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Medido en el proyecto real.** El filtro bajó las llamadas anotadas de 11.769 a 2.289. Dos declaraciones (un helper de autenticación que pasa por casi todos los endpoints) bajaron los endpoints de PHP que no llegan a una tabla de 153 a 72.
    - **Visor.** Las páginas de funcionalidades, pantallas e impacto usan todo el ancho, para que la traza se lea entera.
 
+156. **El parser de TypeScript sigue las funciones que envuelven la llamada HTTP (2026-11-17).** Una funcionalidad entera no mostraba ninguna relación con el back: llamaba por una función propia, `const get = (url) => cliente.get(url, …)`, y el parser solo veía esa llamada, sin ruta.
+   - **Qué hace.** Si la URL de una llamada HTTP es un parámetro de la función que la contiene (función, flecha con nombre, método o propiedad de un objeto), esa función es una envoltura: la llamada real es la de quien la invoca, con la ruta que le pasa, en su archivo y su línea. Vale para envolturas de envolturas (hasta tres niveles) y entre archivos. La envoltura sola deja de contarse como una llamada sin ruta.
+   - **Hereda** el método y la base del cliente de la llamada envuelta.
+   - **No cubre** envolturas que reciben el método como parámetro ni una base distinta pasada en las opciones de cada llamada.
+   - **Medido en el proyecto real:** las cuatro pantallas de esa funcionalidad pasaron de no tener ninguna llamada a llegar a tres endpoints del back.
+

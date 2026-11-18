@@ -1057,3 +1057,26 @@ describe("php-parser: llamadas que el código no declara", () => {
     expect(a?.sinResolver).toEqual([{ desde: "PedidoController.crear", linea: 5, llamada: "$svc->emitir", candidatos: ["Facturador.emitir"] }]);
   });
 });
+
+describe("ts-parser: funciones que envuelven la llamada HTTP", () => {
+  let dir: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "brain-ts-envoltura-"));
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "package.json"), '{ "name": "tienda-web", "dependencies": { "axios": "1" } }\n');
+    await writeFile(
+      join(dir, "src/http.ts"),
+      ['import axios from "axios";', "export const cliente = axios.create({ baseURL: process.env.API_URL });", "export const get = async <T>(url: string) => (await cliente.get<T>(url)).data;", "export const traer = <T>(ruta: string) => get<T>(ruta);", ""].join("\n"),
+    );
+    await writeFile(
+      join(dir, "src/premios.ts"),
+      ['import { get, traer } from "./http";', 'const RUTAS = { estado: "/premios/estado", clubes: "/premios/clubes" } as const;', "export const premiosApi = {", "  estado: () => get(RUTAS.estado),", "  clubes: () => traer(RUTAS.clubes),", "};", ""].join("\n"),
+    );
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("la llamada es la de quien invoca a la envoltura, con su ruta; la envoltura sola no cuenta", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    expect(x.llamadas.map((l) => `${l.archivo}#L${l.linea} ${l.metodo} ${l.url.ruta}`).sort()).toEqual(["src/premios.ts#L4 GET /premios/estado", "src/premios.ts#L5 GET /premios/clubes"]);
+  });
+});

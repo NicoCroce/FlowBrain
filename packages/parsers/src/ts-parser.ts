@@ -964,6 +964,83 @@ function extraer(repo: RepoFuente): Extraccion {
     }
   };
 
+  // ---------- Llamadas HTTP salientes: la forma de la llamada y las funciones que la envuelven ----------
+  const formaSaliente = (call: ts.CallExpression): { url: ts.Expression; base: ts.Expression | null; metodo: string; cuerpo?: ts.Expression | undefined } | null => {
+    const c = call.expression;
+    let url: ts.Expression | undefined;
+    let base: ts.Expression | null = null;
+    let metodo = "GET";
+    let cuerpo: ts.Expression | undefined;
+    if (ts.isIdentifier(c) && c.text === "fetch" && !resolver(c)?.declarations?.length) {
+      url = call.arguments[0];
+      const init = call.arguments[1];
+      if (init && ts.isObjectLiteralExpression(init)) {
+        const m = propiedad(init, "method");
+        if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
+        cuerpo = propiedad(init, "body");
+      }
+    } else if (ts.isPropertyAccessExpression(c) && (METODOS_HTTP as readonly string[]).includes(c.name.text)) {
+      const ax = axiosDe(c.expression);
+      if (!ax) return null;
+      base = ax.baseURL;
+      metodo = c.name.text.toUpperCase();
+      url = call.arguments[0];
+      if (["post", "put", "patch"].includes(c.name.text)) cuerpo = call.arguments[1];
+    } else if (ts.isIdentifier(c) && axiosDe(c)) {
+      const cfg = call.arguments[0];
+      if (!cfg || !ts.isObjectLiteralExpression(cfg)) return null;
+      url = propiedad(cfg, "url");
+      const m = propiedad(cfg, "method");
+      if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
+      cuerpo = propiedad(cfg, "data");
+    } else return null;
+    return url ? { url, base, metodo, cuerpo } : null;
+  };
+  /** Si la expresión es un parámetro de una función con nombre, esa función (su declaración) y la posición del parámetro. */
+  const parametroDe = (e: ts.Expression): { fn: ts.Node; idx: number } | null => {
+    if (!ts.isIdentifier(e)) return null;
+    const d = resolver(e)?.declarations?.[0];
+    if (!d || !ts.isParameter(d)) return null;
+    const f = d.parent;
+    const idx = f.parameters.indexOf(d);
+    if (idx < 0) return null;
+    const nombrada = ts.isFunctionDeclaration(f) || ts.isMethodDeclaration(f) ? f : (ts.isArrowFunction(f) || ts.isFunctionExpression(f)) && (ts.isVariableDeclaration(f.parent) || ts.isPropertyAssignment(f.parent)) ? f.parent : null;
+    return nombrada ? { fn: nombrada, idx } : null;
+  };
+  /**
+   * Funciones del repo que envuelven una llamada HTTP pasándole la URL que reciben por parámetro
+   * (`const get = (url) => cliente.get(url)`): la llamada real, con su ruta, está en quien las invoca.
+   */
+  const envolturas = new Map<ts.Node, { idx: number; metodo: string; base: ts.Expression | null }>();
+  const envolturaDe = (call: ts.CallExpression): { idx: number; metodo: string; base: ts.Expression | null } | null => {
+    if (!envolturas.size) return null;
+    const c = call.expression;
+    const nombre = ts.isIdentifier(c) ? c : ts.isPropertyAccessExpression(c) ? c.name : null;
+    const d = nombre ? resolver(nombre)?.declarations?.[0] : undefined;
+    return d ? (envolturas.get(d) ?? null) : null;
+  };
+  // Dos vueltas más para las envolturas de envolturas (`apiGet` que llama a `get`).
+  for (let vuelta = 0; vuelta < 3; vuelta++) {
+    let nuevas = 0;
+    for (const sf of fuentes) {
+      const ver = (n: ts.Node): void => {
+        if (ts.isCallExpression(n)) {
+          const f = formaSaliente(n);
+          const e = f ? null : envolturaDe(n);
+          const url = f ? f.url : e ? n.arguments[e.idx] : undefined;
+          const p = url ? parametroDe(url) : null;
+          if (p && !envolturas.has(p.fn)) {
+            envolturas.set(p.fn, { idx: p.idx, metodo: f ? f.metodo : e!.metodo, base: f ? f.base : e!.base });
+            nuevas++;
+          }
+        }
+        ts.forEachChild(n, ver);
+      };
+      ts.forEachChild(sf, ver);
+    }
+    if (!nuevas) break;
+  }
+
   for (const sf of fuentes) {
     const archivo = rel(sf);
     const paquete = paqueteDe(repo, archivo);
@@ -1176,46 +1253,31 @@ function extraer(repo: RepoFuente): Extraccion {
       return null;
     };
 
-    // Salientes: fetch(url, init), axios.m(url, body), axios(config), instancia.m(url, body)
-    const saliente = (call: ts.CallExpression): boolean => {
-      const c = call.expression;
-      let url: ts.Expression | undefined;
-      let base: ts.Expression | null = null;
-      let metodo = "GET";
-      let cuerpo: ts.Expression | undefined;
-      if (ts.isIdentifier(c) && c.text === "fetch" && !resolver(c)?.declarations?.length) {
-        url = call.arguments[0];
-        const init = call.arguments[1];
-        if (init && ts.isObjectLiteralExpression(init)) {
-          const m = propiedad(init, "method");
-          if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
-          cuerpo = propiedad(init, "body");
-        }
-      } else if (ts.isPropertyAccessExpression(c) && (METODOS_HTTP as readonly string[]).includes(c.name.text)) {
-        const ax = axiosDe(c.expression);
-        if (!ax) return false;
-        base = ax.baseURL;
-        metodo = c.name.text.toUpperCase();
-        url = call.arguments[0];
-        if (["post", "put", "patch"].includes(c.name.text)) cuerpo = call.arguments[1];
-      } else if (ts.isIdentifier(c) && axiosDe(c)) {
-        const cfg = call.arguments[0];
-        if (!cfg || !ts.isObjectLiteralExpression(cfg)) return false;
-        url = propiedad(cfg, "url");
-        const m = propiedad(cfg, "method");
-        if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
-        cuerpo = propiedad(cfg, "data");
-      } else return false;
-      if (!url) return false;
-      let partes = evaluar(url);
+    // Salientes: fetch(url, init), axios.m(url, body), axios(config), instancia.m(url, body), y las funciones del
+    // repo que envuelven alguna de esas pasándole la URL que reciben.
+    const emitir = (call: ts.CallExpression, f: { url: ts.Expression; base: ts.Expression | null; metodo: string; cuerpo?: ts.Expression | undefined }): boolean => {
+      let partes = evaluar(f.url);
       const primera = partes[0];
       const absoluta = primera && "lit" in primera && /^https?:\/\//.test(primera.lit);
-      if (base && !absoluta) partes = [...evaluar(base), ...partes];
+      if (f.base && !absoluta) partes = [...evaluar(f.base), ...partes];
       const u = analizarUrl(partes);
       if (!u) return false;
-      const llamada: LlamadaCruda = { paquete, archivo, linea: linea(call), metodo, url: u, dato: cuerpo ? nombreTipoDeExpr(cuerpo) : null };
+      const llamada: LlamadaCruda = { paquete, archivo, linea: linea(call), metodo: f.metodo, url: u, dato: f.cuerpo ? nombreTipoDeExpr(f.cuerpo) : null };
       out.llamadas.push(llamada);
       return true;
+    };
+    const saliente = (call: ts.CallExpression): boolean => {
+      const f = formaSaliente(call);
+      if (f) {
+        // La URL es un parámetro de la función que contiene la llamada: la llamada real es la de quien la invoca.
+        if (parametroDe(f.url)) return true;
+        return emitir(call, f);
+      }
+      const e = envolturaDe(call);
+      if (!e) return false;
+      const url = call.arguments[e.idx];
+      if (!url || parametroDe(url)) return !!url;
+      return emitir(call, { url, base: e.base, metodo: e.metodo });
     };
 
     // Prisma: x.<modelo>.<op>(…)
