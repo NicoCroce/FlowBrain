@@ -170,6 +170,8 @@ function extraer(repo: RepoFuente, parser: TSParser): Extraccion {
           const nm = campo(m, "name")?.text ?? "";
           const params = hijos(campo(m, "parameters")).map((p) => tipoDe(campo(p, "type")));
           metodos.set(nm, { nombre: nm, linea: linea(campo(m, "name") ?? m), params, retorno: tipoDe(campo(m, "return_type")), nodo: m });
+          // Con rango, para atribuir cada acceso o llamada al método que lo contiene y encontrar el que atiende un endpoint.
+          if (nm) simbolos.push({ linea: linea(campo(m, "name") ?? m), nombre: `${nombre}.${nm}`, tipo: "metodo", fin: m.endPosition.row + 1 });
         }
         if (m.type === "property_declaration" && /\$table\b/.test(m.text)) tabla = textoString(m.descendantsOfType("string")[0]);
       }
@@ -192,6 +194,92 @@ function extraer(repo: RepoFuente, parser: TSParser): Extraccion {
     simbolos.sort((a, b) => a.linea - b.linea);
     out.archivos.push({ lenguaje: "php", ruta: archivo, simbolos });
   }
+  // ---------- 1b. Llamadas entre métodos: de quién es cada `->metodo()` ----------
+  // El tipo del receptor sale de lo que el código declara: `$this`, propiedades tipadas o inyectadas por el constructor,
+  // parámetros tipados del método (inyección en la acción), `new`, llamadas estáticas y `getRepository(X::class)`.
+  // Sin tipo declarado no se adivina.
+  const implementan = new Map<string, string[]>();
+  for (const c of clases.values()) {
+    for (const i of hijos(hijos(c.nodo).find((x) => x.type === "class_interface_clause"))) implementan.set(ultimo(i.text), [...(implementan.get(ultimo(i.text)) ?? []), c.nombre]);
+  }
+  /** La clase del repo para un tipo: ella misma, o la única que implementa esa interfaz. */
+  const concreta = (t: string | null | undefined): string | null => (!t ? null : clases.has(t) ? t : implementan.get(t)?.length === 1 ? implementan.get(t)![0]! : null);
+  const metodoDe = (cls: string | null, nombre: string): { clase: Clase; m: Metodo } | null => {
+    for (let i = 0, n = cls; n && i < 8; i++) {
+      const c = clases.get(n);
+      const m = c?.metodos.get(nombre);
+      if (c && m) return { clase: c, m };
+      n = c?.extiende ?? null;
+    }
+    return null;
+  };
+  const sinPesos = (t: string | undefined) => (t ?? "").replace(/^\$/, "");
+  const porRuta = new Map(out.archivos.map((a) => [a.ruta, a]));
+  for (const c of clases.values()) {
+    const arch = porRuta.get(c.archivo);
+    if (!arch) continue;
+    const props = new Map<string, string>();
+    for (const m of hijos(campo(c.nodo, "body"))) {
+      if (m.type !== "property_declaration") continue;
+      const t = tipoDe(campo(m, "type"));
+      if (t) for (const v of m.descendantsOfType("variable_name").filter(Boolean) as Node[]) props.set(sinPesos(v.text), t);
+    }
+    const ctor = c.metodos.get("__construct");
+    if (ctor) {
+      const tipos = new Map<string, string>();
+      for (const p of hijos(campo(ctor.nodo, "parameters"))) {
+        const t = tipoDe(campo(p, "type")), nm = sinPesos(campo(p, "name")?.text);
+        if (!t || !nm) continue;
+        tipos.set(nm, t);
+        if (p.type === "property_promotion_parameter") props.set(nm, t);
+      }
+      for (const a of ctor.nodo.descendantsOfType("assignment_expression").filter(Boolean) as Node[]) {
+        const l = campo(a, "left"), r = campo(a, "right");
+        if (l?.type === "member_access_expression" && campo(l, "object")?.text === "$this" && r?.type === "variable_name") {
+          const t = tipos.get(sinPesos(r.text)), nm = campo(l, "name")?.text;
+          if (t && nm) props.set(nm, t);
+        }
+      }
+    }
+    for (const m of c.metodos.values()) {
+      const desde = `${c.nombre}.${m.nombre}`;
+      const locales = new Map<string, string>();
+      for (const p of hijos(campo(m.nodo, "parameters"))) {
+        const t = tipoDe(campo(p, "type")), nm = sinPesos(campo(p, "name")?.text);
+        if (t && nm) locales.set(nm, t);
+      }
+      for (const a of m.nodo.descendantsOfType("assignment_expression").filter(Boolean) as Node[]) {
+        const l = campo(a, "left"), r = campo(a, "right");
+        if (l?.type === "variable_name" && r?.type === "object_creation_expression") locales.set(sinPesos(l.text), ultimo(hijos(r)[0]?.text ?? ""));
+      }
+      const vistos = new Set<string>();
+      for (const n of m.nodo.descendantsOfType(["member_call_expression", "nullsafe_member_call_expression", "scoped_call_expression"]).filter(Boolean) as Node[]) {
+        const nombre = campo(n, "name")?.text;
+        if (!nombre) continue;
+        let cls: string | null | undefined = null;
+        if (n.type === "scoped_call_expression") {
+          const sc = ultimo(campo(n, "scope")?.text ?? "");
+          cls = sc === "self" || sc === "static" ? c.nombre : sc === "parent" ? c.extiende : sc;
+        } else {
+          const o = campo(n, "object");
+          if (o?.type === "variable_name") cls = o.text === "$this" ? c.nombre : locales.get(sinPesos(o.text));
+          else if (o?.type === "member_access_expression" && campo(o, "object")?.text === "$this") cls = props.get(campo(o, "name")?.text ?? "");
+          else if (o?.type === "member_call_expression" && campo(o, "name")?.text === "getRepository") {
+            // Doctrine: el repositorio de una entidad es, por convención, `<Entidad>Repository`.
+            const ent = ultimo((args(o)[0]?.text ?? "").replace(/::class$/, ""));
+            cls = ent ? `${ent}Repository` : null;
+          }
+        }
+        const r = metodoDe(concreta(cls), nombre);
+        if (!r) continue;
+        const simbolo = `${r.clase.nombre}.${r.m.nombre}`;
+        if (simbolo === desde || vistos.has(simbolo)) continue;
+        vistos.add(simbolo);
+        (arch.invoca ??= []).push({ desde, archivo: r.clase.archivo, simbolo, linea: linea(n) });
+      }
+    }
+  }
+
   const hereda = (nombre: string | null, bases: Set<string>): boolean => {
     for (let i = 0, n = nombre; n && i < 8; i++) {
       if (bases.has(n)) return true;

@@ -179,7 +179,15 @@ describe("php-parser sobre fixtures/repos/envios (Laravel + Eloquent)", () => {
 
   it("árbol de archivos con clases PHP", () => {
     const a = r.archivos.archivos.find((x) => x.ruta === "app/Http/Controllers/EnvioController.php");
-    expect(a).toMatchObject({ lenguaje: "php", simbolos: [{ nombre: "EnvioController", tipo: "clase" }] });
+    // La clase y sus métodos con rango; y de quién es cada llamada, por el tipo que el constructor inyecta.
+    expect(a?.simbolos.map((s) => `${s.tipo} ${s.nombre} ${s.linea}-${s.fin ?? ""}`)).toEqual([
+      "clase EnvioController 11-",
+      "metodo EnvioController.__construct 13-15",
+      "metodo EnvioController.store 17-23",
+      "metodo EnvioController.show 25-28",
+      "metodo EnvioController.cancelar 30-34",
+    ]);
+    expect(a?.invoca).toEqual([{ desde: "EnvioController.store", archivo: "app/Services/Correo.php", simbolo: "Correo.despachar", linea: 21 }]);
   });
 
   it("es determinístico", async () => {
