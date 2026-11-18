@@ -250,7 +250,7 @@ export const PRODUCTO_JS = String.raw`
       seccion("Código", lista(codigo) + "<p><small>" + plural(f.archivos, "archivo", "archivos") +
         (f.implementan.length ? " · " + f.implementan.map(function (s) { return esc(nombre(s)); }).join(", ") : "") + "</small></p>" +
         (n.p ? '<p><small>Página: <code>' + esc(n.p) + "</code></small></p>" : "")) +
-      '<p><a href="#/mapa/' + encodeURIComponent(id) + '">Ver sus dependencias en el mapa →</a><br><a href="#/impacto/' + encodeURIComponent(id) + '">¿Qué se ve afectado si cambia? →</a></p>' +
+      '<p><a href="#/grafo/' + encodeURIComponent(id) + '">Verla en el mapa 3D →</a><br><a href="#/impacto/' + encodeURIComponent(id) + '">¿Qué se ve afectado si cambia? →</a></p>' +
       "</div></div>";
   }
 
