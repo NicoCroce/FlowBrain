@@ -259,9 +259,16 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     var cuenta = {};
     N.forEach(function (n) { cuenta[n.tipo] = (cuenta[n.tipo] || 0) + 1; });
     Object.keys(cuenta).forEach(function (t) { FACTOR_TIPO[t] = Math.max(0.5, Math.min(1.45, 1.45 - 0.3 * Math.log(cuenta[t]) / Math.LN10)); });
+    // La jerarquía manda sobre la cantidad: funcionalidad ≥ pantalla ≥ endpoint > tabla > archivo. Una tabla nunca
+    // queda más grande que el endpoint que la usa por el solo hecho de haber menos tablas.
+    var tope = function (t, de, k) { if (FACTOR_TIPO[t] !== undefined && FACTOR_TIPO[de] !== undefined) FACTOR_TIPO[t] = Math.min(FACTOR_TIPO[t], FACTOR_TIPO[de] * k); };
+    tope("pantalla", "feat", 1); tope("endpoint", "pantalla", 1); tope("tabla", "endpoint", 0.8); tope("archivo", "tabla", 0.8);
   })();
+  // Cuánto agranda el uso a cada tipo: una tabla la tocan muchos endpoints, y eso no la hace más importante que ellos.
+  var PESO_USO = { tabla: 1.2, archivo: 1.2 };
   function radio(n) {
-    var b = S.sizeMode === "uso" ? 3 + 3.4 * Math.log(1 + n.uso) : S.sizeMode === "deg" ? 3 + 3.4 * Math.log(1 + n.deg) : 7;
+    var k = PESO_USO[n.tipo] || 3.4;
+    var b = S.sizeMode === "uso" ? 3 + k * Math.log(1 + n.uso) : S.sizeMode === "deg" ? 3 + k * Math.log(1 + n.deg) : 7;
     return b * S.scale * (FACTOR_TIPO[n.tipo] || 1);
   }
   function base3() { var c = cam, cy = Math.cos(c.yaw), sy = Math.sin(c.yaw), cp = Math.cos(c.pitch), sp = Math.sin(c.pitch); return { right: [cy, 0, -sy], up: [-sy * sp, cp, -cy * sp] }; }
@@ -470,9 +477,13 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
       if (xc) visCruce.push(e);
       var enRuta = sel && rutaE && rutaE.has(e);
       var hl = enRuta || (sel && (e.a === sel || e.b === sel)) || (hov && (e.a === hov || e.b === hov));
-      var al = Math.min(pa.a, pb.a) * (hl ? 0.85 : xc ? brilloCruce(e) : 0.13);
+      // Con muchas relaciones resaltadas, cada una se apaga un poco para que no saturen; las que terminan en una
+      // tabla, que son las más numerosas, un poco más. La que está bajo el cursor siempre va plena.
+      var fuerte = 0.85;
+      if (enRuta && !(hov && (e.a === hov || e.b === hov))) fuerte = Math.max(0.2, Math.min(0.85, 0.85 * Math.sqrt(24 / rutaL.length))) * (e.b.tipo === "tabla" ? 0.7 : 1);
+      var al = Math.min(pa.a, pb.a) * (hl ? fuerte : xc ? brilloCruce(e) : 0.13);
       ctx.strokeStyle = hl ? rgba(col(enRuta || e.a === sel || e.a === hov ? e.b.tipo : e.a.tipo), al) : xc ? "rgba(255,214,140," + al + ")" : "rgba(120,146,255," + al + ")";
-      ctx.lineWidth = hl ? 1.6 : xc ? 1.3 : 1;
+      ctx.lineWidth = hl ? (enRuta && rutaL.length > 60 ? 1.1 : 1.6) : xc ? 1.3 : 1;
       ctx.beginPath(); ctx.moveTo(pa.sx, pa.sy);
       ctx.quadraticCurveTo((pa.sx + pb.sx) / 2 - (pb.sy - pa.sy) * e.c, (pa.sy + pb.sy) / 2 + (pb.sx - pa.sx) * e.c, pb.sx, pb.sy); ctx.stroke();
     }
