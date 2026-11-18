@@ -69,10 +69,10 @@ Comandos:
           [--split | --single]              .flowbrain/, pregunta dónde están los repos y si va un cerebro por repo o
                                             todos en uno, e indexa todo; volver a correrlo actualiza
   brains                                  lista los cerebros del registro (flowbrain.yaml en --root) y su estado
-  brains proponer <carpeta...>            explora carpetas y escribe un borrador de flowbrain.yaml con preguntas abiertas
-  brains aplicar [nombre]                 crea e indexa los cerebros del registro (o uno solo)
-  brains visor                            regenera flowbrain.html (tras cambiar comunicacion o conexiones)
-  brains registrar                        registra en Claude Code los hooks del registro e imprime la línea del MCP
+  brains propose <carpeta...>             explora carpetas y escribe un borrador de flowbrain.yaml con preguntas abiertas
+  brains apply [nombre]                   crea e indexa los cerebros del registro (o uno solo)
+  brains viewer                           regenera flowbrain.html (tras cambiar comunicacion o conexiones)
+  brains register                         registra en Claude Code los hooks del registro e imprime la línea del MCP
   evidence [--brain <nombre>] [--guide]     para decidir a qué servicio va cada llamada: por base de URL, dónde se
                                             define y con qué coincide; --guide imprime las instrucciones para el modelo
   connections [--brain <nombre>]           qué llamadas viajan entre un cerebro y los que tiene comunicados

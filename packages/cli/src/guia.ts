@@ -107,13 +107,12 @@ $ARGUMENTS
    - **Huecos del índice: completalos, no solo los reportes.** Si un front tiene 0 pantallas (\`connections\` muestra
      \`pantallas: 0\` y todas sus llamadas salen del servicio), o el parser no entiende cómo se declaran rutas o llamadas:
      1. mirá en el código cómo están declaradas (router, navegador, cliente HTTP propio);
-     2. escribí un extractor en \`.flowbrain/extractores/\` que complete \`pantallas\`, \`navegaciones\` o lo que falte en
-        \`.flowbrain/<cerebro>/_build/files/<repo>.json\`, con el formato de \`.flowbrain/<cerebro>/SCHEMA.md\`
-        (evidencia con archivo y línea reales, \`null\` donde no se sabe);
-     3. corré \`flowbrain compile\` dentro de la carpeta del cerebro y \`flowbrain brains viewer\`, y verificá con
-        \`connections\` que el hueco se cerró;
-     4. avisá que \`brains apply\` y \`sync\` reescriben \`_build\` (el extractor hay que volver a correrlo) y reportá el
-        patrón como mejora del parser de FlowBrain.
+     2. escribí un extractor del proyecto en \`.flowbrain/<cerebro>/extractors/<repo-id>/\` que complete
+        \`pantallas\`, \`navegaciones\` o lo que falte (el contrato y las reglas están en la guía \`/flowbrain-study\`);
+        corre solo en cada indexación, así que sobrevive a \`brains apply\` y a \`sync\`;
+     3. corré \`flowbrain brains apply <cerebro>\` y \`flowbrain brains viewer\`, y verificá con \`connections\` que el
+        hueco se cerró;
+     4. reportá el patrón como mejora del parser de FlowBrain (para que el próximo proyecto no necesite el extractor).
 
 7. **Completar las trazas que se cortan.** Por cada cerebro con endpoints, \`flowbrain calls --brain <cerebro>\`
    devuelve los endpoints cuyo recorrido no llega a ninguna tabla y, en su camino, las llamadas que el parser no pudo
@@ -342,11 +341,15 @@ $ARGUMENTS
      "simbolos":     [{ "archivo": "src/pedidos/handler.go", "nombre": "PedidosHandler.Crear", "tipo": "metodo", "linea": 20, "fin": 41 }],
      "invocaciones": [{ "desde": { "archivo": "src/pedidos/handler.go", "simbolo": "PedidosHandler.Crear" },
                         "hacia": { "archivo": "src/pedidos/repo.go", "simbolo": "PedidosRepo.Guardar" }, "linea": 27 }],
-     "endpoints":    [{ "metodo": "POST", "ruta": "/api/pedidos", "archivo": "src/rutas.go", "linea": 12 }],
-     "llamadas":     [{ "archivo": "src/api/pedidos.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" }],
+     "endpoints":    [{ "metodo": "POST", "ruta": "/api/pedidos", "archivo": "src/rutas.go", "linea": 12,
+                        "handler": { "archivo": "src/pedidos/handler.go", "simbolo": "PedidosHandler.Crear" } }],
+     "llamadas":     [{ "archivo": "src/api/pedidos.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" },
+                      { "archivo": "src/pagos/stripe.go", "linea": 18, "metodo": "POST", "ruta": "/v1/charges", "host": "api.stripe.com" }],
      "pantallas":    [{ "ruta": "/pedidos", "archivo": "src/rutas.tsx", "linea": 8,
                         "componente": { "archivo": "src/pedidos/Pedidos.tsx", "simbolo": "Pedidos" } }],
-     "navegaciones": [{ "archivo": "src/pedidos/Pedidos.tsx", "linea": 14, "desde": "/pedidos", "ruta": "/pedidos/{id}", "tipo": "navega" }],
+     "navegaciones": [{ "archivo": "src/pedidos/Pedidos.tsx", "linea": 14, "desde": "Pedidos", "ruta": "/pedidos/{id}", "tipo": "navega" }],
+     "eventos":      [{ "archivo": "src/pagos/servicio.go", "linea": 50, "nombre": "pago.confirmado", "direccion": "publica" }],
+     "importa":      [{ "archivo": "lib/pedidos_page.dart", "importa": ["lib/api/pedidos_api.dart"] }],
      "accesos":      [{ "archivo": "src/pedidos/repo.go", "linea": 33, "tabla": "pedidos", "verbo": "escribe", "columnas": ["estado", "total"] }],
      "esquema":      [{ "tabla": "pedidos", "archivo": "src/pedidos/modelo.go", "linea": 5,
                         "columnas": [{ "nombre": "id", "tipo": "int", "pk": true }, { "nombre": "nota", "tipo": "text", "nulo": true }] }]
@@ -357,8 +360,20 @@ $ARGUMENTS
    - Un **símbolo** es una función, método o componente con su rango (\`linea\`–\`fin\`): es lo que permite saber que una
      llamada o un acceso ocurre *dentro* de ese método. Declará los que los parsers no tengan.
    - Una **invocación** une dos símbolos que ya existen; la \`linea\` cae dentro del que llama.
-   - El **endpoint** cita la línea donde se declara la ruta o la del método que la atiende: tiene que haber un símbolo
-     con rango que contenga esa línea, o empezar hasta 40 líneas después.
+   - El **endpoint** cita la línea donde se declara la ruta. Si la ruta se declara en un archivo de rutas y la atiende
+     un método de otro lado (\`r.POST("/x", h.Crear)\`, \`path("x/", views.crear)\`, \`get "/x", to: "x#crear"\`), decí cuál con
+     \`handler\` (un símbolo que exista): de ahí arrancan el recorrido y la traza. Sin \`handler\`, el método es el que
+     contiene la línea o el que empieza hasta 40 líneas después.
+   - Una **llamada** con \`host\` va a ese sistema (un tercero, como una pasarela de pagos, o un servicio propio por su
+     nombre de host); sin \`host\`, se resuelve por la ruta contra los endpoints conocidos.
+   - Una **navegación** dice qué símbolo navega en \`desde\` (la función o el componente, el mismo nombre que en
+     \`simbolos\`); si es más fácil, la ruta de la pantalla desde la que se navega (\`"/pedidos"\`). Sin \`desde\`, cuenta
+     para cualquier pantalla que alcance ese archivo.
+   - Un **evento** es un mensaje que el código publica o consume, por su clave (el tópico, la cola, el nombre del
+     evento): \`direccion\` \`publica\` o \`consume\`. Quien publica y quien consume se unen por la cola, y el impacto de
+     cambiar quien publica llega a quien consume. Si la cola no tiene página, el borrador la propone.
+   - **Importa** declara qué archivos del repo usa un archivo, cuando el lenguaje no lo dice de una forma que FlowBrain
+     lea: sirve para que una pantalla alcance los menús y datos que importa.
    - Un **acceso** va en la línea donde ocurre, dentro del método que lo hace; \`columnas\` solo las que se ven en el
      código. Si el parser ya detectó ese acceso (mismo archivo, línea, tabla y verbo), el tuyo le suma las columnas.
      Si tu extractor solo busca columnas y no puede asegurar que cada nombre sea una tabla real (una CTE, una
@@ -371,7 +386,7 @@ $ARGUMENTS
      la ruta, el método o la base mal leídos). Una \`pantalla\` con una ruta que ya existe le reemplaza el componente
      y las \`envuelta\` (un layout tomado por la página). Para borrar lo que el parser inventó, \`quitar\`:
      \`[{ "tipo": "llamada", "archivo": "src/api.ts", "linea": 30 }, { "tipo": "pantalla", "ruta": "/{path}/config" }]\`
-     (también \`navegacion\`). Solo se corrige lo que leyó un parser, nunca lo que sumó otro extractor; un \`quitar\`
+     (también \`navegacion\`, \`endpoint\` con \`metodo\` y \`ruta\`, \`acceso\` con \`tabla\` y \`evento\` con \`nombre\`). Solo se corrige lo que leyó un parser, nunca lo que sumó otro extractor; un \`quitar\`
      que no coincide con nada se rechaza. Lo mismo vale para \`http\` en \`calls.yaml\`.
    - FlowBrain verifica cada dato: el archivo existe, la línea existe, los símbolos existen. Lo que no pasa se descarta.
 
@@ -403,6 +418,13 @@ $ARGUMENTS
 
    Dejá al menos cinco por cerebro, y que incluyan trazas completas: son las que prueban que todo el camino existe.
    En un back, \`traza\` (endpoint → tabla); en un front, \`alcanza\` (pantalla → llamada).
+
+   **Piezas que no son de ningún tipo conocido.** Si el sistema tiene algo que no es pantalla, endpoint, servicio, tabla
+   ni cola (un job programado, un worker, un webhook entrante, un bucket), escribí su página a mano en
+   \`.flowbrain/<cerebro>/technology/<tipo>-<nombre>.md\` con un \`tipo\` propio en minúsculas (\`job\`, \`worker\`,
+   \`bucket\`) y sus relaciones (\`escribe_en\`, \`lee_de\`, \`llama_a\`, \`publica_en\`, \`consume_de\`). Compila como cualquier
+   otro nodo: aparece en el índice, en el mapa 3D con un color propio y en el impacto en las dos direcciones. No uses
+   un tipo propio para algo que ya tiene tipo: lo que es un endpoint o una tabla va con el suyo.
 
 6. **Unir los cerebros.** Con los índices completos, seguí con \`/${NOMBRE_COMANDO}\` (a qué servicio va cada llamada) y
    \`/${NOMBRE_FUNCIONALIDADES}\` (las funcionalidades de producto). Al final, \`flowbrain brains viewer\`.
