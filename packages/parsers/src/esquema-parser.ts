@@ -82,7 +82,30 @@ function aplicarDefinicion(t: TablaEsquema, def: string, archivo: string, linea:
   if (ref) t.fks.push({ columnas: [col.nombre], tabla: ref[2]!, columnasRef: lista(ref[3]!), archivo, linea });
 }
 
-function aplicarDdl(e: Estado, texto: string, archivo: string) {
+/**
+ * El cuerpo de los rollback de una migración (`down` en Doctrine, Laravel, TypeORM, Knex, Sequelize…), en blanco y
+ * conservando los saltos de línea. Deshacen lo de `up`: aplicarlos dejaba tablas borradas o columnas que ya no existen.
+ */
+const ROLLBACK = /\b(?:function\s+down\s*\(|(?:async\s+)?down\s*\([^)]*\)\s*(?::\s*[^{=;]+)?\{|down\s*[:=]\s*(?:async\s*)?(?:function\s*)?\([^)]*\)\s*(?:=>\s*)?\{|down\s*[:=]\s*(?:async\s+)?function\b)/g;
+export function sinRollback(texto: string): string {
+  let out = texto;
+  for (let m = ROLLBACK.exec(texto); m; m = ROLLBACK.exec(texto)) {
+    const abre = texto.indexOf("{", m.index);
+    if (abre < 0) continue;
+    let nivel = 0, i = abre;
+    for (; i < texto.length; i++) {
+      if (texto[i] === "{") nivel++;
+      else if (texto[i] === "}" && --nivel === 0) break;
+    }
+    if (i >= texto.length) continue;
+    out = out.slice(0, abre + 1) + out.slice(abre + 1, i).replace(/[^\n]/g, " ") + out.slice(i);
+    ROLLBACK.lastIndex = i;
+  }
+  return out;
+}
+
+function aplicarDdl(e: Estado, textoOriginal: string, archivo: string) {
+  const texto = sinRollback(textoOriginal);
   const lineaDe = (pos: number) => texto.slice(0, pos).split("\n").length;
   const sentencia = new RegExp(`\\b(CREATE|ALTER|DROP)\\s+(?:TEMPORARY\\s+|UNLOGGED\\s+)?TABLE\\s+(?:IF\\s+(?:NOT\\s+)?EXISTS\\s+)?(?:ONLY\\s+)?${NOMBRE}`, "gi");
   for (let m = sentencia.exec(texto); m; m = sentencia.exec(texto)) {

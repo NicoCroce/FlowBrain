@@ -911,17 +911,38 @@ describe("esquema-parser: tablas, columnas y claves foráneas desde DDL en cualq
       "    $this->addSql('ALTER TABLE turno ADD sala_id INT NOT NULL');",
       "    $this->addSql('DROP TABLE borrador');",
       "  }",
+      "  // El rollback deshace lo de up(): no es el esquema vigente.",
+      "  public function down($schema): void {",
+      "    $this->addSql('ALTER TABLE paciente DROP email, ADD apodo VARCHAR(40)');",
+      "    $this->addSql('DROP TABLE turno');",
+      "  }",
+      "}",
+    ]);
+    // Lo mismo con migraciones de JavaScript: `down` como método o como propiedad.
+    await w(repo, "migrations/Version003.js", [
+      "module.exports = {",
+      "  up: async (q) => { await q.sequelize.query('ALTER TABLE turno ADD sala_nombre VARCHAR(80)'); },",
+      "  down: async (q) => { await q.sequelize.query('DROP TABLE paciente'); },",
+      "};",
+    ]);
+    await w(repo, "migrations/Version004.ts", [
+      "export class Nota {",
+      "  async up(q: Runner): Promise<void> { await q.query(`ALTER TABLE turno ADD nota TEXT`); }",
+      "  async down(q: Runner): Promise<void> {",
+      "    await q.query(`ALTER TABLE turno DROP nota`);",
+      "    await q.query(`DROP TABLE turno`);",
+      "  }",
       "}",
     ]);
   });
   afterAll(() => rm(dir, { recursive: true, force: true }));
 
-  it("aplica CREATE, ALTER y DROP en orden y deja el esquema final", () => {
+  it("aplica CREATE, ALTER y DROP en orden y deja el esquema final; los rollback (down) no cuentan", () => {
     const x = esquemaParser.extract(leerRepo(repo)) as Extraccion;
     const texto = (x.esquema ?? []).map((t) => `${t.tabla} @ ${t.archivo}#L${t.linea}: ${t.columnas.map((c) => `${c.nombre} ${c.tipo}${c.pk ? " pk" : ""}${c.nulo ? " null" : ""}`).join(" | ")}`);
     expect(texto).toEqual([
       "paciente @ db/001_inicial.sql#L1: id int pk | nombre varchar(120) | email varchar(255) null",
-      "turno @ db/001_inicial.sql#L7: id bigint pk | paciente_id int | inicio timestamp with time zone | importe decimal(10, 2) null | sala_id int",
+      "turno @ db/001_inicial.sql#L7: id bigint pk | paciente_id int | inicio timestamp with time zone | importe decimal(10, 2) null | sala_id int | sala_nombre varchar(80) null | nota text null",
     ]);
     expect(x.esquema!.find((t) => t.tabla === "turno")!.fks).toEqual([{ columnas: ["paciente_id"], tabla: "paciente", columnasRef: ["id"], archivo: "db/001_inicial.sql", linea: 12 }]);
   });
@@ -930,7 +951,7 @@ describe("esquema-parser: tablas, columnas y claves foráneas desde DDL en cualq
     await escribirIndex(brain, await indexar(repo, brain));
     const { salidas } = await compileDir(brain);
     const g = salidas.graph;
-    expect((g.nodes.find((n) => n.id === "tabla-turno")!.atributos["columnas"] as Array<{ nombre: string }>).map((c) => c.nombre)).toEqual(["id", "paciente_id", "inicio", "importe", "sala_id"]);
+    expect((g.nodes.find((n) => n.id === "tabla-turno")!.atributos["columnas"] as Array<{ nombre: string }>).map((c) => c.nombre)).toEqual(["id", "paciente_id", "inicio", "importe", "sala_id", "sala_nombre", "nota"]);
     expect(g.edges.filter((e) => e.desde === "tabla-turno").map((e) => `${e.verbo} ${e.hasta} (${e.dato}) ${e.evidencia}`)).toEqual(["depende_de tabla-paciente (paciente_id → id) repo-agenda:db/001_inicial.sql#L12"]);
     const ctx = await cargarContexto(brain);
     expect(buscarNodo(ctx, { texto: "sala_id" }).nodos.map((n) => `${n.id} ${n.coincidencia}`)).toEqual(["tabla-turno columna"]);
