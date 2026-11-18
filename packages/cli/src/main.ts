@@ -542,7 +542,11 @@ export async function ejecutar(
       case "calls": {
         // Dónde se cortan los recorridos por llamadas sin tipo, y qué hay declarado en calls.yaml.
         const decl = await readFile(join(raiz, ARCHIVO_LLAMADAS), "utf8").then(leerLlamadasDeclaradas, () => null);
-        resultado = { ...llamadasPorResolver(ctx, { ...opt("limite", entero(o.limit, "--limit")), ...(decl ? { declaradas: decl.llamadas } : {}) }), ...(decl?.rechazadas.length ? { malFormadas: decl.rechazadas } : {}) };
+        resultado = {
+          ...llamadasPorResolver(ctx, { ...opt("limite", entero(o.limit, "--limit")), ...(decl ? { declaradas: decl.llamadas } : {}) }),
+          ...(decl?.http.length ? { httpDeclaradas: decl.http.length } : {}),
+          ...(decl?.rechazadas.length ? { malFormadas: decl.rechazadas } : {}),
+        };
         break;
       }
       case "drift":

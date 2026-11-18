@@ -23,7 +23,7 @@ $ARGUMENTS
   credenciales. Usá los de ejemplo (\`.env.example\`, \`.env.sample\`), la configuración en el código, \`docker-compose\`,
   pipelines y proxies. Si un valor solo está en un archivo real, preguntáselo al usuario.
 - **No modifiques los repositorios del proyecto.** Editás \`.flowbrain/flowbrain.yaml\`, \`.flowbrain/<cerebro>/calls.yaml\`
-  (paso 7) y, solo para completar un hueco
+  (pasos 7 y 8) y, solo para completar un hueco
   del índice (paso 6), la extracción de un cerebro en \`.flowbrain/<cerebro>/_build/\`.
 - **No declares nada sin evidencia.** Coincidir en método y ruta no es evidencia: dos APIs pueden exponer las mismas
   rutas. Si no podés determinar un destino, no lo adivines: va a la lista de dudas.
@@ -142,9 +142,40 @@ $ARGUMENTS
    - Un endpoint que no llega a una tabla y no tiene llamadas por resolver probablemente no toca datos: no es un error.
    Al terminar, \`flowbrain brains viewer\`.
 
-8. **Informar al usuario**, corto y en este orden:
+8. **Auditar lo que el parser no vio.** La consola solo conoce las llamadas que detectó: si un módulo llama al back de
+   una forma que el parser no entiende, no aparece en ningún lado. Buscalo vos. Por cada cerebro con pantallas,
+   en la sección \`delLadoQueLlama\` de \`flowbrain calls --brain <cerebro>\`:
+   - \`funcionalidadesSinLlamadas\`: funcionalidades con pantallas y ninguna llamada HTTP en ninguna. **Abrí su código**
+     (\`codigo\`): si llama al back (un cliente propio, una función que arma la URL, un SDK, un store), es un hueco.
+   - \`httpSinRuta\`: llamadas HTTP que el parser vio sin poder determinar la ruta. Abrí cada una y seguí cómo se arma.
+   - \`pantallasSinLlamadas\`: tomá una muestra de las que no estén en lo anterior y verificá que de verdad no llamen.
+   - Además, por tu cuenta: buscá en el repo los nombres del cliente HTTP y de sus envolturas (\`axios\`, \`fetch\`, el
+     cliente propio) y compará los módulos donde aparecen contra los que tienen llamadas en el índice
+     (\`flowbrain connections --brain <cerebro>\`, \`flowbrain feature <id>\`). Un módulo que usa el cliente y no tiene
+     llamadas es un hueco.
+   Lo que confirmes leyendo el código, declaralo en \`.flowbrain/<cerebro>/calls.yaml\`:
+
+   \`\`\`yaml
+   http:                              # una llamada HTTP saliente que el parser no vio o no pudo rutear
+     - desde: "repo-tienda-web:src/premios/api.ts#premiosApi.estado"
+       linea: 30                      # la línea de la llamada, dentro de ese símbolo
+       metodo: GET
+       ruta: "/premios/estado"        # con {param} en los segmentos variables
+       base: "API_URL"                # opcional: la variable o el host de donde sale la URL
+       origen: modelo
+       nota: "request() arma la URL con la tabla de rutas de rutas.ts#L4"
+   \`\`\`
+
+   Si la llamada existe pero la pantalla no llega a ella (una función pasada por referencia, un store, un evento),
+   declarala en \`llamadas:\` (paso 7) desde el hook o componente que la dispara. Después \`flowbrain brains apply <cerebro>\`
+   y de nuevo \`calls\`: la funcionalidad tiene que salir de \`funcionalidadesSinLlamadas\`. Cada patrón que el parser no
+   entendió, reportalo como mejora de FlowBrain con un ejemplo mínimo. No escatimes en esta revisión: una funcionalidad
+   sin relaciones en el mapa es peor que gastar más en leer su código.
+
+9. **Informar al usuario**, corto y en este orden:
    - **Confirmado:** cada conexión declarada, con la evidencia en una línea.
    - **Trazas:** cuántos endpoints pasaron a llegar a sus tablas y cuántas llamadas declaraste en \`calls.yaml\`.
+   - **Huecos del parser:** qué funcionalidades no tenían llamadas y ahora sí, y qué patrón no entendió el parser.
    - **Dudas:** lo que no pudiste determinar y qué necesitás que te responda. Si no hay, decilo.
    - **Oportunidades de mejora:** las que encontraste, de mayor a menor impacto, cada una con su archivo.
    - Qué cambió en \`flowbrain.yaml\` y cómo abrir el mapa: \`open .flowbrain/flowbrain.html\`.

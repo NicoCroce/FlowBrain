@@ -1072,11 +1072,20 @@ describe("ts-parser: funciones que envuelven la llamada HTTP", () => {
       join(dir, "src/premios.ts"),
       ['import { get, traer } from "./http";', 'const RUTAS = { estado: "/premios/estado", clubes: "/premios/clubes" } as const;', "export const premiosApi = {", "  estado: () => get(RUTAS.estado),", "  clubes: () => traer(RUTAS.clubes),", "};", ""].join("\n"),
     );
+    // Un objeto que reúne funciones por referencia, y quien lo usa.
+    await writeFile(join(dir, "src/votos.ts"), ['import { get } from "./http";', 'const traerVotos = () => get("/votos");', 'const contar = () => get("/votos/total");', "export const votosApi = { traerVotos, total: contar };", ""].join("\n"));
+    await writeFile(join(dir, "src/usaVotos.ts"), ['import { votosApi } from "./votos";', "export function useVotos() {", "  votosApi.traerVotos();", "  return votosApi.total();", "}", ""].join("\n"));
   });
   afterAll(() => rm(dir, { recursive: true, force: true }));
 
   it("la llamada es la de quien invoca a la envoltura, con su ruta; la envoltura sola no cuenta", async () => {
     const x = await tsParser.extract(leerRepo(dir));
-    expect(x.llamadas.map((l) => `${l.archivo}#L${l.linea} ${l.metodo} ${l.url.ruta}`).sort()).toEqual(["src/premios.ts#L4 GET /premios/estado", "src/premios.ts#L5 GET /premios/clubes"]);
+    expect(x.llamadas.map((l) => `${l.archivo}#L${l.linea} ${l.metodo} ${l.url.ruta}`).sort()).toEqual(["src/premios.ts#L4 GET /premios/estado", "src/premios.ts#L5 GET /premios/clubes", "src/votos.ts#L2 GET /votos", "src/votos.ts#L3 GET /votos/total"]);
+  });
+
+  it("llamar a una propiedad de un objeto que apunta a una función es llamar a esa función", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const a = x.archivos.find((f) => f.ruta === "src/usaVotos.ts");
+    expect(a?.invoca?.map((i) => `${i.desde} → ${i.simbolo}@${i.linea}`)).toEqual(["useVotos → contar@4", "useVotos → traerVotos@3"]);
   });
 });

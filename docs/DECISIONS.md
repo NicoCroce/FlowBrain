@@ -474,3 +474,10 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **No cubre** envolturas que reciben el método como parámetro ni una base distinta pasada en las opciones de cada llamada.
    - **Medido en el proyecto real:** las cuatro pantallas de esa funcionalidad pasaron de no tener ninguna llamada a llegar a tres endpoints del back.
 
+157. **El modelo audita lo que el parser no vio (2026-11-17).** Lo de la decisión 155 solo sirve para lo que el parser detectó y no supo resolver. Un módulo que llama al back de una forma que el parser no entiende no aparecía en ningún informe: nadie lo buscaba.
+   - **Informe.** `flowbrain calls` suma `delLadoQueLlama`: pantallas sin ninguna llamada HTTP en su árbol, funcionalidades con todas sus pantallas así (las sospechosas), y llamadas HTTP vistas sin poder determinar la ruta. Una URL que no se puede analizar ahora queda anotada sin ruta en vez de perderse.
+   - **Declarar.** `calls.yaml` suma la sección `http:` (`desde`, `linea`, `metodo`, `ruta`, `base`, `origen`, `nota`): llamadas salientes que el parser no vio o no pudo rutear. Entran al indexar, antes de unirse a endpoints, con la misma comprobación de símbolo y línea.
+   - **Guía.** Paso 8 de `/flowbrain-index`: revisar las sospechosas abriendo su código, comparar por su cuenta dónde se usa el cliente HTTP contra dónde hay llamadas en el índice, declarar lo confirmado y reportar el patrón. Dice explícitamente que no escatime: una funcionalidad sin relaciones es peor que gastar más en leerla.
+   - **Dos patrones que la auditoría encontró y el parser ya resuelve solo.** Llamar a una propiedad de un objeto que apunta a una función (`api = { crear, listar: traerPedidos }`) es llamar a esa función. Antes se cortaba ahí.
+   - **Medido en el proyecto real.** La auditoría marcó una funcionalidad con tres pantallas y ninguna llamada; con el arreglo del parser y dos rutas declaradas quedó unida al back. Pantallas del front sin llamadas: 13 → 11 de 74.
+

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aplicarLlamadasDeclaradas, leerLlamadasDeclaradas } from "../src/index.js";
+import { aplicarLlamadasDeclaradas, httpDeclaradasDe, leerLlamadasDeclaradas } from "../src/index.js";
 
 const archivos = () => [
   {
@@ -38,5 +38,15 @@ describe("llamadas declaradas (calls.yaml)", () => {
     expect(caso((l) => ((l[2] = '    hacia: "repo-y:src/Facturador.php#Facturador.emitir"'), l))).toContain("el destino está en otro repo");
     expect(leerLlamadasDeclaradas(yaml(['  - desde: "sin-forma"', "    linea: 1"])).rechazadas).toHaveLength(1);
     expect(leerLlamadasDeclaradas("llamadas: [").rechazadas[0]).toContain("YAML inválido");
+  });
+
+  it("llamadas HTTP declaradas: valen las que caen dentro de un símbolo que existe", () => {
+    const y = ["http:", '  - desde: "repo-x:src/PedidoController.php#PedidoController.crear"', "    linea: 15", "    metodo: get", '    ruta: "/facturas/{id}"', "    base: API_URL", '  - desde: "repo-x:src/PedidoController.php#PedidoController.crear"', "    linea: 99", "    metodo: GET", '    ruta: "/x"', '  - desde: "repo-x:src/PedidoController.php#PedidoController.crear"', "    linea: 15", "    metodo: GET", "    ruta: sin-barra"].join("\n");
+    const d = leerLlamadasDeclaradas(y);
+    expect(d.http.map((h) => `${h.metodo} ${h.ruta} ${h.base ?? ""}`)).toEqual(["GET /facturas/{id} API_URL", "GET /x "]);
+    expect(d.rechazadas).toHaveLength(1);
+    const r = httpDeclaradasDe(archivos(), "repo-x", d.http);
+    expect(r.validas.map((h) => `${h.archivo}#L${h.linea} ${h.ruta}`)).toEqual(["src/PedidoController.php#L15 /facturas/{id}"]);
+    expect(r.rechazadas[0]).toContain("la línea 99 no está dentro de PedidoController.crear");
   });
 });

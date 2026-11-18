@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
+import { aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
 import { leerRepo } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
 import { tsParser } from "./ts-parser.js";
@@ -8,6 +8,7 @@ import { phpParser } from "./php-parser.js";
 import { esquemaParser } from "./esquema-parser.js";
 import { infraParser } from "./infra-parser.js";
 import type { Extraccion, Forma, LlamadaCruda, Parser } from "./tipos.js";
+import { paqueteDe } from "./tipos.js";
 
 /** Parsers en orden de prioridad: los posteriores pisan formas y, si son autoritativos, endpoints. */
 export const PARSERS: Parser[] = [tsParser, phpParser, openapiParser, esquemaParser, infraParser];
@@ -249,6 +250,15 @@ export async function indexar(
 
   const x = fusionar(await Promise.all(PARSERS.filter((p) => p.detect(repo)).map((p) => p.extract(repo))));
   const ev = (archivo: string, linea: number) => `${repoId}:${archivo}#L${linea}`;
+  // Lo que alguien resolvió leyendo el código y dejó en `calls.yaml`: llamadas HTTP que el parser no vio o no pudo
+  // rutear (acá, antes de unirlas a endpoints) y llamadas entre métodos (más abajo). Sobrevive a reindexar.
+  const declaradas = await readFile(join(raizBrain, ARCHIVO_LLAMADAS), "utf8").then(leerLlamadasDeclaradas, () => null);
+  for (const h of declaradas ? httpDeclaradasDe(x.archivos, repoId, declaradas.http).validas : []) {
+    // Reemplaza a la que el parser haya dejado en esa línea sin ruta.
+    x.llamadas = x.llamadas.filter((l) => !(l.archivo === h.archivo && l.linea === h.linea && l.url.ruta === null));
+    if (x.llamadas.some((l) => l.archivo === h.archivo && l.linea === h.linea && l.metodo === h.metodo && l.url.ruta === h.ruta)) continue;
+    x.llamadas.push({ paquete: paqueteDe(repo, h.archivo), archivo: h.archivo, linea: h.linea, metodo: h.metodo, url: { base: h.base ? "dinamica" : "relativa", host: null, ruta: h.ruta, texto: h.base ? `\${${h.base}}${h.ruta}` : h.ruta }, dato: null });
+  }
 
   // ---------- Paquetes → servicios ----------
   const svcsDelRepo = nodos.filter((n) => n.tipo === "svc" && n.vive_en.includes(repoId));
@@ -448,7 +458,6 @@ export async function indexar(
   infra.sort((a, b) => cmpTuple([a.de, a.evidencia, a.nombre], [b.de, b.evidencia, b.nombre]));
 
   // Lo que el código no dice con tipos y quedó resuelto en `calls.yaml`: se suma acá para que sobreviva a reindexar.
-  const declaradas = await readFile(join(raizBrain, ARCHIVO_LLAMADAS), "utf8").then(leerLlamadasDeclaradas, () => null);
   if (declaradas) aplicarLlamadasDeclaradas(x.archivos, repoId, declaradas.llamadas);
 
   return {

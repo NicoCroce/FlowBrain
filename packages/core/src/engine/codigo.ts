@@ -948,6 +948,62 @@ export function llamadasPorResolver(ctx: Contexto, p: PorResolverParams = {}) {
     }
     if (llamadas.length) grupos.push({ endpoint: ep, llamadas: llamadas.slice(0, 8), ...(llamadas.length > 8 ? { mas: llamadas.length - 8 } : {}) });
   }
+  // ---------- Del lado del que llama: lo que el parser no vio ----------
+  // Símbolo que contiene una línea: el más interno con rango.
+  const simboloEn = (archivo: string, linea: number): string | null => {
+    const dentro = (ix.estructura.get(archivo)?.simbolos ?? []).filter((s) => s.fin !== undefined && s.linea <= linea && linea <= s.fin);
+    return dentro.length ? dentro.reduce((a, b) => (b.linea >= a.linea ? b : a)).nombre : null;
+  };
+  const claveDe = (evidencia: string): string | null => {
+    const m = /^(.*)#L(\d+)$/.exec(evidencia);
+    const s = m ? simboloEn(m[1]!, Number(m[2])) : null;
+    return m && s ? `${m[1]}#${s}` : null;
+  };
+  // Llamadas HTTP que el parser vio pero sin poder determinar la ruta: no se unen a ningún endpoint.
+  const sinRuta = ix.llamadasPendientes.filter((l) => l.llamada && l.llamada.ruta === null && !ES_TEST.test(l.evidencia.replace(/#L.*$/, "")));
+  const httpSinRuta = sinRuta.map((l) => ({ evidencia: l.evidencia, desde: claveDe(l.evidencia), metodo: l.llamada!.metodo, base: l.llamada!.base }));
+  // Métodos desde los que sale alguna llamada HTTP con ruta (unida a un endpoint o pendiente de otro cerebro).
+  const llaman = new Set<string>();
+  for (const xs of ix.llamanEndpoint.values()) for (const x of xs) llaman.add(x.clave);
+  for (const l of ix.llamadasPendientes) {
+    const k = l.llamada?.ruta ? claveDe(l.evidencia) : null;
+    if (k) llaman.add(k);
+  }
+  // Pantallas desde cuyo árbol de componentes no se llega a ninguna llamada HTTP. Una funcionalidad con todas sus
+  // pantallas así es sospechosa: o no habla con el back, o lo hace de una forma que el parser no entiende.
+  const alcanza = (inicio: string): boolean => {
+    const vistos = new Set<string>([inicio]);
+    const cola = [inicio];
+    while (cola.length && vistos.size < 3000) {
+      const k = cola.pop()!;
+      if (llaman.has(k)) return true;
+      const { archivo, simbolo } = partes(k);
+      const repo = archivo.slice(0, archivo.indexOf(":"));
+      for (const i of ix.estructura.get(archivo)?.invoca ?? []) {
+        const sig = `${repo}:${i.archivo}#${i.simbolo}`;
+        if (i.desde === simbolo && !vistos.has(sig)) {
+          vistos.add(sig);
+          cola.push(sig);
+        }
+      }
+    }
+    return false;
+  };
+  const pantallas = ctx.graph.nodes.filter((n) => n.tipo === "pantalla");
+  const mudas = pantallas.filter((n) => !((n.atributos as { componentes?: string[] }).componentes ?? []).some(alcanza)).map((n) => n.id);
+  const mudasSet = new Set(mudas);
+  const porFeat = new Map<string, { total: number; mudas: string[] }>();
+  for (const e of ctx.graph.edges) {
+    if (e.verbo !== "implementa" || ctx.nodo.get(e.desde)?.tipo !== "pantalla" || ctx.nodo.get(e.hasta)?.tipo !== "feat") continue;
+    const f = porFeat.get(e.hasta) ?? porFeat.set(e.hasta, { total: 0, mudas: [] }).get(e.hasta)!;
+    f.total++;
+    if (mudasSet.has(e.desde)) f.mudas.push(e.desde);
+  }
+  const funcionalidadesSinLlamadas = [...porFeat.entries()]
+    .filter(([, v]) => v.total > 0 && v.mudas.length === v.total)
+    .map(([id, v]) => ({ funcionalidad: id, codigo: ix.fichas.get(id)?.codigo ?? [], pantallas: v.mudas.sort(cmp).slice(0, 6) }))
+    .sort((a, b) => cmp(a.funcionalidad, b.funcionalidad));
+
   const limite = p.limite ?? 20;
   // Una misma llamada corta muchos recorridos (un helper de autenticación, un serializador): resolver esas primero.
   const repetidas = new Map<string, { desde: string; linea: number; llamada: string; candidatos: string[]; endpoints: number }>();
@@ -977,6 +1033,19 @@ export function llamadasPorResolver(ctx: Contexto, p: PorResolverParams = {}) {
     ...(masRepetidas.length ? { masRepetidas } : {}),
     grupos: grupos.slice(0, limite),
     ...(grupos.length > limite ? { gruposOmitidos: grupos.length - limite } : {}),
+    ...(pantallas.length
+      ? {
+          delLadoQueLlama: {
+            pantallas: pantallas.length,
+            pantallasSinLlamadas: mudas.length,
+            /** Funcionalidades con pantallas y ninguna llamada HTTP en ninguna: revisar su código. */
+            funcionalidadesSinLlamadas,
+            httpSinRuta: { total: httpSinRuta.length, ejemplos: httpSinRuta.slice(0, limite) },
+          },
+        }
+      : httpSinRuta.length
+        ? { delLadoQueLlama: { httpSinRuta: { total: httpSinRuta.length, ejemplos: httpSinRuta.slice(0, limite) } } }
+        : {}),
     ...(declaradas.length ? { declaradas: { total: declaradas.length, enElIndice: declaradas.filter((d) => d.enElIndice).length, faltan: declaradas.filter((d) => !d.enElIndice).slice(0, 10).map((d) => `${d.desde} → ${d.hacia}`) } } : {}),
   };
 }

@@ -11,9 +11,29 @@ import { parse } from "yaml";
  *     hacia: "repo-x:src/Service/Facturador.php#Facturador.emitir"
  *     origen: modelo                  # o persona
  *     nota: "el contenedor registra 'facturador' como App\\Service\\Facturador (services.yaml#L12)"
+ *
+ * http:                               # llamadas HTTP salientes que el parser no vio o no pudo rutear
+ *   - desde: "repo-web:src/premios/api.ts#premiosApi.estado"
+ *     linea: 30
+ *     metodo: GET
+ *     ruta: "/premios/estado"
+ *     base: "API_URL"                 # opcional: variable u host de donde sale la URL
+ *     origen: modelo
+ *     nota: "request() arma la URL con una tabla de rutas (rutas.ts#L4)"
  * ```
  */
 export const ARCHIVO_LLAMADAS = "calls.yaml";
+
+/** Una llamada HTTP saliente declarada: el parser no la vio, o la vio sin poder determinar su ruta. */
+export interface HttpDeclarada {
+  desde: string;
+  linea: number;
+  metodo: string;
+  ruta: string;
+  base?: string;
+  origen?: string;
+  nota?: string;
+}
 
 export interface LlamadaDeclarada {
   desde: string;
@@ -36,22 +56,45 @@ const partes = (k: string) => {
 };
 
 /** Lee `calls.yaml`. Devuelve las llamadas bien formadas y por qué se descartó cada una de las otras. */
-export function leerLlamadasDeclaradas(texto: string): { llamadas: LlamadaDeclarada[]; rechazadas: string[] } {
-  const llamadas: LlamadaDeclarada[] = [], rechazadas: string[] = [];
+export function leerLlamadasDeclaradas(texto: string): { llamadas: LlamadaDeclarada[]; http: HttpDeclarada[]; rechazadas: string[] } {
+  const llamadas: LlamadaDeclarada[] = [], http: HttpDeclarada[] = [], rechazadas: string[] = [];
   let doc: unknown;
   try {
     doc = parse(texto);
   } catch (e) {
-    return { llamadas, rechazadas: [`${ARCHIVO_LLAMADAS}: YAML inválido (${(e as Error).message.split("\n")[0]})`] };
+    return { llamadas, http, rechazadas: [`${ARCHIVO_LLAMADAS}: YAML inválido (${(e as Error).message.split("\n")[0]})`] };
   }
+  const texto_ = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  const listaHttp = (doc as { http?: unknown } | null)?.http;
+  (Array.isArray(listaHttp) ? listaHttp : []).forEach((x: Record<string, unknown>, i) => {
+    const desde = texto_(x?.["desde"]), metodo = texto_(x?.["metodo"]), ruta = texto_(x?.["ruta"]), base = texto_(x["base"]), origen = texto_(x["origen"]), nota = texto_(x["nota"]);
+    if (desde && partes(desde) && metodo && ruta?.startsWith("/") && Number.isInteger(x["linea"])) {
+      http.push({ desde, linea: x["linea"] as number, metodo: metodo.toUpperCase(), ruta, ...(base ? { base } : {}), ...(origen ? { origen } : {}), ...(nota ? { nota } : {}) });
+    } else rechazadas.push(`http ${i + 1}: faltan \`desde\` (repo:ruta#Simbolo), \`linea\`, \`metodo\` o \`ruta\` (que empiece con /)`);
+  });
   const lista = (doc as { llamadas?: unknown } | null)?.llamadas;
-  if (!Array.isArray(lista)) return { llamadas, rechazadas };
+  if (!Array.isArray(lista)) return { llamadas, http, rechazadas };
   lista.forEach((x: Record<string, unknown>, i) => {
     if (typeof x?.["desde"] === "string" && typeof x["hacia"] === "string" && Number.isInteger(x["linea"]) && partes(x["desde"]) && partes(x["hacia"])) {
       llamadas.push({ desde: x["desde"], hacia: x["hacia"], linea: x["linea"] as number, ...(typeof x["origen"] === "string" ? { origen: x["origen"] } : {}), ...(typeof x["nota"] === "string" ? { nota: x["nota"] } : {}) });
     } else rechazadas.push(`llamada ${i + 1}: faltan \`desde\` y \`hacia\` (repo:ruta#Simbolo) o \`linea\``);
   });
-  return { llamadas, rechazadas };
+  return { llamadas, http, rechazadas };
+}
+
+/** Las llamadas HTTP declaradas de `repo` que se pueden comprobar: el símbolo existe y la línea cae dentro de él. */
+export function httpDeclaradasDe(archivos: ArchivoIndexado[], repo: string, declaradas: HttpDeclarada[]): { validas: Array<HttpDeclarada & { archivo: string }>; rechazadas: string[] } {
+  const porRuta = new Map(archivos.map((a) => [a.ruta, a]));
+  const validas: Array<HttpDeclarada & { archivo: string }> = [], rechazadas: string[] = [];
+  for (const d of declaradas) {
+    const de = partes(d.desde)!;
+    if (de.repo !== repo) continue;
+    const s = porRuta.get(de.ruta)?.simbolos.find((x) => x.nombre === de.simbolo);
+    if (!s) rechazadas.push(`${d.desde}: no existe en el índice`);
+    else if (d.linea < s.linea || d.linea > (s.fin ?? s.linea)) rechazadas.push(`${d.desde}: la línea ${d.linea} no está dentro de ${de.simbolo} (${s.linea}-${s.fin ?? s.linea})`);
+    else validas.push({ ...d, archivo: de.ruta });
+  }
+  return { validas, rechazadas };
 }
 
 /**

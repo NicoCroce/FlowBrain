@@ -634,11 +634,21 @@ function extraer(repo: RepoFuente): Extraccion {
         if (!out.has(k)) out.set(k, { desde, archivo: t.archivo, simbolo: t.simbolo, linea: l });
       }
     };
+    // `export const api = { crear, listar: traerPedidos }`: la propiedad es otro nombre de esa función.
+    const seguir = (d: ts.Declaration | undefined): ts.Declaration | undefined => {
+      for (let i = 0; d && i < 3; i++) {
+        const s = ts.isShorthandPropertyAssignment(d) ? checker.getShorthandAssignmentValueSymbol(d) : ts.isPropertyAssignment(d) && ts.isIdentifier(d.initializer) ? checker.getSymbolAtLocation(d.initializer) : undefined;
+        const t = s ? real(s)?.declarations?.[0] : undefined;
+        if (!t) break;
+        d = t;
+      }
+      return d;
+    };
     const ver = (n: ts.Node): void => {
       if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
         const e = n.expression;
         const nombre = ts.isPropertyAccessExpression(e) ? e.name : ts.isIdentifier(e) ? e : null;
-        const d = nombre ? real(checker.getSymbolAtLocation(nombre))?.declarations?.[0] : undefined;
+        const d = seguir(nombre ? real(checker.getSymbolAtLocation(nombre))?.declarations?.[0] : undefined);
         if (sinResolver && ts.isPropertyAccessExpression(e)) {
           // Un método de un objeto `any`, o de una interfaz del repo que ninguna clase conocida implementa.
           const c = d ? contenedor(d) : null;
@@ -1260,8 +1270,8 @@ function extraer(repo: RepoFuente): Extraccion {
       const primera = partes[0];
       const absoluta = primera && "lit" in primera && /^https?:\/\//.test(primera.lit);
       if (f.base && !absoluta) partes = [...evaluar(f.base), ...partes];
-      const u = analizarUrl(partes);
-      if (!u) return false;
+      // Una URL que no se puede analizar igual es una llamada HTTP: queda sin ruta, para que se vea que falta.
+      const u = analizarUrl(partes) ?? { base: "dinamica" as const, host: null, ruta: null, texto: f.url.getText().replace(/\s+/g, " ").slice(0, 80) };
       const llamada: LlamadaCruda = { paquete, archivo, linea: linea(call), metodo: f.metodo, url: u, dato: f.cuerpo ? nombreTipoDeExpr(f.cuerpo) : null };
       out.llamadas.push(llamada);
       return true;
