@@ -21,6 +21,16 @@ const RAICES_FUNCIONALIDAD = new Set(["features", "feature", "modules", "module"
  * carpeta de funcionalidades: un front organizado por pantallas no tiene otra pista de producto en su estructura.
  */
 const RAICES_PANTALLA = new Set(["pages", "page", "screens", "screen", "views", "view"]);
+/**
+ * Carpetas de un back organizado por capas (`controllers/ReservasController.php`, `routes/reservas.js`,
+ * `handlers/pagos.go`): sin carpetas de funcionalidades ni de pantallas, cada controlador es una pista de producto.
+ */
+const RAICES_CAPA = new Set(["controllers", "controller", "routes", "routers", "router", "handlers", "handler", "endpoints", "resources", "api", "apis"]);
+/** Sufijos técnicos que no son parte del nombre de la funcionalidad (`ReservasView`, `reservas_screen`, `pagos.controller`). */
+const SUFIJO_TECNICO = /([._-]?(view|page|screen|controller|handler|handlers|router|routes|route|resource|endpoint|endpoints|api|viewset|views|module|component|widget|bloc|cubit|provider|store|service))+$/i;
+/** Archivos sueltos que no son una funcionalidad. */
+const ARCHIVO_NO_FUNCIONALIDAD = /^(index|main|app|root|router|routes|base|abstract|_?layout|_?app|_?document|not[-_]?found|error|404|500|__init__|mod|urls|api|helpers?|utils?)$/i;
+const EXT_CODIGO = /\.(tsx?|jsx?|mjs|cjs|vue|svelte|astro|dart|py|go|rb|php|java|kt|swift|cs|ex|exs)$/;
 /** Hijas de esas carpetas que no son funcionalidades sino código compartido. */
 const NO_FUNCIONALIDAD = new Set(["shared", "common", "core", "utils", "util", "helpers", "lib", "libs", "types", "config", "constants", "test", "tests", "__tests__", "__mocks__", "components", "layouts", "layout"]);
 
@@ -30,7 +40,8 @@ function hijasDeRaiz(rutas: string[], raices: Set<string>): string[] {
     const segs = r.split("/");
     for (let i = 0; i < Math.min(segs.length - 2, 4); i++) {
       const hija = segs[i + 1]!;
-      if (NO_FUNCIONALIDAD.has(segs[i]!.toLowerCase())) break;
+      // `lib/` en la raíz es donde vive el código (Dart, Elixir, Ruby), no código compartido.
+      if (NO_FUNCIONALIDAD.has(segs[i]!.toLowerCase()) && !(i === 0 && segs[i] === "lib")) break;
       if (!raices.has(segs[i]!.toLowerCase())) continue;
       if (!NO_FUNCIONALIDAD.has(hija.toLowerCase()) && !/^[._]/.test(hija)) out.add(segs.slice(0, i + 2).join("/"));
       break;
@@ -39,16 +50,42 @@ function hijasDeRaiz(rutas: string[], raices: Set<string>): string[] {
   return [...out].sort(cmp);
 }
 
+/** Archivos de código sueltos dentro de una raíz (`views/ReservasView.vue`), que no sean infraestructura de la carpeta. */
+function archivosDeRaiz(rutas: string[], raices: Set<string>): string[] {
+  const out = new Set<string>();
+  for (const r of rutas) {
+    const segs = r.split("/");
+    const i = segs.length - 2;
+    if (i < 0 || i > 5 || !raices.has(segs[i]!.toLowerCase()) || !EXT_CODIGO.test(r) || /\.(test|spec|d)\.[a-z]+$/.test(r)) continue;
+    if (segs.slice(0, i).some((x, j) => (NO_FUNCIONALIDAD.has(x.toLowerCase()) && !(j === 0 && x === "lib")) || /^(test|tests|__tests__|spec)$/i.test(x))) continue;
+    const hoja = segs[i + 1]!.replace(/\.[a-z0-9]+$/i, "");
+    // La clase base (`Controller.php`) o un archivo de la carpeta (`index`, `router`) no son funcionalidades.
+    if (!hoja.replace(SUFIJO_TECNICO, "") || ARCHIVO_NO_FUNCIONALIDAD.test(nombreTecnico(segs[i + 1]!))) continue;
+    out.add(r);
+  }
+  return [...out].sort(cmp);
+}
+
+/** Nombre de producto de una carpeta o archivo: sin extensión ni sufijo técnico (`ReservasView.vue` → `Reservas`). */
+export function nombreTecnico(hoja: string): string {
+  const sinExt = hoja.replace(/\.[a-z0-9]+$/i, "").replace(/^\+/, "");
+  return sinExt.replace(SUFIJO_TECNICO, "") || sinExt;
+}
+
 /**
- * Carpetas de funcionalidad de un repo: cada hija de `features/`, `modules/` o `domains/` (hasta 4 niveles de
- * profundidad) que contenga archivos. Se toma la raíz más externa: `modules/x/features/y` da `modules/x`. Lo que cuelga
- * de una carpeta de código compartido (`shared/domain/x`, `core/modules/y`) no es una funcionalidad. Si el repo no
- * tiene ninguna, se usan las hijas de `pages/`, `screens/` o `views/`: una por pantalla, que el modelo o una persona
- * agrupan después.
+ * Carpetas (o archivos) de funcionalidad de un repo, en este orden de preferencia:
+ * 1. cada hija de `features/`, `modules/` o `domains/` (hasta 4 niveles de profundidad) que contenga archivos; se toma
+ *    la raíz más externa (`modules/x/features/y` da `modules/x`), y lo que cuelga de código compartido no cuenta;
+ * 2. si no hay, las hijas de `pages/`, `screens/` o `views/`, carpetas o archivos sueltos (`views/ReservasView.vue`);
+ * 3. si tampoco, los controladores de un back por capas (`controllers/`, `routes/`, `handlers/`…), carpetas o archivos.
+ * Son borradores: el modelo o una persona los agrupan y les ponen el nombre del negocio.
  */
 export function carpetasDeFuncionalidad(rutas: string[]): string[] {
   const feats = hijasDeRaiz(rutas, RAICES_FUNCIONALIDAD);
-  return feats.length ? feats : hijasDeRaiz(rutas, RAICES_PANTALLA);
+  if (feats.length) return feats;
+  const pantallas = [...hijasDeRaiz(rutas, RAICES_PANTALLA), ...archivosDeRaiz(rutas, RAICES_PANTALLA)];
+  if (pantallas.length) return [...new Set(pantallas)].sort(cmp);
+  return [...new Set([...hijasDeRaiz(rutas, RAICES_CAPA), ...archivosDeRaiz(rutas, RAICES_CAPA)])].sort(cmp);
 }
 
 /** `videoAnalysis` → `Video analysis`; `premios-hi` → `Premios hi`. */
@@ -188,7 +225,7 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
   const resumen = { paginas: 0, relaciones: 0, preguntas: 0, tablas: 0, externos: 0, colas: 0, funcionalidades: 0 };
 
   // ---------- 1. Propuestas: tablas y sistemas externos que el brain no tiene ----------
-  const propuestas = new Map<string, { tipo: "tabla" | "ext" | "queue"; nombre: string; aliases: Set<string>; evidencias: string[]; modelos: Set<string> }>();
+  const propuestas = new Map<string, { tipo: "tabla" | "ext" | "queue"; nombre: string; aliases: Set<string>; evidencias: string[]; modelos: Set<string>; declarada?: string }>();
   const propuestas_aristas: AristaExtraida[] = [];
   const restantes: Pendiente[] = [];
   for (const p of r.pendientes) {
@@ -227,6 +264,17 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
     });
   }
 
+  // Tablas del esquema que nadie accede todavía (o que el parser no ve acceder): también tienen página, con su origen.
+  for (const t of r.tablasSinPagina ?? []) {
+    const s = slug(t.tabla);
+    const id = s ? `tabla-${s}` : null;
+    if (!id || existentes.has(id)) continue;
+    const prop = propuestas.get(id) ?? { tipo: "tabla" as const, nombre: t.tabla, aliases: new Set<string>(), evidencias: [], modelos: new Set<string>() };
+    prop.aliases.add(t.tabla);
+    if (!prop.evidencias.length) prop.declarada = t.evidencia;
+    propuestas.set(id, prop);
+  }
+
   // Para las tablas: qué método hace cada acceso (por la estructura del índice) y de qué funcionalidad es.
   const estructura = new Map(r.archivos.archivos.map((a) => [`${r.repo}:${a.ruta}`, a]));
   const metodoDe = (ev: string) => {
@@ -257,7 +305,9 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
     };
     const titulo = `# ${prop.nombre}\n\n${AVISO}\n\n`;
     let detalle =
-      prop.tipo === "tabla"
+      prop.tipo === "tabla" && !evs.length
+        ? `Declarada en \`${prop.declarada}\`; ningún acceso detectado todavía.\n`
+        : prop.tipo === "tabla"
         ? `Modelo${prop.modelos.size > 1 ? "s" : ""} ${[...prop.modelos].sort(cmp).map((m) => `\`${m}\``).join(", ")}; primer acceso en \`${evs[0]}\` (${evs.length} en total).\n`
         : prop.tipo === "queue"
           ? `Evento, tópico o cola \`${prop.nombre}\`. ${["publica_en", "consume_de"].map((v) => `${v === "publica_en" ? "Publican" : "Consumen"}: ${[...new Set(propuestas_aristas.filter((a) => a.hasta === id && a.verbo === v).map((a) => `\`${a.desde}\``))].sort(cmp).join(", ") || "nadie que se haya detectado"}.`).join(" ")}\n`
@@ -277,6 +327,7 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
       }
       const lista = [...porMetodo].sort((a, b) => cmp(a[0], b[0]));
       const fs = [...new Set(accesos.flatMap((a) => featDe(a.evidencia)))].sort(cmp);
+      if (lista.length)
       detalle +=
         "\n## Quién la usa\n\n" +
         lista
@@ -382,7 +433,7 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
   for (const carpeta of carpetasDeFuncionalidad(r.archivos.archivos.map((a) => a.ruta))) {
     const codigo = `${r.repo}:${carpeta}`;
     if (cubierta(codigo)) continue;
-    const hoja = carpeta.split("/").pop()!;
+    const hoja = nombreTecnico(carpeta.split("/").pop()!);
     const id = `feat-${slug(hoja.replace(/([a-z0-9])([A-Z])/g, "$1-$2"))}`;
     if (id === "feat-") continue;
     const previa = feats.get(id);

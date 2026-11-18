@@ -35,6 +35,8 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
     const r = await draftDir(clon, brain);
     expect(r.repo).toBe("repo-envios");
     expect(r.escritos).toEqual([
+      // Un back por capas: cada controlador (y su recurso) propone una funcionalidad.
+      "_drafts/product/feat-envio.md",
       "_drafts/repo-envios/PROMPT.md",
       "_drafts/repo-envios/technology/ext-correo.md",
       "_drafts/repo-envios/technology/repo-envios.md",
@@ -44,7 +46,7 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
     ]);
     expect(await readdir(join(brain, "technology"))).toEqual(["svc-notificaciones.md"]);
     expect(await readdir(brain)).toEqual(["_drafts", "technology"]);
-    expect(r.resumen).toEqual({ paginas: 5, relaciones: 4, preguntas: 4, tablas: 2, externos: 1, colas: 0, funcionalidades: 0 });
+    expect(r.resumen).toEqual({ paginas: 6, relaciones: 4, preguntas: 4, tablas: 2, externos: 1, colas: 0, funcionalidades: 1 });
   });
 
   it("el borrador de una tabla dice qué métodos la leen o escriben", async () => {
@@ -90,7 +92,9 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
     const a = await draftDir(clon, brain);
     const b = await draftDir(clon, brain);
     expect(b.escritos).toEqual([]);
-    expect(stringifyCanonical(b.archivos)).toBe(stringifyCanonical(a.archivos));
+    // Los borradores de funcionalidades ya escritos no se vuelven a proponer: cubren su código.
+    const tecnicos = (x: Record<string, string>) => Object.fromEntries(Object.entries(x).filter(([k]) => !k.startsWith("_drafts/product/")));
+    expect(stringifyCanonical(tecnicos(b.archivos))).toBe(stringifyCanonical(tecnicos(a.archivos)));
   });
 });
 
@@ -179,10 +183,15 @@ describe("flowbrain draft: funcionalidades", () => {
   });
 
   it("sin carpetas de funcionalidades, toma las pantallas de pages/, screens/ o views/", async () => {
-    const { carpetasDeFuncionalidad } = await import("../src/index.js");
+    const { carpetasDeFuncionalidad, nombreTecnico } = await import("../src/index.js");
     expect(
       carpetasDeFuncionalidad(["src/pages/Login/Login.jsx", "src/pages/Agenda/index.jsx", "src/pages/components/Boton.jsx", "src/pages/suelta.jsx", "src/api/x.js"]),
-    ).toEqual(["src/pages/Agenda", "src/pages/Login"]);
+    ).toEqual(["src/pages/Agenda", "src/pages/Login", "src/pages/suelta.jsx"]);
+    // Vue o Flutter: vistas como archivos sueltos, sin el sufijo técnico en el nombre.
+    expect(carpetasDeFuncionalidad(["src/views/ReservasView.vue", "src/views/HomeView.vue", "src/views/index.ts", "lib/screens/pago_screen.dart"])).toEqual(["lib/screens/pago_screen.dart", "src/views/HomeView.vue", "src/views/ReservasView.vue"]);
+    expect(["ReservasView.vue", "pago_screen.dart", "pagos.controller.ts", "Controller.php"].map(nombreTecnico)).toEqual(["Reservas", "pago", "pagos", "Controller"]);
+    // Un back por capas: cada controlador (no la clase base).
+    expect(carpetasDeFuncionalidad(["src/Controller/ReservaController.php", "src/Controller/Controller.php", "app/routes/pagos.js", "app/routes/index.js"])).toEqual(["app/routes/pagos.js", "src/Controller/ReservaController.php"]);
     // Con carpetas de funcionalidades, las de pantallas no se proponen aparte.
     expect(carpetasDeFuncionalidad(["src/features/pagos/a.ts", "src/pages/Inicio/b.tsx"])).toEqual(["src/features/pagos"]);
   });

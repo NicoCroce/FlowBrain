@@ -78,6 +78,8 @@ export interface ResultadoIndex {
   /** Todas las aristas resueltas, una por evidencia: la vista por método y por funcionalidad necesita cada acceso. */
   accesos: AristaExtraida[];
   pendientes: Pendiente[];
+  /** Tablas del esquema (DDL, migraciones, modelos de ORM, extractores) que todavía no tienen página: el borrador las propone. */
+  tablasSinPagina?: Array<{ tabla: string; evidencia: string }>;
   contratos: Contrato[];
   archivos: {
     archivos: Extraccion["archivos"];
@@ -449,8 +451,10 @@ export async function indexar(
     return hits.length === 1 ? hits[0]!.id : null;
   };
   const esquema: EsquemaTabla[] = [];
+  const tablasSinPagina = new Map<string, { tabla: string; evidencia: string }>();
   for (const t of x.esquema ?? []) {
     const id = tablaDe(t.tabla);
+    if (!id && !tablasSinPagina.has(normalizar(t.tabla))) tablasSinPagina.set(normalizar(t.tabla), { tabla: t.tabla, evidencia: ev(t.archivo, t.linea) });
     if (!id || esquema.some((e) => e.tabla === id)) continue;
     esquema.push({
       tabla: id,
@@ -491,6 +495,7 @@ export async function indexar(
     aristas: aristasFinales,
     accesos,
     pendientes,
+    ...(tablasSinPagina.size ? { tablasSinPagina: [...tablasSinPagina.values()].sort((a, b) => cmp(a.tabla, b.tabla)) } : {}),
     contratos: contratos.sort((a, b) => cmp(a.svc, b.svc)),
     archivos: {
       archivos: x.archivos,
