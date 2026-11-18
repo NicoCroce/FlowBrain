@@ -67,6 +67,8 @@ describe("flowbrain promote", () => {
     expect(r.stdout).toContain("promovidos 2:");
     expect(r.stdout).toContain("svc-bff.md (distinto): ya existe una página distinta");
     expect(await existe("_drafts/repo-tienda/technology/ext-correo.md")).toBe(false);
+    // Ya no es borrador: sin el aviso de `flowbrain draft`.
+    expect(await readFile(join(raiz, "technology/ext-correo.md"), "utf8")).not.toContain("Borrador generado");
     // La página curada sigue ahí (compile solo le agrega sus backlinks).
     expect(await readFile(join(raiz, "technology/svc-bff.md"), "utf8")).toContain(antes.slice(0, antes.indexOf("\n---\n", 4)));
     expect((await brain("search", "ext-correo")).stdout).toContain('"id": "ext-correo"');

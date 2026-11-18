@@ -26,6 +26,8 @@ export interface ResultadoPromover {
 }
 
 const leer = (p: string) => readFile(p, "utf8").catch(() => null);
+/** La página promovida ya no es borrador: sin el aviso de `flowbrain draft`. */
+const sinAviso = (t: string) => t.replace(/^> Borrador generado por `flowbrain draft`[^\n]*\n\n?/m, "");
 
 export async function borradoresPromovibles(raiz: string): Promise<Candidato[]> {
   const out: Candidato[] = [];
@@ -33,7 +35,7 @@ export async function borradoresPromovibles(raiz: string): Promise<Candidato[]> 
     for (const n of (await readdir(join(raiz, rel)).catch(() => [] as string[])).filter((x) => x.endsWith(".md") && x !== "PROMPT.md").sort(cmp)) {
       const origen = `${rel}/${n}`, destino = `${carpeta}/${n}`;
       const [a, b] = [await leer(join(raiz, origen)), await leer(join(raiz, destino))];
-      if (a !== null) out.push({ id: n.slice(0, -3), origen, destino, estado: b === null ? "nuevo" : a === b ? "igual" : "distinto" });
+      if (a !== null) out.push({ id: n.slice(0, -3), origen, destino, estado: b === null ? "nuevo" : sinAviso(a) === sinAviso(b) ? "igual" : "distinto" });
     }
   };
   await agregar("_drafts/product", "product");
@@ -62,7 +64,7 @@ export async function promover(raiz: string, opciones: { ids?: string[]; todos?:
     respaldo.set(c.origen, contenido);
     respaldo.set(c.destino, await leer(join(raiz, c.destino)));
     await mkdir(dirname(join(raiz, c.destino)), { recursive: true });
-    await writeFile(join(raiz, c.destino), contenido, "utf8");
+    await writeFile(join(raiz, c.destino), sinAviso(contenido), "utf8");
     await rm(join(raiz, c.origen));
     res.movidos.push(c);
   }

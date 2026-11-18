@@ -10,7 +10,7 @@ import { slug, type AristaExtraida, type Pendiente, type ResultadoIndex } from "
 
 export const RESUMEN_PENDIENTE = "Borrador: completar resumen.";
 export const TITULO_PREGUNTAS = "## Preguntas abiertas";
-const AVISO = "> Borrador generado por `flowbrain draft`. Revisalo, completalo y movelo a `technology/`.";
+const AVISO = "> Borrador generado por `flowbrain draft`. Revisalo y completalo; `flowbrain promote <id> --write` lo pasa a `technology/` (si ya está ahí, borrá este aviso).";
 const AVISO_PRODUCTO = "> Borrador generado por `flowbrain draft` a partir de la estructura del código. Revisalo, completalo y movelo a `product/`.";
 export const QUE_ES_PENDIENTE = "_Completar: qué problema resuelve para quien la usa, quién la usa y cuál es el flujo principal._";
 

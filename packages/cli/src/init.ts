@@ -1,7 +1,7 @@
 import { compileDirConVisor } from "@flowbrain/viewer";
 import { access, chmod, constants, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { cmp } from "@flowbrain/core";
 
@@ -135,7 +135,8 @@ export async function instalarComando(env: NodeJS.ProcessEnv = process.env, bin?
   const enPath = (env.PATH ?? "").split(":").filter(Boolean);
   const escribible = (d: string) => access(d, constants.W_OK).then(() => true, () => false);
   const local = join(homedir(), ".local/bin");
-  let dir = bin;
+  // `--bin` acepta la carpeta o el archivo mismo (`…/bin/flowbrain`).
+  let dir = bin && basename(bin) === "flowbrain" ? dirname(bin) : bin;
   if (!dir) for (const d of ["/opt/homebrew/bin", "/usr/local/bin", local]) if (enPath.includes(d) && (await escribible(d))) { dir = d; break; }
   dir ??= local;
   await mkdir(dir, { recursive: true });

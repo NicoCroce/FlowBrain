@@ -342,6 +342,18 @@ export async function ejecutar(
       if (!raizRegistro) throw new ConsultaError("parametro_invalido", `conexiones necesita un registro: no hay ${ARCHIVO_REGISTRO} en ${raiz}`);
       return { codigo: 0, stdout: stringifyCanonical(await crearMulti(raizRegistro, { cwd }).conexiones(o.brain)), stderr: "" };
     }
+    if (raizRegistro && comando === "status" && !o.brain) {
+      // Con varios cerebros y sin --brain: el estado de cada uno, en vez de pedir que elija.
+      const registro = await leerRegistro(raiz);
+      const propio = registro.deDirectorio(cwd);
+      if (!propio && registro.cerebros.length > 1) {
+        const carpetas = (o.repos ?? env.FLOWBRAIN_REPOS ?? "").split(":").filter(Boolean).map((d) => resolve(cwd, d));
+        const todos = await Promise.all(registro.cerebros.map(async (c) => ({ nombre: c.nombre, e: await estado(c.raiz, carpetas) })));
+        const codigo = todos.some((t) => t.e.desactualizado) ? 1 : 0;
+        if (o.json) return { codigo, stdout: stringifyCanonical(Object.fromEntries(todos.map((t) => [t.nombre, t.e]))), stderr: "" };
+        return { codigo, stdout: todos.map((t) => `== ${t.nombre} ==\n${textoEstado(t.e)}`).join("\n"), stderr: "" };
+      }
+    }
     if (raizRegistro && comando !== "hook") {
       const registro = await leerRegistro(raiz);
       const c = o.brain ? registro.cerebro(o.brain) : (registro.deDirectorio(cwd) ?? (registro.cerebros.length === 1 ? registro.cerebros[0]! : null));
