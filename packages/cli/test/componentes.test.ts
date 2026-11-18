@@ -76,6 +76,35 @@ describe("componentes entre paquetes", () => {
     expect(paquetesPublicados(leerRepo(join(p, "web")))).toEqual([{ carpeta: "", manifiesto: "package.json", nombre: "web", dependeDe: [{ nombre: "@tienda/ui", linea: 5 }, { nombre: "react-router-dom", linea: 6 }] }]);
   });
 
+  it("una carpeta importada con un alias exacto del tsconfig es una librería: sus componentes y las pantallas que los dibujan", async () => {
+    const p = join(dir, "app");
+    await mkdir(join(p, "web/.git"), { recursive: true });
+    await escribir(p, {
+      "web/package.json": '{ "name": "web", "private": true, "dependencies": { "react-router-dom": "6.0.0" } }',
+      "web/tsconfig.json": '{\n  // comentario\n  "compilerOptions": { "jsx": "react-jsx", "paths": { "@/*": ["./src/*"], "@app": ["./src"], "@ds": ["./ds/src"], "@ds/*": ["./ds/src/*"] } }\n}\n',
+      "web/ds/src/Boton.tsx": "export function Boton() {\n  return <button />;\n}\nexport const COLORES = { a: 1 };\n",
+      "web/ds/src/index.ts": 'export * from "./Boton";\n',
+      "web/ds/src/Boton.page.tsx": "export function BotonPage() {\n  return null;\n}\n",
+      "web/src/Inicio.tsx": 'import { Boton } from "@ds";\nexport function Inicio() {\n  return <Boton />;\n}\n',
+      "web/src/App.tsx": 'import { createBrowserRouter } from "react-router-dom";\nimport { Inicio } from "./Inicio";\nexport const router = createBrowserRouter([{ path: "/", element: <Inicio /> }]);\n',
+    });
+    const repo = leerRepo(join(p, "web"));
+    const r = await tsParser.extract(repo);
+    expect(r.archivos.flatMap((a) => (a.componentes ?? []).map((c) => `${a.ruta}#${c.nombre}`))).toEqual(["ds/src/Boton.tsx#Boton"]);
+    expect(r.archivos.flatMap((a) => (a.usaPaquetes ?? []).map((u) => `${a.ruta}:${u.desde}:${u.paquete}/${u.simbolo}`))).toEqual(["src/Inicio.tsx:Inicio:@ds/Boton"]);
+    // `@app` apunta a todo `src`: es un atajo, no una librería.
+    expect(paquetesPublicados(repo).filter((x) => x.manifiesto === "tsconfig.json")).toEqual([{ carpeta: "ds/src", manifiesto: "tsconfig.json", nombre: "@ds" }]);
+    const reg = join(p, ".flowbrain");
+    await mkdir(reg, { recursive: true });
+    await crearRegistro(reg, p, [join(p, "web")], false);
+    const c = await ejecutar(["brains", "apply", "--root", reg], { FLOWBRAIN_COMANDO: "flowbrain" }, p, async () => "");
+    expect(c.codigo, c.stderr).toBe(0);
+    const g = await grafo(join(reg, (await import("node:fs")).readdirSync(reg).find((d) => !d.includes(".") && d !== "_build")!));
+    const comp = g.nodes.find((n) => n.tipo === "componente");
+    expect(comp?.id).toMatch(/:componente:Boton$/);
+    expect(g.edges.some((e) => e.verbo === "usa" && e.hasta === comp!.id && /:pantalla:\/$/.test(e.desde))).toBe(true);
+  });
+
   it("Vue: lo que el template dibuja cuenta; en un monorepo, una librería de otro workspace también", async () => {
     const p = join(dir, "mono");
     await escribir(p, {

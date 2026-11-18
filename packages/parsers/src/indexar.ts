@@ -11,6 +11,7 @@ import { esquemaParser } from "./esquema-parser.js";
 import { infraParser } from "./infra-parser.js";
 import type { Extraccion, Forma, LlamadaCruda, Parser, RepoFuente } from "./tipos.js";
 import { paqueteDe } from "./tipos.js";
+import { libreriasPorAlias } from "./alias.js";
 
 /** Parsers en orden de prioridad: los posteriores pisan formas y, si son autoritativos, endpoints. */
 export const PARSERS: Parser[] = [tsParser, phpParser, openapiParser, esquemaParser, infraParser];
@@ -580,6 +581,9 @@ export function paquetesPublicados(repo: RepoFuente): PaqueteDelRepo[] {
       out.push({ carpeta, manifiesto: ruta, ...(nombre ? { nombre } : {}), ...(dependeDe.length ? { dependeDe } : {}) });
     }
   }
+  // Una carpeta con alias exacto del tsconfig (`"@ds": ["./design-system/src"]`) se importa como un paquete: su
+  // nombre es el alias y su manifiesto, el tsconfig que lo declara.
+  for (const l of libreriasPorAlias(repo)) out.push({ carpeta: l.carpeta, manifiesto: l.manifiesto, nombre: l.nombre });
   return out;
 }
 

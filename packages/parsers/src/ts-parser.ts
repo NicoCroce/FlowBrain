@@ -3,6 +3,7 @@ import { join } from "node:path";
 import ts from "typescript";
 import { cmp, normalizarRuta } from "@flowbrain/core";
 import { analizarUrl, type Parte } from "./url.js";
+import { libreriaPorAliasDe, libreriasPorAlias } from "./alias.js";
 import {
   type RefSimbolo,
   extraccionVacia,
@@ -523,9 +524,14 @@ function extraer(repo: RepoFuente): Extraccion {
     }
     return librerias.get(paquete)!;
   };
-  const esLibreria = (paquete: string) => libreria(paquete) !== null;
-  const NO_ES_FUENTE = /\.(stories|story|test|spec)\.[^.]+$|(^|\/)(__tests__|__mocks__|stories)\//;
-  const esComponente = (n: string) => /^[A-Z][A-Za-z0-9]*$/.test(n);
+  // Una carpeta que se importa con un alias exacto del tsconfig (`@ds`) también es una librería, con el alias de nombre.
+  const porAlias = libreriasPorAlias(repo);
+  /** Librería a la que pertenece un archivo: la de alias más específica, o el paquete si es una librería. */
+  const libreriaDeArchivo = (archivo: string): string | null => libreriaPorAliasDe(porAlias, archivo)?.nombre ?? libreria(paqueteDe(repo, archivo));
+  // Historias, tests y las páginas de muestra de la librería (`Boton.page.tsx`, `Boton.demo.tsx`, `examples/`).
+  const NO_ES_FUENTE = /\.(stories|story|test|spec|page|demo|example|examples|docs)\.[^.]+$|(^|\/)(__tests__|__mocks__|stories|demos?|examples?)\//;
+  // Con mayúscula inicial y alguna minúscula: `COLORES` o `API_URL` son constantes, no componentes.
+  const esComponente = (n: string) => /^[A-Z][A-Za-z0-9]*$/.test(n) && /[a-z]/.test(n);
   /** Componentes que exporta un archivo de una librería: funciones, clases y constantes con nombre de componente. */
   const componentesExportados = (sf: ts.SourceFile, archivo: string): ComponenteCrudo[] => {
     if (NO_ES_FUENTE.test(archivo)) return [];
@@ -559,7 +565,8 @@ function extraer(repo: RepoFuente): Extraccion {
    * Componentes importados de un paquete que no es del repo (`import { Boton } from "@empresa/ui"`), con el símbolo
    * del archivo que los usa. En un componente de un solo archivo lo que el `<script>` no usa lo usa el template.
    */
-  const usosDePaquetes = (sf: ts.SourceFile, simbolos: Simbolo[], sfc: string | null, propio: string): UsoDePaquete[] => {
+  const usosDePaquetes = (sf: ts.SourceFile, simbolos: Simbolo[], sfc: string | null, archivoPropio: string): UsoDePaquete[] => {
+    const propia = libreriaDeArchivo(archivoPropio);
     const importados = new Map<string, { paquete: string; simbolo: string; linea: number }>();
     for (const st of sf.statements) {
       if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier) || !st.importClause || st.importClause.isTypeOnly) continue;
@@ -567,13 +574,13 @@ function extraer(repo: RepoFuente): Extraccion {
       if (mod.startsWith("node:")) continue;
       const relativo = mod.startsWith(".") || mod.startsWith("/");
       // Un alias del propio repo (`@/components/x`) se resuelve a un archivo del repo: eso ya es `importa`. Salvo que
-      // sea otra librería del mismo monorepo (`@empresa/ui` en `packages/ui`): ahí también cuenta como uso del paquete.
+      // sea otra librería del mismo monorepo (`@empresa/ui` en `packages/ui`) o una carpeta con alias propio (`@ds`):
+      // ahí también cuenta como uso de esa librería.
       const d = checker.getSymbolAtLocation(st.moduleSpecifier)?.declarations?.[0];
       let paquete = nombreDePaquete(mod);
       if (d && ts.isSourceFile(d) && delRepo(d)) {
-        const destino = paqueteDe(repo, rel(d));
-        const nombre = destino !== propio ? libreria(destino) : null;
-        if (!nombre) continue;
+        const nombre = libreriaDeArchivo(rel(d));
+        if (!nombre || nombre === propia) continue;
         paquete = nombre;
       } else if (relativo) continue;
       const ic = st.importClause;
@@ -1404,8 +1411,8 @@ function extraer(repo: RepoFuente): Extraccion {
         for (const m of l.matchAll(/\b(?:\$?router\.(?:push|replace)|navigateTo|goto)\(\s*['"`](\/[^'"`$]*)['"`]/g)) out.navegaciones.push({ paquete, archivo, linea: i + 1, desde: comp, ruta: normalizarRuta(m[1]!), tipo: "navega" });
       });
     }
-    const usaPaquetes = usosDePaquetes(sf, simbolos, EXT_SFC.test(archivo) ? nombreSfc(archivo) : null, paquete);
-    const componentes = esLibreria(paquete) ? componentesExportados(sf, archivo) : [];
+    const usaPaquetes = usosDePaquetes(sf, simbolos, EXT_SFC.test(archivo) ? nombreSfc(archivo) : null, archivo);
+    const componentes = libreriaDeArchivo(archivo) ? componentesExportados(sf, archivo) : [];
     simbolos.sort((a, b) => a.linea - b.linea || cmp(a.nombre, b.nombre));
     const arc: ArchivoCrudo = { lenguaje: lenguajeDe(archivo), ruta: archivo, simbolos };
     if (componentes.length) arc.componentes = componentes;
