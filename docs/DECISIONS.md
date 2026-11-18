@@ -547,3 +547,9 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Sin datos nuevos.** Usa las aristas que el mapa ya tenía; no cambia lo que recibe el agente, que ya tiene `pantalla`, `recorrido` e `impacto` para esto.
    - **Medido en el proyecto real:** la funcionalidad de staff del front llega a 2 pantallas, 8 endpoints del back y 33 tablas. **No se miró en un navegador.**
 
+
+169. **Mapa 3D: tamaño según cuántos hay de cada tipo, dendritas animadas y etiquetas solo al aislar (2026-11-18).** Ajustes de estética pedidos al usar el mapa con siete cerebros.
+   - **Tamaño por tipo.** El radio de un nodo se multiplica por un factor de su tipo: `1,45 − 0,3·log10(cantidad)`, entre 0,5 y 1,45. Con 3 funcionalidades el factor es 1,3; con 150 endpoints, 0,8; con mil o más, 0,5. Se combina con el tamaño por uso o por conexiones y con la escala.
+   - **Dendritas.** La neurona de cada nodo ya no es una imagen quieta: se dibuja dos veces (una espejada), cada copia se mece con su propio vaivén y late. Con más de 1.500 nodos en pantalla va una sola copia, para no perder fluidez.
+   - **Etiquetas.** Arrancan en "Ninguna" (antes "Grandes"); el nodo elegido y el que está bajo el cursor siguen mostrando su nombre. Con "Aislar" prendido se muestran los nombres de todo lo que quedó en pantalla.
+   - **No se miró en un navegador.**

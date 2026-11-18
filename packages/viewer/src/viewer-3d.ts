@@ -92,7 +92,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
 
   var ocultosIniciales = {};
   TIPOS.forEach(function (t) { if (D.tiposIniciales.indexOf(t[0]) < 0) ocultosIniciales[t[0]] = true; });
-  var S = { hiddenTypes: ocultosIniciales, hiddenVerbs: {}, sizeMode: "uso", scale: 0.6, group: "feat", labels: "grandes", selId: null, query: "",
+  var S = { hiddenTypes: ocultosIniciales, hiddenVerbs: {}, sizeMode: "uso", scale: 0.6, group: "feat", labels: "ninguna", selId: null, query: "",
     dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, hiddenBrains: {}, todas: {}, tabC: null, intensidad: 0.4, lineas: 0.6,
     pulsos: !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) };
 
@@ -253,9 +253,16 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
   var cam = { yaw: 0.6, pitch: 0.32, dist: 1050, tx: 0, ty: 0, tz: 0, goal: null };
   var anims = [], proj = [], hover = null, sobreNombre = -1, ptr = null, mouse = null, W = 0, H = 0, F = 1;
   var canvas = document.getElementById("m3-canvas");
+  // Cuantos más nodos hay de un tipo, más chicos se dibujan: tres funcionalidades se ven grandes; mil endpoints, finos.
+  var FACTOR_TIPO = {};
+  (function () {
+    var cuenta = {};
+    N.forEach(function (n) { cuenta[n.tipo] = (cuenta[n.tipo] || 0) + 1; });
+    Object.keys(cuenta).forEach(function (t) { FACTOR_TIPO[t] = Math.max(0.5, Math.min(1.45, 1.45 - 0.3 * Math.log(cuenta[t]) / Math.LN10)); });
+  })();
   function radio(n) {
     var b = S.sizeMode === "uso" ? 3 + 3.4 * Math.log(1 + n.uso) : S.sizeMode === "deg" ? 3 + 3.4 * Math.log(1 + n.deg) : 7;
-    return b * S.scale;
+    return b * S.scale * (FACTOR_TIPO[n.tipo] || 1);
   }
   function base3() { var c = cam, cy = Math.cos(c.yaw), sy = Math.sin(c.yaw), cp = Math.cos(c.pitch), sp = Math.sin(c.pitch); return { right: [cy, 0, -sy], up: [-sy * sp, cp, -cy * sp] }; }
   function project(x, y, z) {
@@ -518,7 +525,19 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
         var hr = p2.r * (4 + fi * 2.4);
         ctx.globalCompositeOperation = "lighter";
         ctx.globalAlpha = Math.min(1, p2.a * (0.52 + 0.16 * Math.sin(T * 0.035 + nn.fase) + fi * 0.8));
-        ctx.drawImage(neurona(col(nn.tipo)), p2.sx - hr, p2.sy - hr, hr * 2, hr * 2);
+        // Las dendritas se mecen y laten: dos copias de la misma neurona, una espejada, cada una con su vaivén. Con
+        // miles de nodos en pantalla va una sola copia, para no perder fluidez.
+        var img = neurona(col(nn.tipo)), al0 = ctx.globalAlpha, late = 1 + 0.07 * Math.sin(T * 0.045 + nn.fase * 2);
+        ctx.save(); ctx.translate(p2.sx, p2.sy);
+        ctx.rotate(nn.fase + 0.3 * Math.sin(T * 0.013 + nn.fase * 3) + T * 0.0012);
+        ctx.drawImage(img, -hr * late, -hr * late, hr * 2 * late, hr * 2 * late);
+        if (!muchos) {
+          ctx.rotate(1.9 + 0.42 * Math.sin(T * 0.009 + nn.fase * 5) - T * 0.0024); ctx.scale(-1, 1);
+          ctx.globalAlpha = al0 * 0.5;
+          var h2 = hr * (0.82 + 0.1 * Math.sin(T * 0.03 + nn.fase));
+          ctx.drawImage(img, -h2, -h2, h2 * 2, h2 * 2);
+        }
+        ctx.restore();
         ctx.globalCompositeOperation = "source-over";
       }
       ctx.globalAlpha = p2.a;
@@ -537,6 +556,8 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
       var p3 = P[l], n3 = p3.n;
       var show = n3 === sel || n3 === hov || (sel && rutaN && rutaN.has(n3) && (rutaN.size <= 40 || n3.tipo === "tabla" || n3.c !== sel.c)) || S.labels === "todas" || (S.labels === "grandes" && p3.r > 8.5) || (match && match.has(n3));
       if (S.labels === "ninguna" && n3 !== sel && n3 !== hov) show = false;
+      // Con un recorrido aislado queda poco en pantalla: ahí los nombres se prenden solos.
+      if (S.isolate && isoSet) show = true;
       if (!show || p3.a < 0.3) continue;
       ctx.globalAlpha = Math.min(1, p3.a + 0.15); ctx.lineWidth = 3.5; ctx.strokeStyle = "rgba(10,12,17,.9)";
       var lx = p3.sx + p3.r + 6;
