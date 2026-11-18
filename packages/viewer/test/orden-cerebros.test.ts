@@ -53,6 +53,8 @@ describe("orden de los cerebros en el polígono", () => {
     expect(GRAFO3D_JS).toContain("brilloCruce(e)");
     // Recorrido de punta a punta al elegir una funcionalidad, una pantalla o un endpoint.
     for (const pieza of ["function computeRuta(", "function recorridoDe(", "rutaE.has(e)"]) expect(GRAFO3D_JS).toContain(pieza);
+    // Pop-up del nodo: prende a mano los relacionados de un tipo apagado.
+    for (const pieza of ["function relacionadosDe(", "S.shownIds[x.id] = true", "function accionEn("]) expect(GRAFO3D_JS).toContain(pieza);
     expect(() => new Function(GRAFO3D_JS)).not.toThrow();
   });
 });

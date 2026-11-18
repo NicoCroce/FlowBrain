@@ -556,3 +556,9 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Jerarquía de tamaños (mismo día).** Con solo la cantidad, las tablas quedaban más grandes que los endpoints (hay menos tablas, y cada una se usa muchas veces). El factor de cada tipo ahora respeta el orden funcionalidad ≥ pantalla ≥ endpoint > tabla > archivo (la tabla, como mucho el 80 % del endpoint), y el uso agranda mucho menos a tablas y archivos.
    - **Relaciones que no saturan (mismo día).** Las relaciones resaltadas de un recorrido bajan su opacidad según cuántas son (plena hasta 24, hasta un mínimo del 20 %), las que terminan en una tabla un 30 % más, y con más de 60 se afinan. La relación del nodo bajo el cursor va siempre plena.
 
+170. **Prender desde un nodo sus relacionados apagados (2026-11-18).** Con las tablas (o cualquier tipo) apagadas para no saturar el mapa, no había forma de ver las de un endpoint puntual sin prender todas.
+   - **Pop-up.** Al pasar el cursor por un nodo que tiene relacionados de un tipo apagado, el cartel suma un botón por tipo: "Mostrar 6 tablas", "Mostrar 2 archivos". Vale para cualquier nodo y en las dos direcciones de la relación, así que se puede ir encadenando: pantalla → endpoints → tablas.
+   - **Solo esos.** El botón prende los relacionados de ese nodo, no el tipo entero. Una vez prendidos, el mismo cartel ofrece "Ocultar". Prender o apagar el tipo desde el panel izquierdo descarta lo prendido a mano.
+   - **Anclado al nodo.** Con botones, el cartel se dibuja pegado al nodo y no sigue al cursor, y el nodo sigue activo mientras el cursor está sobre el cartel; sin botones se comporta como antes.
+   - **No se miró en un navegador.**
+

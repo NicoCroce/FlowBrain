@@ -93,7 +93,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
   var ocultosIniciales = {};
   TIPOS.forEach(function (t) { if (D.tiposIniciales.indexOf(t[0]) < 0) ocultosIniciales[t[0]] = true; });
   var S = { hiddenTypes: ocultosIniciales, hiddenVerbs: {}, sizeMode: "uso", scale: 0.6, group: "feat", labels: "ninguna", selId: null, query: "",
-    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, hiddenBrains: {}, todas: {}, tabC: null, intensidad: 0.4, lineas: 0.6,
+    dragChildren: true, rotating: true, isolate: false, hiddenIds: {}, shownIds: {}, hiddenBrains: {}, todas: {}, tabC: null, intensidad: 0.4, lineas: 0.6,
     pulsos: !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) };
 
   function setParents(mode) {
@@ -107,7 +107,32 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     });
   }
   function desc(n) { var out = [], st = n.kids.slice(); while (st.length) { var c = st.pop(); out.push(c); for (var i = 0; i < c.kids.length; i++) st.push(c.kids[i]); } return out; }
-  function base(n) { return !S.hiddenTypes[n.tipo] && !S.hiddenIds[n.id] && !S.hiddenBrains[n.c]; }
+  // Un nodo de un tipo apagado igual se ve si se lo prendió a mano desde el pop-up de un nodo relacionado.
+  function base(n) { return (!S.hiddenTypes[n.tipo] || S.shownIds[n.id]) && !S.hiddenIds[n.id] && !S.hiddenBrains[n.c]; }
+  /** Relacionados de un nodo que están apagados por su tipo (se pueden prender) y los que se prendieron a mano (se pueden volver a apagar), por tipo. */
+  function relacionadosDe(n) {
+    var apag = {}, prend = {};
+    n.adj.forEach(function (a) {
+      var x = a.n;
+      if (S.hiddenIds[x.id] || S.hiddenBrains[x.c] || !S.hiddenTypes[x.tipo]) return;
+      var d = S.shownIds[x.id] ? prend : apag;
+      (d[x.tipo] = d[x.tipo] || []).indexOf(x) < 0 && d[x.tipo].push(x);
+    });
+    var out = [];
+    TIPOS.forEach(function (t) {
+      if (apag[t[0]]) out.push({ tipo: t[0], nodos: apag[t[0]], prender: true, texto: "Mostrar " + apag[t[0]].length + " " + (apag[t[0]].length === 1 ? t[2] : t[1]).toLowerCase() });
+      if (prend[t[0]]) out.push({ tipo: t[0], nodos: prend[t[0]], prender: false, texto: "Ocultar " + prend[t[0]].length + " " + (prend[t[0]].length === 1 ? t[2] : t[1]).toLowerCase() });
+    });
+    return out;
+  }
+  // El pop-up del nodo bajo el cursor: su caja y las acciones que se pueden apretar.
+  var pop = null;
+  function enPop(x, y, margen) { return !!pop && x >= pop.x - margen && x <= pop.x + pop.w + margen && y >= pop.y - margen && y <= pop.y + pop.h + margen; }
+  function accionEn(x, y) {
+    if (!pop) return null;
+    for (var i = 0; i < pop.acciones.length; i++) { var a = pop.acciones[i]; if (x >= a.x && x <= a.x + a.w && y >= a.y && y <= a.y + a.h) return a; }
+    return null;
+  }
   // Una relación entre dos cerebros: lo que viaja de uno a otro.
   function cruza(e) { return e.a.c !== e.b.c; }
   // Brillo de una línea entre cerebros en este cuadro: casi apagada y, de a ratos, se enciende (sin(…)^4 deja el pico
@@ -574,15 +599,33 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
       var lx = p3.sx + p3.r + 6;
       ctx.strokeText(n3.nombre, lx, p3.sy); ctx.fillStyle = n3 === sel ? "#FFFFFF" : "#D5DAE4"; ctx.fillText(n3.nombre, lx, p3.sy); ctx.globalAlpha = 1;
     }
-    if (hov && !ptr && mouse) {
+    pop = null;
+    var ph = hov && !ptr && mouse ? pm.get(hov) : null;
+    if (ph) {
       var hijos = desc(hov).length, lineas = [hov.nombre, TIPO[hov.tipo].uno + " · " + hov.uso + " usos · " + hov.deg + " conexiones"];
       if (hijos) lineas.push(hijos + " hijos se mueven con este nodo");
+      var accs = relacionadosDe(hov);
       ctx.font = "500 12px " + color("sans");
-      var w = 0; lineas.forEach(function (t) { w = Math.max(w, ctx.measureText(t).width); });
-      var bx = Math.max(8, Math.min(W - w - 30, mouse.x + 16)), byy = Math.max(8, Math.min(H - lineas.length * 18 - 24, mouse.y + 16));
+      var w = 0; lineas.concat(accs.map(function (a) { return a.texto + "     "; })).forEach(function (t) { w = Math.max(w, ctx.measureText(t).width); });
+      var alto = lineas.length * 18 + 14 + (accs.length ? accs.length * 28 + 8 : 0);
+      // Con acciones, el cartel se ancla al nodo (no al cursor) para poder llevar el cursor hasta el botón.
+      var ax = accs.length ? ph.sx + ph.r * 0.5 : mouse.x + 16, ay = accs.length ? ph.sy + ph.r * 0.5 : mouse.y + 16;
+      var bx = Math.max(8, Math.min(W - w - 30, ax)), byy = Math.max(8, Math.min(H - alto - 10, ay));
       ctx.fillStyle = "rgba(18,22,32,.96)"; ctx.strokeStyle = "#2A3142"; ctx.lineWidth = 1;
-      ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, byy, w + 24, lineas.length * 18 + 14, 8); else ctx.rect(bx, byy, w + 24, lineas.length * 18 + 14); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(bx, byy, w + 24, alto, 8); else ctx.rect(bx, byy, w + 24, alto); ctx.fill(); ctx.stroke();
       lineas.forEach(function (t, ix) { ctx.fillStyle = ix === 0 ? "#FFFFFF" : "#A3ABBD"; ctx.font = (ix === 0 ? "600 " : "400 ") + "12px " + color("sans"); ctx.fillText(t, bx + 12, byy + 16 + ix * 18); });
+      if (accs.length) {
+        pop = { n: hov, x: bx, y: byy, w: w + 24, h: alto, acciones: [] };
+        accs.forEach(function (a, ix) {
+          var yy = byy + lineas.length * 18 + 14 + ix * 28, caja = { x: bx + 8, y: yy, w: w + 8, h: 24, acc: a };
+          var encima = mouse.x >= caja.x && mouse.x <= caja.x + caja.w && mouse.y >= caja.y && mouse.y <= caja.y + caja.h;
+          ctx.fillStyle = encima ? "rgba(91,124,250,.32)" : "rgba(91,124,250,.14)"; ctx.strokeStyle = encima ? "#8FA6FF" : "#36457A";
+          ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(caja.x, caja.y, caja.w, caja.h, 6); else ctx.rect(caja.x, caja.y, caja.w, caja.h); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = col(a.tipo); ctx.beginPath(); ctx.arc(caja.x + 12, caja.y + 12, 4, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#E6EAF2"; ctx.font = "500 12px " + color("sans"); ctx.fillText(a.texto, caja.x + 24, caja.y + 12);
+          pop.acciones.push(caja);
+        });
+      }
     }
   }
   var corriendo = false;
@@ -599,7 +642,15 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
   // ---------- Interacción con el lienzo ----------
   function pos(ev) { var r = canvas.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
   canvas.addEventListener("pointerdown", function (ev) {
-    var p = pos(ev), cn = MULTI ? nombreEn(p.x, p.y) : -1, hit = cn >= 0 ? null : pick(p.x, p.y);
+    var p = pos(ev);
+    // Un botón del pop-up: prende (o vuelve a apagar) los relacionados de ese tipo, sin mover ni elegir nada.
+    var boton = accionEn(p.x, p.y);
+    if (boton) {
+      boton.acc.nodos.forEach(function (x) { if (boton.acc.prender) S.shownIds[x.id] = true; else delete S.shownIds[x.id]; });
+      actualizarActivos(); reacomodar(0.3); ui();
+      return;
+    }
+    var cn = MULTI ? nombreEn(p.x, p.y) : -1, hit = cn >= 0 ? null : pick(p.x, p.y);
     canvas.setPointerCapture(ev.pointerId);
     ptr = { x: p.x, y: p.y, moved: 0, hit: hit, group: null, cerebro: cn };
     if (hit) ptr.group = S.dragChildren && !ev.shiftKey ? [hit].concat(desc(hit)) : [hit];
@@ -607,6 +658,8 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
   });
   canvas.addEventListener("pointermove", function (ev) {
     var p = pos(ev); mouse = p;
+    // Mientras el cursor está sobre el pop-up (o yendo hacia él), el nodo sigue siendo el mismo.
+    if (!ptr && pop && enPop(p.x, p.y, 10)) { hover = pop.n; canvas.style.cursor = accionEn(p.x, p.y) ? "pointer" : "default"; return; }
     if (!ptr) { sobreNombre = MULTI ? nombreEn(p.x, p.y) : -1; hover = sobreNombre >= 0 ? null : pick(p.x, p.y); canvas.style.cursor = sobreNombre >= 0 ? "move" : hover ? "pointer" : "grab"; return; }
     var dx = p.x - ptr.x, dy = p.y - ptr.y; ptr.x = p.x; ptr.y = p.y; ptr.moved += Math.abs(dx) + Math.abs(dy);
     if (ptr.cerebro >= 0) {
@@ -812,8 +865,8 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     else if (d.tabC) S.tabC = d.tabC;
     else if (d.todas) S.todas[d.todas] = !S.todas[d.todas];
     else if (d.focoCerebro) { var fc = Number(d.focoCerebro); cam.goal = { x: OX[fc], y: OY[fc], z: OZ[fc], dist: Math.max(600, (BRS[fc] || 260) * 3.1) }; }
-    else if (d.tipos) { TIPOS.forEach(function (t) { S.hiddenTypes[t[0]] = d.tipos === "ninguno"; }); actualizarActivos(); reacomodar(0.3); }
-    else if (d.tipo) { S.hiddenTypes[d.tipo] = !S.hiddenTypes[d.tipo]; actualizarActivos(); reacomodar(0.3); }
+    else if (d.tipos) { S.shownIds = {}; TIPOS.forEach(function (t) { S.hiddenTypes[t[0]] = d.tipos === "ninguno"; }); actualizarActivos(); reacomodar(0.3); }
+    else if (d.tipo) { N.forEach(function (x) { if (x.tipo === d.tipo) delete S.shownIds[x.id]; }); S.hiddenTypes[d.tipo] = !S.hiddenTypes[d.tipo]; actualizarActivos(); reacomodar(0.3); }
     else if (d.verbo) { S.hiddenVerbs[d.verbo] = !S.hiddenVerbs[d.verbo]; armarResortes(); }
     else if (d.mostrarOcultos) { S.hiddenIds = {}; actualizarActivos(); }
     else if (d.tam) S.sizeMode = d.tam;
