@@ -171,16 +171,27 @@ export async function doctor(raiz: string, opciones: { carpetas?: string[]; sett
   const comandos = Object.values((s?.["hooks"] ?? {}) as Record<string, Array<{ hooks?: Array<{ command?: string }> }>>).flatMap((es) => es.flatMap((e) => (e.hooks ?? []).map((h) => h.command ?? "")));
   const hook = comandos.find((c) => / hook claude-code( |$)/.test(c));
   out.push({ que: "hooks de Claude Code", ok: !!hook, detalle: hook ? `registrados en ${settings}` : `no están en ${settings}; flowbrain init --claude-code los registra` });
-  const configs = opciones.mcpConfig ?? [join(homedir(), ".claude.json"), join(process.cwd(), ".mcp.json")];
-  let mcp: string | null = null;
+  const mcp = await mcpRegistrado(opciones.mcpConfig);
+  out.push({ que: "servidor MCP", ok: !!mcp, detalle: mcp ? `registrado en ${mcp}` : "no está registrado; flowbrain init imprime la línea de claude mcp add" });
+  return out;
+}
+
+/** Dónde está registrado el servidor MCP de FlowBrain (`~/.claude.json` o `.mcp.json`), o null si no lo está. */
+export async function mcpRegistrado(configs: string[] = [join(homedir(), ".claude.json"), join(process.cwd(), ".mcp.json")]): Promise<string | null> {
+  const leerJson = async (p: string): Promise<Record<string, unknown> | null> => {
+    try {
+      return JSON.parse(await readFile(p, "utf8")) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  };
   for (const p of configs) {
     const j = await leerJson(p);
     const propios = (j?.["mcpServers"] ?? {}) as Record<string, { args?: string[]; command?: string }>;
     const deProyectos = Object.values((j?.["projects"] ?? {}) as Record<string, { mcpServers?: typeof propios }>).map((x) => x.mcpServers ?? {});
     // El servidor de FlowBrain: registrado con ese nombre (o `brain`, el anterior), o cualquier entrada cuyo comando sea `flowbrain … serve`.
     const esBrain = ([nombre, v]: [string, { args?: string[]; command?: string }]) => nombre === "flowbrain" || nombre === "brain" || /brain\b.*\bserve\b/.test([v.command ?? "", ...(v.args ?? [])].join(" "));
-    if ([propios, ...deProyectos].some((m) => Object.entries(m).some(esBrain))) { mcp = p; break; }
+    if ([propios, ...deProyectos].some((m) => Object.entries(m).some(esBrain))) return p;
   }
-  out.push({ que: "servidor MCP", ok: !!mcp, detalle: mcp ? `registrado en ${mcp}` : "no está registrado; flowbrain init imprime la línea de claude mcp add" });
-  return out;
+  return null;
 }

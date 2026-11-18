@@ -575,3 +575,11 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Medido en el banco:** 0 rechazos de extractores, 0 controles fallando, traza pantalla Vue → FastAPI → Go de punta a punta, e impacto de `tabla-pagos` (Go) que llega a los servicios de Python y a la pantalla de pago de Vue.
    - **Pendiente:** rutas por archivos de Next `pages/`, Nuxt y SvelteKit; Angular HttpClient, ky y `$fetch`; entradas que no son HTTP (cron, consumidores, gRPC) en el extractor; `screen`, `feature` y `trace` de la CLI no cruzan cerebros (el MCP sí); la llamada de un layout se atribuye al servicio y no a las pantallas que envuelve.
 
+172. **Un menú en la terminal (2026-11-18).** Se pidió un punto de entrada simple: escribir `flowbrain` y elegir qué hacer, en vez de recordar comandos.
+   - **`flowbrain` sin argumentos, en una terminal, abre el menú** (también `flowbrain menu`). Flechas y Enter, o el número; `q` sale. Sin terminal sigue imprimiendo la ayuda, así ningún script cambia.
+   - **Las opciones dependen del proyecto.** El proyecto se busca hacia arriba (sirve parado en un subrepo). Sin `.flowbrain/`: configurar (es `install`: detecta los subrepositorios y arma los cerebros), analizar, MCP, actualizar. Configurado: además reindexar, visor y estado. La cabecera dice el proyecto, los cerebros y si el MCP está conectado.
+   - **Analizar es siempre completo**, como pidió el usuario: abre Claude Code con un prompt que recorre las tres guías en orden (estudio y extractores, comunicación entre servicios, funcionalidades) leyéndolas con `--guide`. **Por qué así:** las guías salen del mismo código que los comandos `/flowbrain-*`, pero no dependen de que estén instalados ni de encadenar comandos de barra.
+   - **Lo que toca la configuración del usuario pregunta antes:** registrar el MCP y actualizar FlowBrain.
+   - **`flowbrain setup`:** deja la máquina al día (comando, hooks y comandos de Claude Code) sin tocar ningún proyecto. Lo usa Actualizar después de traer el código nuevo, porque el proceso que corre el menú todavía tiene el viejo.
+   - Cada opción corre los mismos comandos que se escriben a mano; el menú no agrega lógica propia.
+

@@ -10,6 +10,8 @@ claude mcp add --scope user flowbrain -- npx -y flowbrain serve --sync
 
 `install` crea `.flowbrain/` en el proyecto, pregunta dónde están los repositorios, indexa todo, deja el visor en `.flowbrain/flowbrain.html` y los comandos de Claude Code `/flowbrain-study` (estudia cada repo y escribe los extractores que completan el índice), `/flowbrain-index` (la comunicación real entre servicios) y `/flowbrain-features` (las funcionalidades de producto).
 
+Después, `flowbrain` sin argumentos abre un menú en la terminal: configurar el proyecto, analizarlo completo con Claude Code, reindexar, abrir el visor, conectar el MCP y actualizar FlowBrain.
+
 Consultas frecuentes:
 
 ```bash

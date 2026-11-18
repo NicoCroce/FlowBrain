@@ -20,6 +20,18 @@ flowbrain install
 
 Volver a correrlo actualiza. Para reagrupar repos o apagar la comunicación se edita `.flowbrain/flowbrain.yaml` (ver "Varios cerebros"). Los hooks y el servidor MCP usan el `.flowbrain` de la carpeta donde se abrió Claude Code, o de cualquier carpeta por encima; fuera de un proyecto no hacen nada. `.flowbrain/.gitignore` deja fuera lo derivado (`_build/` y el visor).
 
+### El menú
+
+`flowbrain` sin argumentos (o `flowbrain menu`), en una terminal, abre un menú con lo que se puede hacer en el proyecto donde estás parado (lo encuentra también desde un subrepo):
+
+- **Configurar este proyecto** (sin `.flowbrain/`): lo mismo que `flowbrain install`. Con el proyecto ya configurado, **Actualizar la configuración** deja al día el comando, los hooks y los comandos de Claude Code, y reindexa.
+- **Analizar el proyecto completo:** abre Claude Code con el análisis de punta a punta, en orden: estudio de cada repo y extractores (`flowbrain coverage --guide`), comunicación entre servicios (`flowbrain evidence --guide`) y funcionalidades de producto (`flowbrain feature --guide`). Si el proyecto no está configurado, lo configura antes. El análisis es siempre completo: no hay una versión rápida.
+- **Reindexar**, **Abrir el visor** y **Ver estado** (todos los cerebros).
+- **Conectar Claude Code (MCP):** registra el servidor para todos tus proyectos; pregunta antes.
+- **Actualizar FlowBrain:** desde el repo, `git pull --ff-only`, `pnpm install` y `flowbrain setup`; con el paquete publicado, `npm install -g flowbrain@latest`. Pregunta antes.
+
+`flowbrain setup` deja lista la máquina (comando, hooks y comandos de Claude Code) sin tocar ningún proyecto. Sin terminal, `flowbrain` sin argumentos imprime la ayuda.
+
 ### Que un modelo analice la comunicación real
 
 La consola une llamadas con endpoints por método y ruta. Eso no alcanza para saber a qué servidor va una llamada: dos APIs pueden exponer las mismas rutas. Cuando una llamada coincide en más de un cerebro, no se une a ninguno y queda como disputada, hasta que una conexión declarada en `.flowbrain/flowbrain.yaml` diga a qué servicio va cada base de URL.

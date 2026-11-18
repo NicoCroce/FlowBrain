@@ -61,6 +61,10 @@ const AYUDA = `flowbrain <comando> [opciones]
 Grafo de conocimiento del sistema para agentes de código. Empezá con "flowbrain install" parado en el proyecto.
 
 Comandos:
+  (sin comando) | menu                      menú en la terminal: configurar el proyecto, analizarlo completo con Claude
+                                            Code, reindexar, abrir el visor, conectar el MCP y actualizar FlowBrain
+  setup                                     deja lista la máquina (comando, hooks y comandos de Claude Code) sin
+                                            tocar ningún proyecto
   init [dir] [--claude-code]                crea un brain en dir (por defecto el actual) y lo compila;
                                             con --claude-code registra los hooks en ~/.claude/settings.json
   compile                                   compila páginas y JSON → _build/, INDEX.md, backlinks
@@ -135,6 +139,30 @@ const entero = (v: string | undefined, nombre: string) => {
 };
 
 /** Ejecuta la CLI sin efectos sobre el proceso: devuelve código y salidas. Testeable. */
+/** Deja lista la máquina: el comando `flowbrain` en el PATH, los hooks y los comandos de Claude Code. */
+async function prepararMaquina(env: NodeJS.ProcessEnv, cwd: string, settingsOpt?: string, binOpt?: string): Promise<string[]> {
+  const cmd = comandoBrain(env);
+  const settings = settingsOpt !== undefined ? resolve(cwd, settingsOpt) : join(homedir(), ".claude/settings.json");
+  const bin = VERSION === "dev" || binOpt !== undefined ? await instalarComando(env, binOpt !== undefined ? resolve(cwd, binOpt) : undefined) : null;
+  const cambio = await instalarHooksClaudeCode(settings, `${cmd} hook claude-code`);
+  // Los comandos de Claude Code (las guías para el modelo) van junto a los settings.
+  const comandos = join(dirname(settings), "commands");
+  await mkdir(comandos, { recursive: true });
+  const comandoCC = join(comandos, `${NOMBRE_COMANDO}.md`);
+  const comandoFeat = join(comandos, `${NOMBRE_FUNCIONALIDADES}.md`);
+  const comandoEstudio = join(comandos, `${NOMBRE_ESTUDIO}.md`);
+  await writeFile(comandoCC, GUIA_ANALISIS, "utf8");
+  await writeFile(comandoFeat, GUIA_FUNCIONALIDADES, "utf8");
+  await writeFile(comandoEstudio, GUIA_ESTUDIO, "utf8");
+  return [
+    ...(bin ? [`Comando flowbrain en ${bin.archivo}${bin.enPath ? "" : ` (esa carpeta no está en tu PATH: agregá export PATH="${dirname(bin.archivo)}:$PATH" a tu ~/.zshrc)`}.`] : []),
+    `Hooks de Claude Code ${cambio ? "registrados" : "ya estaban registrados"} en ${settings} (UserPromptSubmit y SessionEnd).`,
+    `Comando /${NOMBRE_COMANDO} para Claude Code en ${comandoCC}: indexa el proyecto y analiza la comunicación real entre servicios.`,
+    `Comando /${NOMBRE_FUNCIONALIDADES} en ${comandoFeat}: deduce y completa las funcionalidades de producto de cada cerebro.`,
+    `Comando /${NOMBRE_ESTUDIO} en ${comandoEstudio}: estudia cómo está hecho cada repo y escribe los extractores que completan el índice.`,
+  ];
+}
+
 export async function ejecutar(
   argv: string[],
   env: NodeJS.ProcessEnv = process.env,
@@ -192,6 +220,7 @@ export async function ejecutar(
   const [comando, arg] = positionals;
   if (o.version) return { codigo: 0, stdout: `${VERSION}\n`, stderr: "" };
   if (comando === "help") return { codigo: 0, stdout: AYUDA, stderr: "" };
+  if (comando === "menu") return { codigo: 2, stdout: "", stderr: "el menú necesita una terminal interactiva; sin ella, usá los comandos (flowbrain help)\n" };
   if (o.help || !comando) return { codigo: comando || o.help ? 0 : 2, stdout: AYUDA, stderr: "" };
   // Sin --root ni $FLOWBRAIN_ROOT: el `.flowbrain` del proyecto donde se está parado (en esta carpeta o por encima).
   const explicita = o.root ?? env.FLOWBRAIN_ROOT;
@@ -223,31 +252,17 @@ export async function ejecutar(
       return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
     }
 
+    if (comando === "setup") {
+      // Solo la máquina: el comando en el PATH, los hooks y los comandos de Claude Code. No toca ningún proyecto.
+      return { codigo: 0, stdout: (await prepararMaquina(env, cwd, o.settings, o.bin)).join("\n") + "\n", stderr: "" };
+    }
+
     if (comando === "install") {
       // Un solo comando, parado en el proyecto. Deja lista la máquina (comando en el PATH y hooks de Claude Code, sin
       // atarlos a una carpeta) y arma `.flowbrain/` en el proyecto: pregunta dónde están los repos y cómo dividirlos.
       const proyecto = resolve(cwd, arg ?? ".");
       const cmd = comandoBrain(env);
-      const settings = o.settings !== undefined ? resolve(cwd, o.settings) : join(homedir(), ".claude/settings.json");
-      const bin = VERSION === "dev" || o.bin !== undefined ? await instalarComando(env, o.bin !== undefined ? resolve(cwd, o.bin) : undefined) : null;
-      const cambio = await instalarHooksClaudeCode(settings, `${cmd} hook claude-code`);
-      // El comando de Claude Code para que un modelo indexe y analice la comunicación real: va junto a los settings.
-      const comandoCC = join(dirname(settings), "commands", `${NOMBRE_COMANDO}.md`);
-      await mkdir(dirname(comandoCC), { recursive: true });
-      await writeFile(comandoCC, GUIA_ANALISIS, "utf8");
-      const comandoFeat = join(dirname(settings), "commands", `${NOMBRE_FUNCIONALIDADES}.md`);
-      await writeFile(comandoFeat, GUIA_FUNCIONALIDADES, "utf8");
-      // Y el que estudia cada repo y escribe los extractores que completan el índice.
-      const comandoEstudio = join(dirname(settings), "commands", `${NOMBRE_ESTUDIO}.md`);
-      await writeFile(comandoEstudio, GUIA_ESTUDIO, "utf8");
-      const lineas = [
-        ...(bin ? [`Comando flowbrain en ${bin.archivo}${bin.enPath ? "" : ` (esa carpeta no está en tu PATH: agregá export PATH="${dirname(bin.archivo)}:$PATH" a tu ~/.zshrc)`}.`] : []),
-        `Hooks de Claude Code ${cambio ? "registrados" : "ya estaban registrados"} en ${settings} (UserPromptSubmit y SessionEnd).`,
-        `Comando /${NOMBRE_COMANDO} para Claude Code en ${comandoCC}: indexa el proyecto y analiza la comunicación real entre servicios.`,
-        `Comando /${NOMBRE_FUNCIONALIDADES} en ${comandoFeat}: deduce y completa las funcionalidades de producto de cada cerebro.`,
-        `Comando /${NOMBRE_ESTUDIO} en ${comandoEstudio}: estudia cómo está hecho cada repo y escribe los extractores que completan el índice.`,
-        "",
-      ];
+      const lineas = [...(await prepararMaquina(env, cwd, o.settings, o.bin)), ""];
       const reg = join(proyecto, CARPETA_PROYECTO);
       await mkdir(reg, { recursive: true });
       if (!(await esRegistro(reg))) {
@@ -652,11 +667,19 @@ if (esMain && process.argv[2] === "serve") {
   await servir(process.argv.slice(3), process.env, (raiz) => sync(raiz, { carpetas: (process.env.FLOWBRAIN_REPOS ?? "").split(":").filter(Boolean) }));
 } else if (esMain) {
   // Solo se pregunta cuando hay una persona del otro lado.
-  const preguntar = process.stdin.isTTY && process.stdout.isTTY ? async (q: string) => {
+  const interactivo = !!(process.stdin.isTTY && process.stdout.isTTY);
+  const preguntar = interactivo ? async (q: string) => {
     const rl = createInterface({ input: process.stdin, output: process.stdout });
     try { return await rl.question(q); } finally { rl.close(); }
   } : undefined;
-  const r = await ejecutar(process.argv.slice(2), process.env, process.cwd(), leerStdin, preguntar);
+  const args = process.argv.slice(2);
+  if (interactivo && (args.length === 0 || (args.length === 1 && args[0] === "menu"))) {
+    // Sin argumentos y con una persona del otro lado: el menú.
+    const { menu, terminal } = await import("./menu.js");
+    await menu(process.cwd(), terminal((a, cwd) => ejecutar(a, process.env, cwd, leerStdin, preguntar)));
+    process.exit(0);
+  }
+  const r = await ejecutar(args, process.env, process.cwd(), leerStdin, preguntar);
   process.stdout.write(r.stdout);
   process.stderr.write(r.stderr);
   process.exitCode = r.codigo;
