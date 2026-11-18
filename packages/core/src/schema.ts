@@ -4,10 +4,22 @@ import { z } from "zod";
 
 export const TIPOS_PAGINA = ["repo", "svc", "lib", "db", "queue", "ext", "tabla", "feat", "team", "decision"] as const;
 export const TIPOS_GENERADOS = ["contrato", "endpoint", "archivo", "pantalla"] as const;
-export type TipoPagina = (typeof TIPOS_PAGINA)[number];
+export type TipoConocido = (typeof TIPOS_PAGINA)[number];
+/**
+ * Tipo de una página: uno de los conocidos o uno propio del proyecto (`job`, `topic`, `componente`, `webhook`…), en
+ * minúsculas. Un tipo propio va en `technology/` o en `product/`, acepta las relaciones de datos y de dependencia con
+ * cualquier pieza, y fluye igual al impacto, al visor y a las consultas.
+ */
+export type TipoPagina = TipoConocido | (string & {});
 export type Tipo = TipoPagina | (typeof TIPOS_GENERADOS)[number];
+export const TIPO_PROPIO = /^[a-z][a-z0-9_]{1,30}$/;
+export const esTipoPropio = (t: string) => !(TIPOS_PAGINA as readonly string[]).includes(t) && !(TIPOS_GENERADOS as readonly string[]).includes(t);
+/** Verbos que acepta un tipo propio, de un lado o del otro. */
+const VERBOS_TIPO_PROPIO = new Set(["llama_a", "publica_en", "consume_de", "lee_de", "escribe_en", "depende_de", "implementa", "decidido_por", "pertenece_a"]);
+/** Carpeta de una página: la de su tipo; un tipo propio puede ir en cualquiera de las dos. */
+export const carpetasDeTipo = (t: string): Array<"product" | "technology"> => (esTipoPropio(t) ? ["technology", "product"] : [CARPETA_POR_TIPO[t as TipoConocido]]);
 
-export const CARPETA_POR_TIPO: Record<TipoPagina, "product" | "technology"> = {
+export const CARPETA_POR_TIPO: Record<TipoConocido, "product" | "technology"> = {
   repo: "technology",
   svc: "technology",
   lib: "technology",
@@ -60,7 +72,7 @@ export const VERBOS_RELACION = [
 export const VERBOS_DATOS: readonly Verbo[] = ["llama_a", "publica_en", "consume_de", "lee_de", "escribe_en"];
 
 /** Pares (desde → hasta) permitidos por verbo. */
-const TODOS_PAGINA: readonly TipoPagina[] = TIPOS_PAGINA;
+const TODOS_PAGINA: readonly Tipo[] = TIPOS_PAGINA;
 export const DOMINIO: Record<Verbo, ReadonlyArray<readonly [readonly Tipo[], readonly Tipo[]]>> = {
   llama_a: [
     [["svc", "lib", "ext"], ["svc", "ext"]],
@@ -101,6 +113,7 @@ export const DOMINIO: Record<Verbo, ReadonlyArray<readonly [readonly Tipo[], rea
 };
 
 export function verboAdmite(verbo: Verbo, desde: Tipo, hasta: Tipo): boolean {
+  if ((esTipoPropio(desde) || esTipoPropio(hasta)) && VERBOS_TIPO_PROPIO.has(verbo)) return true;
   return DOMINIO[verbo].some(([ds, hs]) => ds.includes(desde) && hs.includes(hasta));
 }
 
@@ -160,7 +173,7 @@ export const RelacionSchema = z
 export const FrontmatterSchema = z
   .object({
     id: z.string(),
-    tipo: z.enum(TIPOS_PAGINA),
+    tipo: z.union([z.enum(TIPOS_PAGINA), z.string().regex(TIPO_PROPIO, "tipo: uno conocido o uno propio en minúsculas (job, topic, componente…)").refine((t) => !(TIPOS_GENERADOS as readonly string[]).includes(t), "tipo: ese tipo lo genera FlowBrain, no se escribe en una página")]),
     nombre: z.string().min(1),
     resumen: z
       .string()

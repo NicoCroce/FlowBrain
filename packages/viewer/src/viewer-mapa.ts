@@ -1,4 +1,4 @@
-import { IMPACTO_JS } from "@flowbrain/core";
+import { DEPENDE_JS, IMPACTO_JS } from "@flowbrain/core";
 
 /**
  * "Impacto" (si cambia esta pieza, qué se ve afectado, por niveles y con el porqué) y el enrutador de todo el visor:
@@ -7,6 +7,8 @@ import { IMPACTO_JS } from "@flowbrain/core";
  */
 export const MAPA_JS =
   IMPACTO_JS +
+  "\n" +
+  DEPENDE_JS +
   String.raw`
 (function () {
   "use strict";
@@ -19,7 +21,7 @@ export const MAPA_JS =
   var plural = function (n, uno, varios) { return n + " " + (n === 1 ? uno : varios); };
   var TIPO = { feat: "funcionalidad", pantalla: "pantalla", tabla: "tabla", endpoint: "endpoint", svc: "servicio", ext: "servicio externo", db: "base de datos", queue: "cola", lib: "librería", repo: "repo" };
   var TIPOS = { feat: "funcionalidades", pantalla: "pantallas", tabla: "tablas", endpoint: "endpoints", svc: "servicios", ext: "servicios externos", db: "bases de datos", queue: "colas", lib: "librerías", repo: "repos" };
-  var VERBO = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de" };
+  var VERBO = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" };
   var puntoT = function (t) { return '<span class="punto" style="background:' + color(t) + '"></span>'; };
   var punto = function (id) { return puntoT(tipo(id)); };
   var entran = {}, salen = {};
@@ -69,27 +71,8 @@ export const MAPA_JS =
    * Igual que en el impacto, "implementa" solo se sigue desde el origen, y un servicio alcanzado no se expande: sería
    * todo lo que ese servicio toca.
    */
-  function dependeDe(origen) {
-    var visto = {}, niveles = [], frente = [origen];
-    visto[origen] = true;
-    while (frente.length && niveles.length < 8) {
-      var nivel = [];
-      frente.forEach(function (id) {
-        if (id !== origen && tipo(id) === "svc") return;
-        (salen[id] || []).forEach(function (d) {
-          if (d[2] === "implementa" && id !== origen) return;
-          if (visto[d[1]]) return;
-          visto[d[1]] = true;
-          nivel.push({ id: d[1], via: id, verbo: d[2] });
-        });
-      });
-      if (!nivel.length) break;
-      niveles.push(nivel);
-      frente = nivel.map(function (x) { return x.id; });
-    }
-    return niveles;
-  }
-  var VERBO_IDA = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "se apoya en", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de" };
+
+  var VERBO_IDA = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "se apoya en", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" };
   /** Chips por tipo y un grupo por tipo con su buscador, para una lista de piezas con nivel. */
   function gruposHtml(todos, porque, enlaceExtra) {
     var porTipo = {};
@@ -135,7 +118,7 @@ export const MAPA_JS =
   function mostrarImpacto(id, pestana) {
     if (!id || !porId[id]) return inicioImpacto();
     cerebroActual = cerebroDe(id);
-    var imp = conNivel(impacto(deps, id)), dep = conNivel(dependeDe(id));
+    var imp = conNivel(impacto(deps, id)), dep = conNivel(dependeDe(deps, id, tipo));
     // Afectados: "lee Club, que …" (de la pieza hacia atrás). Dependencias: "se apoya en /x, que llama a …" (de la pieza hacia adelante).
     var porque = function (x) {
       var partes = [];

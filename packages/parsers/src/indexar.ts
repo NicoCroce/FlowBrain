@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
 import { correrExtractores, RUTA_INFORME_EXTRACTORES, type InformeExtractor } from "./extractores.js";
-import { leerRepo } from "./repo.js";
+import { leerRepo, podarPaquetes } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
 import { tsParser } from "./ts-parser.js";
 import { phpParser } from "./php-parser.js";
@@ -59,10 +59,10 @@ export interface Pendiente {
   desde: string;
   evidencia: string;
   motivo: string;
-  /** Lo que falta en el brain para resolverla: host (`host sin nodo`) o tabla física (`modelo sin tabla`). */
+  /** Lo que falta en el brain para resolverla: host (`host sin nodo`), tabla física (`modelo sin tabla`) o cola (`cola sin nodo`). */
   objetivo: string | null;
-  verbo: "llama_a" | "lee_de" | "escribe_en";
-  /** URL reconstruida o modelo de datos. */
+  verbo: "llama_a" | "lee_de" | "escribe_en" | "publica_en" | "consume_de";
+  /** URL reconstruida, modelo de datos o nombre del evento. */
   referencia: string;
 }
 
@@ -276,7 +276,9 @@ export async function indexar(
   const svcsDelRepo = nodos.filter((n) => n.tipo === "svc" && n.vive_en.includes(repoId));
   const servicios: ResultadoIndex["servicios"] = [];
   const svcsDe = new Map<string, string[]>();
-  for (const paquete of repo.paquetes) {
+  // Los paquetes de otros ecosistemas (y la raíz) cuentan si el índice les encontró algo.
+  const conDatos = new Set([...x.endpoints, ...x.llamadas, ...x.pantallas, ...x.tablas, ...(x.eventos ?? [])].map((d) => d.paquete));
+  for (const paquete of podarPaquetes(repo, conDatos).paquetes) {
     const ids = svcsDelRepo
       .filter((s) => {
         const rutas = Object.values(s.puntos_de_entrada);
@@ -407,7 +409,12 @@ export async function indexar(
 
   // ---------- Eventos con cola conocida: el servicio publica en ella o consume de ella ----------
   for (const [svc, eventos] of eventosPorSvc) {
-    for (const e of eventos) if (e.cola) aristas.push({ dato: null, desde: svc, endpoint: null, evidencia: e.evidencia, hasta: e.cola, origen: "parser", verbo: e.direccion === "publica" ? "publica_en" : "consume_de" });
+    for (const e of eventos) {
+      const verbo = e.direccion === "publica" ? "publica_en" : "consume_de";
+      if (e.cola) aristas.push({ dato: null, desde: svc, endpoint: null, evidencia: e.evidencia, hasta: e.cola, origen: "parser", verbo });
+      // Sin página de la cola: queda pendiente y el borrador la propone (así quien publica y quien consume se encuentran).
+      else pendientes.push({ candidatos: [], desde: svc, evidencia: e.evidencia, motivo: `cola sin nodo: ${e.nombre}`, objetivo: e.nombre, referencia: e.nombre, verbo });
+    }
   }
 
   // ---------- Dedupe (gana la primera evidencia en orden archivo/línea) y orden ----------

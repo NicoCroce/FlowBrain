@@ -13,7 +13,7 @@ import {
   type Paso,
   type Recorredor,
 } from "../funcionalidades.js";
-import { dependenciasDelGrafo, impacto as recorrerImpacto, type Dependencia } from "../impacto.js";
+import { dependenciasDelGrafo, dependeDe as recorrerDependencias, impacto as recorrerImpacto, type Dependencia } from "../impacto.js";
 import { dentroDe, ENDPOINT_REF, normalizarRuta, type Graph, type GraphNode } from "../schema.js";
 import { notasDe, type Contexto } from "./contexto.js";
 import { ConsultaError, normalizar, rutaCoincide } from "./herramientas.js";
@@ -549,7 +549,7 @@ export interface ImpactoParams {
   budget_tokens?: number | null;
 }
 
-const VERBO: Record<string, string> = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de" };
+const VERBO: Record<string, string> = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" };
 
 export interface InfraParams {
   /** Servicio, repo, base, cola o externo. Sin nodo: toda la infraestructura del brain. */
@@ -606,6 +606,8 @@ function columnasDe(ctx: Contexto, id: string): string[] | null {
   return cols?.length ? cols.map((c) => `${c.nombre} ${c.tipo}${c.pk ? " pk" : ""}${c.nulo ? " null" : ""}`) : null;
 }
 
+const VERBO_IDA: Record<string, string> = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "se apoya en", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" };
+
 export function impactoDe(ctx: Contexto, p: ImpactoParams) {
   const ix = indice(ctx);
   let id = ctx.nodo.has(p.pieza) ? p.pieza : null;
@@ -631,6 +633,16 @@ export function impactoDe(ctx: Contexto, p: ImpactoParams) {
     return out.join(", que ");
   };
   const afectados = niveles.flatMap((nv, i) => nv.map((x) => ({ nivel: i + 1, id: x.id, tipo: ctx.nodo.get(x.id)?.tipo ?? "", porque: porque(x.id) })));
+  // La otra dirección: de qué depende la pieza (si cambia algo de esto, la afecta a ella).
+  const ida = recorrerDependencias(ix.dependencias, id, (n) => ctx.nodo.get(n)?.tipo);
+  const infoIda = new Map<string, { via: string; verbo: string }>();
+  for (const nv of ida) for (const x of nv) infoIda.set(x.id, x);
+  const porqueIda = (x: string) => {
+    const out: string[] = [];
+    for (let c = infoIda.get(x); c; c = infoIda.get(c.via)) out.unshift(`${c.via} ${VERBO_IDA[c.verbo] ?? c.verbo}`);
+    return out.join(", que ") + ` ${x}`;
+  };
+  const dependeDe = ida.flatMap((nv, i) => nv.map((x) => ({ nivel: i + 1, id: x.id, tipo: ctx.nodo.get(x.id)?.tipo ?? "", porque: porqueIda(x.id) })));
   const res = {
     pieza: id,
     tipo: ctx.nodo.get(id)?.tipo ?? "",
@@ -639,10 +651,11 @@ export function impactoDe(ctx: Contexto, p: ImpactoParams) {
     ...contextoHumano(ctx, id, afectados.map((a) => a.id)),
     ...(ix.tocanTabla.has(id) ? { tocadaPor: ix.tocanTabla.get(id)!.map((t) => ({ verbo: t.verbo, quien: t.clave.includes("#") && !/#L\d/.test(t.clave) ? cita(ix, t.clave) : t.clave, ev: t.evidencia })) } : {}),
     tecnicas: afectados.filter((a) => a.tipo !== "feat"),
-    avisos: [...(afectados.length ? [] : ["nada depende de esta pieza en el grafo"]), ...avisosIndice(ix)],
+    dependeDe,
+    avisos: [...(afectados.length ? [] : [`nada depende de esta pieza en el grafo${dependeDe.length ? "; en `dependeDe` está lo que, si cambia, la afecta a ella" : ""}`]), ...avisosIndice(ix)],
     indice: versiones(ix),
   };
-  return ajustarLista(res, ["tecnicas", "tocadaPor", "columnas", "funcionalidades"], p.budget_tokens);
+  return ajustarLista(res, ["dependeDe", "tecnicas", "tocadaPor", "columnas", "funcionalidades"], p.budget_tokens);
 }
 
 // ------------------------------------------------------------------ riesgo de un cambio

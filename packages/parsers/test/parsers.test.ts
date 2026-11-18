@@ -4,7 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buscarNodo, cargarContexto, compileDir, impactoDe, infra, stringifyCanonical } from "@flowbrain/core";
-import { endpointsAlcanzables, esquemaParser, escribirIndex, infraParser, indexar, leerRepo, openapiParser, phpParser, tsParser, type Extraccion, type ResultadoIndex } from "../src/index.js";
+import { correrExtractores, endpointsAlcanzables, esquemaParser, extraccionVacia, escribirIndex, infraParser, indexar, leerRepo, openapiParser, phpParser, tsParser, type Extraccion, type ResultadoIndex } from "../src/index.js";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const F = (p: string) => join(RAIZ, "fixtures", p);
@@ -1186,6 +1186,48 @@ describe("extractores del proyecto", () => {
     expect(r.archivos.esquema).toEqual([{ tabla: "tabla-pedidos", evidencia: "repo-pedidos:src/modelo.go#L3", columnas: [{ nombre: "id", tipo: "int", nulo: false, pk: true }, { nombre: "estado", tipo: "text", nulo: true, pk: false }], fks: [] }]);
     await rm(join(brain, "extractors/repo-pedidos/40-esquema.mjs"));
     await rm(join(brain, "technology/tabla-pedidos.md"));
+  });
+
+  it("handler, host, eventos, importa, navegación desde una pantalla y quitar lo que el parser inventó", async () => {
+    await writeFile(join(repo, "src/app.dart"), ["import 'pedidos.dart';", "class PedidosPage {", "  void abrir() {", "    context.go('/pedidos/1');", "  }", "}", ""].join("\n"));
+    await writeFile(join(repo, "src/pedidos.dart"), ["// api", ""].join("\n"));
+    await extractor("50-mas.mjs", {
+      simbolos: [
+        { archivo: "src/handler.go", nombre: "PedidosHandler.Crear", tipo: "metodo", linea: 3, fin: 5 },
+        { archivo: "src/app.dart", nombre: "PedidosPage", tipo: "clase", linea: 2, fin: 6 },
+      ],
+      endpoints: [
+        { metodo: "POST", ruta: "/api/pedidos", archivo: "src/rutas.go", linea: 3, handler: { archivo: "src/handler.go", simbolo: "PedidosHandler.Crear" } },
+        { metodo: "GET", ruta: "/x", archivo: "src/rutas.go", linea: 3, handler: { archivo: "src/handler.go", simbolo: "NoExiste" } },
+      ],
+      llamadas: [{ archivo: "src/repo.go", linea: 4, metodo: "post", ruta: "/v1/charges", host: "https://api.stripe.com/v1" }],
+      pantallas: [{ ruta: "/pedidos", archivo: "src/app.dart", linea: 2, componente: { archivo: "src/app.dart", simbolo: "PedidosPage" } }],
+      navegaciones: [{ archivo: "src/app.dart", linea: 4, desde: "/pedidos", ruta: "/pedidos/{id}" }],
+      eventos: [
+        { archivo: "src/repo.go", linea: 4, nombre: "pedido.creado", direccion: "publica" },
+        { archivo: "src/repo.go", linea: 4, nombre: "x", direccion: "manda" },
+      ],
+      importa: [{ archivo: "src/app.dart", importa: ["src/pedidos.dart"] }],
+    });
+    const x = extraccionVacia("prueba");
+    // Lo que "leyó un parser": un endpoint y un acceso inventados, que el extractor quita.
+    x.endpoints.push({ paquete: "", metodo: "GET", ruta: "/debug", request: null, response: null, archivo: "src/rutas.go", linea: 1 });
+    x.tablas.push({ paquete: "", archivo: "src/repo.go", linea: 4, modelo: "estado", verbo: "lee_de" });
+    await extractor("60-quitar.mjs", { quitar: [{ tipo: "endpoint", ruta: "/debug" }, { tipo: "acceso", tabla: "estado" }, { tipo: "endpoint", ruta: "/nada" }] });
+    const inf = await correrExtractores(brain, "repo-pedidos", leerRepo(repo), x);
+    const mas = inf.find((i) => i.extractor === "50-mas.mjs")!;
+    expect(mas.aceptados).toMatchObject({ endpoints: 1, llamadas: 1, eventos: 1, importa: 1, navegaciones: 1 });
+    expect(mas.motivos.join("\n")).toMatch(/símbolo del `handler`[\s\S]*`direccion`/);
+    // El endpoint queda donde se atiende: de ahí arrancan el recorrido y la traza.
+    expect(x.endpoints.map((e) => `${e.metodo} ${e.ruta} ${e.archivo}#${e.linea}`)).toEqual(["POST /api/pedidos src/handler.go#3"]);
+    expect(x.llamadas[0]!.url).toEqual({ base: "literal", host: "api.stripe.com", ruta: "/v1/charges", texto: "https://api.stripe.com/v1/charges" });
+    expect(x.eventos).toEqual([{ paquete: "", archivo: "src/repo.go", linea: 4, nombre: "pedido.creado", direccion: "publica" }]);
+    expect(x.navegaciones[0]!.desde).toBe("PedidosPage");
+    expect(x.archivos.find((a) => a.ruta === "src/app.dart")!.importa).toEqual(["src/pedidos.dart"]);
+    expect(x.tablas.map((t) => t.modelo)).toEqual(["pedidos"]);
+    expect(inf.find((i) => i.extractor === "60-quitar.mjs")).toMatchObject({ aceptados: { quitar: 2 }, rechazados: 1 });
+    for (const n of ["50-mas.mjs", "60-quitar.mjs"]) await rm(join(brain, "extractors/repo-pedidos", n));
+    for (const n of ["src/app.dart", "src/pedidos.dart"]) await rm(join(repo, n));
   });
 
   it("un extractor que falla no rompe la indexación: queda anotado", async () => {

@@ -24,9 +24,23 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     ["team", "Equipos", "Equipo"], ["decision", "Decisiones", "Decisión"], ["archivo", "Archivos", "Archivo"]];
   var TIPO = {};
   TIPOS.forEach(function (t) { TIPO[t[0]] = { label: t[1], uno: t[2] }; });
+  // Un tipo de nodo que el visor no conoce (lo trajo un extractor o una versión nueva) también se dibuja, con su nombre.
+  D.nodes.forEach(function (n) {
+    if (TIPO[n.t] || n.t === "contrato") return;
+    var nom = n.t.charAt(0).toUpperCase() + n.t.slice(1).replace(/_/g, " ");
+    TIPO[n.t] = { label: nom, uno: nom };
+    TIPOS.push([n.t, nom, nom]);
+  });
   var ORDEN_VERBOS = ["implementa", "navega_a", "llama_a", "lee_de", "escribe_en", "publica_en", "consume_de", "depende_de", "contiene", "vive_en", "recorrido", "pertenece_a", "decidido_por"];
   var colores = {};
-  var col = function (t) { return colores[t] || (colores[t] = color(t)); };
+  /** Color de un tipo: la variable del tema; si el tema no la tiene (un tipo nuevo), uno estable sacado de su nombre. */
+  var PALETA_EXTRA = ["#E0A458", "#7FB7BE", "#D3826F", "#A3C46C", "#B48EAD", "#88C0D0", "#EBCB8B", "#C97B84"];
+  var col = function (t) {
+    if (colores[t]) return colores[t];
+    var v = css.getPropertyValue("--" + t).trim();
+    if (!v) { var h = 0; for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0; v = PALETA_EXTRA[h % PALETA_EXTRA.length]; }
+    return (colores[t] = v);
+  };
 
   // ---------- Modelo ----------
   // Varios cerebros: cada uno se dibuja como un cerebro aparte, uno al lado del otro. Con uno solo, todo queda en el origen.

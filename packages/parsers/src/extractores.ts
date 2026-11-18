@@ -20,20 +20,28 @@ import { paqueteDe, type Extraccion, type RepoFuente } from "./tipos.js";
  * {
  *   "simbolos":     [{ "archivo": "src/Pedidos.go", "nombre": "PedidosHandler.Crear", "tipo": "metodo", "linea": 20, "fin": 41 }],
  *   "invocaciones": [{ "desde": { "archivo": "…", "simbolo": "…" }, "hacia": { "archivo": "…", "simbolo": "…" }, "linea": 27 }],
- *   "endpoints":    [{ "metodo": "POST", "ruta": "/pedidos", "archivo": "src/rutas.go", "linea": 12 }],
- *   "llamadas":     [{ "archivo": "src/api.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" }],
+ *   "endpoints":    [{ "metodo": "POST", "ruta": "/pedidos", "archivo": "src/rutas.go", "linea": 12, "handler": { "archivo": "src/Pedidos.go", "simbolo": "PedidosHandler.Crear" } }],
+ *   "llamadas":     [{ "archivo": "src/api.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" }, { "archivo": "…", "linea": 9, "metodo": "POST", "ruta": "/v1/charges", "host": "api.stripe.com" }],
  *   "pantallas":    [{ "ruta": "/pedidos", "archivo": "src/rutas.tsx", "linea": 8, "componente": { "archivo": "…", "simbolo": "Pedidos" } }],
- *   "navegaciones": [{ "archivo": "…", "linea": 14, "desde": "/pedidos", "ruta": "/pedidos/{id}", "tipo": "navega" }],
+ *   "navegaciones": [{ "archivo": "…", "linea": 14, "desde": "PedidosPage.irAlDetalle", "ruta": "/pedidos/{id}", "tipo": "navega" }],
+ *   "eventos":      [{ "archivo": "…", "linea": 50, "nombre": "pago.confirmado", "direccion": "publica" }],
+ *   "importa":      [{ "archivo": "lib/pedidos_page.dart", "importa": ["lib/api/pedidos.dart"] }],
  *   "accesos":      [{ "archivo": "src/repo.go", "linea": 33, "tabla": "pedidos", "verbo": "escribe", "columnas": ["estado", "total"] }],
  *   "esquema":      [{ "tabla": "pedidos", "archivo": "src/models.go", "linea": 5, "columnas": [{ "nombre": "id", "tipo": "int", "pk": true }, { "nombre": "nota", "tipo": "text", "nulo": true }] }],
- *   "quitar":       [{ "tipo": "llamada", "archivo": "src/api.ts", "linea": 30 }, { "tipo": "pantalla", "ruta": "/{path}/config" }]
+ *   "quitar":       [{ "tipo": "llamada", "archivo": "src/api.ts", "linea": 30 }, { "tipo": "pantalla", "ruta": "/{path}/config" }, { "tipo": "endpoint", "metodo": "GET", "ruta": "/debug" }]
  * }
  * ```
  *
  * Un extractor también corrige lo que el parser leyó mal: una llamada en una línea reemplaza a las que el parser dejó en
  * esa misma línea (con o sin ruta), una pantalla con una ruta que ya existe le reemplaza el componente y las envolturas,
  * `esquema` reemplaza las columnas que un parser haya leído para esa tabla (un ORM que FlowBrain no conoce, una convención
- * de nombres propia), y `quitar` borra lo que el parser inventó (una llamada, una pantalla o una navegación). Solo se corrige lo que vino de
+ * de nombres propia), y `quitar` borra lo que el parser inventó (una llamada, una pantalla, una navegación, un endpoint, un
+ * acceso a una tabla o un evento).
+ *
+ * `handler` en un endpoint dice qué método lo atiende cuando la ruta se declara en otro lugar (`r.GET("/x", h.Crear)`):
+ * el recorrido y la traza arrancan ahí. `desde` en una navegación es el símbolo que navega (`Clase.metodo` o función);
+ * también se acepta la ruta de la pantalla desde la que se navega. `host` en una llamada la manda a ese sistema
+ * (externo o propio) en vez de resolverla por la ruta. Solo se corrige lo que vino de
  * un parser: lo que sumó otro extractor no se toca.
  */
 export const CARPETA_EXTRACTORES = "extractors";
@@ -41,7 +49,7 @@ export const RUTA_INFORME_EXTRACTORES = (repo: string) => `_build/extractors/${r
 
 const INTERPRETES: Record<string, string> = { ".mjs": "node", ".js": "node", ".cjs": "node", ".py": "python3", ".sh": "sh", ".rb": "ruby", ".php": "php" };
 const TIEMPO_MS = 180_000;
-const TIPOS = ["simbolos", "invocaciones", "endpoints", "llamadas", "pantallas", "navegaciones", "accesos", "esquema", "quitar"] as const;
+const TIPOS = ["simbolos", "invocaciones", "endpoints", "llamadas", "pantallas", "navegaciones", "accesos", "esquema", "eventos", "importa", "quitar"] as const;
 type Tipo = (typeof TIPOS)[number];
 
 export interface InformeExtractor {
@@ -100,12 +108,12 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
   const lineasDe = (a: string) => lineas.get(a) ?? lineas.set(a, readFileSync(join(repo.raiz, a), "utf8").split("\n").length).get(a)!;
   const informes: InformeExtractor[] = [];
   // Lo que vino de los parsers: es lo único que un extractor puede corregir o quitar.
-  const delParser = { llamadas: new Set(x.llamadas), pantallas: new Set(x.pantallas), navegaciones: new Set(x.navegaciones) };
+  const delParser = { llamadas: new Set(x.llamadas), pantallas: new Set(x.pantallas), navegaciones: new Set(x.navegaciones), endpoints: new Set(x.endpoints), tablas: new Set(x.tablas), eventos: new Set(x.eventos ?? []) };
   /** Líneas que algún extractor ya corrigió: la segunda llamada en la misma línea se suma a la primera. */
   const corregidas = new Set<string>();
 
   for (const nombre of programas) {
-    const inf: InformeExtractor = { extractor: nombre, ms: 0, aceptados: { simbolos: 0, invocaciones: 0, endpoints: 0, llamadas: 0, pantallas: 0, navegaciones: 0, accesos: 0, esquema: 0, quitar: 0 }, rechazados: 0, motivos: [] };
+    const inf: InformeExtractor = { extractor: nombre, ms: 0, aceptados: Object.fromEntries(TIPOS.map((t) => [t, 0])) as Record<Tipo, number>, rechazados: 0, motivos: [] };
     informes.push(inf);
     const t0 = Date.now();
     let salida: Record<string, unknown>;
@@ -165,13 +173,23 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
       inf.aceptados.invocaciones++;
     }
     for (const d of lista(salida["endpoints"])) {
-      const m = cita(d["archivo"], d["linea"]) ?? (!esTexto(d["metodo"]) || !esTexto(d["ruta"]) || !d["ruta"].startsWith("/") ? "faltan `metodo` o `ruta` (que empiece con /)" : null);
+      const h = d["handler"] as Record<string, unknown> | null | undefined;
+      const sh = h ? simbolo(h["archivo"], h["simbolo"]) : undefined;
+      const m =
+        cita(d["archivo"], d["linea"]) ??
+        (!esTexto(d["metodo"]) || !esTexto(d["ruta"]) || !d["ruta"].startsWith("/") ? "faltan `metodo` o `ruta` (que empiece con /)" : h && !sh ? "no existe el símbolo del `handler` (declaralo en `simbolos`)" : null);
       if (m) {
         rechazar("endpoints", d, m);
         continue;
       }
-      const e = { paquete: paqueteDe(repo, d["archivo"] as string), metodo: (d["metodo"] as string).toUpperCase(), ruta: d["ruta"] as string, request: esTexto(d["request"]) ? d["request"] : null, response: esTexto(d["response"]) ? d["response"] : null, archivo: d["archivo"] as string, linea: d["linea"] as number };
-      if (!x.endpoints.some((y) => y.paquete === e.paquete && y.metodo === e.metodo && y.ruta === e.ruta)) x.endpoints.push(e);
+      // Con `handler`, la evidencia del endpoint pasa al método que lo atiende (como hacen los parsers): de ahí arrancan
+      // el recorrido y la traza. El paquete sigue siendo el de la declaración de la ruta.
+      const donde = sh ? { archivo: h!["archivo"] as string, linea: sh.linea } : { archivo: d["archivo"] as string, linea: d["linea"] as number };
+      const e = { paquete: paqueteDe(repo, d["archivo"] as string), metodo: (d["metodo"] as string).toUpperCase(), ruta: d["ruta"] as string, request: esTexto(d["request"]) ? d["request"] : null, response: esTexto(d["response"]) ? d["response"] : null, ...donde };
+      const ya = x.endpoints.find((y) => y.paquete === e.paquete && y.metodo === e.metodo && y.ruta === e.ruta);
+      // Si el parser ya lo tenía, el extractor le corrige dónde se atiende.
+      if (ya && sh && delParser.endpoints.has(ya)) x.endpoints[x.endpoints.indexOf(ya)] = { ...ya, ...donde };
+      else if (!ya) x.endpoints.push(e);
       inf.aceptados.endpoints++;
     }
     for (const d of lista(salida["llamadas"])) {
@@ -182,6 +200,7 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
       }
       const l = { archivo: d["archivo"] as string, linea: d["linea"] as number, metodo: (d["metodo"] as string).toUpperCase(), ruta: d["ruta"] as string };
       const base = esTexto(d["base"]) ? d["base"] : null;
+      const host = esTexto(d["host"]) ? (d["host"] as string).replace(/^[a-z]+:\/\//i, "").replace(/[/:].*$/, "").toLowerCase() : null;
       // Reemplaza a las que el parser haya dejado en esa línea, con o sin ruta: el extractor leyó mejor.
       const clave = `${l.archivo}#${l.linea}`;
       if (!corregidas.has(clave)) {
@@ -189,7 +208,7 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
         x.llamadas = x.llamadas.filter((y) => !(delParser.llamadas.has(y) && y.archivo === l.archivo && y.linea === l.linea));
       }
       if (!x.llamadas.some((y) => y.archivo === l.archivo && y.linea === l.linea && y.metodo === l.metodo && y.url.ruta === l.ruta)) {
-        x.llamadas.push({ paquete: paqueteDe(repo, l.archivo), ...l, url: { base: base ? "dinamica" : "relativa", host: null, ruta: l.ruta, texto: base ? `\${${base}}${l.ruta}` : l.ruta }, dato: null });
+        x.llamadas.push({ paquete: paqueteDe(repo, l.archivo), ...l, url: host ? { base: "literal", host, ruta: l.ruta, texto: `https://${host}${l.ruta}` } : { base: base ? "dinamica" : "relativa", host: null, ruta: l.ruta, texto: base ? `\${${base}}${l.ruta}` : l.ruta }, dato: null });
       }
       inf.aceptados.llamadas++;
     }
@@ -216,7 +235,14 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
         rechazar("navegaciones", d, m);
         continue;
       }
-      x.navegaciones.push({ paquete: paqueteDe(repo, d["archivo"] as string), archivo: d["archivo"] as string, linea: d["linea"] as number, desde: esTexto(d["desde"]) ? d["desde"] : null, ruta: d["ruta"] as string, tipo });
+      // `desde` es el símbolo que navega. Si viene una ruta (`/pedidos`), es la pantalla desde la que se navega: se usa su
+      // componente; si no hay pantalla con esa ruta, la navegación queda a nivel de archivo.
+      let desde = esTexto(d["desde"]) ? (d["desde"] as string) : null;
+      if (desde?.startsWith("/")) {
+        const p = x.pantallas.find((y) => y.ruta === desde && y.componente?.archivo === d["archivo"]) ?? x.pantallas.find((y) => y.ruta === desde && y.componente);
+        desde = p?.componente && p.componente.archivo === d["archivo"] ? p.componente.simbolo : null;
+      }
+      x.navegaciones.push({ paquete: paqueteDe(repo, d["archivo"] as string), archivo: d["archivo"] as string, linea: d["linea"] as number, desde, ruta: d["ruta"] as string, tipo });
       inf.aceptados.navegaciones++;
     }
     for (const d of lista(salida["accesos"])) {
@@ -242,27 +268,55 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
       }
       inf.aceptados.accesos++;
     }
+    for (const d of lista(salida["eventos"])) {
+      const dir = d["direccion"] === "publica" || d["direccion"] === "consume" ? (d["direccion"] as "publica" | "consume") : null;
+      const m = cita(d["archivo"], d["linea"]) ?? (!esTexto(d["nombre"]) ? "falta `nombre` (la clave del evento, el tópico o la cola)" : !dir ? "`direccion` tiene que ser `publica` o `consume`" : null);
+      if (m || !dir) {
+        rechazar("eventos", d, m ?? "dirección inválida");
+        continue;
+      }
+      const e = { paquete: paqueteDe(repo, d["archivo"] as string), archivo: d["archivo"] as string, linea: d["linea"] as number, nombre: d["nombre"] as string, direccion: dir };
+      if (!(x.eventos ?? []).some((y) => y.archivo === e.archivo && y.linea === e.linea && y.nombre === e.nombre && y.direccion === e.direccion)) (x.eventos ??= []).push(e);
+      inf.aceptados.eventos++;
+    }
+    for (const d of lista(salida["importa"])) {
+      const destinos = Array.isArray(d["importa"]) ? (d["importa"] as unknown[]).filter(esTexto) : [];
+      const m = !esTexto(d["archivo"]) || !enRepo.has(d["archivo"]) ? "el archivo no existe en el repo" : !destinos.length ? "falta `importa` (lista de archivos del repo)" : destinos.find((a) => !enRepo.has(a)) ? `no existe en el repo: ${destinos.find((a) => !enRepo.has(a))}` : null;
+      if (m) {
+        rechazar("importa", d, m);
+        continue;
+      }
+      const a = archivoDe(d["archivo"] as string);
+      a.importa = [...new Set([...(a.importa ?? []), ...destinos])].sort(cmp);
+      inf.aceptados.importa++;
+    }
     for (const d of lista(salida["quitar"])) {
       const tipo = d["tipo"];
       const coincide = (y: { archivo: string; linea: number; ruta?: string | null }) =>
         (d["archivo"] === undefined || y.archivo === d["archivo"]) && (d["linea"] === undefined || y.linea === d["linea"]) && (d["ruta"] === undefined || y.ruta === d["ruta"]);
-      const m =
-        tipo !== "llamada" && tipo !== "pantalla" && tipo !== "navegacion"
-          ? "`tipo` tiene que ser `llamada`, `pantalla` o `navegacion`"
-          : d["archivo"] === undefined && d["ruta"] === undefined
-            ? "falta `archivo` (con `linea`) o `ruta`: no se quita nada a ciegas"
-            : d["archivo"] !== undefined
-              ? cita(d["archivo"], d["linea"] ?? 1)
-              : null;
+      const metodo = (v: string) => d["metodo"] === undefined || v === String(d["metodo"]).toUpperCase();
+      const QUITABLES = ["llamada", "pantalla", "navegacion", "endpoint", "acceso", "evento"];
+      const m = !QUITABLES.includes(String(tipo))
+        ? `\`tipo\` tiene que ser ${QUITABLES.map((q) => `\`${q}\``).join(", ")}`
+        : d["archivo"] === undefined && d["ruta"] === undefined && d["tabla"] === undefined && d["nombre"] === undefined
+          ? "falta `archivo` (con `linea`), `ruta`, `tabla` o `nombre`: no se quita nada a ciegas"
+          : d["archivo"] !== undefined
+            ? cita(d["archivo"], d["linea"] ?? 1)
+            : null;
       if (m) {
         rechazar("quitar", d, m);
         continue;
       }
-      const antes = x.llamadas.length + x.pantallas.length + x.navegaciones.length;
-      if (tipo === "llamada") x.llamadas = x.llamadas.filter((y) => !(delParser.llamadas.has(y) && coincide({ archivo: y.archivo, linea: y.linea, ruta: y.url.ruta }) && (d["metodo"] === undefined || y.metodo === String(d["metodo"]).toUpperCase())));
+      const total = () => x.llamadas.length + x.pantallas.length + x.navegaciones.length + x.endpoints.length + x.tablas.length + (x.eventos?.length ?? 0);
+      const antes = total();
+      if (tipo === "llamada") x.llamadas = x.llamadas.filter((y) => !(delParser.llamadas.has(y) && coincide({ archivo: y.archivo, linea: y.linea, ruta: y.url.ruta }) && metodo(y.metodo)));
       if (tipo === "pantalla") x.pantallas = x.pantallas.filter((y) => !(delParser.pantallas.has(y) && coincide(y)));
       if (tipo === "navegacion") x.navegaciones = x.navegaciones.filter((y) => !(delParser.navegaciones.has(y) && coincide(y)));
-      if (x.llamadas.length + x.pantallas.length + x.navegaciones.length === antes) rechazar("quitar", d, "no coincide con nada que haya leído un parser");
+      if (tipo === "endpoint") x.endpoints = x.endpoints.filter((y) => !(delParser.endpoints.has(y) && coincide(y) && metodo(y.metodo)));
+      if (tipo === "acceso")
+        x.tablas = x.tablas.filter((y) => !(delParser.tablas.has(y) && coincide(y) && (d["tabla"] === undefined || y.modelo === d["tabla"] || x.modelos.some((mo) => mo.nombre === y.modelo && mo.tabla === d["tabla"]))));
+      if (tipo === "evento" && x.eventos) x.eventos = x.eventos.filter((y) => !(delParser.eventos.has(y) && coincide(y) && (d["nombre"] === undefined || y.nombre === d["nombre"])));
+      if (total() === antes) rechazar("quitar", d, "no coincide con nada que haya leído un parser");
       else inf.aceptados.quitar++;
     }
     for (const d of lista(salida["esquema"])) {

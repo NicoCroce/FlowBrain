@@ -53,7 +53,9 @@ export function aplicarBacklinks(cuerpo: string, id: string, graph: Graph, archi
 /** Índice para lectura jerárquica: nodos de página y endpoints, agrupados por tipo. */
 export function renderIndex(graph: Graph): string {
   const lineas = ["# INDEX", "", "<!-- generado por flowbrain compile; no editar -->"];
-  for (const tipo of ORDEN_TIPOS) {
+  // Los tipos propios del proyecto van al final, por nombre.
+  const propios = [...new Set(graph.nodes.map((n) => n.tipo))].filter((t) => !ORDEN_TIPOS.includes(t)).sort();
+  for (const tipo of [...ORDEN_TIPOS, ...propios]) {
     if (tipo === "archivo" || tipo === "contrato") continue;
     const ns = graph.nodes.filter((n) => n.tipo === tipo);
     if (ns.length === 0) continue;

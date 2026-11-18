@@ -4,7 +4,7 @@ import { CompileError, parsePagina, type ErrorCompilacion } from "./frontmatter.
 import { aplicarBacklinks, renderBacklinksJson, renderIndex, renderMermaid } from "./render.js";
 import {
   ArchivosSchema,
-  CARPETA_POR_TIPO,
+  carpetasDeTipo,
   CONFIANZA,
   ContratoSchema,
   claveDudosa,
@@ -132,8 +132,8 @@ export function compile(entradas: Entradas): Salidas {
     if (!fm.id.startsWith(`${fm.tipo}-`)) {
       errores.push({ archivo: f.ruta, linea: L(["tipo"]), mensaje: `el id "${fm.id}" debe empezar con "${fm.tipo}-"` });
     }
-    if (carpeta !== CARPETA_POR_TIPO[fm.tipo]) {
-      errores.push({ archivo: f.ruta, linea: L(["tipo"]), mensaje: `una página de tipo ${fm.tipo} va en ${CARPETA_POR_TIPO[fm.tipo]}/` });
+    if (!carpetasDeTipo(fm.tipo).includes(carpeta as "product")) {
+      errores.push({ archivo: f.ruta, linea: L(["tipo"]), mensaje: `una página de tipo ${fm.tipo} va en ${carpetasDeTipo(fm.tipo).join("/ o ")}/` });
     }
     if (fm.puntos_de_entrada && fm.tipo !== "svc") {
       errores.push({ archivo: f.ruta, linea: L(["puntos_de_entrada"]), mensaje: "puntos_de_entrada solo aplica a svc" });

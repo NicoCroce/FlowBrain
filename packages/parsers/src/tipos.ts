@@ -7,6 +7,8 @@ export interface RepoFuente {
   archivos: string[];
   /** Raíces de paquete (apps) relativas a la raíz; `""` es la raíz misma. Ordenadas. */
   paquetes: string[];
+  /** Paquetes por un manifiesto que no es de JavaScript ni de PHP: quedan solo si el índice les encuentra algo. */
+  candidatos?: string[];
 }
 
 export interface Simbolo {

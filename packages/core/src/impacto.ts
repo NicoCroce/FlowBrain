@@ -36,6 +36,8 @@ export function dependenciasDelGrafo(graph: Graph, fichas: Ficha[]): Dependencia
     // Una funcionalidad depende del servicio que la implementa; una tabla, de la base donde vive.
     if (e.verbo === "implementa") sumar(e.hasta, e.desde, "implementa");
     if (e.verbo === "vive_en" && tipo.get(e.desde) === "tabla") sumar(e.desde, e.hasta, "vive_en");
+    // Una cola depende de quien publica en ella: si cambia el mensaje, se ven afectados los que consumen.
+    if (e.verbo === "publica_en") sumar(e.hasta, e.desde, "alimenta");
   }
   for (const f of fichas) {
     for (const u of f.usaFuncionalidades) {
@@ -59,21 +61,53 @@ export function dependenciasDelGrafo(graph: Graph, fichas: Ficha[]): Dependencia
  * Recorrido inverso por niveles, en JavaScript plano: lo usan el visor (embebido) y los tests (evaluado), así hay
  * una sola implementación. Nivel 1 son las piezas que dependen directo del origen; nivel 2, las que dependen de esas.
  * `implementa` solo se sigue desde el origen: cambiar un servicio afecta a lo que implementa, pero llegar a un
- * servicio por propagación no arrastra a todas sus funcionalidades.
+ * servicio por propagación no arrastra a todas sus funcionalidades. Una cola a la que se llegó porque cambió quien
+ * publica afecta a los que consumen, no a los demás que publican.
  */
 export const IMPACTO_JS = String.raw`function impacto(deps, origen) {
   var entran = {};
   deps.forEach(function (d) { (entran[d[1]] = entran[d[1]] || []).push(d); });
-  var visto = {}, niveles = [], frente = [origen];
+  var visto = {}, por = {}, niveles = [], frente = [origen];
   visto[origen] = true;
   while (frente.length) {
     var nivel = [];
     frente.forEach(function (id) {
       (entran[id] || []).forEach(function (d) {
         if (d[2] === "implementa" && id !== origen) return;
+        if (d[2] === "publica_en" && por[id] === "alimenta") return;
         if (visto[d[0]]) return;
         visto[d[0]] = true;
+        por[d[0]] = d[2];
         nivel.push({ id: d[0], via: id, verbo: d[2] });
+      });
+    });
+    if (!nivel.length) break;
+    nivel.sort(function (a, b) { return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; });
+    niveles.push(nivel);
+    frente = nivel.map(function (x) { return x.id; });
+  }
+  return niveles;
+}`;
+
+/**
+ * La otra dirección: de qué depende una pieza (lo que, si cambia, la afecta a ella), por niveles. Las mismas reglas:
+ * "implementa" solo desde el origen, y un servicio alcanzado no se expande (sería todo lo que ese servicio toca).
+ * `tipo(id)` da el tipo de cada pieza. La usan el visor y el MCP.
+ */
+export const DEPENDE_JS = String.raw`function dependeDe(deps, origen, tipo, tope) {
+  var salen = {};
+  deps.forEach(function (d) { (salen[d[0]] = salen[d[0]] || []).push(d); });
+  var visto = {}, niveles = [], frente = [origen];
+  visto[origen] = true;
+  while (frente.length && niveles.length < (tope || 8)) {
+    var nivel = [];
+    frente.forEach(function (id) {
+      if (id !== origen && tipo(id) === "svc") return;
+      (salen[id] || []).forEach(function (d) {
+        if (d[2] === "implementa" && id !== origen) return;
+        if (visto[d[1]]) return;
+        visto[d[1]] = true;
+        nivel.push({ id: d[1], via: id, verbo: d[2] });
       });
     });
     if (!nivel.length) break;
@@ -92,3 +126,4 @@ export interface Afectado {
 }
 
 export const impacto = new Function(`${IMPACTO_JS}; return impacto;`)() as (deps: Dependencia[], origen: string) => Afectado[][];
+export const dependeDe = new Function(`${DEPENDE_JS}; return dependeDe;`)() as (deps: Dependencia[], origen: string, tipo: (id: string) => string | undefined, tope?: number) => Afectado[][];

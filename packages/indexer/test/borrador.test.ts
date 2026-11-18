@@ -44,7 +44,7 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
     ]);
     expect(await readdir(join(brain, "technology"))).toEqual(["svc-notificaciones.md"]);
     expect(await readdir(brain)).toEqual(["_drafts", "technology"]);
-    expect(r.resumen).toEqual({ paginas: 5, relaciones: 4, preguntas: 4, tablas: 2, externos: 1, funcionalidades: 0 });
+    expect(r.resumen).toEqual({ paginas: 5, relaciones: 4, preguntas: 4, tablas: 2, externos: 1, colas: 0, funcionalidades: 0 });
   });
 
   it("el borrador de una tabla dice qué métodos la leen o escriben", async () => {
@@ -83,7 +83,7 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
     expect(aristas).toEqual(["escribe_en tabla-envios", "lee_de tabla-tarifas", "llama_a ext-correo", "llama_a svc-notificaciones"]);
     // Una vez movido, un nuevo borrador no propone nada que ya esté.
     const otra = await draftDir(clon, brain);
-    expect(otra.resumen).toEqual({ paginas: 1, relaciones: 0, preguntas: 1, tablas: 0, externos: 0, funcionalidades: 0 });
+    expect(otra.resumen).toEqual({ paginas: 1, relaciones: 0, preguntas: 1, tablas: 0, externos: 0, colas: 0, funcionalidades: 0 });
   });
 
   it("es determinístico e idempotente", async () => {

@@ -2,7 +2,7 @@ import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
 import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, CompileError, crucesDelRegistro, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
 import { draftDir } from "@flowbrain/indexer";
-import { escribirIndex, fusionar, indexar, leerRepo, PARSERS, slug } from "@flowbrain/parsers";
+import { escribirIndex, fusionar, IGNORAR, indexar, leerRepo, PARSERS, slug } from "@flowbrain/parsers";
 import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@flowbrain/viewer";
 import { init } from "./init.js";
 import { borradoresPromovibles, promover } from "./promover.js";
@@ -13,7 +13,10 @@ import { borradoresPromovibles, promover } from "./promover.js";
  */
 
 const existe = (p: string) => stat(p).then(() => true, () => false);
-const IGNORAR = new Set(["node_modules", ".git", "dist", "build", "vendor", ".next", "coverage", ".cache", "tmp"]);
+/** Manifiestos que delatan un proyecto en cualquier lenguaje (para encontrar repos sin `.git`). */
+const MANIFIESTOS = ["package.json", "composer.json", "go.mod", "pyproject.toml", "requirements.txt", "setup.py", "Pipfile", "pom.xml", "build.gradle", "build.gradle.kts", "Gemfile", "pubspec.yaml", "Package.swift", "Cargo.toml", "mix.exs"];
+const tieneManifiesto = async (dir: string) =>
+  (await Promise.all(MANIFIESTOS.map((m) => existe(join(dir, m))))).some(Boolean) || (await readdir(dir).catch(() => [] as string[])).some((n) => /\.(csproj|sln)$/.test(n));
 
 /**
  * Repos bajo una carpeta: los directorios con `.git`, o con manifiesto si nada por encima es un repo. No entra en un
@@ -22,7 +25,7 @@ const IGNORAR = new Set(["node_modules", ".git", "dist", "build", "vendor", ".ne
 export async function encontrarRepos(carpeta: string, profundidad = 3): Promise<string[]> {
   const out: string[] = [];
   const andar = async (dir: string, nivel: number) => {
-    if ((await existe(join(dir, ".git"))) || (nivel > 0 && ((await existe(join(dir, "package.json"))) || (await existe(join(dir, "composer.json")))))) {
+    if ((await existe(join(dir, ".git"))) || (nivel > 0 && (await tieneManifiesto(dir)))) {
       out.push(dir);
       return;
     }

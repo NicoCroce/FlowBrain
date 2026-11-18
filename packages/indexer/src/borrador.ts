@@ -80,7 +80,7 @@ interface PaginaExistente {
 export interface Borradores {
   /** Ruta relativa a la raíz del brain (`_drafts/<repo>/…`) → contenido. */
   archivos: Record<string, string>;
-  resumen: { paginas: number; relaciones: number; preguntas: number; tablas: number; externos: number; funcionalidades: number };
+  resumen: { paginas: number; relaciones: number; preguntas: number; tablas: number; externos: number; colas: number; funcionalidades: number };
 }
 
 const claveRel = (verbo: string, destino: string, endpoint: string | null | undefined) => {
@@ -185,10 +185,10 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
   const existentes = leerPaginas(paginas);
   const base = `_drafts/${r.repo}`;
   const archivos: Record<string, string> = {};
-  const resumen = { paginas: 0, relaciones: 0, preguntas: 0, tablas: 0, externos: 0, funcionalidades: 0 };
+  const resumen = { paginas: 0, relaciones: 0, preguntas: 0, tablas: 0, externos: 0, colas: 0, funcionalidades: 0 };
 
   // ---------- 1. Propuestas: tablas y sistemas externos que el brain no tiene ----------
-  const propuestas = new Map<string, { tipo: "tabla" | "ext"; nombre: string; aliases: Set<string>; evidencias: string[]; modelos: Set<string> }>();
+  const propuestas = new Map<string, { tipo: "tabla" | "ext" | "queue"; nombre: string; aliases: Set<string>; evidencias: string[]; modelos: Set<string> }>();
   const propuestas_aristas: AristaExtraida[] = [];
   const restantes: Pendiente[] = [];
   for (const p of r.pendientes) {
@@ -199,12 +199,15 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
     } else if (p.candidatos.length === 0 && p.objetivo && p.motivo.startsWith("host sin nodo")) {
       const e = etiquetaHost(p.objetivo);
       id = e && slug(e) ? `ext-${slug(e)}` : null;
+    } else if (p.candidatos.length === 0 && p.objetivo && p.motivo.startsWith("cola sin nodo")) {
+      const s = slug(p.objetivo);
+      id = s ? `queue-${s}` : null;
     }
     if (!id || existentes.has(id)) {
       restantes.push(p);
       continue;
     }
-    const tipo = id.startsWith("tabla-") ? "tabla" : "ext";
+    const tipo = id.startsWith("tabla-") ? "tabla" : id.startsWith("queue-") ? "queue" : "ext";
     const prop = propuestas.get(id) ?? { tipo, nombre: p.objetivo!, aliases: new Set<string>(), evidencias: [], modelos: new Set<string>() };
     prop.aliases.add(p.objetivo!);
     if (tipo === "tabla") {
@@ -256,11 +259,15 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
     let detalle =
       prop.tipo === "tabla"
         ? `Modelo${prop.modelos.size > 1 ? "s" : ""} ${[...prop.modelos].sort(cmp).map((m) => `\`${m}\``).join(", ")}; primer acceso en \`${evs[0]}\` (${evs.length} en total).\n`
-        : `Host \`${[...prop.aliases].sort(cmp).join("`, `")}\`; primera llamada en \`${evs[0]}\` (${evs.length} en total).\n`;
+        : prop.tipo === "queue"
+          ? `Evento, tópico o cola \`${prop.nombre}\`. ${["publica_en", "consume_de"].map((v) => `${v === "publica_en" ? "Publican" : "Consumen"}: ${[...new Set(propuestas_aristas.filter((a) => a.hasta === id && a.verbo === v).map((a) => `\`${a.desde}\``))].sort(cmp).join(", ") || "nadie que se haya detectado"}.`).join(" ")}\n`
+          : `Host \`${[...prop.aliases].sort(cmp).join("`, `")}\`; primera llamada en \`${evs[0]}\` (${evs.length} en total).\n`;
     let pregunta =
       prop.tipo === "tabla"
         ? "- ¿En qué base de datos vive? Agregá `vive_en: [db-…]` (y la página de la base si no existe)."
-        : "- ¿Es un sistema de terceros (`ext`) o un servicio propio (`svc`)? Si es propio, renombrá la página.";
+        : prop.tipo === "queue"
+          ? "- ¿Es un evento en proceso o una cola o tópico de un broker? ¿Qué lleva el mensaje?"
+          : "- ¿Es un sistema de terceros (`ext`) o un servicio propio (`svc`)? Si es propio, renombrá la página.";
     if (prop.tipo === "tabla") {
       const accesos = propuestas_aristas.filter((a) => a.hasta === id);
       const porMetodo = new Map<string, Set<string>>();
@@ -289,6 +296,7 @@ export function generarBorradores(r: ResultadoIndex, paginas: Fuente[], carpetaR
     resumen.paginas++;
     resumen.preguntas++;
     if (prop.tipo === "tabla") resumen.tablas++;
+    else if (prop.tipo === "queue") resumen.colas++;
     else resumen.externos++;
   }
 
