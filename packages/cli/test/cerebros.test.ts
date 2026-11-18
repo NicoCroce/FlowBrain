@@ -270,6 +270,9 @@ describe("dentro de un proyecto", () => {
     const guia = (await ejecutar(["evidence", "--guide"], {}, dir)).stdout;
     expect(guia).toContain("Nunca abras archivos de entorno reales");
     expect(await readFile(join(dir, "global/commands/flowbrain-index.md"), "utf8")).toBe(guia);
+    const feats = (await ejecutar(["feature", "--guide"], {}, dir)).stdout;
+    expect(feats).toContain("Agrupar pantallas sueltas");
+    expect(await readFile(join(dir, "global/commands/flowbrain-features.md"), "utf8")).toBe(feats);
   }, 120_000);
 
   it("install sin nadie a quién preguntar: --repos elige la carpeta (un monorepo) y --single junta todo en un cerebro", async () => {

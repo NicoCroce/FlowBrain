@@ -106,7 +106,7 @@ export interface EstructuraArchivo {
   importa: string[];
   invoca: Array<{ desde: string; archivo: string; simbolo: string; linea: number; via?: string | undefined }>;
   /** Llamadas que el parser no pudo atribuir (tipo `any`, interfaz sin implementación conocida). */
-  sinResolver?: Array<{ desde: string; linea: number; llamada: string }> | undefined;
+  sinResolver?: Array<{ desde: string; linea: number; llamada: string; candidatos?: string[] | undefined }> | undefined;
 }
 
 /** Lo que toca un paso: una tabla (`lee_de`/`escribe_en`), un servicio o externo (`llama_a`) o una cola (`publica_en`/`consume_de`). */

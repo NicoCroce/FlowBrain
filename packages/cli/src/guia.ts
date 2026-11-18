@@ -22,7 +22,8 @@ $ARGUMENTS
 - **Nunca abras archivos de entorno reales** (\`.env\`, \`.env.local\`, \`.env.production\`, \`env.prod\` y parecidos): tienen
   credenciales. Usá los de ejemplo (\`.env.example\`, \`.env.sample\`), la configuración en el código, \`docker-compose\`,
   pipelines y proxies. Si un valor solo está en un archivo real, preguntáselo al usuario.
-- **No modifiques los repositorios del proyecto.** Editás \`.flowbrain/flowbrain.yaml\` y, solo para completar un hueco
+- **No modifiques los repositorios del proyecto.** Editás \`.flowbrain/flowbrain.yaml\`, \`.flowbrain/<cerebro>/calls.yaml\`
+  (paso 7) y, solo para completar un hueco
   del índice (paso 6), la extracción de un cerebro en \`.flowbrain/<cerebro>/_build/\`.
 - **No declares nada sin evidencia.** Coincidir en método y ruta no es evidencia: dos APIs pueden exponer las mismas
   rutas. Si no podés determinar un destino, no lo adivines: va a la lista de dudas.
@@ -109,9 +110,114 @@ $ARGUMENTS
      4. avisá que \`brains apply\` y \`sync\` reescriben \`_build\` (el extractor hay que volver a correrlo) y reportá el
         patrón como mejora del parser de FlowBrain.
 
-7. **Informar al usuario**, corto y en este orden:
+7. **Completar las trazas que se cortan.** Por cada cerebro con endpoints, \`flowbrain calls --brain <cerebro>\`
+   devuelve los endpoints cuyo recorrido no llega a ninguna tabla y, en su camino, las llamadas que el parser no pudo
+   atribuir porque el receptor no tiene tipo declarado (una variable sin tipo, un servicio pedido al contenedor por
+   nombre, una llamada dinámica). Cada una trae \`candidatos\`: los métodos del repo que se llaman así.
+   - Abrí el archivo en la línea de la llamada y determiná de qué clase es el receptor: seguí la asignación de la
+     variable, el tipo que devuelve el método que la crea, la configuración del contenedor de servicios
+     (\`services.yaml\`, un \`ServiceProvider\`, un módulo), la clase base.
+   - Si lo confirmás, declaralo en \`.flowbrain/<cerebro>/calls.yaml\` (creá el archivo si no existe):
+
+     \`\`\`yaml
+     llamadas:
+       - desde: "repo-tienda-api:src/Controller/PedidoController.php#PedidoController.crear"
+         linea: 42                    # la línea de la llamada, dentro del método que llama
+         hacia: "repo-tienda-api:src/Service/Facturador.php#Facturador.emitir"
+         origen: modelo
+         nota: "services.yaml#L12 registra 'facturador' como App\\Service\\Facturador"
+     \`\`\`
+
+     \`desde\` es el valor de \`desde\` que te dio \`calls\`; \`hacia\` es uno de sus \`candidatos\`, o el símbolo que
+     encontraste (\`flowbrain search <Clase.metodo> --brain <cerebro>\` da su clave \`repo:ruta#Simbolo\`).
+   - Si no podés determinarlo leyendo el código, no lo declares: va a la lista de dudas.
+   - Empezá por \`masRepetidas\`: una sola llamada (un helper de autenticación, un serializador) puede estar cortando
+     decenas de recorridos. Después seguí con los endpoints que más se usan, de a tandas. Después de cada tanda:
+     \`flowbrain brains apply <cerebro>\` (reindexa y aplica \`calls.yaml\`) y de nuevo \`flowbrain calls\`:
+     \`sinLlegarATabla\` tiene que bajar, y \`declaradas.faltan\` lista las que no entraron (símbolo o línea que no
+     coinciden: corregilas). Seguí hasta que no queden endpoints con llamadas por resolver o hasta que lo que queda
+     no se pueda determinar.
+   - \`sinMetodo\` son endpoints para los que no se encontró el método que los atiende: ahí el hueco es de cómo se
+     declaran las rutas; tratalo como un hueco del índice (paso 6).
+   - Un endpoint que no llega a una tabla y no tiene llamadas por resolver probablemente no toca datos: no es un error.
+   Al terminar, \`flowbrain brains viewer\`.
+
+8. **Informar al usuario**, corto y en este orden:
    - **Confirmado:** cada conexión declarada, con la evidencia en una línea.
+   - **Trazas:** cuántos endpoints pasaron a llegar a sus tablas y cuántas llamadas declaraste en \`calls.yaml\`.
    - **Dudas:** lo que no pudiste determinar y qué necesitás que te responda. Si no hay, decilo.
    - **Oportunidades de mejora:** las que encontraste, de mayor a menor impacto, cada una con su archivo.
    - Qué cambió en \`flowbrain.yaml\` y cómo abrir el mapa: \`open .flowbrain/flowbrain.html\`.
+   - Si algún cerebro tiene pantallas o endpoints pero ninguna funcionalidad en \`product/\` (\`flowbrain status\` lo
+     muestra como "pantallas sin funcionalidad" o "borradores sin promover"), sugerí correr \`/flowbrain-features\`.
+`;
+
+export const NOMBRE_FUNCIONALIDADES = "flowbrain-features";
+
+/**
+ * Guía para que un modelo deduzca y complete las funcionalidades de producto de cada cerebro. Es el texto del comando
+ * `/flowbrain-features` (lo escribe `flowbrain install`) y lo que imprime `flowbrain feature --guide`.
+ *
+ * `flowbrain draft` propone una funcionalidad por carpeta (`features/`, `modules/`, `domains/` o, sin ellas,
+ * `pages/`, `screens/`, `views/`), con nombre técnico y sin descripción. Lo que la estructura no dice es qué es cada
+ * una para quien la usa, cuáles son la misma con otro nombre y a qué funcionalidad pertenece el código de un back
+ * organizado por capas (`Controller/`, `Service/`): eso lo deduce el modelo leyendo pantallas, textos y llamadas.
+ */
+export const GUIA_FUNCIONALIDADES = `---
+description: Deduce y completa las funcionalidades de producto de cada cerebro de FlowBrain
+---
+
+Vas a completar el catálogo de funcionalidades de este proyecto en FlowBrain: qué puede hacer quien usa el producto,
+con qué pantallas, endpoints y tablas. La consola propone borradores por estructura de carpetas; tu trabajo es
+convertirlos en funcionalidades de producto con nombre de negocio, descripción y todo su código.
+
+$ARGUMENTS
+
+## Reglas
+
+- **No modifiques los repositorios del proyecto.** Solo escribís en \`.flowbrain/<cerebro>/_drafts/product/\` y
+  \`.flowbrain/<cerebro>/product/\`.
+- **No abras archivos de entorno reales** (\`.env\` y parecidos).
+- **Todo sale del código.** El nombre y la descripción salen de lo que ve quien usa la pantalla (títulos, textos de
+  i18n, menús, rutas), de los endpoints que llama y de las tablas que toca; nunca de suponer por el nombre de una
+  carpeta. Lo que no puedas deducir queda en "Preguntas abiertas" de la página.
+- No borres páginas de \`product/\` que ya estaban (las escribió alguien): si las contradecís, decilo.
+- Respondé en el idioma del usuario. Nombres y descripciones, en el idioma del producto (el de sus textos de i18n).
+
+## Pasos
+
+1. **Ver el estado.** Parado en el proyecto, por cada cerebro (\`flowbrain brains\` los lista):
+   \`flowbrain status --brain <cerebro>\` muestra pantallas y endpoints sin funcionalidad y borradores sin promover.
+   Si no hay borradores ni páginas, corré \`flowbrain brains apply\` (reindexa y propone borradores).
+   Buscá además un glosario del producto en el proyecto (docs de dominio, README, textos de i18n): da los nombres de negocio.
+
+2. **Promover los borradores tal cual, para poder consultarlos:** \`flowbrain promote <id...> --write --brain <cerebro>\`
+   con los ids \`feat-*\` (solo los de \`_drafts/product/\`; los de \`technology/\` son otro trabajo). Desde ahí
+   \`flowbrain feature <id> --brain <cerebro>\` da sus pantallas, endpoints, tablas y dependencias, y
+   \`flowbrain screen <ruta> --brain <cerebro>\` cada pantalla de punta a punta.
+
+3. **Armar el catálogo de cada cerebro**, editando \`.flowbrain/<cerebro>/product/feat-*.md\`:
+   - **Unir duplicados:** dos páginas que son la misma funcionalidad (\`game\` y \`games\`, el listado y el detalle de lo
+     mismo) quedan en una: sumá las rutas de \`codigo\`, dejá el id más claro y borrá la otra.
+   - **Agrupar pantallas sueltas:** si los borradores salieron uno por pantalla (\`pages/Login\`, \`pages/Recover\`,
+     \`pages/Register\`), agrupalos en la funcionalidad que el usuario reconoce (acceso a la cuenta).
+   - **Separar lo que no es producto:** contenedores de navegación (drawer, splash, layout) y herramientas internas no
+     son funcionalidades: borrá la página o sumá su código a la funcionalidad a la que sirven. Lo exclusivo de
+     administración sí lo es, con su nombre ("Backoffice: …").
+   - **Back organizado por capas** (sin borradores, o con muy pocos): creá las funcionalidades con \`codigo\` apuntando a
+     los archivos de controller (\`repo-x:src/Controller/PlayerController.php\`), agrupados por la funcionalidad del
+     front que llama a sus endpoints (\`flowbrain connections\`, \`evidence\` y \`feature\` del front lo muestran). Usá el
+     mismo id que esa funcionalidad tiene en el cerebro del front: así se encuentran entre cerebros.
+   - Cada página: \`nombre\` de negocio (el técnico va a \`aliases\`), \`resumen\` de una línea (máximo 140
+     caracteres) y "## Qué es" en lenguaje de producto: qué le permite hacer a quien la usa, quién la usa y el flujo
+     principal, sin nombres de archivos ni de clases. Sacá el aviso de borrador y las preguntas que resolviste.
+
+4. **Compilar y verificar.** \`flowbrain compile\` dentro de \`.flowbrain/<cerebro>/\` después de cada tanda (si no
+   compila, el error dice qué página corregir). Al final, \`flowbrain status --brain <cerebro>\`: las pantallas y
+   endpoints sin funcionalidad tienen que haber bajado; los que quedan, revisalos uno por uno (¿falta sumar su carpeta
+   a un \`codigo\`?). Después \`flowbrain brains viewer\` regenera el mapa.
+
+5. **Informar al usuario**, corto: cuántas funcionalidades quedaron por cerebro, qué uniste o descartaste y por qué,
+   las preguntas abiertas que necesitan respuesta de una persona, y cómo verlas:
+   \`open .flowbrain/flowbrain.html#/funcionalidades\`.
 `;

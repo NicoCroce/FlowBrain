@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
+import { aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
 import { leerRepo } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
 import { tsParser } from "./ts-parser.js";
@@ -446,6 +446,10 @@ export async function indexar(
     }
   }
   infra.sort((a, b) => cmpTuple([a.de, a.evidencia, a.nombre], [b.de, b.evidencia, b.nombre]));
+
+  // Lo que el código no dice con tipos y quedó resuelto en `calls.yaml`: se suma acá para que sobreviva a reindexar.
+  const declaradas = await readFile(join(raizBrain, ARCHIVO_LLAMADAS), "utf8").then(leerLlamadasDeclaradas, () => null);
+  if (declaradas) aplicarLlamadasDeclaradas(x.archivos, repoId, declaradas.llamadas);
 
   return {
     repo: repoId,

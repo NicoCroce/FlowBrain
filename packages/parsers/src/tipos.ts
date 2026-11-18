@@ -32,6 +32,8 @@ export interface LlamadaSinResolver {
   desde: string;
   linea: number;
   llamada: string;
+  /** Símbolos del repo (`Clase.metodo`) que se llaman así: a alguno de ellos puede ir la llamada. */
+  candidatos?: string[];
 }
 
 export interface ArchivoCrudo {

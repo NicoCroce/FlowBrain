@@ -1033,3 +1033,27 @@ describe("infra-parser: imágenes, compose, pipelines, variables y proxy", () =>
     expect((infra(ctx, { texto: "kubernetes" }) as { avisos: string[] }).avisos).toEqual(["nada coincide: no hay infraestructura declarada para eso en los repos indexados"]);
   });
 });
+
+describe("php-parser: llamadas que el código no declara", () => {
+  let dir: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "brain-php-sin-tipo-"));
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "composer.json"), '{ "require": { "symfony/framework-bundle": "6" } }\n');
+    await writeFile(
+      join(dir, "src/PedidoController.php"),
+      ["<?php", "class PedidoController {", "  public function crear(Request $request) {", "    $svc = $this->container->get('facturador');", "    $svc->emitir();", "    $svc->getId();", "    $request->get('id');", "    return $this->json([]);", "  }", "}", ""].join("\n"),
+    );
+    await writeFile(join(dir, "src/Facturador.php"), ["<?php", "class Facturador {", "  public function emitir() { return strtoupper('f'); }", "  public function getId() { return 1; }", "}", ""].join("\n"));
+  });
+  afterAll(() => rm(dir, { recursive: true, force: true }));
+
+  it("una llamada sin tipo a un método que existe en el repo queda anotada con sus candidatos; lo del framework no", async () => {
+    const x = await phpParser.extract(leerRepo(dir));
+    const a = x.archivos.find((f) => f.ruta === "src/PedidoController.php");
+    // `$svc` no tiene tipo: no se adivina, pero se anota a qué puede ir. `$request->get` y `$this->json` son del
+    // framework, y `getId` no llama a nada: ninguno de los tres puede cortar un recorrido.
+    expect(a?.invoca).toBeUndefined();
+    expect(a?.sinResolver).toEqual([{ desde: "PedidoController.crear", linea: 5, llamada: "$svc->emitir", candidatos: ["Facturador.emitir"] }]);
+  });
+});

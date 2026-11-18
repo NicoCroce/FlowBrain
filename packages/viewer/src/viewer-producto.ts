@@ -71,35 +71,65 @@ export const PRODUCTO_JS = String.raw`
   }
 
   // ---------- Catálogo ----------
-  function tarjeta(f) {
-    var n = porId[f.id] || {};
-    var chips = [plural(f.archivos, "archivo", "archivos")];
-    var rel = f.usaFuncionalidades.length + f.usadaPor.length;
-    if (rel) chips.push(plural(rel, "relacionada", "relacionadas"));
-    var t = datosDe(f).length;
-    if (t) chips.push(plural(t, "tabla", "tablas"));
-    if (f.expone.length) chips.push("API: " + f.expone.length);
-    return '<a class="tarjeta" href="' + hrefFicha(f.id) + '"><h3>' + esc(nombre(f.id)) + "</h3>" +
-      (pendiente(n.r) ? '<p class="pendiente">Sin descripción todavía</p>' : "<p>" + esc(n.r) + "</p>") +
-      '<div class="chips">' + chips.map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") + "</div></a>";
+  // Con varios cerebros los ids son "cerebro/feat-x". La misma funcionalidad en varios cerebros (mismo id) es una sola
+  // tarjeta, con un enlace a la ficha de cada cerebro: el front que la muestra y el back que la atiende.
+  var cerebroDe = function (id) { var i = id.indexOf("/"); return i < 0 ? "" : id.slice(0, i); };
+  var idBase = function (id) { return id.slice(id.indexOf("/") + 1); };
+  function grupos() {
+    var g = {}, orden = [];
+    fichas.forEach(function (f) {
+      var k = idBase(f.id);
+      if (!g[k]) { g[k] = []; orden.push(k); }
+      g[k].push(f);
+    });
+    return orden.map(function (k) { return g[k]; });
+  }
+  function tarjeta(grupo) {
+    var f = grupo[0];
+    var desc = grupo.map(function (x) { return (porId[x.id] || {}).r; }).filter(function (r) { return !pendiente(r); })[0];
+    var archivos = 0, api = 0, tablas = {}, rel = {};
+    grupo.forEach(function (x) {
+      archivos += x.archivos;
+      api += x.expone.length;
+      datosDe(x).forEach(function (d) { tablas[d.tabla] = true; });
+      x.usaFuncionalidades.concat(x.usadaPor).forEach(function (u) { rel[idBase(u)] = true; });
+    });
+    var chips = [plural(archivos, "archivo", "archivos")];
+    var nr = Object.keys(rel).length, nt = Object.keys(tablas).length;
+    if (nr) chips.push(plural(nr, "relacionada", "relacionadas"));
+    if (nt) chips.push(plural(nt, "tabla", "tablas"));
+    if (api) chips.push("API: " + api);
+    var cuerpo = "<h3>" + esc(nombre(f.id)) + "</h3>" +
+      (desc ? "<p>" + esc(desc) + "</p>" : '<p class="pendiente">Sin descripción todavía</p>') +
+      '<div class="chips">' + chips.map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") + "</div>";
+    if (!cerebroDe(f.id)) return '<a class="tarjeta" href="' + hrefFicha(f.id) + '">' + cuerpo + "</a>";
+    // Varios enlaces: la tarjeta no puede ser un <a> (no se anidan); el título lleva a la primera ficha.
+    return '<div class="tarjeta">' + cuerpo.replace("<h3>" + esc(nombre(f.id)) + "</h3>", '<h3><a href="' + hrefFicha(f.id) + '">' + esc(nombre(f.id)) + "</a></h3>") +
+      '<div class="chips cerebros">' + grupo.map(function (x) {
+        return '<a class="chip" href="' + hrefFicha(x.id) + '" title="' + esc(nombre(x.id)) + '">' + esc(cerebroDe(x.id)) + "</a>";
+      }).join("") + "</div></div>";
   }
   function tarjetas() {
     var q = filtro.trim().toLowerCase();
-    var lista = fichas.filter(function (f) {
-      var n = porId[f.id] || {};
-      return !q || [f.id, n.n || "", n.r || ""].concat(n.a || []).join(" ").toLowerCase().indexOf(q) >= 0;
-    }).sort(function (a, b) { return nombre(a.id).localeCompare(nombre(b.id), "es"); });
+    var lista = grupos().filter(function (g) {
+      return !q || g.some(function (f) {
+        var n = porId[f.id] || {};
+        return [f.id, n.n || "", n.r || ""].concat(n.a || []).join(" ").toLowerCase().indexOf(q) >= 0;
+      });
+    }).sort(function (a, b) { return nombre(a[0].id).localeCompare(nombre(b[0].id), "es"); });
     return lista.map(tarjeta).join("") || '<p class="vacio">Ninguna funcionalidad coincide.</p>';
   }
   function pintarCatalogo() {
     if (!fichas.length) {
       raiz.innerHTML = "<h1>Funcionalidades</h1>" +
-        '<p class="aviso">Todavía no hay funcionalidades. <code>flowbrain draft &lt;repo&gt;</code> las propone a partir de las carpetas <code>features/</code>, <code>modules/</code> o <code>domains/</code> en <code>_drafts/product/</code>: revisalas, movelas a <code>product/</code> y corré <code>flowbrain compile</code>.</p>';
+        '<p class="aviso">Todavía no hay funcionalidades. <code>flowbrain draft &lt;repo&gt;</code> las propone a partir de las carpetas <code>features/</code>, <code>modules/</code> o <code>domains/</code> (o, sin ellas, <code>pages/</code>, <code>screens/</code> o <code>views/</code>) en <code>_drafts/product/</code>. Para completarlas con nombre de negocio y descripción, corré <code>/flowbrain-features</code> en Claude Code, o revisalas a mano y pasalas a <code>product/</code> con <code>flowbrain promote</code>.</p>';
       return;
     }
     var sin = fichas.filter(function (f) { return pendiente((porId[f.id] || {}).r); }).length;
     raiz.innerHTML = "<h1>Funcionalidades</h1>" +
-      '<p class="subtitulo">' + plural(fichas.length, "funcionalidad", "funcionalidades") + (sin ? " · " + sin + " sin descripción" : "") + "</p>" +
+      '<p class="subtitulo">' + plural(grupos().length, "funcionalidad", "funcionalidades") +
+      (grupos().length !== fichas.length ? " en " + plural(fichas.length, "ficha", "fichas") + " de sus cerebros" : "") +
+      (sin ? " · " + sin + " sin descripción" : "") + "</p>" +
       '<input id="filtro-feat" type="search" placeholder="Filtrar por nombre o descripción" autocomplete="off">' +
       '<div class="tarjetas" id="tarjetas">' + tarjetas() + "</div>";
     var input = document.getElementById("filtro-feat");

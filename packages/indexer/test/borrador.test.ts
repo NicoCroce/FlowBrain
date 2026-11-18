@@ -51,8 +51,7 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
     await draftDir(clon, brain);
     const t = await readFile(join(brain, "_drafts/repo-envios/technology/tabla-envios.md"), "utf8");
     expect(t).toContain("## Quién la usa");
-    // El parser de PHP no da métodos con rango: queda la evidencia del acceso.
-    expect(t).toContain("- `repo-envios:app/Http/Controllers/EnvioController.php#L20` (escribe)");
+    expect(t).toContain("- `EnvioController.store @ repo-envios:app/Http/Controllers/EnvioController.php#L17` (escribe)");
   });
 
   it("las relaciones del borrador son las aristas etiquetadas a mano, con evidencia", async () => {
@@ -177,6 +176,15 @@ describe("flowbrain draft: funcionalidades", () => {
     ).toEqual(["modules/billing", "src/features/payments", "src/features/videoAnalysis"]);
     expect(nombreDeCarpeta("videoAnalysis")).toBe("Video analysis");
     expect(nombreDeCarpeta("premios-hi")).toBe("Premios hi");
+  });
+
+  it("sin carpetas de funcionalidades, toma las pantallas de pages/, screens/ o views/", async () => {
+    const { carpetasDeFuncionalidad } = await import("../src/index.js");
+    expect(
+      carpetasDeFuncionalidad(["src/pages/Login/Login.jsx", "src/pages/Agenda/index.jsx", "src/pages/components/Boton.jsx", "src/pages/suelta.jsx", "src/api/x.js"]),
+    ).toEqual(["src/pages/Agenda", "src/pages/Login"]);
+    // Con carpetas de funcionalidades, las de pantallas no se proponen aparte.
+    expect(carpetasDeFuncionalidad(["src/features/pagos/a.ts", "src/pages/Inicio/b.tsx"])).toEqual(["src/features/pagos"]);
   });
 
   it("propone una feat por carpeta y une la misma carpeta de otro repo en una sola", async () => {

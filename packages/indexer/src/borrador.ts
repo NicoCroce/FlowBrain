@@ -16,27 +16,39 @@ export const QUE_ES_PENDIENTE = "_Completar: qué problema resuelve para quien l
 
 /** Carpetas que agrupan funcionalidades por convención, en cualquier lenguaje o framework. */
 const RAICES_FUNCIONALIDAD = new Set(["features", "feature", "modules", "module", "domains", "domain"]);
-/** Hijas de esas carpetas que no son funcionalidades sino código compartido. */
-const NO_FUNCIONALIDAD = new Set(["shared", "common", "core", "utils", "util", "helpers", "lib", "libs", "types", "config", "constants", "test", "tests", "__tests__", "__mocks__"]);
-
 /**
- * Carpetas de funcionalidad de un repo: cada hija de `features/`, `modules/` o `domains/` (hasta 4 niveles de
- * profundidad) que contenga archivos. Se toma la raíz más externa: `modules/x/features/y` da `modules/x`. Lo que cuelga
- * de una carpeta de código compartido (`shared/domain/x`, `core/modules/y`) no es una funcionalidad.
+ * Carpetas que agrupan pantallas (`src/pages/Login`, `src/screens/Profile`). Solo se usan si el repo no tiene ninguna
+ * carpeta de funcionalidades: un front organizado por pantallas no tiene otra pista de producto en su estructura.
  */
-export function carpetasDeFuncionalidad(rutas: string[]): string[] {
+const RAICES_PANTALLA = new Set(["pages", "page", "screens", "screen", "views", "view"]);
+/** Hijas de esas carpetas que no son funcionalidades sino código compartido. */
+const NO_FUNCIONALIDAD = new Set(["shared", "common", "core", "utils", "util", "helpers", "lib", "libs", "types", "config", "constants", "test", "tests", "__tests__", "__mocks__", "components", "layouts", "layout"]);
+
+function hijasDeRaiz(rutas: string[], raices: Set<string>): string[] {
   const out = new Set<string>();
   for (const r of rutas) {
     const segs = r.split("/");
     for (let i = 0; i < Math.min(segs.length - 2, 4); i++) {
       const hija = segs[i + 1]!;
       if (NO_FUNCIONALIDAD.has(segs[i]!.toLowerCase())) break;
-      if (!RAICES_FUNCIONALIDAD.has(segs[i]!.toLowerCase())) continue;
+      if (!raices.has(segs[i]!.toLowerCase())) continue;
       if (!NO_FUNCIONALIDAD.has(hija.toLowerCase()) && !/^[._]/.test(hija)) out.add(segs.slice(0, i + 2).join("/"));
       break;
     }
   }
   return [...out].sort(cmp);
+}
+
+/**
+ * Carpetas de funcionalidad de un repo: cada hija de `features/`, `modules/` o `domains/` (hasta 4 niveles de
+ * profundidad) que contenga archivos. Se toma la raíz más externa: `modules/x/features/y` da `modules/x`. Lo que cuelga
+ * de una carpeta de código compartido (`shared/domain/x`, `core/modules/y`) no es una funcionalidad. Si el repo no
+ * tiene ninguna, se usan las hijas de `pages/`, `screens/` o `views/`: una por pantalla, que el modelo o una persona
+ * agrupan después.
+ */
+export function carpetasDeFuncionalidad(rutas: string[]): string[] {
+  const feats = hijasDeRaiz(rutas, RAICES_FUNCIONALIDAD);
+  return feats.length ? feats : hijasDeRaiz(rutas, RAICES_PANTALLA);
 }
 
 /** `videoAnalysis` → `Video analysis`; `premios-hi` → `Premios hi`. */

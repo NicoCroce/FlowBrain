@@ -115,7 +115,7 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .aviso { padding: 12px 14px; border: 1px dashed var(--borde2); border-radius: 12px; color: var(--medio); background: var(--tarjeta); margin: 0 0 16px; }
 
 /* Páginas: funcionalidades, ficha, impacto */
-.pagina { max-width: 1120px; margin: 0 auto; padding: 32px 20px 72px; }
+.pagina { max-width: none; margin: 0 auto; padding: 32px 32px 72px; }
 .pagina h1 { font-size: 28px; font-weight: 600; margin: 0 0 6px; }
 .pagina h2 { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--suave); margin: 0 0 10px; }
 .pagina h3 { font-size: 17px; font-weight: 600; margin: 24px 0 8px; }
@@ -155,7 +155,7 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .recorrido { border: 1px solid var(--borde); border-radius: 12px; padding: 10px 14px; margin: 0 0 8px; background: var(--tarjeta); }
 .recorrido summary { cursor: pointer; }
 .traza { margin: 8px 0 4px; border: 1px solid var(--borde); border-radius: 10px; overflow: hidden; background: var(--fondo); }
-.tz-fila { display: grid; grid-template-columns: minmax(240px, 48%) minmax(0, 1fr); align-items: center; min-height: 28px; border-bottom: 1px solid #141925; }
+.tz-fila { display: grid; grid-template-columns: minmax(320px, 42%) minmax(0, 1fr); align-items: center; min-height: 28px; border-bottom: 1px solid #141925; }
 .tz-fila:last-child { border-bottom: 0; } .tz-fila:hover { background: var(--hover); }
 .tz-nom { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 3px 10px; font-size: 12.5px; white-space: nowrap; overflow: hidden; }
 .tz-nom strong { font-weight: 600; color: var(--claro); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }

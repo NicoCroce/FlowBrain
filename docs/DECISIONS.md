@@ -412,3 +412,59 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Medido en el banco de pruebas.** Con tres fronts, dos APIs y dos cerebros sin cruces, el orden del registro daba líneas cruzadas. El nuevo deja 0 cruces y cada par que se habla en vértices vecinos.
    - **Visto en un navegador**, en esta sesión y en una ventana chica: sin errores de consola. El ritmo del parpadeo queda para ajustar a ojo.
    - **Impulsos como estrellas, y opacidad regulable (mismo día).** El rastro largo y quebrado con un brillo redondo en la punta se leía como una cola que nada. Ahora cada impulso es una estrella chica de cuatro puntas, con cuatro más cortas en diagonal, que titila y gira, y deja una estela recta corta, del 4,5 % de la curva y no del 16 %. El panel suma "Líneas entre cerebros · Opacidad": multiplica el brillo de esas líneas sin tocar el parpadeo. 40 % es el brillo de la versión anterior, el valor inicial es 60 %, 100 % lo lleva a dos veces y media y 0 % deja solo los impulsos. Con un solo cerebro, el control no se muestra.
+
+152. **Funcionalidades deducidas por el modelo, y una tarjeta por funcionalidad entre cerebros (2026-11-17).** En el banco de pruebas, la vista Funcionalidades estaba vacía con siete cerebros indexados. `draft` había dejado 77 borradores sin revisar en cuatro cerebros, con nombre técnico en inglés y sin descripción, y ninguno en los otros dos: un front organizado por pantallas (`src/pages/*`) y un back Symfony por capas (`src/Controller/*`, 182 controllers, 1.028 endpoints). Nada los llevaba a `product/`.
+   - **`draft` toma pantallas cuando no hay carpetas de funcionalidad.** Si el repo no tiene `features/`, `modules/` ni `domains/`, propone una por hija de `pages/`, `screens/` o `views/`. Salen muchas (76 en el front de referencia), pero cada una ya tiene su `codigo` y se puede consultar. No se usa si hay carpetas de funcionalidad, para no proponer lo mismo dos veces. `components/` y `layouts/` dejan de contar como funcionalidad.
+   - **El resto lo hace el modelo, con una guía propia: `/flowbrain-features`** (`flowbrain feature --guide`, la instala `install`). La guía pide:
+     - promover los borradores tal cual, para poder consultarlos con `feature` y `screen`;
+     - unir duplicados y agrupar pantallas sueltas en lo que reconoce quien usa el producto;
+     - sacar contenedores de navegación;
+     - en un back por capas, asignar cada controller a la funcionalidad del front que llama a sus endpoints, con el mismo id, para que se encuentren entre cerebros;
+     - escribir nombre de negocio, resumen y "Qué es" sacados de textos, rutas y llamadas.
+     
+     Lo que no se puede deducir queda en "Preguntas abiertas". `/flowbrain-index` sugiere correrla cuando un cerebro tiene pantallas o endpoints sin funcionalidad.
+   - **Medido en el banco de pruebas**, con cuatro agentes en paralelo (dos fronts primero, los backs después, con los ids de los fronts):
+
+     | Cerebro | Antes | Después | Cobertura |
+     |---|---|---|---|
+     | Front port | 32 borradores | 26 | 73 de 74 pantallas |
+     | App mobile | 31 | 24 | 69 de 71 |
+     | Front por pantallas | 76 | 35 | 142 de 142 |
+     | Back Nest | 12 | 21 | 105 de 109 endpoints; afuera, salud y métricas |
+     | Back Symfony | 2 | 40 | 1.016 de 1.028 endpoints; afuera, Swagger, logs y pruebas |
+
+     Cada cerebro dejó entre 5 y 17 preguntas abiertas para una persona (pantallas legacy, módulos sin uso desde ningún front).
+   - **Una tarjeta por funcionalidad.** Con varios cerebros, el catálogo mostraba la misma funcionalidad una vez por cerebro (cinco "Acceso a la cuenta"), sin decir de cuál. Ahora el mismo id es una sola tarjeta:
+     - la descripción es la primera que no es borrador;
+     - los conteos se suman, y tablas y relacionadas se cuentan sin repetir;
+     - lleva un chip por cerebro que abre su ficha.
+     
+     En el banco de pruebas: 52 funcionalidades en 146 fichas.
+   - **Queda fuera:**
+     - que `draft` proponga funcionalidades para un back por capas (agrupar controllers por el front que los llama, como hizo el modelo con un script);
+     - que `feature` de un front muestre los endpoints que consume de otro cerebro: el agente tuvo que cruzarlos desde la extracción;
+     - una ficha unida entre cerebros (hoy cada chip abre la ficha de su cerebro).
+
+153. **Traza de punta a punta entre cerebros, dibujada en cascada (2026-11-17).** Con un cerebro por repo, la ficha de una funcionalidad del front decía "no llama al back": el front y el back quedaron en cerebros distintos y cada uno solo ve su mitad.
+   - **Unión.** `trazasCruzadas` (core) arma, por cada pantalla con llamadas que cruzan, su recorrido en el front con cada llamada como un toque hacia el endpoint del otro cerebro, y por cada endpoint cruzado lo que ejecuta el back hasta las tablas. Se calcula al generar el visor, con la comunicación y las conexiones vigentes; no se guarda en los grafos.
+   - **Vista.** En la ficha y en la vista de la pantalla, "Traza": una fila por paso (componente, hook, llamada HTTP, método del back, tabla), indentada, con una barra que cubre el paso y todo lo que cuelga de él. No hay tiempos: el eje es el orden de ejecución.
+   - **Rutas ambiguas.** Entre varias rutas que coinciden gana la que acierta más segmentos literales (`/login` es `/api/login`, no `/api/imagen/{id}`). Antes esa llamada se descartaba por ambigua y la pantalla de login quedaba sin traza.
+   - **Medido en el proyecto real:** 202 pantallas con traza y 321 endpoints cruzados. Los 48 endpoints del back en TypeScript llegan hasta sus tablas.
+   - **Hueco conocido.** El back en PHP no tiene traza: el parser de PHP registra las clases pero no los métodos ni las llamadas entre ellos, así que no se encuentra el método que atiende cada endpoint. Las trazas hacia ese back terminan en la llamada HTTP.
+   - **Pendiente para el agente.** La herramienta `pantalla` del MCP todavía no une las dos mitades: hoy la unión está solo en el visor.
+
+154. **El parser de PHP registra métodos y llamadas entre clases (2026-11-17).** Cierra el hueco de la decisión 153: sin métodos con rango no se encontraba cuál atiende cada endpoint de un back en PHP, y las trazas hacia él terminaban en la llamada HTTP.
+   - **Símbolos.** Cada método queda como `Clase.metodo`, con su línea y su última línea, igual que en TypeScript.
+   - **De quién es cada llamada.** El tipo del receptor sale de lo que el código declara: `$this`, propiedades tipadas o inyectadas por el constructor (también las promovidas), parámetros tipados del método, `new`, llamadas estáticas (`self`, `static`, `parent`, `Clase::`) y `getRepository(X::class)`, que por convención de Doctrine es `XRepository`. Una interfaz vale por su única implementación. Los métodos heredados se atribuyen a la clase que los define. Sin tipo declarado no se adivina.
+   - **Efecto en el resto.** Los borradores de tablas ahora nombran el método que las usa en vez de solo la línea, y los endpoints de PHP ganan relaciones finas hacia sus tablas.
+   - **Medido en el proyecto real:** de 247 endpoints del back en PHP que alguna pantalla llama, todos tienen método y 226 llegan a alguna tabla. El visor del proyecto pasó de unos 14 a 22 MB.
+   - **Lo que no resuelve.** Variables sin tipo declarado, contenedores de servicios (`$this->get('x')`) y llamadas dinámicas.
+
+155. **Lo que el código no declara lo resuelve un modelo: `flowbrain calls` y `calls.yaml` (2026-11-17).** El parser no adivina de qué clase es un receptor sin tipo, y ahí se corta el recorrido. En vez de adivinar, se deja anotado y se le da a un modelo la forma de resolverlo y dejarlo escrito.
+   - **Anotar.** El parser de PHP registra como `sinResolver` las llamadas con receptor sin tipo cuando algún método del repo se llama así, con sus `candidatos`. No anota lo que no puede cortar un recorrido: métodos que no llaman a nada (getters, setters) ni cadenas que arrancan en una variable con tipo del framework.
+   - **Informar.** `flowbrain calls` lista los endpoints cuyo recorrido no llega a una tabla y las llamadas sin resolver de su camino, y aparte `masRepetidas`: las que cortan más recorridos a la vez.
+   - **Declarar.** `calls.yaml`, en la raíz de cada brain: `desde`, `linea`, `hacia`, `origen` y `nota`. Se aplica al indexar, así que sobrevive a `brains apply` y `sync`. Solo entra la que se puede comprobar (los dos símbolos existen y la línea cae dentro del método que llama); `calls` dice cuáles no entraron.
+   - **Quién lo hace.** Es el paso 7 de `/flowbrain-index`: el modelo abre cada llamada, confirma el destino leyendo el código, lo declara, reindexa y repite hasta que no quede nada determinable. Lo que no puede confirmar va a dudas.
+   - **Medido en el proyecto real.** El filtro bajó las llamadas anotadas de 11.769 a 2.289. Dos declaraciones (un helper de autenticación que pasa por casi todos los endpoints) bajaron los endpoints de PHP que no llegan a una tabla de 153 a 72.
+   - **Visor.** Las páginas de funcionalidades, pantallas e impacto usan todo el ancho, para que la traza se lea entera.
+

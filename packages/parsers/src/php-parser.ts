@@ -214,6 +214,13 @@ function extraer(repo: RepoFuente, parser: TSParser): Extraccion {
     return null;
   };
   const sinPesos = (t: string | undefined) => (t ?? "").replace(/^\$/, "");
+  // Qué clases del repo definen cada nombre de método: una llamada sin tipo a ese nombre puede ir a alguna de ellas.
+  const definen = new Map<string, string[]>();
+  // Solo cuentan los métodos que hacen algo: un getter o setter que no llama a nada no lleva a ninguna tabla.
+  const LLAMA = ["member_call_expression", "nullsafe_member_call_expression", "scoped_call_expression", "function_call_expression", "object_creation_expression"];
+  for (const c of clases.values()) {
+    for (const [m, info] of c.metodos) if (m && !m.startsWith("__") && info.nodo.descendantsOfType(LLAMA).length) definen.set(m, [...(definen.get(m) ?? []), c.nombre]);
+  }
   const porRuta = new Map(out.archivos.map((a) => [a.ruta, a]));
   for (const c of clases.values()) {
     const arch = porRuta.get(c.archivo);
@@ -271,7 +278,26 @@ function extraer(repo: RepoFuente, parser: TSParser): Extraccion {
           }
         }
         const r = metodoDe(concreta(cls), nombre);
-        if (!r) continue;
+        if (!r) {
+          // Sin tipo declarado para el receptor y con algún método del repo que se llama así: queda anotada, con sus
+          // candidatos, para que alguien (una persona o un modelo) diga a cuál va. Un tipo declarado que no es del
+          // repo es del framework: no se anota.
+          const cand = definen.get(nombre);
+          const receptor = n.type === "scoped_call_expression" ? campo(n, "scope") : campo(n, "object");
+          // La variable de donde arranca la cadena (`$request->request->all()` → `$request`): si tiene un tipo
+          // declarado que no es del repo, todo lo que cuelga de ella es del framework.
+          let base: Node | null = receptor;
+          while (base && base.type !== "variable_name") base = campo(base, "object");
+          const tipoBase = base && base.text !== "$this" ? locales.get(sinPesos(base.text)) : undefined;
+          const ajeno = !!tipoBase && !concreta(tipoBase);
+          if (!cls && cand && receptor && receptor.text !== "$this" && !ajeno) {
+            const llamada = `${receptor.text.replace(/\s+/g, " ").slice(0, 60)}->${nombre}`;
+            if (!(arch.sinResolver ?? []).some((x) => x.linea === linea(n) && x.llamada === llamada)) {
+              (arch.sinResolver ??= []).push({ desde, linea: linea(n), llamada, candidatos: cand.slice(0, 6).map((k) => `${k}.${nombre}`).sort() });
+            }
+          }
+          continue;
+        }
         const simbolo = `${r.clase.nombre}.${r.m.nombre}`;
         if (simbolo === desde || vistos.has(simbolo)) continue;
         vistos.add(simbolo);

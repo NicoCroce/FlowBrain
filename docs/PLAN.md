@@ -258,7 +258,7 @@ El mapa 3D dibuja un cerebro por cada cerebro del registro, con la misma estéti
 
 ## Pendientes anotados en las decisiones
 
-Lo que cada paso dejó afuera está en su decisión (120 a 150), bajo "Queda fuera". Los de más valor:
+Lo que cada paso dejó afuera está en su decisión (120 a 152), bajo "Queda fuera". Los de más valor:
 
 - Que `impacto` y la ficha lean del grafo en vez de recalcular desde la extracción (120).
 - Preguntas de evaluación para las herramientas sin cubrir (121): hoy `buscar_nodo`, `contrato_de`, `recorrer_grafo`, `trazar`, `infra`, `riesgo`, `deriva` y `paridad`.
@@ -272,3 +272,4 @@ Lo que cada paso dejó afuera está en su decisión (120 a 150), bajo "Queda fue
 - Marcar en el registro una llamada como interna del front (URL relativa a su propio servidor), para que no se cruce con ningún cerebro (150).
 - `deriva` y `paridad` entre cerebros (139, 150).
 - Otros routers que hoy no dan pantallas: Expo Router (rutas por archivo), Next.js `pages/`/`app/` como pantallas, React Navigation con `createStaticNavigation` y pantallas declaradas como objetos (149).
+- Funcionalidades en un back por capas: que `draft` agrupe controllers por la funcionalidad del front que llama a sus endpoints; que `feature` de un front liste lo que consume de otro cerebro; ficha unida entre cerebros (152).

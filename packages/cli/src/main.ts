@@ -9,6 +9,9 @@ import { parseArgs } from "node:util";
 import {
   buscarNodo,
   ARCHIVO_REGISTRO,
+  ARCHIVO_LLAMADAS,
+  leerLlamadasDeclaradas,
+  llamadasPorResolver,
   MAX_CEREBROS,
   buscarRegistro,
   CARPETA_PROYECTO,
@@ -44,7 +47,7 @@ import { draftDir } from "@flowbrain/indexer";
 import { aplicar, ARCHIVO_VISOR, crearRegistro, encontrarRepos, escribirVisor, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { evidencia } from "./evidencia.js";
-import { GUIA_ANALISIS, NOMBRE_COMANDO } from "./guia.js";
+import { GUIA_ANALISIS, GUIA_FUNCIONALIDADES, NOMBRE_COMANDO, NOMBRE_FUNCIONALIDADES } from "./guia.js";
 import { comandoBrain, comillas, init, instalarComando, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
 import { escribirIndex, indexar } from "@flowbrain/parsers";
@@ -84,7 +87,8 @@ Comandos:
   traverse <nodo> [--verbs a,b] [--direction out|in|both] [--depth n]
   contract <nodo> [--endpoint "MÉTODO /ruta"]
   trace --from <nodo|URL|ruta|archivo> [--to <nodo>]
-  feature <id|nombre>                 ficha compacta: endpoints, consumo, datos, relaciones, dominio compartido
+  feature <id|nombre> [--guide]       ficha compacta: endpoints, consumo, datos, relaciones, dominio compartido;
+                                            --guide imprime cómo deducir y completar las funcionalidades (para el modelo)
   flow <"MÉTODO /ruta"|Clase.metodo>   pasos controller → servicio → repositorio, con lo que toca cada uno
   screen </ruta|Componente>               pantalla del front de punta a punta: de dónde se llega, a dónde lleva, qué llama del back
   callers <Clase.metodo|Clase> [--depth n]
@@ -92,6 +96,9 @@ Comandos:
   risk [archivo...] [--diff <archivo|->]  alcance de un cambio: desde un diff (git diff | flowbrain risk --diff -) o archivos
          [--repo <repo-id>]                 tocados, qué funcionalidades, endpoints, pantallas, tablas y repos alcanza
   parity <svc-viejo> <svc-nuevo>           qué falta migrar de un servicio a otro: endpoints, pantallas y tablas
+  calls [--limit n]                         dónde se cortan los recorridos: endpoints que no llegan a una tabla y las
+                                            llamadas sin tipo que hay en su camino, con candidatos; se resuelven
+                                            declarándolas en calls.yaml (raíz del brain) y reindexando
   drift [svc]                              llamadas que ningún endpoint atiende y endpoints que nadie llama
   infra [nodo] [--text <t>]                imágenes, compose, pipelines, variables de entorno y proxy, con su archivo
   eval [archivo] [--min pct]          corre preguntas con respuesta conocida (por defecto evals/questions.json)
@@ -218,10 +225,13 @@ export async function ejecutar(
       const comandoCC = join(dirname(settings), "commands", `${NOMBRE_COMANDO}.md`);
       await mkdir(dirname(comandoCC), { recursive: true });
       await writeFile(comandoCC, GUIA_ANALISIS, "utf8");
+      const comandoFeat = join(dirname(settings), "commands", `${NOMBRE_FUNCIONALIDADES}.md`);
+      await writeFile(comandoFeat, GUIA_FUNCIONALIDADES, "utf8");
       const lineas = [
         ...(bin ? [`Comando flowbrain en ${bin.archivo}${bin.enPath ? "" : ` (esa carpeta no está en tu PATH: agregá export PATH="${dirname(bin.archivo)}:$PATH" a tu ~/.zshrc)`}.`] : []),
         `Hooks de Claude Code ${cambio ? "registrados" : "ya estaban registrados"} en ${settings} (UserPromptSubmit y SessionEnd).`,
         `Comando /${NOMBRE_COMANDO} para Claude Code en ${comandoCC}: indexa el proyecto y analiza la comunicación real entre servicios.`,
+        `Comando /${NOMBRE_FUNCIONALIDADES} en ${comandoFeat}: deduce y completa las funcionalidades de producto de cada cerebro.`,
         "",
       ];
       const reg = join(proyecto, CARPETA_PROYECTO);
@@ -307,6 +317,7 @@ export async function ejecutar(
     // Con un registro de cerebros, el resto de los comandos trabaja sobre uno: el pedido, o el del repo actual.
     // El hook elige el suyo más abajo, por el directorio que le manda Claude Code, y nunca falla.
     const raizRegistro = (await esRegistro(raiz)) ? raiz : null;
+    if (comando === "feature" && o.guide) return { codigo: 0, stdout: GUIA_FUNCIONALIDADES, stderr: "" };
     if (comando === "evidence") {
       // Con --guide, las instrucciones para el modelo que va a analizar; sin él, el informe.
       if (o.guide) return { codigo: 0, stdout: GUIA_ANALISIS, stderr: "" };
@@ -528,6 +539,12 @@ export async function ejecutar(
         if (!arg || !positionals[2]) throw new ConsultaError("parametro_invalido", "uso: flowbrain parity <svc-viejo> <svc-nuevo>");
         resultado = paridad(ctx, { viejo: arg, nuevo: positionals[2], ...opt("budget_tokens", comunes.budget_tokens) });
         break;
+      case "calls": {
+        // Dónde se cortan los recorridos por llamadas sin tipo, y qué hay declarado en calls.yaml.
+        const decl = await readFile(join(raiz, ARCHIVO_LLAMADAS), "utf8").then(leerLlamadasDeclaradas, () => null);
+        resultado = { ...llamadasPorResolver(ctx, { ...opt("limite", entero(o.limit, "--limit")), ...(decl ? { declaradas: decl.llamadas } : {}) }), ...(decl?.rechazadas.length ? { malFormadas: decl.rechazadas } : {}) };
+        break;
+      }
       case "drift":
         resultado = deriva(ctx, { ...opt("nodo", arg), ...opt("budget_tokens", comunes.budget_tokens) });
         break;

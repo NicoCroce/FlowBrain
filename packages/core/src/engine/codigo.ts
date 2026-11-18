@@ -906,3 +906,77 @@ export function paridad(ctx: Contexto, p: ParidadParams) {
   for (const l of listas) while (b !== null && l.length && tokens({ ...res, truncado: true, omitidos: omitidos + 1 }) > b) { l.pop(); omitidos++; }
   return omitidos ? { ...res, truncado: true as const, omitidos } : res;
 }
+
+export interface PorResolverParams {
+  limite?: number;
+  /** Lo que dice `calls.yaml`, para informar cuáles ya entraron al índice. */
+  declaradas?: Array<{ desde: string; hacia: string; linea: number }>;
+}
+
+/**
+ * Dónde se cortan los recorridos: endpoints cuyo recorrido no llega a ninguna tabla y que tienen, en el camino,
+ * llamadas que el parser no pudo atribuir (receptor sin tipo declarado). Cada una trae sus candidatos, para que quien
+ * lea el código (una persona o un modelo) declare a cuál va en `calls.yaml`.
+ */
+export function llamadasPorResolver(ctx: Contexto, p: PorResolverParams = {}) {
+  const ix = indice(ctx);
+  let total = 0;
+  for (const [archivo, e] of ix.estructura) if (!ES_TEST.test(archivo)) total += e.sinResolver?.length ?? 0;
+  const endpoints = ctx.graph.nodes.filter((n) => n.tipo === "endpoint").map((n) => n.id).sort(cmp);
+  const sinMetodo: string[] = [];
+  const grupos: Array<{ endpoint: string; llamadas: Array<{ desde: string; linea: number; llamada: string; candidatos: string[] }>; mas?: number }> = [];
+  let sinTabla = 0;
+  for (const ep of endpoints) {
+    const r = ix.recorredor.desdeEndpoint(ep);
+    if (!r.pasos.length) {
+      sinMetodo.push(ep);
+      continue;
+    }
+    if (r.pasos.some((x) => x.toca.some((t) => t.verbo === "lee_de" || t.verbo === "escribe_en"))) continue;
+    sinTabla++;
+    const llamadas: Array<{ desde: string; linea: number; llamada: string; candidatos: string[] }> = [];
+    const vistos = new Set<string>();
+    for (const paso of r.pasos) {
+      const archivo = paso.evidencia.replace(/#L\d+$/, "");
+      const k = `${archivo}#${paso.simbolo}`;
+      if (vistos.has(k)) continue;
+      vistos.add(k);
+      for (const s of ix.estructura.get(archivo)?.sinResolver ?? []) {
+        if (s.desde !== paso.simbolo) continue;
+        llamadas.push({ desde: k, linea: s.linea, llamada: s.llamada, candidatos: (s.candidatos ?? []).flatMap((c) => ix.porNombre.get(c) ?? []).sort(cmp) });
+      }
+    }
+    if (llamadas.length) grupos.push({ endpoint: ep, llamadas: llamadas.slice(0, 8), ...(llamadas.length > 8 ? { mas: llamadas.length - 8 } : {}) });
+  }
+  const limite = p.limite ?? 20;
+  // Una misma llamada corta muchos recorridos (un helper de autenticación, un serializador): resolver esas primero.
+  const repetidas = new Map<string, { desde: string; linea: number; llamada: string; candidatos: string[]; endpoints: number }>();
+  for (const g of grupos) {
+    for (const l of g.llamadas) {
+      const k = `${l.desde}#L${l.linea}`;
+      const r = repetidas.get(k);
+      if (r) r.endpoints++;
+      else repetidas.set(k, { ...l, endpoints: 1 });
+    }
+  }
+  const masRepetidas = [...repetidas.values()].filter((r) => r.endpoints > 1).sort((a, b) => b.endpoints - a.endpoints || cmp(a.desde, b.desde) || a.linea - b.linea).slice(0, 15);
+  const declaradas = (p.declaradas ?? []).map((d) => {
+    const de = partes(d.desde), a = partes(d.hacia);
+    const repo = d.hacia.slice(0, d.hacia.indexOf(":"));
+    const ok = (ix.estructura.get(de.archivo)?.invoca ?? []).some((i) => i.desde === de.simbolo && i.simbolo === a.simbolo && `${repo}:${i.archivo}` === a.archivo);
+    return { ...d, enElIndice: ok };
+  });
+  return {
+    herramienta: "llamadas_por_resolver",
+    endpoints: endpoints.length,
+    /** Endpoints sin método que los atienda: ahí el hueco es del parser de rutas, no de una llamada. */
+    sinMetodo: { total: sinMetodo.length, ejemplos: sinMetodo.slice(0, 5) },
+    sinLlegarATabla: sinTabla,
+    conLlamadasPorResolver: grupos.length,
+    sinResolverEnTotal: total,
+    ...(masRepetidas.length ? { masRepetidas } : {}),
+    grupos: grupos.slice(0, limite),
+    ...(grupos.length > limite ? { gruposOmitidos: grupos.length - limite } : {}),
+    ...(declaradas.length ? { declaradas: { total: declaradas.length, enElIndice: declaradas.filter((d) => d.enElIndice).length, faltan: declaradas.filter((d) => !d.enElIndice).slice(0, 10).map((d) => `${d.desde} → ${d.hacia}`) } } : {}),
+  };
+}
