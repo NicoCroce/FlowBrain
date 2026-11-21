@@ -1,6 +1,8 @@
-import { compileDir, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { compileDir, fidelidadDeFuentes, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
 import { renderViewerCerebros, type CerebroVisor, type PorPaquetes } from "./cerebros.js";
-import { renderViewer } from "./viewer.js";
+import { renderViewer, type FidelidadVisor } from "./viewer.js";
 
 export * from "./viewer.js";
 export * from "./mapa3d.js";
@@ -13,12 +15,18 @@ export * from "./cerebros.js";
 export const RUTA_VIEWER = "_build/viewer.html";
 
 /** Salida extra de `compile`: el visor autocontenido. */
-export async function visor(s: Salidas): Promise<Record<string, string>> {
-  return { [RUTA_VIEWER]: renderViewer(s.graph, s.funcionalidades) };
+export async function visor(s: Salidas, fidelidad?: FidelidadVisor): Promise<Record<string, string>> {
+  return { [RUTA_VIEWER]: renderViewer(s.graph, s.funcionalidades, fidelidad) };
 }
 
-/** `flowbrain compile` completo: grafo, índices, páginas y el visor. */
-export const compileDirConVisor = (raiz: string) => compileDir(raiz, visor);
+const jsonDe = async (dir: string) => Promise.all((await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort().map((n) => readFile(join(dir, n), "utf8")));
+
+/** `flowbrain compile` completo: grafo, índices, páginas y el visor, con la fidelidad de cada archivo indexado. */
+export const compileDirConVisor = (raiz: string) =>
+  compileDir(raiz, async (s) => {
+    const [archivos, extracciones] = await Promise.all([jsonDe(join(raiz, "_build/files")), jsonDe(join(raiz, "_build/extraction"))]);
+    return visor(s, archivos.length ? fidelidadDeFuentes(s.graph, s.funcionalidades, archivos, extracciones) : undefined);
+  });
 
 /** Página del visor para varios cerebros. */
 export async function visorDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas?: TrazasCruzadas, paquetes?: PorPaquetes): Promise<string> {

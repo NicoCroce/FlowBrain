@@ -76,7 +76,7 @@ Todo lo que el modelo escribe queda en `.flowbrain/`, legible y versionable junt
 | `packages/indexer` | Borradores de páginas a partir del código |
 | `packages/mcp` | Servidor MCP |
 | `packages/hooks` | Hooks de Claude Code (contexto en cada prompt, notas al cerrar la sesión) |
-| `packages/viewer` | Visor HTML: catálogo, pantallas, trazas, impacto y mapa 3D |
+| `packages/viewer` | Visor HTML: catálogo, pantallas, trazas, impacto, fidelidad y mapa 3D |
 | `packages/cli` | Comando `flowbrain` y las guías de los comandos para el modelo |
 | `packages/flowbrain` | Paquete npm publicable (un solo archivo armado con esbuild) |
 

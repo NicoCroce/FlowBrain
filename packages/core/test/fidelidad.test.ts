@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConsultaError, crearContexto, crearIndiceCodigo, fidelidad, fidelidadDeArchivos, type Ficha, type Graph, type GraphEdge, type GraphNode } from "../src/index.js";
+import { ConsultaError, crearContexto, crearIndiceCodigo, fidelidad, fidelidadDeArchivos, fidelidadDeFuentes, type Ficha, type Graph, type GraphEdge, type GraphNode } from "../src/index.js";
 
 /**
  * Un back y un front mínimos, armados a mano para que cada archivo tenga una falta distinta y conocida:
@@ -73,21 +73,37 @@ describe("fidelidad por archivo", () => {
     expect(a.señales).toEqual({ llamadas: { ok: 1, total: 1 }, entradas: { ok: 1, total: 2 }, contrato: { ok: 1, total: 2 }, funcionalidad: { ok: 1, total: 1 } });
     // (2·1 + 2·0,5 + 1·0,5 + 1·1) / 6 = 75
     expect(a.puntaje).toBe(75);
-    expect(a.faltas).toEqual(["1 endpoints cuyo recorrido no llega a nada (DELETE /pedidos/{id})", "1 endpoints sin tipo de respuesta"]);
+    expect(a.faltas).toEqual(["1 endpoint cuyo recorrido no llega a nada (DELETE /pedidos/{id})", "1 endpoint sin tipo de respuesta"]);
   });
 
   it("llamadas sin resolver y tablas sin página, con su línea", () => {
     const a = de("api/servicio.ts");
     expect(a.señales).toMatchObject({ llamadas: { ok: 1, total: 2 }, datos: { ok: 1, total: 2 } });
     expect(a.puntaje).toBe(60);
-    expect(a.faltas[0]).toContain("1 llamadas sin resolver (L6)");
-    expect(a.faltas[1]).toContain("1 accesos a tablas sin página (auditoria; L8)");
+    expect(a.faltas[0]).toContain("1 llamada sin resolver (L6)");
+    expect(a.faltas[1]).toContain("1 acceso a tablas sin página (auditoria; L8)");
   });
 
   it("HTTP sin ruta y archivos sin funcionalidad", () => {
     expect(de("web/api.ts")).toMatchObject({ señales: { http: { ok: 1, total: 2 } }, puntaje: 67 });
-    expect(de("web/api.ts").faltas[0]).toContain("1 llamadas HTTP sin ruta (L14)");
+    expect(de("web/api.ts").faltas[0]).toContain("1 llamada HTTP sin ruta (L14)");
     expect(de("web/suelto.ts")).toMatchObject({ puntaje: 0, funcionalidades: [] });
+  });
+});
+
+describe("fidelidad con varios cerebros", () => {
+  // Una llamada con ruta que este cerebro no atiende: sola se da por entendida; con otros cerebros, depende de si cruzó.
+  const pendiente = { verbo: "llama_a", desde: "svc-web", referencia: "GET /stock", motivo: "ningún endpoint conocido coincide", evidencia: `${R}:web/api.ts#L16`, candidatos: [], llamada: { metodo: "GET", ruta: "/stock", base: "${api}" } };
+  const j = JSON.parse(extraccion) as { pendientes: unknown[] };
+  const conPendiente = JSON.stringify({ ...j, pendientes: [...j.pendientes, pendiente] });
+  const http = (cruzadas?: Set<string>) => fidelidadDeFuentes(graph, [ficha], [archivos], [conPendiente], cruzadas ? { cruzadas } : {}).archivos.find((a) => a.archivo === `${R}:web/api.ts`)!;
+
+  it("la llamada que cruza cuenta como unida; la que no llega a ningún cerebro, como falta", () => {
+    expect(http().señales.http).toEqual({ ok: 2, total: 3 });
+    expect(http(new Set([`${R}:web/api.ts#L16`])).señales.http).toEqual({ ok: 2, total: 3 });
+    const sola = http(new Set());
+    expect(sola.señales.http).toEqual({ ok: 1, total: 3 });
+    expect(sola.faltas.join(" ")).toContain("1 llamada HTTP que no se unió a ningún endpoint, ni de este cerebro ni de los comunicados (L16)");
   });
 });
 

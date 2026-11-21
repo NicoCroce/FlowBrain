@@ -2,7 +2,7 @@ import { DEPENDE_JS, IMPACTO_JS } from "@flowbrain/core";
 
 /**
  * "Impacto" (si cambia esta pieza, qué se ve afectado, por niveles y con el porqué) y el enrutador de todo el visor:
- * `#/funcionalidades`, `#/f/<id>`, `#/impacto[/<id>]`, `#/n/<id>` (ficha técnica de cualquier pieza), `#/grafo[/<id>]`. Los enlaces viejos `#/mapa[/<id>]` (la vista
+ * `#/funcionalidades`, `#/f/<id>`, `#/impacto[/<id>]`, `#/fidelidad`, `#/n/<id>` (ficha técnica de cualquier pieza), `#/grafo[/<id>]`. Los enlaces viejos `#/mapa[/<id>]` (la vista
  * de dependencias, que se quitó) abren el mapa 3D. JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
 export const MAPA_JS =
@@ -26,7 +26,7 @@ export const MAPA_JS =
   var punto = function (id) { return puntoT(tipo(id)); };
   var entran = {}, salen = {};
   deps.forEach(function (d) { (entran[d[1]] = entran[d[1]] || []).push(d); (salen[d[0]] = salen[d[0]] || []).push(d); });
-  var vistas = { producto: document.getElementById("producto"), impacto: document.getElementById("impacto"), grafo: document.getElementById("app") };
+  var vistas = { producto: document.getElementById("producto"), impacto: document.getElementById("impacto"), fidelidad: document.getElementById("fidelidad"), grafo: document.getElementById("app") };
 
   // ---------- Impacto ----------
   var raizImpacto = vistas.impacto, copia = "", filtroImpacto = "todos";
@@ -298,6 +298,7 @@ export const MAPA_JS =
     }
     if (/^\/grafo/.test(h)) vista = "grafo";
     else if (/^\/(impacto|n\/)/.test(h)) vista = "impacto";
+    else if (/^\/fidelidad/.test(h)) vista = "fidelidad";
     else if (h === "" && !fichas.length) vista = "grafo";
     else vista = "producto";
     // La navegación entre pantallas se dibuja en el mismo contenedor que las funcionalidades.
@@ -306,6 +307,7 @@ export const MAPA_JS =
     Object.keys(vistas).forEach(function (k) { vistas[k].classList.toggle("oculto", k !== vista); });
     document.getElementById("presets").classList.toggle("oculto", vista !== "grafo");
     if (vista === "grafo") { V.mostrarMapa(); if ((m = /^\/grafo\/(.+)$/.exec(h))) V.enfocar(m[1]); return; }
+    if (vista === "fidelidad") { window.brainFidelidad.mostrar(); window.scrollTo(0, 0); return; }
     if (vista === "impacto" && (m = /^\/n\/(.+)$/.exec(h))) { mostrarFicha(m[1]); window.scrollTo(0, 0); return; }
     if (vista === "impacto") { m = /^\/impacto\/(.+?)(?:\/(afecta|depende))?$/.exec(h); mostrarImpacto(m ? m[1] : null, m ? m[2] : null); window.scrollTo(0, 0); return; }
     if (pestana === "pantallas") window.brainPantallas.mostrar(h); else P.mostrar(h);

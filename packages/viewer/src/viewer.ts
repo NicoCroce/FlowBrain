@@ -1,4 +1,5 @@
-import { dependenciasDelGrafo, type Ficha, type Graph } from "@flowbrain/core";
+import { dependenciasDelGrafo, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
 import { mapa3dDelGrafo } from "./mapa3d.js";
 import { GRAFO3D_JS } from "./viewer-3d.js";
 import { MAPA_JS } from "./viewer-mapa.js";
@@ -7,7 +8,7 @@ import { PRODUCTO_JS } from "./viewer-producto.js";
 
 /**
  * Visor estático (`_build/viewer.html`): un único HTML con el grafo embebido, sin servidor ni red. Vistas:
- * funcionalidades, mapa 3D del grafo entero (`viewer-3d.ts`) e impacto.
+ * funcionalidades, mapa 3D del grafo entero (`viewer-3d.ts`), impacto y fidelidad (`viewer-fidelidad.ts`).
  * Determinístico: depende solo del grafo, las funcionalidades y la versión de Cytoscape.
  */
 
@@ -16,9 +17,27 @@ const TIPOS_INICIALES = ["feat", "pantalla", "componente", "endpoint", "tabla", 
 
 const seguroEnScript = (s: string) => s.replace(/<\/(script)/gi, "<\\/$1").replace(/<!--/g, "<\\!--");
 
-/** Lo que el visor embebe de un brain. */
-export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = []) {
+/** Fidelidad de un brain tal como la calcula el motor (`fidelidadDeArchivos`). */
+export interface FidelidadVisor {
+  archivos: FidelidadArchivo[];
+  sinDatos: string[];
+}
+
+/** Fidelidad en el formato corto que embebe el visor: una fila por archivo medido. */
+export function fidelidadDelVisor(f: FidelidadVisor | undefined) {
+  if (!f) return null;
   return {
+    // a: archivo, p: puntaje, l: lenguaje, k: capa, f: funcionalidades, s: señal → [ok, total], x: faltas.
+    archivos: f.archivos.map((x) => ({ a: x.archivo, p: x.puntaje, l: x.lenguaje, k: x.capa, f: x.funcionalidades, s: Object.fromEntries(Object.entries(x.señales).map(([k, v]) => [k, [v.ok, v.total]])), x: x.faltas })),
+    sinDatos: f.sinDatos.length,
+    ejemplosSinDatos: f.sinDatos.slice(0, 5),
+  };
+}
+
+/** Lo que el visor embebe de un brain. */
+export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor) {
+  return {
+    fidelidad: fidelidadDelVisor(fidelidad),
     dependencias: dependenciasDelGrafo(graph, funcionalidades),
     funcionalidades,
     // Pantallas del front con su envoltura y a dónde llevan; el recorrido de cada una viene en su funcionalidad.
@@ -56,8 +75,8 @@ export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = []) {
 
 export type DatosVisor = ReturnType<typeof datosDelVisor>;
 
-export function renderViewer(graph: Graph, funcionalidades: Ficha[] = []): string {
-  return paginaDelVisor(datosDelVisor(graph, funcionalidades));
+export function renderViewer(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor): string {
+  return paginaDelVisor(datosDelVisor(graph, funcionalidades, fidelidad));
 }
 
 /** La página autocontenida, a partir de los datos (de un brain, o de varios cerebros ya unidos). */
@@ -204,6 +223,39 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .pasos .flecha { color: var(--suave); }
 .toca { margin: 4px 0 0 0; }
 
+/* Fidelidad */
+.fd-cifras { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 20px; }
+.fd-cifra { padding: 14px 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
+.fd-cifra b { display: block; font: 600 28px var(--display); font-variant-numeric: tabular-nums; }
+.fd-cifra span { font-size: 12px; color: var(--suave); }
+.fd-graficos { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin: 0 0 20px; }
+.fd-graficos section { padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); min-width: 0; }
+.fd-barras { display: flex; flex-direction: column; gap: 2px; }
+.fd-barra { display: grid; grid-template-columns: minmax(64px, 34%) minmax(0, 1fr) minmax(120px, auto); align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 4px 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--claro); font: 500 13px var(--sans); text-align: left; cursor: pointer; }
+.fd-barra:hover { background: var(--hover); color: #FFFFFF; } .fd-barra.on { background: #1D2740; border-color: var(--primario); color: #FFFFFF; }
+.fd-et { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fd-pista { height: 8px; border-radius: 999px; background: #0E1118; border: 1px solid var(--borde); overflow: hidden; }
+.fd-relleno { display: block; height: 100%; border-radius: 999px; }
+.fd-val { font-size: 12px; color: var(--suave); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fd-sin { margin: 4px 8px; font-size: 12px; color: var(--suave); }
+.fd-filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 20px; padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
+.fd-campo { flex-direction: column; align-items: stretch; gap: 6px; cursor: default; }
+.fd-campo input[type=number] { width: 100%; height: 38px; padding: 0 12px; border: 1px solid #262C3A; border-radius: 10px; background: #0E1118; color: var(--text); font: 400 13px var(--sans); outline: none; }
+.fd-campo input[type=number]:focus { border-color: var(--primario); }
+.fd-cab { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.fd-cab .subtitulo { margin: 0; } .fd-acc { display: flex; gap: 8px; }
+.fd-fila { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 14px; align-items: start; padding: 12px 0 !important; }
+.fd-p { display: inline-flex; align-items: center; justify-content: center; height: 40px; border: 1px solid; border-radius: 10px; font: 600 16px var(--display); font-variant-numeric: tabular-nums; }
+.fd-cuerpo { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fd-ruta code { font-size: 13px; color: var(--text); }
+.fd-sinfeat { color: var(--dudoso); border-color: #5B2A2A; }
+.fd-señales { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--suave); }
+.fd-s.falta { color: var(--feat); }
+.fd-faltas { margin: 0; padding-left: 18px; color: var(--claro); font-size: 13px; }
+.fd-faltas li { padding: 1px 0; border: 0; }
+.fd-ok { margin: 0; font-size: 13px; color: var(--tabla); }
+.fd-mas { display: flex; align-items: center; gap: 12px; margin-top: 16px; color: var(--suave); }
+
 a.nb { text-decoration: none; }
 
 /* Mapa 3D */
@@ -296,11 +348,12 @@ a.nb { text-decoration: none; }
 <body>
 <header id="cabecera">
   <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>FlowBrain</div>
-  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/impacto" data-vista="impacto">Impacto</a></nav>
+  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/fidelidad" data-vista="fidelidad">Fidelidad</a></nav>
   <div id="presets" class="oculto"></div>
 </header>
 <div id="producto" class="pagina"></div>
 <div id="impacto" class="pagina oculto"></div>
+<div id="fidelidad" class="pagina oculto"></div>
 <div id="app" class="oculto">
   <aside class="m3-panel m3-izq">
     <div class="m3-busca">
@@ -368,6 +421,7 @@ a.nb { text-decoration: none; }
 <script>${seguroEnScript(GRAFO3D_JS)}</script>
 <script>${seguroEnScript(PRODUCTO_JS)}</script>
 <script>${seguroEnScript(PANTALLAS_JS)}</script>
+<script>${seguroEnScript(FIDELIDAD_JS)}</script>
 <script>${seguroEnScript(MAPA_JS)}</script>
 </body>
 </html>

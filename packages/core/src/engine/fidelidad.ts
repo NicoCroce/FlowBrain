@@ -1,8 +1,8 @@
 import { cmp } from "../canonical.js";
-import { capaDe, ES_TEST } from "../funcionalidades.js";
-import { dentroDe } from "../schema.js";
-import { ajustarLista, pantallasSinLlamadas } from "./codigo.js";
-import type { Contexto } from "./contexto.js";
+import { capaDe, ES_TEST, type Ficha } from "../funcionalidades.js";
+import { dentroDe, type Graph } from "../schema.js";
+import { ajustarLista, crearIndiceCodigo, pantallasSinLlamadas } from "./codigo.js";
+import { crearContexto, type Contexto } from "./contexto.js";
 import { ConsultaError, normalizar } from "./herramientas.js";
 
 /**
@@ -24,7 +24,7 @@ export const PESOS: Record<Señal, number> = { llamadas: 2, http: 2, datos: 2, e
 /** Qué mide cada señal, para quien lee el informe. */
 export const QUE_MIDE: Record<Señal, string> = {
   llamadas: "llamadas entre métodos que el índice pudo atribuir a su destino",
-  http: "llamadas HTTP con ruta conocida (unidas a un endpoint, a un externo, o con ruta para otro cerebro)",
+  http: "llamadas HTTP unidas a un endpoint o a un externo (con un solo cerebro, alcanza con que tengan ruta)",
   datos: "accesos a tablas que tienen página y dicen qué columnas tocan",
   entradas: "endpoints atendidos acá cuyo recorrido llega a una tabla, un servicio o una cola",
   contrato: "endpoints atendidos acá con tipo de respuesta",
@@ -66,10 +66,26 @@ const lineas = (xs: number[]) => {
   const u = [...new Set(xs)].sort((a, b) => a - b);
   return u.length > 6 ? `L${u.slice(0, 6).join(", L")} y ${u.length - 6} más` : `L${u.join(", L")}`;
 };
+/** "1 llamada" / "3 llamadas". */
+const cuantos = (c: number, uno: string, varios: string) => `${c} ${c === 1 ? uno : varios}`;
 const redondo = (n: number) => Math.round(n * 10) / 10;
 
+export interface OpcionesFidelidad {
+  /**
+   * Con varios cerebros: evidencias (`repo:ruta#Ln`) de las llamadas HTTP de este cerebro que se unieron a un endpoint
+   * de otro. Si viene, una llamada con ruta que no se unió ni acá ni allá cuenta como falta; si no viene, se da por
+   * entendida (no se sabe si hay otro cerebro que la atienda).
+   */
+  cruzadas?: ReadonlySet<string>;
+}
+
+/** Lo mismo que `fidelidadDeArchivos`, desde los contenidos de `_build` (para quien no tiene un contexto armado). */
+export function fidelidadDeFuentes(graph: Graph, fichas: Ficha[], archivos: string[], extracciones: string[], opciones: OpcionesFidelidad = {}) {
+  return fidelidadDeArchivos(crearContexto(graph, [], new Map(), crearIndiceCodigo(graph, fichas, archivos, extracciones)), opciones);
+}
+
 /** Puntaje de cada archivo del índice que se puede medir, y cuáles no se pudieron medir. Sin filtros ni recortes. */
-export function fidelidadDeArchivos(ctx: Contexto): { archivos: FidelidadArchivo[]; sinDatos: string[] } {
+export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad = {}): { archivos: FidelidadArchivo[]; sinDatos: string[] } {
   const ix = ctx.codigo;
   if (!ix) throw new ConsultaError("parametro_invalido", "no hay índice de código: corré `flowbrain index <repo>` y `flowbrain compile`");
   const archivoDe = (k: string) => k.slice(0, k.lastIndexOf("#"));
@@ -82,12 +98,13 @@ export function fidelidadDeArchivos(ctx: Contexto): { archivos: FidelidadArchivo
   const hayFuncionalidades = ix.fichas.size > 0;
 
   // Llamadas HTTP que no se unieron a nada, por archivo.
-  const pendientes = new Map<string, { conRuta: number; sinRuta: number[] }>();
+  const pendientes = new Map<string, { conRuta: number; sinDestino: number[]; sinRuta: number[] }>();
   for (const l of ix.llamadasPendientes) {
     const m = l.llamada ? /^(.*)#L(\d+)$/.exec(l.evidencia) : null;
     if (!m) continue;
-    const p = pendientes.get(m[1]!) ?? pendientes.set(m[1]!, { conRuta: 0, sinRuta: [] }).get(m[1]!)!;
+    const p = pendientes.get(m[1]!) ?? pendientes.set(m[1]!, { conRuta: 0, sinDestino: [], sinRuta: [] }).get(m[1]!)!;
     if (l.llamada!.ruta === null) p.sinRuta.push(Number(m[2]));
+    else if (opciones.cruzadas && !opciones.cruzadas.has(l.evidencia)) p.sinDestino.push(Number(m[2]));
     else p.conRuta++;
   }
 
@@ -126,35 +143,36 @@ export function fidelidadDeArchivos(ctx: Contexto): { archivos: FidelidadArchivo
     const sinResolver = e.sinResolver ?? [];
     if (e.invoca.length + sinResolver.length) {
       señales.llamadas = { ok: e.invoca.length, total: e.invoca.length + sinResolver.length };
-      if (sinResolver.length) faltas.push(`${sinResolver.length} llamadas sin resolver (${lineas(sinResolver.map((s) => s.linea))}): declaralas en calls.yaml o con un extractor`);
+      if (sinResolver.length) faltas.push(`${cuantos(sinResolver.length, "llamada", "llamadas")} sin resolver (${lineas(sinResolver.map((s) => s.linea))}): declaralas en calls.yaml o con un extractor`);
     }
 
     const d = ix.porArchivo.get(archivo), pen = pendientes.get(archivo);
-    const http = (d?.llamadas ?? 0) + (pen?.conRuta ?? 0) + (pen?.sinRuta.length ?? 0);
+    const http = (d?.llamadas ?? 0) + (pen?.conRuta ?? 0) + (pen?.sinDestino.length ?? 0) + (pen?.sinRuta.length ?? 0);
     if (http) {
-      señales.http = { ok: http - (pen?.sinRuta.length ?? 0), total: http };
-      if (pen?.sinRuta.length) faltas.push(`${pen.sinRuta.length} llamadas HTTP sin ruta (${lineas(pen.sinRuta)}): la sección http de calls.yaml o un extractor`);
+      señales.http = { ok: (d?.llamadas ?? 0) + (pen?.conRuta ?? 0), total: http };
+      if (pen?.sinDestino.length) faltas.push(`${cuantos(pen.sinDestino.length, "llamada HTTP que no se unió", "llamadas HTTP que no se unieron")} a ningún endpoint, ni de este cerebro ni de los comunicados (${lineas(pen.sinDestino)}): revisá la ruta o declarala en la sección http de calls.yaml`);
+      if (pen?.sinRuta.length) faltas.push(`${cuantos(pen.sinRuta.length, "llamada HTTP", "llamadas HTTP")} sin ruta (${lineas(pen.sinRuta)}): la sección http de calls.yaml o un extractor`);
     }
 
     const accesos = (d?.accesos ?? 0) + (d?.sinPagina.length ?? 0);
     if (accesos) {
       señales.datos = { ok: d!.conColumnas, total: accesos };
-      if (d!.sinPagina.length) faltas.push(`${d!.sinPagina.length} accesos a tablas sin página (${[...new Set(d!.sinPagina.map((s) => s.tabla))].sort(cmp).slice(0, 5).join(", ")}; ${lineas(d!.sinPagina.map((s) => s.linea))})`);
-      if (d!.accesos - d!.conColumnas > 0) faltas.push(`${d!.accesos - d!.conColumnas} accesos a tablas sin columnas`);
+      if (d!.sinPagina.length) faltas.push(`${cuantos(d!.sinPagina.length, "acceso", "accesos")} a tablas sin página (${[...new Set(d!.sinPagina.map((s) => s.tabla))].sort(cmp).slice(0, 5).join(", ")}; ${lineas(d!.sinPagina.map((s) => s.linea))})`);
+      if (d!.accesos - d!.conColumnas > 0) faltas.push(`${cuantos(d!.accesos - d!.conColumnas, "acceso", "accesos")} a tablas sin columnas`);
     }
 
     const en = entradas.get(archivo);
     if (en) {
       señales.entradas = { ok: en.total - en.sinDestino.length, total: en.total };
       señales.contrato = { ok: en.total - en.sinRespuesta.length, total: en.total };
-      if (en.sinDestino.length) faltas.push(`${en.sinDestino.length} endpoints cuyo recorrido no llega a nada (${en.sinDestino.sort(cmp).slice(0, 4).join(", ")}${en.sinDestino.length > 4 ? "…" : ""})`);
-      if (en.sinRespuesta.length) faltas.push(`${en.sinRespuesta.length} endpoints sin tipo de respuesta`);
+      if (en.sinDestino.length) faltas.push(`${cuantos(en.sinDestino.length, "endpoint", "endpoints")} cuyo recorrido no llega a nada (${en.sinDestino.sort(cmp).slice(0, 4).join(", ")}${en.sinDestino.length > 4 ? "…" : ""})`);
+      if (en.sinRespuesta.length) faltas.push(`${cuantos(en.sinRespuesta.length, "endpoint", "endpoints")} sin tipo de respuesta`);
     }
 
     const pa = pantallas.get(archivo);
     if (pa) {
       señales.pantallas = { ok: pa.total - pa.mudas.length, total: pa.total };
-      if (pa.mudas.length) faltas.push(`${pa.mudas.length} pantallas sin llamadas HTTP detectadas (${pa.mudas.sort(cmp).slice(0, 4).join(", ")}${pa.mudas.length > 4 ? "…" : ""})`);
+      if (pa.mudas.length) faltas.push(`${cuantos(pa.mudas.length, "pantalla", "pantallas")} sin llamadas HTTP detectadas (${pa.mudas.sort(cmp).slice(0, 4).join(", ")}${pa.mudas.length > 4 ? "…" : ""})`);
     }
 
     // Sin símbolos ni nada de lo anterior, el índice no vio nada en el archivo: no hay con qué medirlo.
