@@ -238,7 +238,7 @@ describe("consultas de código", () => {
     const r = evaluar(ctx, preguntas);
     expect(r).toMatchObject({ total: 4, aciertos: 3, porcentaje: 75, cobertura: 80, porHerramienta: { quien_llama: { total: 2, aciertos: 2 }, recorrido: { total: 2, aciertos: 1 } } });
     // Lo que la evaluación no mide queda a la vista.
-    expect(r.sinPreguntas).toEqual(["buscar_nodo", "contrato_de", "deriva", "funcionalidad", "impacto", "infra", "pantalla", "paridad", "recorrer_grafo", "riesgo", "trazar"]);
+    expect(r.sinPreguntas).toEqual(["buscar_nodo", "contrato_de", "deriva", "fidelidad", "funcionalidad", "impacto", "infra", "pantalla", "paridad", "recorrer_grafo", "riesgo", "trazar"]);
     expect(r.falladas).toEqual([{ id: "c", pregunta: "c", herramienta: "recorrido", ok: false, faltan: ["tabla-inexistente"], sobran: [] }]);
     expect(() => leerPreguntas('[{"id":"x","herramienta":"otra","args":{}}]')).toThrow(/herramienta desconocida/);
   });

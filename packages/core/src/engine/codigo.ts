@@ -52,6 +52,19 @@ export interface IndiceCodigo {
   accesos: { total: number; conColumnas: number };
   /** Llamadas HTTP que el índice no pudo unir a un endpoint (`pendientes` de la extracción). */
   llamadasPendientes: Array<{ desde: string; referencia: string; motivo: string; evidencia: string; candidatos: number; llamada?: { metodo: string; ruta: string | null; base: string } }>;
+  /** Archivo (`repo:ruta`) → cuánto de lo que el índice vio ahí quedó unido: lo usa `fidelidad`. */
+  porArchivo: Map<string, DatosArchivo>;
+}
+
+/** Lo que sale de un archivo según la extracción: llamadas a otros servicios y accesos a tablas. */
+export interface DatosArchivo {
+  /** Llamadas unidas a un servicio, externo o endpoint. */
+  llamadas: number;
+  /** Accesos a tablas con página, y cuántos dicen qué columnas tocan. */
+  accesos: number;
+  conColumnas: number;
+  /** Accesos a tablas que no tienen página en el brain, con su línea. */
+  sinPagina: Array<{ tabla: string; linea: number }>;
 }
 
 const clave = (archivo: string, simbolo: string) => `${archivo}#${simbolo}`;
@@ -97,11 +110,24 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
   const llamanEndpoint = new Map<string, Array<{ clave: string; evidencia: string }>>();
   const tocanTabla = new Map<string, Array<{ clave: string; verbo: string; evidencia: string }>>();
   const accesos = { total: 0, conColumnas: 0 };
+  const porArchivo = new Map<string, DatosArchivo>();
+  const delArchivo = (evidencia: string) => {
+    const m = /^([^#]+)#L(\d+)/.exec(evidencia);
+    if (!m) return null;
+    const d = porArchivo.get(m[1]!) ?? porArchivo.set(m[1]!, { llamadas: 0, accesos: 0, conColumnas: 0, sinPagina: [] }).get(m[1]!)!;
+    return { d, linea: Number(m[2]) };
+  };
+  for (const s of sinPagina) delArchivo(s.evidencia)?.d.sinPagina.push({ tabla: s.tabla, linea: delArchivo(s.evidencia)!.linea });
   for (const a of aristas) {
+    const da = delArchivo(a.evidencia)?.d;
     if (a.verbo === "lee_de" || a.verbo === "escribe_en") {
       accesos.total++;
       if (a.columnas?.length) accesos.conColumnas++;
-    }
+      if (da) {
+        da.accesos++;
+        if (a.columnas?.length) da.conColumnas++;
+      }
+    } else if (a.verbo === "llama_a" && da) da.llamadas++;
     if (a.verbo === "llama_a" && a.endpoint) {
       const m = /^([^#]+)#L(\d+)/.exec(a.evidencia);
       const e = m ? estructura.get(m[1]!) : undefined;
@@ -130,7 +156,7 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
     }
   }
   llamadasPendientes.sort((a, b) => cmp(a.evidencia, b.evidencia) || cmp(a.referencia, b.referencia));
-  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, porNombre, atiende, accesos, llamanEndpoint, tocanTabla, llamadasPendientes };
+  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, porNombre, atiende, accesos, llamanEndpoint, tocanTabla, llamadasPendientes, porArchivo };
 }
 
 /** Lee el HEAD actual de cada clon indexado, para avisar si el índice quedó atrás. Barato: unas lecturas de `.git`. */
@@ -169,7 +195,7 @@ const cita = (ix: IndiceCodigo, k: string, linea?: number) => {
 const dueñas = (ix: IndiceCodigo, archivo: string) => [...ix.fichas.values()].filter((f) => f.codigo.some((c) => dentroDe(archivo, c))).map((f) => f.id);
 
 /** Recorta listas desde el final, en el orden dado, hasta entrar en el presupuesto. Informa cuántos ítems quitó. */
-function ajustarLista<T extends Record<string, unknown>>(r: T, campos: (keyof T & string) | Array<keyof T & string>, budget: number | null | undefined): T & { truncado?: true; omitidos?: number } {
+export function ajustarLista<T extends Record<string, unknown>>(r: T, campos: (keyof T & string) | Array<keyof T & string>, budget: number | null | undefined): T & { truncado?: true; omitidos?: number } {
   const b = budget === undefined ? 2000 : budget;
   if (b === null || tokens(r) <= b) return r;
   const copia: Record<string, unknown> = { ...r };
@@ -982,6 +1008,49 @@ export function llamadasDePantalla(ctx: Contexto, pantalla: string): Array<{ met
   return out;
 }
 
+/** `repo:ruta#Simbolo` del símbolo que contiene la línea de una evidencia (el más interno con rango). */
+function claveDeEvidencia(ix: IndiceCodigo, evidencia: string): string | null {
+  const m = /^(.*)#L(\d+)$/.exec(evidencia);
+  if (!m) return null;
+  const linea = Number(m[2]);
+  const dentro = (ix.estructura.get(m[1]!)?.simbolos ?? []).filter((s) => s.fin !== undefined && s.linea <= linea && linea <= s.fin);
+  return dentro.length ? `${m[1]}#${dentro.reduce((a, b) => (b.linea >= a.linea ? b : a)).nombre}` : null;
+}
+
+/**
+ * Pantallas desde cuyo árbol de componentes no se llega a ninguna llamada HTTP con ruta (unida a un endpoint o pendiente
+ * de otro cerebro). Una funcionalidad con todas sus pantallas así es sospechosa: o no habla con el back, o lo hace de
+ * una forma que el parser no entiende.
+ */
+export function pantallasSinLlamadas(ctx: Contexto): string[] {
+  const ix = indice(ctx);
+  const llaman = new Set<string>();
+  for (const xs of ix.llamanEndpoint.values()) for (const x of xs) llaman.add(x.clave);
+  for (const l of ix.llamadasPendientes) {
+    const k = l.llamada?.ruta ? claveDeEvidencia(ix, l.evidencia) : null;
+    if (k) llaman.add(k);
+  }
+  const alcanza = (inicio: string): boolean => {
+    const vistos = new Set<string>([inicio]);
+    const cola = [inicio];
+    while (cola.length && vistos.size < 3000) {
+      const k = cola.pop()!;
+      if (llaman.has(k)) return true;
+      const { archivo, simbolo } = partes(k);
+      const repo = archivo.slice(0, archivo.indexOf(":"));
+      for (const i of ix.estructura.get(archivo)?.invoca ?? []) {
+        const sig = `${repo}:${i.archivo}#${i.simbolo}`;
+        if (i.desde === simbolo && !vistos.has(sig)) {
+          vistos.add(sig);
+          cola.push(sig);
+        }
+      }
+    }
+    return false;
+  };
+  return ctx.graph.nodes.filter((n) => n.tipo === "pantalla" && !((n.atributos as { componentes?: string[] }).componentes ?? []).some(alcanza)).map((n) => n.id);
+}
+
 export function llamadasPorResolver(ctx: Contexto, p: PorResolverParams = {}) {
   const ix = indice(ctx);
   let total = 0;
@@ -1013,48 +1082,12 @@ export function llamadasPorResolver(ctx: Contexto, p: PorResolverParams = {}) {
     if (llamadas.length) grupos.push({ endpoint: ep, llamadas: llamadas.slice(0, 8), ...(llamadas.length > 8 ? { mas: llamadas.length - 8 } : {}) });
   }
   // ---------- Del lado del que llama: lo que el parser no vio ----------
-  // Símbolo que contiene una línea: el más interno con rango.
-  const simboloEn = (archivo: string, linea: number): string | null => {
-    const dentro = (ix.estructura.get(archivo)?.simbolos ?? []).filter((s) => s.fin !== undefined && s.linea <= linea && linea <= s.fin);
-    return dentro.length ? dentro.reduce((a, b) => (b.linea >= a.linea ? b : a)).nombre : null;
-  };
-  const claveDe = (evidencia: string): string | null => {
-    const m = /^(.*)#L(\d+)$/.exec(evidencia);
-    const s = m ? simboloEn(m[1]!, Number(m[2])) : null;
-    return m && s ? `${m[1]}#${s}` : null;
-  };
+  const claveDe = (evidencia: string) => claveDeEvidencia(ix, evidencia);
   // Llamadas HTTP que el parser vio pero sin poder determinar la ruta: no se unen a ningún endpoint.
   const sinRuta = ix.llamadasPendientes.filter((l) => l.llamada && l.llamada.ruta === null && !ES_TEST.test(l.evidencia.replace(/#L.*$/, "")));
   const httpSinRuta = sinRuta.map((l) => ({ evidencia: l.evidencia, desde: claveDe(l.evidencia), metodo: l.llamada!.metodo, base: l.llamada!.base }));
-  // Métodos desde los que sale alguna llamada HTTP con ruta (unida a un endpoint o pendiente de otro cerebro).
-  const llaman = new Set<string>();
-  for (const xs of ix.llamanEndpoint.values()) for (const x of xs) llaman.add(x.clave);
-  for (const l of ix.llamadasPendientes) {
-    const k = l.llamada?.ruta ? claveDe(l.evidencia) : null;
-    if (k) llaman.add(k);
-  }
-  // Pantallas desde cuyo árbol de componentes no se llega a ninguna llamada HTTP. Una funcionalidad con todas sus
-  // pantallas así es sospechosa: o no habla con el back, o lo hace de una forma que el parser no entiende.
-  const alcanza = (inicio: string): boolean => {
-    const vistos = new Set<string>([inicio]);
-    const cola = [inicio];
-    while (cola.length && vistos.size < 3000) {
-      const k = cola.pop()!;
-      if (llaman.has(k)) return true;
-      const { archivo, simbolo } = partes(k);
-      const repo = archivo.slice(0, archivo.indexOf(":"));
-      for (const i of ix.estructura.get(archivo)?.invoca ?? []) {
-        const sig = `${repo}:${i.archivo}#${i.simbolo}`;
-        if (i.desde === simbolo && !vistos.has(sig)) {
-          vistos.add(sig);
-          cola.push(sig);
-        }
-      }
-    }
-    return false;
-  };
   const pantallas = ctx.graph.nodes.filter((n) => n.tipo === "pantalla");
-  const mudas = pantallas.filter((n) => !((n.atributos as { componentes?: string[] }).componentes ?? []).some(alcanza)).map((n) => n.id);
+  const mudas = pantallasSinLlamadas(ctx);
   const mudasSet = new Set(mudas);
   const porFeat = new Map<string, { total: number; mudas: string[] }>();
   for (const e of ctx.graph.edges) {

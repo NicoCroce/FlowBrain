@@ -20,3 +20,4 @@ export * from "./registro.js";
 export * from "./engine/cerebros.js";
 export * from "./llamadas.js";
 export * from "./engine/cobertura.js";
+export * from "./engine/fidelidad.js";

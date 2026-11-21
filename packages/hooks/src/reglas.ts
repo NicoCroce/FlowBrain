@@ -61,6 +61,7 @@ export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): st
     "- `riesgo` con un diff o los archivos que vas a tocar, antes de un cambio grande: qué alcanza y a quién avisar.",
     "- `deriva` para ver llamadas que ningún endpoint atiende y endpoints que nadie llama; `paridad` para saber qué falta migrar de un servicio a otro.",
     "- `infra` para saber cómo se construye, despliega y configura un servicio: imagen, pipelines, variables de entorno y proxy.",
+    "- `fidelidad` para saber qué tan confiable es lo que el grafo dice de un archivo o una funcionalidad (0 a 100) y qué le falta.",
     "- `funcionalidad` para la ficha de una funcionalidad de producto: endpoints, consumo, datos y relaciones.",
     "Los `avisos` de cada respuesta son huecos conocidos (no hay dato, no \"no pasa nada\"): llamadas sin resolver o índice desactualizado; ahí sí conviene mirar el código. `indice` dice de qué commit salió.",
     "Sin MCP, los mismos comandos por CLI: `flowbrain search <texto>`, `flowbrain traverse <nodo>`, `flowbrain contract <nodo>`, `flowbrain trace --from <ruta>`, `flowbrain flow <endpoint|Clase.metodo>`, `flowbrain screen </ruta>`, `flowbrain callers <Clase.metodo>`, `flowbrain impact <pieza>`, `flowbrain feature <id>`.",

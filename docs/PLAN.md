@@ -23,7 +23,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 2 | Relaciones finas en el grafo | Hecho (decisión 120) |
 | 3 | MCP: respuestas compactas, búsqueda e instrucciones | Hecho (decisión 121) |
 | 4 | Comandos `sync`, `estado` y `doctor` | Hecho (decisión 122) |
-| 5 | Registro del MCP y los hooks | Hecho el 2026-11-17: a nivel usuario, apuntando al brain de depuración |
+| 5 | Registro del MCP y los hooks | Hecho el 2026-11-17: a nivel usuario |
 | 6 | Eventos y colas | Hecho (decisión 123) |
 | 7 | Bases de datos y esquema | Hecho (decisión 124) |
 | 8 | Infraestructura | Hecho (decisión 125) |
@@ -46,6 +46,13 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 25 | Pistas de otros cerebros | Hecho (decisión 138) |
 | 26 | Relaciones entre cerebros | Hecho (decisión 139) |
 | 27 | Visor con varios cerebros | Hecho (decisión 140); falta revisarlo a ojo en un navegador |
+| 28 | Fidelidad: puntaje por archivo | Hecho (decisión 176) |
+| 29 | Fidelidad: pantalla en el visor | Pendiente |
+| 30 | Fidelidad: editar desde el visor | Pendiente |
+| 31 | Reglas de negocio | Pendiente |
+| 32 a 35 | Entre cerebros: `deriva`, `paridad`, su pantalla y la CLI | Pendiente |
+| 36 a 39 | Otros: llamada interna, `riesgo` con tipos, `deriva` por campos, `infra` | Pendiente |
+| 40 a 43 | Parsers genéricos: rutas por archivo, clientes HTTP, layout y contexto, cron y gRPC | Pendiente |
 
 ---
 
@@ -242,19 +249,104 @@ El mapa 3D dibuja un cerebro por cada cerebro del registro, con la misma estéti
 
 ---
 
+## Fase 8 · Fidelidad
+
+Pedido del 2026-11-21. Saber, de 0 a 100, qué tan entendido quedó cada archivo, verlo por cerebro, tipo de archivo y funcionalidad, filtrarlo y corregirlo desde el visor.
+
+### Paso 28 · Puntaje por archivo
+
+El número y lo que le falta a cada archivo, en el motor, la CLI y el MCP (decisión 176).
+
+### Paso 29 · Pantalla Fidelidad en el visor
+
+Estadística de todos los cerebros y filtros por rango de puntaje, cerebro, tipo de archivo, capa, funcionalidad y señal. Cada archivo muestra sus faltas con la línea. Con varios cerebros, las llamadas que cruzan se cuentan unidas.
+
+**Hecho cuando.** Con dos cerebros sintéticos, la pantalla lista los archivos de los dos, filtra por rango y por funcionalidad, y un vacío dice por qué está vacío.
+
+### Paso 30 · Editar desde el visor
+
+El visor hoy es un archivo estático. Un servidor local (`flowbrain viewer --serve`, solo en `127.0.0.1`) que permite guardar: sumar un archivo al `codigo` de una funcionalidad, declarar una llamada en `calls.yaml`, agregar un control. Se editan los archivos del cerebro, nunca el código fuente; lo guardado queda como curado y recompila.
+
+**Hecho cuando.** Un test fija que una edición escribe el archivo del cerebro esperado, que el puntaje del archivo sube al recompilar y que el servidor rechaza escribir fuera de `.flowbrain/`.
+
+### Paso 31 · Reglas de negocio
+
+Un tipo de página `regla`, unido a las funcionalidades que la cumplen y al código que la aplica (con evidencia). Decisión de esquema: va con `SCHEMA.md`.
+
+---
+
+## Fase 9 · Entre cerebros
+
+### Paso 32 · `deriva` entre cerebros
+
+Con un cerebro por repo, `deriva` de un front lista todo como "sin endpoint". Que cruce con la misma regla que `impacto` (comunicación y conexiones declaradas).
+
+### Paso 33 · `paridad` entre cerebros
+
+Comparar un servicio de un cerebro con el de otro: el caso de una migración con el viejo y el nuevo en cerebros distintos.
+
+### Paso 34 · Pantalla de deriva y paridad en el visor
+
+### Paso 35 · `screen`, `feature` y `trace` de la CLI cruzan cerebros
+
+El MCP ya cruza; la CLI no (decisión 171).
+
+---
+
+## Fase 10 · Otros
+
+### Paso 36 · Llamada interna del front y ruta comodín
+
+Marcar en el registro una llamada como interna (URL relativa al propio front) y que una ruta comodín del back (`/{token}`) no atrape archivos estáticos (decisión 150).
+
+### Paso 37 · `riesgo` sigue tipos y constantes
+
+Hoy un cambio en un tipo o una constante sale como "fuera de funciones" (decisión 128).
+
+### Paso 38 · `deriva` compara campos
+
+Lo que el front manda o espera contra el tipo que declara el back (decisión 132).
+
+### Paso 39 · Kubernetes, Helm, Terraform y serverless en `infra`
+
+---
+
+## Fase 11 · Parsers genéricos
+
+En el proyecto real estos huecos los cubren extractores; importan para un proyecto nuevo. Cada uno entra con su fixture.
+
+### Paso 40 · Pantallas por archivo
+
+Next (`pages/` y `app/`), Nuxt, SvelteKit y Expo Router.
+
+### Paso 41 · Más clientes HTTP
+
+Angular `HttpClient`, `ky` y `$fetch`.
+
+### Paso 42 · Layout, contexto y objeto de un hook
+
+Lo que hoy resuelven tres extractores del proyecto real (decisión 159).
+
+### Paso 43 · Entradas que no son HTTP
+
+Cron y gRPC como entradas de un recorrido.
+
+---
+
 ## Orden y dependencias
 
 - 2 → 3 → 4 → 5 en ese orden. El 5 espera la decisión del usuario.
 - 16 depende de 2 y 11. 17 depende de 15. 10 conviene antes de 13 por tiempo de indexado.
 - Las fases 2 a 6 se pueden reordenar según lo que muestre el paso 13.
 - Fase 7: 23 → 24 → 25 → 26 → 27. El 27 necesita el 26; los pasos 23 a 25 ya dan cerebros aislados con pistas.
+- Fase 8: 28 → 29 → 30. El 31 es independiente. El 29 mide el efecto de todo lo que sigue.
+- Fases 9 a 11: el 34 necesita el 32 y el 33; el resto no depende entre sí.
 
 ## Decisiones abiertas
 
-1. **Paso 5:** si el MCP y los hooks se registran a nivel usuario, solo en un proyecto, o todavía no, y a qué brain apuntan. `flowbrain doctor` dice qué falta; `flowbrain init --claude-code` y la línea de `claude mcp add` que imprime lo hacen. Conviene registrar el servidor con `serve --sync`.
-2. **Paso 13:** qué proyecto de otra pila se usa como segundo banco de pruebas. De eso dependen los lenguajes nuevos del paso 14.
-3. **Paso 22:** publicar `flowbrain` en npm.
-4. Carpetas de ejemplo `afip` y `videoAnalysis` en `packages/indexer/test/borrador.test.ts`: renombrarlas si identifican al proyecto de referencia.
+1. **Paso 13:** qué proyecto de otra pila se usa como segundo banco de pruebas. De eso dependen los lenguajes nuevos del paso 14.
+2. **Paso 22:** publicar en npm. El nombre `flowbrain` ya es de otro paquete (visto el 2026-11-21): hay que elegir otro nombre o un scope, y corregir la opción "Actualizar" del menú, que instala `flowbrain@latest`.
+3. Carpetas de ejemplo `afip` y `videoAnalysis` en `packages/indexer/test/borrador.test.ts`: renombrarlas si identifican al proyecto de referencia.
 
 ## Pendientes anotados en las decisiones
 
@@ -267,8 +359,7 @@ Lo que cada paso dejó afuera está en su decisión (120 a 152), bajo "Queda fue
 - Kubernetes, Terraform y serverless en `infra` (125).
 - Seguir el uso de un tipo o una constante cambiados en `riesgo` (128).
 - Comparar campos entre lo que el front espera y lo que el back declara (132).
-- Precisión del hook de prompt: una palabra común del pedido ("documentos") alcanzó para inyectar el contexto de una funcionalidad que no venía al caso. Visto el 2026-11-17, en el primer uso real.
-- Falsos positivos de llamadas (150): `fetch` con `method` en las opciones leído como `GET`; query concatenada pegada a la ruta; rutas comodín del back (`/{token}`) que atrapan archivos estáticos del propio front.
+- Falsos positivos de llamadas (150): rutas comodín del back (`/{token}`) que atrapan archivos estáticos del propio front (paso 36). El `method` en las opciones y la query concatenada ya se leen (decisión 159).
 - Marcar en el registro una llamada como interna del front (URL relativa a su propio servidor), para que no se cruce con ningún cerebro (150).
 - `deriva` y `paridad` entre cerebros (139, 150).
 - Otros routers que hoy no dan pantallas: Expo Router (rutas por archivo), Next.js `pages/`/`app/` como pantallas, React Navigation con `createStaticNavigation` y pantallas declaradas como objetos (149).

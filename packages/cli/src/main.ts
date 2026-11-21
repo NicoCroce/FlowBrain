@@ -11,6 +11,7 @@ import {
   ARCHIVO_REGISTRO,
   ARCHIVO_CONTROLES,
   cobertura,
+  fidelidad,
   leerControles,
   type InformeExtractorBreve,
   ARCHIVO_LLAMADAS,
@@ -109,6 +110,10 @@ Comandos:
   coverage                                  cuánto del código quedó conectado: pantallas con llamadas, llamadas con
                                             ruta, endpoints con método y que llegan a una tabla, accesos con columnas;
                                             más el informe de los extractores del proyecto y los controles (checks.yaml)
+  fidelity [archivo] [--min n] [--max n]    qué tan entendido quedó cada archivo, de 0 a 100, y qué le falta (con su
+           [--feature id|ninguna]           línea): llamadas sin resolver, HTTP sin ruta, accesos sin columnas, endpoints
+           [--type ext] [--signal s]        sin recorrido o sin respuesta, pantallas sin llamadas, archivos sin
+           [--limit n]                      funcionalidad. Lista de menor a mayor; con un archivo, su detalle
   calls [--limit n]                         dónde se cortan los recorridos: endpoints que no llegan a una tabla y las
                                             llamadas sin tipo que hay en su camino, con candidatos; se resuelven
                                             declarándolas en calls.yaml (raíz del brain) y reindexando
@@ -196,6 +201,10 @@ export async function ejecutar(
         days: { type: "string" },
         today: { type: "string" },
         min: { type: "string" },
+        max: { type: "string" },
+        feature: { type: "string" },
+        type: { type: "string" },
+        signal: { type: "string" },
         text: { type: "string" },
         diff: { type: "string" },
         write: { type: "boolean" },
@@ -579,6 +588,18 @@ export async function ejecutar(
       case "parity":
         if (!arg || !positionals[2]) throw new ConsultaError("parametro_invalido", "uso: flowbrain parity <svc-viejo> <svc-nuevo>");
         resultado = paridad(ctx, { viejo: arg, nuevo: positionals[2], ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
+      case "fidelity":
+        resultado = fidelidad(ctx, {
+          ...opt("archivo", arg),
+          ...opt("min", entero(o.min, "--min")),
+          ...opt("max", entero(o.max, "--max")),
+          ...opt("funcionalidad", o.feature),
+          ...opt("tipo", o.type),
+          ...opt("señal", o.signal),
+          ...opt("limite", entero(o.limit, "--limit")),
+          ...opt("budget_tokens", comunes.budget_tokens),
+        });
         break;
       case "calls": {
         // Dónde se cortan los recorridos por llamadas sin tipo, y qué hay declarado en calls.yaml.

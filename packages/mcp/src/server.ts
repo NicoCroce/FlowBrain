@@ -10,6 +10,7 @@ import {
   ConsultaError,
   contratoDe,
   deriva,
+  fidelidad,
   funcionalidad,
   impactoDe,
   infra,
@@ -21,6 +22,7 @@ import {
   PROYECCIONES,
   recorrerGrafo,
   riesgo,
+  SEÑALES,
   stringifyCompact,
   trazar,
   VERBOS,
@@ -105,6 +107,7 @@ export const INSTRUCCIONES = [
   "- Por dónde viaja un dato entre servicios: trazar.",
   "- Cómo se construye, despliega y configura un servicio (imagen, pipeline, variables de entorno, proxy): infra.",
   "- Vecinos de un nodo por tipo de relación: recorrer_grafo.",
+  "- Qué tan confiable es lo que el grafo dice de un archivo o una funcionalidad, y qué falta completar: fidelidad.",
   "Cada dato trae evidencia `repo:ruta#Ln`: abrí ese archivo antes de afirmar algo. `avisos` y `truncado` marcan huecos conocidos: ahí falta dato, no significa que no pase nada.",
 ].join("\n");
 
@@ -329,6 +332,26 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
       inputSchema: { viejo: z.string().min(1).describe("id del servicio de origen"), nuevo: z.string().min(1).describe("id del servicio que lo reemplaza"), ...presupuesto, ...deCerebro },
     },
     async (a) => correr("paridad", a, (ctx, args) => paridad(ctx, args)),
+  );
+
+  server.registerTool(
+    "fidelidad",
+    {
+      description:
+        "Qué tan entendido quedó cada archivo por el índice, de 0 a 100, y qué le falta con su línea (llamadas sin resolver, HTTP sin ruta, accesos a tablas sin columnas o sin página, endpoints sin recorrido o sin tipo de respuesta, pantallas sin llamadas, archivos sin funcionalidad). Sin argumentos: puntaje general, reparto por tramos, por señal, por funcionalidad, capa y lenguaje, y los archivos de menor puntaje. Con `archivo`: su detalle. Usalo para saber dónde desconfiar del grafo y qué completar primero.",
+      inputSchema: {
+        archivo: z.string().min(1).optional().describe("repo:ruta o ruta de un archivo: devuelve solo ese"),
+        min: z.number().int().min(0).max(100).optional().describe("puntaje mínimo (0 a 100)"),
+        max: z.number().int().min(0).max(100).optional().describe("puntaje máximo (0 a 100)"),
+        funcionalidad: z.string().min(1).optional().describe("id o nombre de una funcionalidad; \"ninguna\" para los archivos sin funcionalidad"),
+        tipo: z.string().min(1).optional().describe("lenguaje o extensión: php, ts, vue"),
+        señal: z.enum(SEÑALES).optional().describe("solo archivos a los que les falta esta señal"),
+        limite: z.number().int().positive().optional().describe("cuántos archivos listar (por defecto 30)"),
+        ...presupuesto,
+        ...deCerebro,
+      },
+    },
+    async (a) => correr("fidelidad", a, (ctx, args) => fidelidad(ctx, args)),
   );
 
   if (multi) {
