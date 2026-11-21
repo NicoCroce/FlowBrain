@@ -320,6 +320,15 @@ export const ARCHIVO_VISOR = "flowbrain.html";
  * (solo entre los que tienen la comunicación activa). Devuelve la ruta escrita, o `null` si no hay nada compilado.
  */
 export async function escribirVisor(registro: Registro): Promise<string | null> {
+  const html = await htmlDelVisor(registro);
+  if (html === null) return null;
+  const archivo = join(registro.carpeta, ARCHIVO_VISOR);
+  await writeFile(archivo, html, "utf8");
+  return archivo;
+}
+
+/** La página del visor de todo el registro, sin escribirla (`null` si ningún cerebro está compilado). */
+export async function htmlDelVisor(registro: Registro): Promise<string | null> {
   const visibles: CerebroVisor[] = [];
   const fuentes: FuenteTraza[] = [];
   const livianos = new Map<string, CerebroLiviano>();
@@ -350,7 +359,5 @@ export async function escribirVisor(registro: Registro): Promise<string | null> 
     x.visible.fidelidad = fidelidadDeFuentes(x.visible.graph, x.funcionalidades, x.archivos, x.extracciones, { cruzadas });
   }
   const conexiones = resumenConexiones(cruces, registro.conexiones.filter((x) => registro.comunicados(x.desde.cerebro, x.hacia.cerebro)));
-  const archivo = join(registro.carpeta, ARCHIVO_VISOR);
-  await writeFile(archivo, await visorDeCerebros(visibles, cruces, conexiones, trazasCruzadas(fuentes, cruces), usosEntreCerebros([...livianos.values()])), "utf8");
-  return archivo;
+  return visorDeCerebros(visibles, cruces, conexiones, trazasCruzadas(fuentes, cruces), usosEntreCerebros([...livianos.values()]));
 }

@@ -79,6 +79,9 @@ Comandos:
   brains propose <carpeta...>             explora carpetas y escribe un borrador de flowbrain.yaml con preguntas abiertas
   brains apply [nombre]                   crea e indexa los cerebros del registro (o uno solo)
   brains viewer                           regenera flowbrain.html (tras cambiar comunicacion o conexiones)
+  viewer [--serve] [--port n]             regenera flowbrain.html; con --serve lo sirve en http://127.0.0.1:4780 y deja
+                                          corregir desde la pantalla Fidelidad (sumar un archivo a una funcionalidad,
+                                          declarar llamadas en calls.yaml). Solo escribe archivos del cerebro
   brains register                         registra en Claude Code los hooks del registro e imprime la línea del MCP
   evidence [--brain <nombre>] [--guide]     para decidir a qué servicio va cada llamada: por base de URL, dónde se
                                             define y con qué coincide; --guide imprime las instrucciones para el modelo
@@ -201,6 +204,8 @@ export async function ejecutar(
         days: { type: "string" },
         today: { type: "string" },
         min: { type: "string" },
+        serve: { type: "boolean" },
+        port: { type: "string" },
         max: { type: "string" },
         feature: { type: "string" },
         type: { type: "string" },
@@ -309,6 +314,13 @@ export async function ejecutar(
       return { codigo: fallo(rs) ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
     }
 
+    if (comando === "viewer") {
+      if (!(await esRegistro(raiz))) throw new ConsultaError("parametro_invalido", `no hay ${ARCHIVO_REGISTRO} en ${raiz}: el visor de un brain suelto es _build/viewer.html y lo deja flowbrain compile`);
+      // El servidor queda corriendo: lo arranca el punto de entrada, no este despachador (que devuelve y termina).
+      if (o.serve) throw new ConsultaError("parametro_invalido", "flowbrain viewer --serve se corre directo desde la terminal");
+      const visor = await escribirVisor(await leerRegistro(raiz));
+      return { codigo: visor ? 0 : 1, stdout: visor ? `${visor}\n` : "ningún cerebro está compilado: corré flowbrain brains apply\n", stderr: "" };
+    }
     if (comando === "brains") {
       if (arg === "propose") {
         const carpetas = positionals.slice(2).map((c) => resolve(cwd, c));
@@ -685,6 +697,21 @@ const esMain = process.argv[1] !== undefined && real(fileURLToPath(import.meta.u
 if (esMain && process.argv[2] === "serve") {
   const { servir } = await import("@flowbrain/mcp");
   await servir(process.argv.slice(3), process.env, (raiz) => sync(raiz, { carpetas: (process.env.FLOWBRAIN_REPOS ?? "").split(":").filter(Boolean) }));
+} else if (esMain && process.argv[2] === "viewer" && process.argv.includes("--serve")) {
+  // El visor con edición: un servidor en 127.0.0.1 que queda corriendo hasta Ctrl+C.
+  const { values } = parseArgs({ args: process.argv.slice(3), options: { serve: { type: "boolean" }, port: { type: "string" }, root: { type: "string" } } });
+  const carpeta = resolve(process.cwd(), values.root ?? process.env.FLOWBRAIN_ROOT ?? (await buscarRegistro(process.cwd())) ?? ".");
+  try {
+    if (!(await esRegistro(carpeta))) throw new Error(`no hay ${ARCHIVO_REGISTRO} en ${carpeta}: corré flowbrain install en el proyecto`);
+    const puerto = values.port === undefined ? undefined : Number(values.port);
+    if (puerto !== undefined && (!Number.isInteger(puerto) || puerto < 0 || puerto > 65535)) throw new Error("--port debe ser un puerto (0 a 65535)");
+    const { servirVisor } = await import("./servidor-visor.js");
+    const s = await servirVisor(carpeta, puerto);
+    process.stdout.write(`Visor con edición en ${s.url()}\nSolo esta máquina puede abrirlo. Lo que se corrige ahí se escribe en ${carpeta}.\nCtrl+C para cerrarlo.\n`);
+  } catch (e) {
+    process.stderr.write(`${(e as Error).message}\n`);
+    process.exit(1);
+  }
 } else if (esMain) {
   // Solo se pregunta cuando hay una persona del otro lado.
   const interactivo = !!(process.stdin.isTTY && process.stdout.isTTY);

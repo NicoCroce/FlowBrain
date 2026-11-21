@@ -48,7 +48,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 27 | Visor con varios cerebros | Hecho (decisión 140); falta revisarlo a ojo en un navegador |
 | 28 | Fidelidad: puntaje por archivo | Hecho (decisión 176) |
 | 29 | Fidelidad: pantalla en el visor | Hecho (decisión 177); falta revisarla a ojo en un navegador |
-| 30 | Fidelidad: editar desde el visor | Pendiente |
+| 30 | Fidelidad: editar desde el visor | Hecho (decisión 178); falta usarlo en un navegador |
 | 31 | Reglas de negocio | Pendiente |
 | 32 a 35 | Entre cerebros: `deriva`, `paridad`, su pantalla y la CLI | Pendiente |
 | 36 a 39 | Otros: llamada interna, `riesgo` con tipos, `deriva` por campos, `infra` | Pendiente |

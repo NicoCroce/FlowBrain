@@ -254,6 +254,16 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .fd-faltas { margin: 0; padding-left: 18px; color: var(--claro); font-size: 13px; }
 .fd-faltas li { padding: 1px 0; border: 0; }
 .fd-ok { margin: 0; font-size: 13px; color: var(--tabla); }
+.fd-ed { margin-top: 4px; padding: 12px 14px; border: 1px solid var(--borde2); border-radius: 10px; background: var(--fondo); display: flex; flex-direction: column; gap: 12px; }
+.fd-ed section { display: flex; flex-direction: column; gap: 8px; } .fd-ed h4 { margin: 0; font-size: 13px; color: var(--claro); }
+.fd-linea { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) auto; gap: 8px; align-items: center; }
+.fd-linea:has(.fd-donde) { grid-template-columns: minmax(140px, 1fr) minmax(90px, .5fr) minmax(0, 1.4fr) auto; }
+.fd-linea:has(.fd-donde):not(:has(select + input)) { grid-template-columns: minmax(140px, 1fr) minmax(0, 1.6fr) auto; }
+.fd-donde { font-size: 12px; color: var(--medio); overflow-wrap: anywhere; }
+.fd-nota { margin: 0; font-size: 12px; color: var(--suave); }
+.fd-msg { margin: 0; padding: 8px 10px; border-radius: 8px; background: #10201A; color: var(--tabla); font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fd-msg.error { background: #2A1416; color: var(--dudoso); }
+#fd-aviso .boton { margin-left: 6px; }
 .fd-mas { display: flex; align-items: center; gap: 12px; margin-top: 16px; color: var(--suave); }
 
 a.nb { text-decoration: none; }

@@ -1,0 +1,151 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { ConsultaError, leerRegistro, type Registro } from "@flowbrain/core";
+import { aplicarCerebro, htmlDelVisor } from "./cerebros.js";
+import { detalleDeArchivo, editar, type Edicion } from "./edicion.js";
+
+/**
+ * `flowbrain viewer --serve`: el visor servido desde esta máquina, con edición. El archivo `flowbrain.html` es estático
+ * y no puede guardar nada; este servidor entrega la misma página y, además, recibe las correcciones que se hacen desde
+ * la pantalla Fidelidad y las escribe en los archivos del cerebro.
+ *
+ * Escribe en disco, así que se cuida de quién le habla:
+ * - escucha solo en `127.0.0.1`;
+ * - cada pedido tiene que venir a `127.0.0.1` o `localhost` con el puerto propio (una página de otro sitio que apunte un
+ *   nombre suyo a esta máquina no pasa), y si trae `Origin`, tiene que ser el propio;
+ * - todo lo que no es la página pide un token que se genera al arrancar y solo viaja dentro de la página servida.
+ */
+
+export const PUERTO_VISOR = 4780;
+const MAX_CUERPO = 64 * 1024;
+const MARCA_DATOS = '<script type="application/json" id="datos">';
+
+export interface ServidorVisor {
+  server: Server;
+  token: string;
+  /** `http://127.0.0.1:<puerto>/` una vez que escucha. */
+  url(): string;
+}
+
+class ErrorHttp extends Error {
+  constructor(readonly estado: number, mensaje: string) {
+    super(mensaje);
+  }
+}
+
+async function cuerpoJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  if (!/^application\/json\b/i.test(req.headers["content-type"] ?? "")) throw new ErrorHttp(415, "el cuerpo tiene que ser application/json");
+  const partes: Buffer[] = [];
+  let total = 0;
+  for await (const p of req) {
+    total += (p as Buffer).length;
+    if (total > MAX_CUERPO) throw new ErrorHttp(413, "el pedido es demasiado grande");
+    partes.push(p as Buffer);
+  }
+  try {
+    const j: unknown = JSON.parse(Buffer.concat(partes).toString("utf8"));
+    if (j === null || typeof j !== "object" || Array.isArray(j)) throw new Error("no es un objeto");
+    return j as Record<string, unknown>;
+  } catch {
+    throw new ErrorHttp(400, "el cuerpo no es un objeto JSON válido");
+  }
+}
+
+/** El servidor, sin escuchar todavía. `carpeta` es la del registro (`.flowbrain`). */
+export function crearServidorVisor(carpeta: string, opciones: { token?: string } = {}): ServidorVisor {
+  const token = opciones.token ?? randomBytes(32).toString("hex");
+  /** Cerebros con declaraciones en `calls.yaml` que todavía no entraron al índice. */
+  const sinAplicar = new Set<string>();
+  // Las escrituras van de a una: dos ediciones seguidas del mismo archivo no se pisan.
+  let cola: Promise<unknown> = Promise.resolve();
+  const enCola = <T>(f: () => Promise<T>): Promise<T> => {
+    const r = cola.then(f, f);
+    cola = r.catch(() => undefined);
+    return r;
+  };
+  const puerto = () => (server.address() as { port: number } | null)?.port ?? 0;
+  const propios = () => new Set([`127.0.0.1:${puerto()}`, `localhost:${puerto()}`]);
+
+  const tokenValido = (req: IncomingMessage) => {
+    const t = req.headers["x-flowbrain-token"];
+    if (typeof t !== "string" || t.length !== token.length) return false;
+    return timingSafeEqual(Buffer.from(t), Buffer.from(token));
+  };
+
+  async function atender(req: IncomingMessage, url: URL, registro: Registro): Promise<{ estado?: number; html?: string; json?: unknown }> {
+    if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+      const html = await htmlDelVisor(registro);
+      if (html === null) throw new ErrorHttp(409, "ningún cerebro está compilado: corré flowbrain brains apply");
+      const edicion = JSON.stringify({ token, sinAplicar: [...sinAplicar].sort() }).replace(/</g, "\\u003c");
+      return { html: html.replace(MARCA_DATOS, `<script>window.FLOWBRAIN_EDICION=${edicion};</script>\n${MARCA_DATOS}`) };
+    }
+    if (!url.pathname.startsWith("/api/")) throw new ErrorHttp(404, "no existe");
+    if (!tokenValido(req)) throw new ErrorHttp(403, "falta el token de edición o no es el de esta sesión: recargá la página");
+    if (req.method === "GET" && url.pathname === "/api/archivo") {
+      return { json: await detalleDeArchivo(registro, url.searchParams.get("cerebro"), url.searchParams.get("archivo")) };
+    }
+    if (req.method === "POST" && url.pathname === "/api/editar") {
+      const ed = (await cuerpoJson(req)) as unknown as Edicion;
+      return {
+        json: await enCola(async () => {
+          const r = await editar(registro, ed);
+          if (r.faltaReindexar) sinAplicar.add(ed.cerebro);
+          return { ...r, sinAplicar: [...sinAplicar].sort() };
+        }),
+      };
+    }
+    if (req.method === "POST" && url.pathname === "/api/aplicar") {
+      const { cerebro } = await cuerpoJson(req);
+      const c = typeof cerebro === "string" ? registro.cerebro(cerebro) : null;
+      if (!c) throw new ErrorHttp(404, `no existe el cerebro: ${String(cerebro)}`);
+      return {
+        json: await enCola(async () => {
+          const r = await aplicarCerebro(c);
+          const errores = [...r.errores, ...r.repos.filter((x) => x.error).map((x) => `${x.ruta}: ${x.error}`)];
+          if (!errores.length) sinAplicar.delete(c.nombre);
+          return { cerebro: c.nombre, nodos: r.nodos, relaciones: r.relaciones, errores, sinAplicar: [...sinAplicar].sort() };
+        }),
+      };
+    }
+    throw new ErrorHttp(404, "no existe");
+  }
+
+  const server = createServer((req, res: ServerResponse) => {
+    const responder = (estado: number, tipo: string, cuerpo: string) => {
+      res.writeHead(estado, {
+        "content-type": `${tipo}; charset=utf-8`,
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer",
+        // La página es autocontenida: nada de afuera, y solo se conecta a este mismo servidor.
+        "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      });
+      res.end(cuerpo);
+    };
+    void (async () => {
+      try {
+        const host = req.headers.host ?? "";
+        if (!propios().has(host)) throw new ErrorHttp(403, "este servidor solo atiende a 127.0.0.1");
+        const origen = req.headers.origin;
+        if (origen !== undefined && origen !== `http://${host}`) throw new ErrorHttp(403, "pedido de otro origen");
+        // El registro se lee en cada pedido: si alguien lo edita a mano, vale lo que hay en disco.
+        const r = await atender(req, new URL(req.url ?? "/", `http://${host}`), await leerRegistro(carpeta));
+        if (r.html !== undefined) responder(200, "text/html", r.html);
+        else responder(200, "application/json", JSON.stringify(r.json));
+      } catch (e) {
+        const estado = e instanceof ErrorHttp ? e.estado : e instanceof ConsultaError ? (e.codigo === "nodo_inexistente" ? 404 : 400) : 500;
+        responder(estado, "application/json", JSON.stringify({ error: (e as Error).message }));
+      }
+    })();
+  });
+  return { server, token, url: () => `http://127.0.0.1:${puerto()}/` };
+}
+
+/** Arranca el servidor en `127.0.0.1` y espera a que escuche. Con `puerto` 0, el sistema elige uno libre. */
+export function servirVisor(carpeta: string, puerto = PUERTO_VISOR): Promise<ServidorVisor> {
+  const s = crearServidorVisor(carpeta);
+  return new Promise((ok, mal) => {
+    s.server.once("error", (e: NodeJS.ErrnoException) => mal(e.code === "EADDRINUSE" ? new Error(`el puerto ${puerto} está en uso: probá con --port <otro>`) : e));
+    s.server.listen(puerto, "127.0.0.1", () => ok(s));
+  });
+}

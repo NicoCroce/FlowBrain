@@ -2,6 +2,8 @@
  * "Fidelidad" (`#/fidelidad`): qué tan entendido quedó cada archivo por el índice, de 0 a 100, y qué le falta. Arriba,
  * el reparto por tramos, por cerebro y por señal (cada barra filtra); abajo, la lista de menor a mayor, con filtros por
  * rango, cerebro, tipo de archivo, capa, funcionalidad y señal. Un vacío siempre dice por qué está vacío.
+ * Servida por `flowbrain viewer --serve` (que deja `window.FLOWBRAIN_EDICION` con el token), cada archivo con faltas se
+ * puede corregir ahí mismo; abierta como archivo, es de solo lectura y lo dice.
  * JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
 export const FIDELIDAD_JS = String.raw`
@@ -28,11 +30,22 @@ export const FIDELIDAD_JS = String.raw`
   var PASO = 100;
   var inicial = function () { return { min: 0, max: 100, cerebro: "", lenguaje: "", capa: "", feat: "", senal: "", q: "", orden: "asc", ver: PASO }; };
   var S = inicial();
+  // El filtro sobrevive a una recarga (después de corregir algo la página se vuelve a pedir).
+  var CLAVE = "flowbrain.fidelidad";
+  var guardar = function () { try { if (typeof sessionStorage !== "undefined") sessionStorage.setItem(CLAVE, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ } };
+  try {
+    var previo = typeof sessionStorage !== "undefined" ? JSON.parse(sessionStorage.getItem(CLAVE) || "null") : null;
+    if (previo) Object.keys(S).forEach(function (k) { if (typeof previo[k] === typeof S[k]) S[k] = previo[k]; });
+    if (S.cerebro !== "" && !CEREBROS[Number(S.cerebro)]) S.cerebro = "";
+  } catch (e) { /* sin almacenamiento */ }
+  // Edición: solo cuando la página la sirve flowbrain viewer --serve.
+  var ED = window.FLOWBRAIN_EDICION || null;
+  var abierto = null, DET = null, MSG = null, ocupado = false;
 
   var plural = function (n, uno, varios) { return n.toLocaleString("es") + " " + (n === 1 ? uno : varios); };
   var tono = function (p) { return p < 40 ? "var(--dudoso)" : p < 80 ? "var(--feat)" : "var(--tabla)"; };
   var promedio = function (xs) { if (!xs.length) return null; var s = 0; xs.forEach(function (x) { s += x.p; }); return Math.round((10 * s) / xs.length) / 10; };
-  var cerebroDe = function (x) { return CEREBROS.length > 1 && x.c !== undefined && CEREBROS[x.c] ? CEREBROS[x.c].nombre : ""; };
+  var cerebroDe = function (x) { return x.c !== undefined && CEREBROS[x.c] ? CEREBROS[x.c].nombre : ""; };
   // "cerebro/repo-x:src/a.ts" → { repo: "repo-x", ruta: "src/a.ts" }
   var partes = function (x) {
     var c = cerebroDe(x), a = c && x.a.indexOf(c + "/") === 0 ? x.a.slice(c.length + 1) : x.a, i = a.indexOf(":");
@@ -150,12 +163,95 @@ export const FIDELIDAD_JS = String.raw`
     return '<li class="fd-fila">' +
       '<span class="fd-p" style="color:' + tono(x.p) + ";border-color:" + tono(x.p) + '">' + x.p + "</span>" +
       '<div class="fd-cuerpo"><div class="fd-ruta"><code>' + esc(p.ruta) + "</code>" + (p.repo ? " <small>" + esc(p.repo) + "</small>" : "") + "</div>" +
-      '<div class="chips">' + (c ? '<span class="chip">' + esc(c) + "</span>" : "") + '<span class="chip">' + esc(x.l) + '</span><span class="capa capa-' + esc(x.k) + '">' + esc(CAPA[x.k] || x.k) + "</span>" +
+      '<div class="chips">' + (c && CEREBROS.length > 1 ? '<span class="chip">' + esc(c) + "</span>" : "") + '<span class="chip">' + esc(x.l) + '</span><span class="capa capa-' + esc(x.k) + '">' + esc(CAPA[x.k] || x.k) + "</span>" +
       (x.f.length ? x.f.map(function (id) { return '<a class="chip" href="#/f/' + encodeURIComponent(id) + '">' + esc(nombreFeat(id)) + "</a>"; }).join("") : '<span class="chip fd-sinfeat">sin funcionalidad</span>') + "</div>" +
       '<div class="fd-señales">' + señales + "</div>" +
       (x.x.length ? '<ul class="fd-faltas">' + x.x.map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>" : '<p class="fd-ok">Sin faltas: todo lo que el índice vio acá quedó unido.</p>') +
+      (ED && x.x.length ? '<div><button type="button" class="boton' + (abierto === x.a ? " on" : "") + '" data-acc="editar" data-a="' + esc(x.a) + '">' + (abierto === x.a ? "Cerrar" : "Corregir") + "</button></div>" + (abierto === x.a ? panel(x) : "") : "") +
       "</div></li>";
   }
+
+  // ---------- Edición ----------
+  var METODOS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+  var idServidor = function (x) { var p = partes(x); return p.repo + ":" + p.ruta; };
+  var porArchivo = function (a) { for (var i = 0; i < filas.length; i++) if (filas[i].a === a) return filas[i]; return null; };
+  function pedir(metodo, ruta, cuerpo) {
+    return fetch(ruta, { method: metodo, headers: cuerpo ? { "content-type": "application/json", "x-flowbrain-token": ED.token } : { "x-flowbrain-token": ED.token }, body: cuerpo ? JSON.stringify(cuerpo) : undefined })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || "el servidor respondió " + r.status); return j; }); });
+  }
+  function panel(x) {
+    if (!DET) return '<div class="fd-ed"><p class="vacio">' + (MSG ? esc(MSG.texto) : "Leyendo el archivo…") + "</p></div>";
+    var falta = function (s) { var v = x.s[s]; return !!v && v[0] < v[1]; };
+    var html = "";
+    if (falta("funcionalidad")) {
+      html += '<section><h4>Sumarlo a una funcionalidad</h4>' + (DET.funcionalidades.length
+        ? '<div class="fd-linea"><select id="fd-e-feat" aria-label="Funcionalidad">' + DET.funcionalidades.map(function (f) { return '<option value="' + esc(f.id) + '">' + esc(f.nombre) + "</option>"; }).join("") + "</select>" +
+          '<select id="fd-e-entrada" aria-label="Qué sumar">' + DET.entradas.map(function (e, i) { return '<option value="' + esc(e) + '">' + (i ? "toda la carpeta " : "solo este archivo: ") + esc(e.slice(e.indexOf(":") + 1)) + "</option>"; }).join("") + "</select>" +
+          '<button type="button" class="boton" data-acc="sumar">Sumar</button></div><p class="fd-nota">Se escribe en el <code>codigo</code> de la página de esa funcionalidad y el cerebro se recompila.</p>'
+        : '<p class="fd-nota">El cerebro ' + esc(DET.cerebro) + " no tiene funcionalidades con página todavía: se crean con <code>/flowbrain-features</code>.</p>") + "</section>";
+    }
+    if (DET.http.length) {
+      html += "<section><h4>Llamadas HTTP sin ruta</h4>" + DET.http.map(function (h) {
+        if (!h.desde) return '<p class="fd-nota">L' + h.linea + ": no está dentro de una función con rango; se enseña con un extractor (<code>flowbrain coverage --guide</code>).</p>";
+        return '<div class="fd-linea"><span class="fd-donde">L' + h.linea + " · " + esc(h.desde) + '</span><select id="fd-h-m-' + h.linea + '" aria-label="Método">' + METODOS.map(function (m) { return "<option" + (m === h.metodo ? " selected" : "") + ">" + m + "</option>"; }).join("") + "</select>" +
+          '<input id="fd-h-r-' + h.linea + '" type="search" placeholder="/pedidos/{id}" aria-label="Ruta" autocomplete="off">' +
+          '<button type="button" class="boton" data-acc="declarar-http" data-linea="' + h.linea + '">Declarar</button></div>';
+      }).join("") + "</section>";
+    }
+    if (DET.llamadas.length) {
+      html += "<section><h4>Llamadas sin resolver</h4>" + DET.llamadas.map(function (l) {
+        var destino = l.candidatos.length
+          ? '<select id="fd-l-' + l.linea + '" aria-label="A qué método va">' + l.candidatos.map(function (k) { var i = k.lastIndexOf("#"); return '<option value="' + esc(k) + '">' + esc(k.slice(i + 1)) + " · " + esc(k.slice(k.indexOf(":") + 1, i)) + "</option>"; }).join("") + "</select>"
+          : '<input id="fd-l-' + l.linea + '" type="search" placeholder="repo:ruta/Archivo.ext#Clase.metodo" aria-label="A qué método va" autocomplete="off">';
+        return '<div class="fd-linea"><span class="fd-donde">L' + l.linea + " · " + esc(l.desde) + " llama <code>" + esc(l.llamada) + "</code></span>" + destino +
+          '<button type="button" class="boton" data-acc="declarar-llamada" data-linea="' + l.linea + '">Declarar</button></div>';
+      }).join("") + '<p class="fd-nota">Se escriben en <code>calls.yaml</code> y entran al índice al reindexar el cerebro.</p></section>';
+    }
+    if (falta("datos") || falta("entradas") || falta("contrato") || falta("pantallas")) {
+      html += '<section><p class="fd-nota">Lo demás (columnas de una tabla, recorrido o tipo de respuesta de un endpoint, pantallas sin llamadas) no se corrige con un formulario: se enseña con un extractor. Las instrucciones salen de <code>flowbrain coverage --guide</code>.</p></section>';
+    }
+    return '<div class="fd-ed">' + (html || '<p class="fd-nota">Nada de lo que le falta a este archivo se corrige desde acá.</p>') +
+      (MSG ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + (MSG.aplicar ? ' <button type="button" class="boton" data-acc="aplicar" data-cerebro="' + esc(MSG.aplicar) + '">Reindexar ' + esc(MSG.aplicar) + " ahora</button>" : "") + (MSG.recargar ? ' <button type="button" class="boton" data-acc="recargar">Ver el puntaje nuevo</button>' : "") + "</p>" : "") + "</div>";
+  }
+  function abrir(a) {
+    if (abierto === a) { abierto = null; DET = null; MSG = null; pintarLista(); return; }
+    abierto = a; DET = null; MSG = null; pintarLista();
+    var x = porArchivo(a);
+    pedir("GET", "/api/archivo?cerebro=" + encodeURIComponent(cerebroDe(x)) + "&archivo=" + encodeURIComponent(idServidor(x)))
+      .then(function (d) { if (abierto === a) { DET = d; pintarLista(); } })
+      .catch(function (e) { if (abierto === a) { MSG = { texto: "No se pudo leer el archivo: " + e.message, error: true }; pintarLista(); } });
+  }
+  function enviar(cuerpo) {
+    if (ocupado) return;
+    var x = porArchivo(abierto);
+    cuerpo.cerebro = cerebroDe(x); cuerpo.archivo = idServidor(x);
+    ocupado = true; MSG = { texto: "Guardando…" }; pintarLista();
+    pedir("POST", "/api/editar", cuerpo).then(function (r) {
+      ocupado = false;
+      ED.sinAplicar = r.sinAplicar || [];
+      MSG = { texto: r.mensaje + " (" + r.escrito + ")", aplicar: r.faltaReindexar ? cuerpo.cerebro : null, recargar: r.cambio && !r.faltaReindexar };
+      pintarLista();
+    }).catch(function (e) { ocupado = false; MSG = { texto: e.message, error: true }; pintarLista(); });
+  }
+  function aplicar(cerebro) {
+    if (ocupado) return;
+    ocupado = true; MSG = { texto: "Reindexando " + cerebro + "… puede tardar unos segundos." }; pintarLista(); pintarAviso("Reindexando " + cerebro + "…");
+    pedir("POST", "/api/aplicar", { cerebro: cerebro }).then(function (r) {
+      ocupado = false;
+      if (r.errores.length) { MSG = { texto: "El cerebro se reindexó con errores: " + r.errores.join("; "), error: true }; pintarLista(); pintarAviso(null); return; }
+      guardar(); location.reload();
+    }).catch(function (e) { ocupado = false; MSG = { texto: e.message, error: true }; pintarLista(); pintarAviso(null); });
+  }
+  var valor = function (id) { var e = document.getElementById(id); return e ? String(e.value || "").trim() : ""; };
+  // Lo que se declaró y todavía no entró al índice: se dice arriba, con el botón para aplicarlo.
+  function aviso(texto) {
+    if (!ED) return '<p class="aviso" id="fd-aviso">Esta página es de solo lectura. Para corregir lo que falta desde acá, abrila con <code>flowbrain viewer --serve</code>.</p>';
+    if (texto) return '<p class="aviso" id="fd-aviso">' + esc(texto) + "</p>";
+    if (!ED.sinAplicar || !ED.sinAplicar.length) return '<p class="aviso oculto" id="fd-aviso"></p>';
+    return '<p class="aviso" id="fd-aviso">Hay declaraciones guardadas en <code>calls.yaml</code> que todavía no entraron al índice: ' +
+      ED.sinAplicar.map(function (c) { return '<button type="button" class="boton" data-acc="aplicar" data-cerebro="' + esc(c) + '">Reindexar ' + esc(c) + "</button>"; }).join(" ") + "</p>";
+  }
+  function pintarAviso(texto) { var e = document.getElementById("fd-aviso"); if (e && e.outerHTML !== undefined) e.outerHTML = aviso(texto); }
   function lista() {
     var xs = filtradas(), activos = filtrosActivos();
     if (!xs.length) {
@@ -184,16 +280,22 @@ export const FIDELIDAD_JS = String.raw`
       raiz.innerHTML = "<h1>Fidelidad</h1>" + '<p class="aviso">El índice no midió ningún archivo.</p>' + sin;
       return;
     }
-    raiz.innerHTML = "<h1>Fidelidad</h1>" + COMO + cifras() + graficos() + filtros() + '<div id="fd-lista">' + lista() + "</div>" + sin;
+    raiz.innerHTML = "<h1>Fidelidad</h1>" + COMO + aviso(null) + cifras() + graficos() + filtros() + '<div id="fd-lista">' + lista() + "</div>" + sin;
   }
-  function refrescar(todo) { S.ver = PASO; if (todo) pintarTodo(); else pintarLista(); }
+  function refrescar(todo) { S.ver = PASO; guardar(); if (todo) pintarTodo(); else pintarLista(); }
   var entero = function (v, def) { var n = parseInt(v, 10); return isNaN(n) ? def : Math.min(100, Math.max(0, n)); };
 
   raiz.addEventListener("click", function (ev) {
     var b = ev.target.closest ? ev.target.closest("button") : null;
     if (!b) return;
     var acc = b.getAttribute("data-acc");
-    if (acc === "limpiar") { S = inicial(); pintarTodo(); return; }
+    if (acc === "limpiar") { S = inicial(); guardar(); pintarTodo(); return; }
+    if (acc === "editar") { abrir(b.getAttribute("data-a")); return; }
+    if (acc === "recargar") { guardar(); location.reload(); return; }
+    if (acc === "aplicar") { aplicar(b.getAttribute("data-cerebro")); return; }
+    if (acc === "sumar") { enviar({ tipo: "funcionalidad", funcionalidad: valor("fd-e-feat"), entrada: valor("fd-e-entrada") }); return; }
+    if (acc === "declarar-http") { var lh = Number(b.getAttribute("data-linea")); enviar({ tipo: "http", linea: lh, metodo: valor("fd-h-m-" + lh), ruta: valor("fd-h-r-" + lh) }); return; }
+    if (acc === "declarar-llamada") { var ll = Number(b.getAttribute("data-linea")); enviar({ tipo: "llamada", linea: ll, hacia: valor("fd-l-" + ll) }); return; }
     if (acc === "orden") { S.orden = S.orden === "asc" ? "desc" : "asc"; refrescar(false); return; }
     if (acc === "mas") { S.ver += PASO; pintarLista(); return; }
     // Las barras prenden y apagan su filtro.

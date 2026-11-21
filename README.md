@@ -63,7 +63,7 @@ Con Claude Code abierto en la carpeta del proyecto (con otro agente, el menú da
 1. **`/flowbrain-study`**: el modelo estudia cómo está hecho cada repo, escribe `profile.md`, extractores en `.flowbrain/<cerebro>/extractors/<repo-id>/` para lo que los parsers no ven, y controles (`checks.yaml`) que tienen que seguir cumpliéndose. `flowbrain coverage` mide el avance.
 2. **`/flowbrain-index`**: decide a qué servicio va cada llamada entre repos (por base de URL, configuración e infraestructura) y lo declara con evidencia.
 3. **`/flowbrain-features`**: deduce las funcionalidades de producto, las explica y las une con sus pantallas, endpoints y tablas.
-4. **`flowbrain brains viewer`**: regenera el visor.
+4. **`flowbrain brains viewer`**: regenera el visor. Con **`flowbrain viewer --serve`** se abre en `http://127.0.0.1:4780` y la pantalla Fidelidad deja corregir lo que le falta a cada archivo (solo escribe en `.flowbrain/`).
 
 Todo lo que el modelo escribe queda en `.flowbrain/`, legible y versionable junto al proyecto; lo derivado (`_build/`, el visor) queda fuera de git.
 
