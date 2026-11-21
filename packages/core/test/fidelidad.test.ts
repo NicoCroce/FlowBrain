@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConsultaError, crearContexto, crearIndiceCodigo, fidelidad, fidelidadDeArchivos, fidelidadDeFuentes, type Ficha, type Graph, type GraphEdge, type GraphNode } from "../src/index.js";
+import { ConsultaError, crearContexto, crearIndiceCodigo, fidelidad, fidelidadDeArchivos, fidelidadDeFuentes, planDeFidelidad, type Ficha, type Graph, type GraphEdge, type GraphNode } from "../src/index.js";
 
 /**
  * Un back y un front mínimos, armados a mano para que cada archivo tenga una falta distinta y conocida:
@@ -64,13 +64,13 @@ describe("fidelidad por archivo", () => {
     expect(sinDatos).toEqual([`${R}:web/datos.json`]);
     // Los tests no entran.
     expect(medidos.map((a) => a.archivo)).not.toContain(`${R}:web/api.test.ts`);
-    expect(de("web/Ayuda.tsx").señales).toEqual({ pantallas: { ok: 0, total: 1 }, funcionalidad: { ok: 1, total: 1 } });
+    expect(de("web/Ayuda.tsx").signals).toEqual({ pantallas: { ok: 0, total: 1 }, funcionalidad: { ok: 1, total: 1 } });
     expect(de("web/Pedidos.tsx")).toMatchObject({ puntaje: 100, faltas: [], funcionalidades: ["feat-pedidos"] });
   });
 
   it("endpoints: uno llega a una tabla y tiene respuesta; el otro, ninguna de las dos", () => {
     const a = de("api/pedidos.ts");
-    expect(a.señales).toEqual({ llamadas: { ok: 1, total: 1 }, entradas: { ok: 1, total: 2 }, contrato: { ok: 1, total: 2 }, funcionalidad: { ok: 1, total: 1 } });
+    expect(a.signals).toEqual({ llamadas: { ok: 1, total: 1 }, entradas: { ok: 1, total: 2 }, contrato: { ok: 1, total: 2 }, funcionalidad: { ok: 1, total: 1 } });
     // (2·1 + 2·0,5 + 1·0,5 + 1·1) / 6 = 75
     expect(a.puntaje).toBe(75);
     expect(a.faltas).toEqual(["1 endpoint cuyo recorrido no llega a nada (DELETE /pedidos/{id})", "1 endpoint sin tipo de respuesta"]);
@@ -78,16 +78,59 @@ describe("fidelidad por archivo", () => {
 
   it("llamadas sin resolver y tablas sin página, con su línea", () => {
     const a = de("api/servicio.ts");
-    expect(a.señales).toMatchObject({ llamadas: { ok: 1, total: 2 }, datos: { ok: 1, total: 2 } });
+    expect(a.signals).toMatchObject({ llamadas: { ok: 1, total: 2 }, datos: { ok: 1, total: 2 } });
     expect(a.puntaje).toBe(60);
     expect(a.faltas[0]).toContain("1 llamada sin resolver (L6)");
     expect(a.faltas[1]).toContain("1 acceso a tablas sin página (auditoria; L8)");
   });
 
   it("HTTP sin ruta y archivos sin funcionalidad", () => {
-    expect(de("web/api.ts")).toMatchObject({ señales: { http: { ok: 1, total: 2 } }, puntaje: 67 });
+    expect(de("web/api.ts")).toMatchObject({ signals: { http: { ok: 1, total: 2 } }, puntaje: 67 });
     expect(de("web/api.ts").faltas[0]).toContain("1 llamada HTTP sin ruta (L14)");
     expect(de("web/suelto.ts")).toMatchObject({ puntaje: 0, funcionalidades: [] });
+  });
+});
+
+describe("tareas: qué hacer para llegar a 100", () => {
+  const { archivos: medidos } = fidelidadDeArchivos(ctx);
+  const de = (ruta: string) => medidos.find((a) => a.archivo === `${R}:${ruta}`)!;
+
+  it("cada falta dice qué pasa, qué hacer, quién lo resuelve y en qué líneas", () => {
+    expect(de("web/Pedidos.tsx").tareas).toEqual([]);
+    expect(de("api/servicio.ts").tareas).toEqual([
+      { signal: "llamadas", resuelve: "persona", lineas: [6], que: "1 llamada que no se sabe a qué método va: el código no lo dice con tipos", hacer: expect.stringContaining("calls.yaml") },
+      { signal: "datos", resuelve: "agente", lineas: [8], que: "Toca 1 tabla que el cerebro no conoce (auditoria)", hacer: expect.any(String) },
+    ]);
+    expect(de("web/api.ts").tareas.map((t) => [t.signal, t.resuelve, t.lineas])).toEqual([["http", "persona", [14]]]);
+    expect(de("api/pedidos.ts").tareas.map((t) => [t.signal, t.resuelve])).toEqual([["entradas", "agente"], ["contrato", "agente"]]);
+    expect(de("web/Ayuda.tsx").tareas.map((t) => t.signal)).toEqual(["pantallas"]);
+  });
+
+  it("a un archivo sin funcionalidad le sugiere la de sus vecinos de carpeta", () => {
+    const a = de("web/suelto.ts");
+    expect(a.tareas).toEqual([expect.objectContaining({ signal: "funcionalidad", resuelve: "persona" })]);
+    expect(a.sugerida).toEqual({ id: "feat-pedidos", motivo: "3 archivos de web/ son de feat-pedidos" });
+    expect(de("web/api.ts").sugerida).toBeUndefined();
+  });
+
+  it("plan para el modelo: tareas por archivo, cómo se resuelve cada tipo y qué correr al terminar", () => {
+    const plan = planDeFidelidad(medidos);
+    expect(plan).toContain("llevar a 100 el puntaje de fidelidad de 5 archivos");
+    expect(plan).toContain(`### ${R}:web/suelto.ts (0/100)\nPista: 3 archivos de web/ son de feat-pedidos (\`feat-pedidos\`).\n- [ ] funcionalidad: No es parte de ninguna funcionalidad ni librería.`);
+    expect(plan).toContain("- [ ] llamadas: 1 llamada que no se sabe a qué método va: el código no lo dice con tipos (L6).");
+    expect(plan).toContain("- **llamadas**: Abrí el archivo");
+    expect(plan).toContain("flowbrain brains apply");
+    // El archivo completo no entra; los de menor puntaje van primero.
+    expect(plan).not.toContain("web/Pedidos.tsx");
+    expect(plan.indexOf("web/suelto.ts")).toBeLessThan(plan.indexOf("api/pedidos.ts"));
+    // Solo un tipo de relación, y con tope.
+    const soloHttp = planDeFidelidad(medidos, { signals: ["http"] });
+    expect(soloHttp).toContain("de 1 archivo");
+    expect(soloHttp).not.toContain("**llamadas**");
+    expect(planDeFidelidad(medidos, { limite: 2 })).toContain("quedan 3 más para otra tanda");
+    expect(planDeFidelidad([])).toContain("No hay nada para hacer");
+    // Desde la herramienta, con los mismos filtros que el informe.
+    expect(fidelidad(ctx, { plan: true, signal: "http" })).toEqual({ herramienta: "fidelidad", archivos: 1, plan: soloHttp });
   });
 });
 
@@ -99,10 +142,10 @@ describe("fidelidad con varios cerebros", () => {
   const http = (cruzadas?: Set<string>) => fidelidadDeFuentes(graph, [ficha], [archivos], [conPendiente], cruzadas ? { cruzadas } : {}).archivos.find((a) => a.archivo === `${R}:web/api.ts`)!;
 
   it("la llamada que cruza cuenta como unida; la que no llega a ningún cerebro, como falta", () => {
-    expect(http().señales.http).toEqual({ ok: 2, total: 3 });
-    expect(http(new Set([`${R}:web/api.ts#L16`])).señales.http).toEqual({ ok: 2, total: 3 });
+    expect(http().signals.http).toEqual({ ok: 2, total: 3 });
+    expect(http(new Set([`${R}:web/api.ts#L16`])).signals.http).toEqual({ ok: 2, total: 3 });
     const sola = http(new Set());
-    expect(sola.señales.http).toEqual({ ok: 1, total: 3 });
+    expect(sola.signals.http).toEqual({ ok: 1, total: 3 });
     expect(sola.faltas.join(" ")).toContain("1 llamada HTTP que no se unió a ningún endpoint, ni de este cerebro ni de los comunicados (L16)");
   });
 });
@@ -117,14 +160,14 @@ describe("informe de fidelidad", () => {
     expect(r.porFuncionalidad).toContainEqual({ id: "ninguna", archivos: 1, puntaje: 0 });
   });
 
-  it("filtra por rango, funcionalidad, tipo y señal", () => {
+  it("filtra por rango, funcionalidad, tipo y signal", () => {
     const lista = (p: Parameters<typeof fidelidad>[1]) => (fidelidad(ctx, p) as unknown as { lista: Array<{ archivo: string }> }).lista.map((a) => a.archivo.slice(R.length + 1));
     expect(lista({ min: 60, max: 75 })).toEqual(["api/servicio.ts", "web/api.ts", "api/pedidos.ts"]);
     expect(lista({ funcionalidad: "ninguna" })).toEqual(["web/suelto.ts"]);
     expect(lista({ funcionalidad: "pedidos", tipo: "tsx" })).toEqual(["web/Ayuda.tsx", "web/Pedidos.tsx"]);
-    expect(lista({ señal: "http" })).toEqual(["web/api.ts"]);
+    expect(lista({ signal: "http" })).toEqual(["web/api.ts"]);
     expect(() => fidelidad(ctx, { min: 80, max: 20 })).toThrow(ConsultaError);
-    expect(() => fidelidad(ctx, { señal: "otra" })).toThrow(/señal desconocida/);
+    expect(() => fidelidad(ctx, { signal: "otra" })).toThrow(/signal desconocida/);
   });
 
   it("un archivo: su detalle, o por qué no tiene puntaje", () => {

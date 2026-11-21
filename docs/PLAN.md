@@ -47,8 +47,9 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 26 | Relaciones entre cerebros | Hecho (decisión 139) |
 | 27 | Visor con varios cerebros | Hecho (decisión 140); falta revisarlo a ojo en un navegador |
 | 28 | Fidelidad: puntaje por archivo | Hecho (decisión 176) |
-| 29 | Fidelidad: pantalla en el visor | Hecho (decisión 177); falta revisarla a ojo en un navegador |
+| 29 | Fidelidad: pantalla en el visor | Hecho (decisión 177); rehecha en el 30b |
 | 30 | Fidelidad: editar desde el visor | Hecho (decisión 178); falta usarlo en un navegador |
+| 30b | Fidelidad: cadena, tareas con sugerencia y plan para el agente | Hecho (decisión 179) |
 | 31 | Reglas de negocio | Pendiente |
 | 32 a 35 | Entre cerebros: `deriva`, `paridad`, su pantalla y la CLI | Pendiente |
 | 36 a 39 | Otros: llamada interna, `riesgo` con tipos, `deriva` por campos, `infra` | Pendiente |
@@ -268,6 +269,9 @@ Estadística de todos los cerebros y filtros por rango de puntaje, cerebro, tipo
 El visor hoy es un archivo estático. Un servidor local (`flowbrain viewer --serve`, solo en `127.0.0.1`) que permite guardar: sumar un archivo al `codigo` de una funcionalidad, declarar una llamada en `calls.yaml`, agregar un control. Se editan los archivos del cerebro, nunca el código fuente; lo guardado queda como curado y recompila.
 
 **Hecho cuando.** Un test fija que una edición escribe el archivo del cerebro esperado, que el puntaje del archivo sube al recompilar y que el servidor rechaza escribir fuera de `.flowbrain/`.
+
+### Paso 30b · Fidelidad que se explica sola
+Cada fila con su cadena de trazabilidad y, por cada falta, qué pasa, qué hacer y quién lo resuelve. Sugerencia de funcionalidad por vecinos de carpeta. Plan en texto para un modelo (`flowbrain fidelity --plan`, `fidelidad` con `plan: true`, y desde la pantalla). `signal` en vez de `señal`.
 
 ### Paso 31 · Reglas de negocio
 

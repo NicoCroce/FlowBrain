@@ -116,7 +116,8 @@ Comandos:
   fidelity [archivo] [--min n] [--max n]    qué tan entendido quedó cada archivo, de 0 a 100, y qué le falta (con su
            [--feature id|ninguna]           línea): llamadas sin resolver, HTTP sin ruta, accesos sin columnas, endpoints
            [--type ext] [--signal s]        sin recorrido o sin respuesta, pantallas sin llamadas, archivos sin
-           [--limit n]                      funcionalidad. Lista de menor a mayor; con un archivo, su detalle
+           [--limit n] [--plan]             funcionalidad. Lista de menor a mayor; con un archivo, su detalle. Con
+                                            --plan, un plan en texto para que un modelo lleve esos archivos a 100
   calls [--limit n]                         dónde se cortan los recorridos: endpoints que no llegan a una tabla y las
                                             llamadas sin tipo que hay en su camino, con candidatos; se resuelven
                                             declarándolas en calls.yaml (raíz del brain) y reindexando
@@ -210,6 +211,7 @@ export async function ejecutar(
         feature: { type: "string" },
         type: { type: "string" },
         signal: { type: "string" },
+        plan: { type: "boolean" },
         text: { type: "string" },
         diff: { type: "string" },
         write: { type: "boolean" },
@@ -608,10 +610,13 @@ export async function ejecutar(
           ...opt("max", entero(o.max, "--max")),
           ...opt("funcionalidad", o.feature),
           ...opt("tipo", o.type),
-          ...opt("señal", o.signal),
+          ...opt("signal", o.signal),
           ...opt("limite", entero(o.limit, "--limit")),
           ...opt("budget_tokens", comunes.budget_tokens),
+          ...(o.plan ? { plan: true } : {}),
         });
+        // El plan es texto para pegarle a un modelo: sale tal cual, no como JSON.
+        if (o.plan) return { codigo: 0, stdout: (resultado as unknown as { plan: string }).plan, stderr: "" };
         break;
       case "calls": {
         // Dónde se cortan los recorridos por llamadas sin tipo, y qué hay declarado en calls.yaml.

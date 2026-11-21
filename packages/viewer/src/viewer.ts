@@ -1,4 +1,4 @@
-import { dependenciasDelGrafo, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { CIERRE_DEL_PLAN, COMO_RESOLVER, dependenciasDelGrafo, REGLAS_DEL_PLAN, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
 import { mapa3dDelGrafo } from "./mapa3d.js";
 import { GRAFO3D_JS } from "./viewer-3d.js";
@@ -27,8 +27,16 @@ export interface FidelidadVisor {
 export function fidelidadDelVisor(f: FidelidadVisor | undefined) {
   if (!f) return null;
   return {
-    // a: archivo, p: puntaje, l: lenguaje, k: capa, f: funcionalidades, s: señal → [ok, total], x: faltas.
-    archivos: f.archivos.map((x) => ({ a: x.archivo, p: x.puntaje, l: x.lenguaje, k: x.capa, f: x.funcionalidades, s: Object.fromEntries(Object.entries(x.señales).map(([k, v]) => [k, [v.ok, v.total]])), x: x.faltas })),
+    // a: archivo, p: puntaje, l: lenguaje, k: capa, f: funcionalidades, s: signal → [ok, total],
+    // t: tareas [signal, 1 si la resuelve una persona, qué pasa, qué hacer, líneas], g: funcionalidad sugerida [id, motivo].
+    archivos: f.archivos.map((x) => ({
+      a: x.archivo, p: x.puntaje, l: x.lenguaje, k: x.capa, f: x.funcionalidades,
+      s: Object.fromEntries(Object.entries(x.signals).map(([k, v]) => [k, [v.ok, v.total]])),
+      t: x.tareas.map((t) => [t.signal, t.resuelve === "persona" ? 1 : 0, t.que, t.hacer, t.lineas]),
+      ...(x.sugerida ? { g: [x.sugerida.id, x.sugerida.motivo] } : {}),
+    })),
+    // Los textos del plan para el modelo: los mismos que usan el CLI y el MCP.
+    plan: { reglas: REGLAS_DEL_PLAN, como: COMO_RESOLVER, cierre: CIERRE_DEL_PLAN },
     sinDatos: f.sinDatos.length,
     ejemplosSinDatos: f.sinDatos.slice(0, 5),
   };
@@ -249,17 +257,35 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .fd-cuerpo { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .fd-ruta code { font-size: 13px; color: var(--text); }
 .fd-sinfeat { color: var(--dudoso); border-color: #5B2A2A; }
-.fd-señales { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--suave); }
-.fd-s.falta { color: var(--feat); }
-.fd-faltas { margin: 0; padding-left: 18px; color: var(--claro); font-size: 13px; }
-.fd-faltas li { padding: 1px 0; border: 0; }
+.fd-leyenda { display: flex; gap: 8px; margin: -8px 0 16px; }
+.fd-grupos { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.fd-grupo { height: 38px; padding: 0 14px; border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); color: var(--claro); font: 500 13px var(--sans); cursor: pointer; }
+.fd-grupo small { margin-left: 6px; color: var(--suave); font-variant-numeric: tabular-nums; }
+.fd-grupo:hover { background: var(--hover); color: #FFFFFF; } .fd-grupo.on { background: #1D2740; border-color: var(--primario); color: #FFFFFF; }
+.fd-herr { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; } .fd-herr input[type=search] { flex: 1 1 260px; min-width: 0; }
+.fd-plan { display: flex; flex-direction: column; gap: 12px; margin: 0 0 20px; padding: 16px; border: 1px solid var(--primario); border-radius: 12px; background: var(--tarjeta); }
+.fd-plan h2 { margin: 0; }
+.fd-casillas { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.fd-casilla { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--claro); cursor: pointer; } .fd-casilla small { color: var(--suave); }
+.fd-linea-plan { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; } .fd-linea-plan .fd-campo { width: 260px; }
+.fd-texto { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid #262C3A; border-radius: 10px; background: #0E1118; color: var(--claro); font: 400 12px/1.5 var(--mono, ui-monospace, monospace); resize: vertical; }
+.fd-cadena { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.fd-es { padding: 2px 9px; border: 1px solid var(--borde); border-radius: 8px; font-size: 12px; white-space: nowrap; }
+.fd-es.ok { color: var(--tabla); border-color: #1F4A3A; background: #10201A; }
+.fd-es.no { color: var(--dudoso); border-color: #5B2A2A; background: #2A1416; }
+.fd-es.na { color: var(--suave); border-style: dashed; }
+.boton.fd-pri { background: var(--primario); border-color: var(--primario); color: #FFFFFF; } .boton.fd-pri:hover { background: #3F5BEF; } .boton.fd-pri[disabled] { opacity: .5; cursor: default; }
+.fd-sep { color: var(--suave); font-size: 13px; }
+.fd-tarea { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding-top: 8px; border-top: 1px solid var(--borde); }
+.fd-que { flex: 1 1 320px; min-width: 0; } .fd-que p { margin: 0; font-size: 13px; color: var(--claro); overflow-wrap: anywhere; }
+.fd-ln { color: var(--suave); font-variant-numeric: tabular-nums; }
+.fd-hacer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fd-quien { padding: 2px 9px; border: 1px solid var(--borde); border-radius: 8px; font-size: 12px; color: var(--suave); white-space: nowrap; } .fd-quien.vos { color: var(--feat); }
+.fd-pregunta { display: flex; flex-direction: column; gap: 6px; } .fd-opciones { display: flex; flex-wrap: wrap; gap: 8px; } .fd-opciones small { color: var(--suave); margin-left: 4px; }
 .fd-ok { margin: 0; font-size: 13px; color: var(--tabla); }
 .fd-ed { margin-top: 4px; padding: 12px 14px; border: 1px solid var(--borde2); border-radius: 10px; background: var(--fondo); display: flex; flex-direction: column; gap: 12px; }
-.fd-ed section { display: flex; flex-direction: column; gap: 8px; } .fd-ed h4 { margin: 0; font-size: 13px; color: var(--claro); }
-.fd-linea { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) auto; gap: 8px; align-items: center; }
-.fd-linea:has(.fd-donde) { grid-template-columns: minmax(140px, 1fr) minmax(90px, .5fr) minmax(0, 1.4fr) auto; }
-.fd-linea:has(.fd-donde):not(:has(select + input)) { grid-template-columns: minmax(140px, 1fr) minmax(0, 1.6fr) auto; }
-.fd-donde { font-size: 12px; color: var(--medio); overflow-wrap: anywhere; }
+.fd-linea { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.fd-donde { margin: 0; font-size: 13px; color: var(--claro); overflow-wrap: anywhere; }
 .fd-nota { margin: 0; font-size: 12px; color: var(--suave); }
 .fd-msg { margin: 0; padding: 8px 10px; border-radius: 8px; background: #10201A; color: var(--tabla); font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .fd-msg.error { background: #2A1416; color: var(--dudoso); }

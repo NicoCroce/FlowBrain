@@ -21,7 +21,7 @@ Grafo de conocimiento de un sistema de software, hecho para que un agente de có
 | Llamadas sin endpoint y endpoints sin uso | `deriva` | `flowbrain drift` |
 | Qué falta migrar de un servicio a otro | `paridad` | `flowbrain parity <viejo> <nuevo>` |
 | Cómo se construye y despliega | `infra` | `flowbrain infra` |
-| Qué tan entendido quedó cada archivo (0 a 100) y qué le falta | `fidelidad` | `flowbrain fidelity` |
+| Qué tan entendido quedó cada archivo (0 a 100), qué le falta y un plan para llevarlo a 100 | `fidelidad` | `flowbrain fidelity [--plan]` |
 | Qué llamadas cruzan entre cerebros | `conexiones` | `flowbrain connections` |
 | Buscar un nodo / recorrer el grafo | `buscar_nodo`, `recorrer_grafo` | `flowbrain search`, `flowbrain traverse` |
 

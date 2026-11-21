@@ -57,12 +57,13 @@ describe("visor de varios cerebros", () => {
 
   it("fidelidad: cada fila dice de qué cerebro es, con sus ids prefijados; un cerebro sin índice no aporta filas", () => {
     const frontConArchivo: Graph = { ...front, nodes: [...front.nodes, nodo("repo-tienda:src/api.ts", "archivo"), nodo("feat-pedidos", "feat")] };
-    const fila = { archivo: "repo-tienda:src/api.ts", puntaje: 50, lenguaje: "ts", capa: "otros", funcionalidades: ["feat-pedidos"], señales: { http: { ok: 1, total: 2 } }, faltas: ["1 llamadas HTTP sin ruta (L9)"] };
+    const fila = { archivo: "repo-tienda:src/api.ts", puntaje: 50, lenguaje: "ts", capa: "otros", funcionalidades: ["feat-pedidos"], signals: { http: { ok: 1, total: 2 } }, faltas: ["1 llamada HTTP sin ruta (L9)"], tareas: [{ signal: "http" as const, que: "1 llamada HTTP cuya ruta no se pudo leer", hacer: "Escribir la ruta.", resuelve: "persona" as const, lineas: [9] }] };
     const d = datosDeCerebros([{ ...cerebros[0]!, graph: frontConArchivo, fidelidad: { archivos: [fila], sinDatos: ["repo-tienda:datos.json"] } }, cerebros[1]!], cruces, []);
     expect(d.fidelidad).toEqual({
-      archivos: [{ a: "front/repo-tienda:src/api.ts", c: 0, p: 50, l: "ts", k: "otros", f: ["front/feat-pedidos"], s: { http: [1, 2] }, x: ["1 llamadas HTTP sin ruta (L9)"] }],
+      archivos: [{ a: "front/repo-tienda:src/api.ts", c: 0, p: 50, l: "ts", k: "otros", f: ["front/feat-pedidos"], s: { http: [1, 2] }, t: [["http", 1, "1 llamada HTTP cuya ruta no se pudo leer", "Escribir la ruta.", [9]]] }],
       sinDatos: 1,
       ejemplosSinDatos: ["repo-tienda:datos.json"],
+      plan: { reglas: expect.any(Array), como: expect.objectContaining({ http: expect.stringContaining("calls.yaml") }), cierre: expect.any(Array) },
     });
     // Sin índice de código en ningún cerebro, la pantalla lo explica en vez de mostrar una lista vacía.
     expect(datosDeCerebros(cerebros, cruces, []).fidelidad).toBeNull();
