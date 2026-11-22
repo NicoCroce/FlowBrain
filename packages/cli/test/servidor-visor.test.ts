@@ -155,6 +155,26 @@ describe("flowbrain viewer --serve", () => {
     expect((await pedir("POST", "/api/editar", { cuerpo: { cerebro: "no-existe", archivo: AVISOS, tipo: "http" } })).estado).toBe(404);
   });
 
+  it("confirma una especificación: cambia el estado en la página y el cerebro queda recompilado", async () => {
+    const ruta = join(reg, "tienda/product/feat-pedidos.md");
+    const previa = await readFile(ruta, "utf8");
+    await writeFile(ruta, previa.replace("\n---\n# Pedidos", "\nespecificaciones:\n  - id: alta\n    texto: Se puede dar de alta un pedido.\n    tipo: producto\n    archivos: [" + R + ":src/main.ts]\n---\n# Pedidos"));
+    expect((await ejecutar(["brains", "apply", "--root", reg], {}, dir)).codigo).toBe(0);
+    const estado = async () => ((await ejecutar(["specs", "pedidos", "--root", join(reg, "tienda")], {}, dir)).stdout.match(/"estado": "(\w+)"/) ?? [])[1];
+    expect(await estado()).toBe("propuesta");
+    const confirmar = (cuerpo: Record<string, unknown>) => pedir("POST", "/api/editar", { cuerpo: { cerebro: "tienda", tipo: "especificacion", funcionalidad: "feat-pedidos", id: "alta", estado: "confirmada", ...cuerpo } });
+    const r = await confirmar({});
+    expect(r.estado).toBe(200);
+    expect(r.json).toMatchObject({ escrito: "tienda/product/feat-pedidos.md", cambio: true, faltaReindexar: false });
+    expect(await readFile(ruta, "utf8")).toContain("    tipo: producto\n    archivos: [" + R + ":src/main.ts]\n    estado: confirmada\n");
+    expect(await estado()).toBe("confirmada");
+    expect((await confirmar({})).json).toMatchObject({ cambio: false });
+    expect((await confirmar({ id: "no-existe" })).estado).toBe(404);
+    expect((await confirmar({ estado: "lista" })).estado).toBe(400);
+    expect((await confirmar({ funcionalidad: "feat-no-existe" })).estado).toBe(404);
+    expect((await confirmar({ estado: "propuesta" })).json).toMatchObject({ cambio: true });
+  }, 60_000);
+
   it("nunca escribe fuera de la carpeta del cerebro", async () => {
     const base = join(reg, "tienda");
     await expect(rutaDentro(base, "../flowbrain.yaml")).rejects.toThrow(/se sale/);

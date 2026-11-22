@@ -1,6 +1,6 @@
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { agregarCodigoAPagina, agregarDeclaracion, ARCHIVO_LLAMADAS, cargarContexto, cmp, ConsultaError, dentroDe, type Cerebro, type Contexto, type Registro } from "@flowbrain/core";
+import { agregarCodigoAPagina, agregarDeclaracion, cambiarEstadoDeEspecificacion, ARCHIVO_LLAMADAS, cargarContexto, cmp, ConsultaError, dentroDe, type Cerebro, type Contexto, type Registro } from "@flowbrain/core";
 import { compileDirConVisor } from "@flowbrain/viewer";
 
 /**
@@ -16,7 +16,9 @@ export type Edicion =
   /** Declarar la ruta de una llamada HTTP que el índice vio sin poder rutear. */
   | { tipo: "http"; cerebro: string; archivo: string; linea: number; metodo: string; ruta: string }
   /** Declarar a qué método va una llamada que el índice no pudo atribuir. */
-  | { tipo: "llamada"; cerebro: string; archivo: string; linea: number; hacia: string };
+  | { tipo: "llamada"; cerebro: string; archivo: string; linea: number; hacia: string }
+  /** Confirmar una especificación de una funcionalidad (o volverla a propuesta). */
+  | { tipo: "especificacion"; cerebro: string; funcionalidad: string; id: string; estado: string };
 
 export interface ResultadoEdicion {
   /** Archivo escrito, relativo a la carpeta del registro. */
@@ -90,10 +92,29 @@ export async function detalleDeArchivo(registro: Registro, nombreCerebro: unknow
 export async function editar(registro: Registro, ed: Edicion): Promise<ResultadoEdicion> {
   const c = cerebroDe(registro, ed?.cerebro);
   const ctx = await cargarContexto(c.raiz);
-  const { e, archivo, repo } = estructuraDe(ctx, ed.archivo);
   // `rutaDentro` devuelve rutas ya resueltas; la carpeta del registro se resuelve igual para informar una ruta corta.
   const carpeta = await realpath(registro.carpeta).catch(() => registro.carpeta);
   const rel = (abs: string) => relative(carpeta, abs);
+
+  if (ed.tipo === "especificacion") {
+    const n = typeof ed.funcionalidad === "string" ? ctx.nodo.get(ed.funcionalidad) : undefined;
+    if (!n || n.tipo !== "feat" || !n.pagina || !/\.md$/.test(n.pagina)) throw new ConsultaError("nodo_inexistente", `no existe la funcionalidad (o no tiene página): ${String(ed.funcionalidad)}`);
+    if (typeof ed.id !== "string" || (ed.estado !== "confirmada" && ed.estado !== "propuesta")) throw invalido("falta el id de la especificación, o el estado no es confirmada ni propuesta");
+    const destino = await rutaDentro(c.raiz, n.pagina);
+    let r: { contenido: string; cambio: boolean };
+    try {
+      r = cambiarEstadoDeEspecificacion(n.pagina, await readFile(destino, "utf8"), ed.id, ed.estado);
+    } catch (err) {
+      throw new ConsultaError("nodo_inexistente", (err as Error).message);
+    }
+    if (r.cambio) {
+      await writeFile(destino, r.contenido, "utf8");
+      await compileDirConVisor(c.raiz);
+    }
+    return { escrito: rel(destino), cambio: r.cambio, faltaReindexar: false, mensaje: r.cambio ? `La especificación ${ed.id} de ${n.nombre} quedó ${ed.estado}.` : `La especificación ${ed.id} ya estaba ${ed.estado}: no se escribió nada.` };
+  }
+
+  const { e, archivo, repo } = estructuraDe(ctx, ed.archivo);
 
   if (ed.tipo === "funcionalidad") {
     const n = typeof ed.funcionalidad === "string" ? ctx.nodo.get(ed.funcionalidad) : undefined;

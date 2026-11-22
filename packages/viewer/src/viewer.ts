@@ -1,4 +1,5 @@
 import { CIERRE_DEL_PLAN, COMO_RESOLVER, dependenciasDelGrafo, REGLAS_DEL_PLAN, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
 import { mapa3dDelGrafo } from "./mapa3d.js";
 import { GRAFO3D_JS } from "./viewer-3d.js";
@@ -295,6 +296,21 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 #fd-aviso .boton { margin-left: 6px; }
 .fd-mas { display: flex; align-items: center; gap: 12px; margin-top: 16px; color: var(--suave); }
 
+/* Especificaciones */
+.es-feat { scroll-margin-top: 84px; margin: 0 0 20px; padding: 16px 18px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
+.es-cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 8px; }
+.es-cab h3 { margin: 0; } .es-cab h3 a { color: var(--text); text-decoration: none; } .es-cab h3 a:hover { color: var(--acento); }
+.es-item { display: flex; flex-direction: column; gap: 8px; padding: 14px 0 !important; }
+.es-cabeza { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.es-texto { margin: 0; font-size: 15px; color: var(--text); overflow-wrap: anywhere; }
+.es-ref { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: baseline; font-size: 13px; color: var(--claro); }
+.es-ref code { font-size: 12px; overflow-wrap: anywhere; } .es-ref small { color: var(--suave); }
+.es-tests li { padding: 3px 0; border: 0; }
+.es-roto { display: block; } .es-roto code { overflow-wrap: anywhere; }
+#especificaciones .fd-herr select { flex: 0 0 auto; width: auto; }
+.es-falta { color: var(--dudoso); border-color: #5B2A2A; }
+.es-fila { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; } .es-fila .fd-plan { flex: 1 1 100%; margin: 4px 0 0; }
+
 a.nb { text-decoration: none; }
 
 /* Mapa 3D */
@@ -387,12 +403,13 @@ a.nb { text-decoration: none; }
 <body>
 <header id="cabecera">
   <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>FlowBrain</div>
-  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/fidelidad" data-vista="fidelidad">Fidelidad</a></nav>
+  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/especificaciones" data-vista="especificaciones">Especificaciones</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/fidelidad" data-vista="fidelidad">Fidelidad</a></nav>
   <div id="presets" class="oculto"></div>
 </header>
 <div id="producto" class="pagina"></div>
 <div id="impacto" class="pagina oculto"></div>
 <div id="fidelidad" class="pagina oculto"></div>
+<div id="especificaciones" class="pagina oculto"></div>
 <div id="app" class="oculto">
   <aside class="m3-panel m3-izq">
     <div class="m3-busca">
@@ -461,6 +478,7 @@ a.nb { text-decoration: none; }
 <script>${seguroEnScript(PRODUCTO_JS)}</script>
 <script>${seguroEnScript(PANTALLAS_JS)}</script>
 <script>${seguroEnScript(FIDELIDAD_JS)}</script>
+<script>${seguroEnScript(ESPECIFICACIONES_JS)}</script>
 <script>${seguroEnScript(MAPA_JS)}</script>
 </body>
 </html>

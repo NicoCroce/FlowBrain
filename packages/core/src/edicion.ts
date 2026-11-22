@@ -1,7 +1,7 @@
-import { isSeq, parseDocument, Scalar, YAMLSeq } from "yaml";
+import { isMap, isSeq, parseDocument, Scalar, YAMLSeq } from "yaml";
 import { parsePagina } from "./frontmatter.js";
 import { ARCHIVO_LLAMADAS, type HttpDeclarada, type LlamadaDeclarada } from "./llamadas.js";
-import { CODIGO, dentroDe } from "./schema.js";
+import { CODIGO, dentroDe, ESTADOS_ESPECIFICACION } from "./schema.js";
 
 /**
  * Ediciones sobre los archivos de un brain que alguien hace a mano desde el visor: sumar código a una funcionalidad y
@@ -24,6 +24,23 @@ export function agregarCodigoAPagina(archivo: string, contenido: string, entrada
     doc.set("codigo", seq);
   }
   (seq as YAMLSeq).items.push(doc.createNode(entrada));
+  const frontmatter = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+  return { contenido: `---\n${frontmatter.endsWith("\n") ? frontmatter : `${frontmatter}\n`}---\n${p.cuerpo}`, cambio: true };
+}
+
+/**
+ * Cambia el `estado` de una especificación de la página de una funcionalidad: `confirmada` cuando una persona la leyó
+ * y la da por buena, `propuesta` para volver atrás. No toca el texto ni el resto de la página.
+ */
+export function cambiarEstadoDeEspecificacion(archivo: string, contenido: string, id: string, estado: string): { contenido: string; cambio: boolean } {
+  if (!(ESTADOS_ESPECIFICACION as readonly string[]).includes(estado)) throw new Error(`estado desconocido: ${estado} (va ${ESTADOS_ESPECIFICACION.join(" o ")})`);
+  const p = parsePagina(archivo, contenido);
+  const doc = parseDocument(p.frontmatter, { version: "1.2", schema: "core" });
+  const seq = doc.get("especificaciones", true);
+  const item = isSeq(seq) ? seq.items.find((x) => isMap(x) && x.get("id") === id) : undefined;
+  if (!item || !isMap(item)) throw new Error(`la página ${archivo} no tiene una especificación con id ${id}`);
+  if ((item.get("estado") ?? "propuesta") === estado) return { contenido, cambio: false };
+  item.set("estado", estado);
   const frontmatter = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
   return { contenido: `---\n${frontmatter.endsWith("\n") ? frontmatter : `${frontmatter}\n`}---\n${p.cuerpo}`, cambio: true };
 }

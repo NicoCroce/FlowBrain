@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agregarCodigoAPagina, agregarDeclaracion, leerLlamadasDeclaradas } from "../src/index.js";
+import { agregarCodigoAPagina, agregarDeclaracion, cambiarEstadoDeEspecificacion, leerLlamadasDeclaradas } from "../src/index.js";
 
 const PAGINA = `---
 id: feat-pedidos
@@ -47,5 +47,28 @@ describe("declarar en calls.yaml", () => {
     expect(r.contenido.startsWith(previo)).toBe(true);
     expect(leerLlamadasDeclaradas(r.contenido).llamadas.map((x) => x.linea)).toEqual([42, 50]);
     expect(() => agregarDeclaracion("llamadas: [", "http", http)).toThrow(/YAML inválido/);
+  });
+});
+
+describe("confirmar una especificación", () => {
+  const CON = PAGINA.replace("---\n# Pedidos", ["especificaciones:", "  - id: sin-stock # la más pedida", "    texto: No se puede pedir algo sin stock.", "    tipo: negocio", "  - { id: orden, texto: Los más nuevos van primero., tipo: producto, estado: confirmada }", "---", "# Pedidos"].join("\n"));
+
+  it("cambia solo el estado de esa especificación y deja el resto igual", () => {
+    const r = cambiarEstadoDeEspecificacion("product/feat-pedidos.md", CON, "sin-stock", "confirmada");
+    expect(r.cambio).toBe(true);
+    expect(r.contenido).toContain("  - id: sin-stock # la más pedida\n    texto: No se puede pedir algo sin stock.\n    tipo: negocio\n    estado: confirmada\n");
+    expect(r.contenido).toContain('nombre: "Pedidos" # el nombre de negocio');
+    expect(r.contenido.endsWith("---\n# Pedidos\n\nTexto que no se toca.\n")).toBe(true);
+    const vuelta = cambiarEstadoDeEspecificacion("p.md", CON, "orden", "propuesta");
+    expect(vuelta.contenido).toContain("estado: propuesta");
+    expect(vuelta.contenido).not.toContain("estado: confirmada");
+  });
+
+  it("no escribe lo que ya está dicho, ni una especificación o un estado que no existen", () => {
+    expect(cambiarEstadoDeEspecificacion("p.md", CON, "orden", "confirmada")).toEqual({ contenido: CON, cambio: false });
+    expect(cambiarEstadoDeEspecificacion("p.md", CON, "sin-stock", "propuesta")).toEqual({ contenido: CON, cambio: false });
+    expect(() => cambiarEstadoDeEspecificacion("p.md", CON, "otra", "confirmada")).toThrow(/no tiene una especificación con id otra/);
+    expect(() => cambiarEstadoDeEspecificacion("p.md", PAGINA, "sin-stock", "confirmada")).toThrow(/no tiene una especificación/);
+    expect(() => cambiarEstadoDeEspecificacion("p.md", CON, "sin-stock", "lista")).toThrow(/estado desconocido/);
   });
 });

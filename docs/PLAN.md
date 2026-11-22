@@ -52,7 +52,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 30b | Fidelidad: cadena, tareas con sugerencia y plan para el agente | Hecho (decisión 179) |
 | 31a | Tests por funcionalidad | Hecho (decisión 180) |
 | 31b | Especificaciones: tipo, página, guía para el agente y consulta | Hecho (decisión 181) |
-| 31c | Pantalla Especificaciones | Pendiente |
+| 31c | Pantalla Especificaciones | Hecho (decisión 182) |
 | 31d | Archivos sin asociar, con funcionalidad recomendada | Pendiente |
 | 32 a 35 | Entre cerebros: `deriva`, `paridad`, su pantalla y la CLI | Pendiente |
 | 36 a 39 | Otros: llamada interna, `riesgo` con tipos, `deriva` por campos, `infra` | Pendiente |
