@@ -352,11 +352,12 @@ export async function htmlDelVisor(registro: Registro): Promise<string | null> {
     if (archivos.length) conIndice.push({ visible, funcionalidades, extracciones, archivos });
   }
   if (!visibles.length) return null;
-  const todos = crucesDelRegistro([...livianos.values()], registro.comunicados, registro.conexiones);
+  const todos = crucesDelRegistro([...livianos.values()], registro.comunicados, registro.conexiones, registro.internas);
   const cruces: Cruce[] = todos.cruces;
   // Fidelidad de cada cerebro: una llamada que cruza a otro cerebro cuenta como unida; una que no llega a ninguno, como falta.
   for (const x of conIndice) {
-    const cruzadas = new Set(cruces.filter((k) => k.desde.cerebro === x.visible.nombre).map((k) => k.desde.evidencia));
+    // Unida cuenta la que cruza a otro cerebro y la que el registro declara interna del propio servicio.
+    const cruzadas = new Set([...cruces.filter((k) => k.desde.cerebro === x.visible.nombre).map((k) => k.desde.evidencia), ...todos.internas.filter((k) => k.cerebro === x.visible.nombre).map((k) => k.evidencia)]);
     const ctx = contextoDeFuentes(x.visible.graph, x.funcionalidades, x.archivos, x.extracciones);
     x.visible.fidelidad = fidelidadDeArchivos(ctx, { cruzadas });
     // Y su deriva, con la misma regla: lo que atiende o llama otro cerebro comunicado no es deriva.

@@ -58,7 +58,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 33 | `paridad` entre cerebros | Hecho (decisión 186) |
 | 34 | Pantalla Contratos: deriva y paridad | Hecho (decisión 187) |
 | 35 | Las consultas de la CLI cruzan cerebros | Hecho (decisión 188) |
-| 36 a 39 | Otros: llamada interna, `riesgo` con tipos, `deriva` por campos, `infra` | Pendiente |
+| 36 | Llamada interna del front y ruta comodín | Hecho (decisión 189) |
+| 37 a 39 | Otros: `riesgo` con tipos, `deriva` por campos, `infra` | Pendiente |
 | 40 a 43 | Parsers genéricos: rutas por archivo, clientes HTTP, layout y contexto, cron y gRPC | Pendiente |
 
 ---

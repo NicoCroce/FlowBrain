@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cerebroLiviano, crucesDelRegistro, crucesEntre, impactoCruzado, resumenConexiones, trazasCruzadas, type Graph, type GraphNode } from "../src/index.js";
+import { cerebroLiviano, crucesDelRegistro, crucesEntre, derivaCruzadaDe, impactoCruzado, resumenConexiones, trazasCruzadas, type Graph, type GraphNode } from "../src/index.js";
 
 const nodo = (id: string, tipo: GraphNode["tipo"], atributos: Record<string, unknown> = {}): GraphNode => ({ actualizado: null, aliases: [], atributos, estado: "vigente", id, nombre: id, origen: "parser", pagina: null, resumen: null, tecnologia: [], tipo, verificado: null });
 
@@ -58,6 +58,25 @@ describe("cruces entre cerebros", () => {
   it("sin la estructura de archivos no se inventan pantallas", () => {
     const { cruces } = crucesEntre(cerebroLiviano("front", front, [extraccion]), cerebroLiviano("back", back, []), []);
     expect(cruces.map((c) => c.desde.pantallas)).toEqual([[], []]);
+  });
+
+  it("una llamada interna del propio servicio no cruza a ningún cerebro, y un comodín no atrapa archivos estáticos", () => {
+    const llamada = (evidencia: string, ruta: string, base: string) => ({ verbo: "llama_a", desde: "svc-web", evidencia, llamada: { metodo: "GET", ruta, base } });
+    const ext = JSON.stringify({ pendientes: [llamada("repo-web:src/i18n.ts#L4", "/locales/es", ""), llamada("repo-web:src/api.ts#L9", "/pedidos", "API_URL"), llamada("repo-web:src/version.ts#L2", "/api/version.json", "API_URL"), llamada("repo-web:src/corto.ts#L2", "/api/abc123", "API_URL")] });
+    const api: Graph = { version: 1, nodes: [nodo("svc-api", "svc"), ...["/pedidos", "/locales/{idioma}", "/api/{token}"].map((r) => nodo(`svc-api:GET:${r}`, "endpoint", { metodo: "GET", ruta: r }))], edges: [] };
+    const f = cerebroLiviano("front", front, [ext]), b = cerebroLiviano("back", api, []);
+    const a = (r: { cruces: Array<{ desde: { evidencia: string }; hacia: { endpoint: string } }> }) => r.cruces.map((c) => `${c.desde.evidencia} → ${c.hacia.endpoint}`).sort();
+    // Sin declarar nada, /locales/es se une al back. El archivo estático no: `{token}` no atiende un `.json`.
+    expect(a(crucesEntre(f, b, []))).toEqual(["repo-web:src/api.ts#L9 → svc-api:GET:/pedidos", "repo-web:src/corto.ts#L2 → svc-api:GET:/api/{token}", "repo-web:src/i18n.ts#L4 → svc-api:GET:/locales/{idioma}"]);
+    // Declaradas internas las de URL relativa: salen de los cruces y quedan anotadas.
+    const interna = { de: { cerebro: "front", svc: "svc-web" }, por: null };
+    const r = crucesEntre(f, b, [], [interna]);
+    expect(a(r)).toEqual(["repo-web:src/api.ts#L9 → svc-api:GET:/pedidos", "repo-web:src/corto.ts#L2 → svc-api:GET:/api/{token}"]);
+    expect(r.internas).toEqual([{ cerebro: "front", svc: "svc-web", evidencia: "repo-web:src/i18n.ts#L4" }]);
+    // Con `por`, las que lo llevan en la base o al principio de la ruta; las de otro servicio u otro cerebro no.
+    expect(crucesEntre(f, b, [], [{ ...interna, por: "/api/" }]).internas.map((i) => i.evidencia)).toEqual(["repo-web:src/corto.ts#L2", "repo-web:src/version.ts#L2"]);
+    expect(crucesEntre(f, b, [], [{ de: { cerebro: "front", svc: "svc-otro" }, por: null }]).internas).toEqual([]);
+    expect(derivaCruzadaDe("front", crucesDelRegistro([f, b], () => true, [], [interna]), ["back"]).internas).toEqual(new Set(["repo-web:src/i18n.ts#L4"]));
   });
 
   it("una llamada que coincide con un endpoint en dos cerebros no se une a ninguno hasta que una conexión diga a cuál va", () => {

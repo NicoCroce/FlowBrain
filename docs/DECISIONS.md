@@ -717,3 +717,10 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Con un solo cerebro, o sin registro, nada cambia:** ni campos nuevos ni carga extra.
    - **Verificado** con tests (336, con casos nuevos de `impact`, `search` y `flow` por consola) y, solo leyendo, sobre un proyecto real de siete cerebros: `screen`, `feature` y `trace` de una pantalla del front muestran el endpoint de la API que llama, e `impact` de ese endpoint en la API llega a 3 funcionalidades y 7 pantallas del front.
    - Con esto queda cerrada la fase 9.
+
+189. **2026-11-22 · Llamadas internas y rutas comodín.** Un front que se llama a su propio servidor (`/version.json`, traducciones, configuración en runtime) dejaba esas llamadas pendientes: se cruzaban con otro cerebro si alguna ruta coincidía, o figuraban en `deriva` como llamadas sin endpoint. Y una ruta comodín del back (`/api/{token}`) atrapaba archivos estáticos del propio front.
+   - **`internas` en `flowbrain.yaml`:** `{ de: cerebro/svc-id, por?, origen?, evidencia?, nota? }`. Sin `por`, todas las llamadas de URL relativa; con `por`, las que lo llevan en la base o al principio de la ruta. Se declaran aparte de `conexiones` porque no tienen destino: una conexión apunta a un servicio de otro cerebro y esto no va a ninguno.
+   - **Qué cambia:** no se cruzan con ningún cerebro, `deriva` no las lista como sin endpoint y las cuenta en `internasDelServicio`, y en la fidelidad del visor cuentan como unidas. Vale igual en el MCP, la consola y la evidencia.
+   - **Un comodín no atrapa estáticos:** una llamada cuyo último segmento es un archivo de sitio (`.json`, `.js`, `.css`, `.svg`, `.png`…) solo se une a un endpoint que lo nombre literal, dentro de un brain y entre cerebros. Es una regla del motor, sin declarar nada: ningún back sirve un `.svg` por `/{token}` sin nombrarlo.
+   - **La guía `/flowbrain-index`** explica cuándo declarar una interna en vez de una conexión, con un ejemplo.
+   - **Verificado** con tests (337, con un caso nuevo: internas con y sin `por`, de otro servicio, en `deriva`, y un comodín que no atrapa un `.json`).

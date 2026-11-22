@@ -84,7 +84,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       const l = await liviano(x.nombre, x.raiz);
       if (l) ls.push(l);
     }
-    return { cruces: crucesDelRegistro(ls, r.comunicados, r.conexiones), livianos: ls };
+    return { cruces: crucesDelRegistro(ls, r.comunicados, r.conexiones, r.internas), livianos: ls };
   };
 
   /**
@@ -293,7 +293,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       const todos = global.cruces.filter(mios);
       // Disputadas que tocan a este cerebro: las que salen de él y las que lo tienen entre sus destinos posibles.
       const disputadas = global.entreCerebros.filter((d) => d.cerebro === c.nombre || d.candidatos.some((k) => k.startsWith(`${c.nombre}/`)));
-      const ambiguas = crucesDelRegistro([propio, ...vecinos], (a, b) => (a === c.nombre || b === c.nombre) && r.comunicados(a, b), r.conexiones).ambiguas;
+      const ambiguas = crucesDelRegistro([propio, ...vecinos], (a, b) => (a === c.nombre || b === c.nombre) && r.comunicados(a, b), r.conexiones, r.internas).ambiguas;
       const resumen = resumenConexiones(todos, r.conexiones.filter(mios).filter((x) => r.comunicados(x.desde.cerebro, x.hacia.cerebro)));
       const apagados = r.cerebros.filter((x) => x.nombre !== c.nombre && !r.comunicados(c.nombre, x.nombre)).map((x) => x.nombre);
       // Por paquetes: componentes que una pantalla toma de una librería de otro cerebro y dependencias declaradas.

@@ -84,6 +84,21 @@ $ARGUMENTS
        nota: "API_URL apunta a api.tienda.test, que el compose de tienda-api publica en el puerto 3000"
    \`\`\`
 
+   - \`internas\`: cuando el servicio se llama a **su propio servidor** (un \`/version.json\`, las traducciones, la
+     configuración en runtime, rutas relativas del mismo host), no es una conexión: no va a ningún cerebro. Declaralo
+     así y esas llamadas dejan de cruzarse y de figurar en \`drift\` como llamadas sin endpoint. Sin \`por\` vale para
+     todas las de URL relativa; con \`por\`, solo para las que lo llevan en la base o al principio de la ruta.
+
+   \`\`\`yaml
+   internas:
+     - de: web/svc-tienda-web
+       por: /assets                # opcional
+       origen: modelo
+       evidencia:
+         - "tienda-web/src/version.ts#L8"
+       nota: "fetch('/assets/version.json'): lo sirve el propio front, no la API"
+   \`\`\`
+
    Lo que no pudiste confirmar va a \`preguntas:\` (una frase por duda, con la base y qué falta saber). No borres las
    conexiones que tengan \`origen: persona\` o no tengan \`origen\`: las escribió alguien; si las contradecís, decilo.
 

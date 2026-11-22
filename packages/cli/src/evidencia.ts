@@ -146,7 +146,7 @@ export async function evidencia(registro: Registro, solo?: string): Promise<Evid
   }
   bases.sort((a, b) => cmp(a.desde, b.desde) || b.llamadas - a.llamadas || cmp(a.base, b.base));
   const disp = new Map<string, { desde: string; base: string; llamadas: number; entre: Set<string> }>();
-  for (const d of crucesDelRegistro(livianos, registro.comunicados, registro.conexiones).entreCerebros) {
+  for (const d of crucesDelRegistro(livianos, registro.comunicados, registro.conexiones, registro.internas).entreCerebros) {
     if (solo && d.cerebro !== solo) continue;
     const k = `${d.cerebro}/${d.svc}\u0000${d.base}`;
     const x = disp.get(k) ?? { desde: `${d.cerebro}/${d.svc}`, base: d.base, llamadas: 0, entre: new Set<string>() };

@@ -248,7 +248,10 @@ const literalesIguales = (a: string, b: string) => {
  */
 export function endpointsAlcanzables<E extends { ruta: string; metodo: string }>(eps: E[], metodo: string, ruta: string): E[] {
   if (!ruta.split("/").some((s) => s !== "" && !esParam(s))) return [];
-  const delMetodo = eps.filter((e) => e.metodo === metodo);
+  // Un archivo estático del sitio (`/version.json`) no lo atiende un parámetro de ruta (`/api/{token}`): solo un endpoint que lo nombre.
+  const ultimo = ruta.split("/").filter(Boolean).pop() ?? "";
+  const estatico = /\.(?:m?js|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|json|html?|txt|xml|webmanifest)$/i.test(ultimo);
+  const delMetodo = eps.filter((e) => e.metodo === metodo && (!estatico || e.ruta.split("/").filter(Boolean).pop() === ultimo));
   const segs = ruta.split("/").filter(Boolean);
   /** Cola del endpoint con la misma cantidad de segmentos que la llamada. */
   const cola = (e: E) => "/" + e.ruta.split("/").filter(Boolean).slice(-segs.length).join("/");

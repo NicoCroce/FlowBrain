@@ -1,5 +1,5 @@
 import { cmp } from "../canonical.js";
-import type { Conexion } from "../registro.js";
+import type { Conexion, Interna } from "../registro.js";
 import { aristasDeExtracciones, crearRecorredor, LIMITES_PANTALLA, tablasSinPagina, type AristaExtraccion, type EstructuraArchivo, type Paso, type Toque } from "../funcionalidades.js";
 import type { Graph } from "../schema.js";
 import { alcancePorPantalla } from "../pantallas.js";
@@ -249,7 +249,19 @@ export interface Cruces {
   ambiguas: number;
   /** Llamadas que coinciden con un endpoint en más de un cerebro: tampoco se unen, hasta que una conexión diga a cuál van. */
   entreCerebros: Disputada[];
+  /** Llamadas que el registro declara internas del propio servicio: no se buscan en ningún cerebro. */
+  internas: Array<{ cerebro: string; svc: string; evidencia: string }>;
 }
+
+/**
+ * Un archivo estático de un sitio (`/version.json`, `/logo.svg`). Un parámetro de ruta del back (`/api/{token}`) no lo
+ * atiende: lo sirve el propio front. Solo coincide con un endpoint que lo nombre literal.
+ */
+const ESTATICO = /\.(?:m?js|css|map|png|jpe?g|gif|svg|ico|webp|avif|woff2?|ttf|eot|json|html?|txt|xml|webmanifest)$/i;
+const atrapaEstatico = (rutaEndpoint: string, ruta: string) => {
+  const s = segmentos(ruta), ultimo = s[s.length - 1] ?? "", e = segmentos(rutaEndpoint);
+  return ESTATICO.test(ultimo) && (e[e.length - 1] ?? "") !== ultimo;
+};
 
 const segmentos = (r: string) => r.split("/").filter(Boolean);
 
@@ -260,7 +272,7 @@ const segmentos = (r: string) => r.split("/").filter(Boolean);
  * desempatar entre cerebros: una coincidencia exacta vale más que una por sufijo, y más literales, más.
  */
 function candidatosConPuntaje(destino: CerebroLiviano, metodo: string, ruta: string, svcs: Set<string> | null) {
-  const eps = destino.endpoints.filter((e) => e.metodo === metodo && (!svcs || svcs.has(e.svc)));
+  const eps = destino.endpoints.filter((e) => e.metodo === metodo && (!svcs || svcs.has(e.svc)) && !atrapaEstatico(e.ruta, ruta));
   const s = segmentos(ruta);
   const puntos = (e: { ruta: string }) => segmentos(e.ruta).slice(-s.length).filter((x, i) => x === s[i]).length;
   const mejores = <T extends { ruta: string }>(cs: T[]): T[] => {
@@ -289,13 +301,20 @@ const candidatos = (destino: CerebroLiviano, metodo: string, ruta: string, svcs:
 /** Endpoints de un cerebro que atienden `método ruta`, para quien necesita la coincidencia sin las reglas de comunicación. */
 export const endpointsQueAtienden = candidatos;
 
-export function crucesDesde(origen: CerebroLiviano, destinos: CerebroLiviano[], conexiones: Conexion[]): Cruces {
+export function crucesDesde(origen: CerebroLiviano, destinos: CerebroLiviano[], conexiones: Conexion[], internas: Interna[] = []): Cruces {
   const out: Cruce[] = [];
   const entreCerebros: Disputada[] = [];
+  const deAdentro: Cruces["internas"] = [];
+  const propiasInternas = internas.filter((i) => i.de.cerebro === origen.nombre);
   let ambiguas = 0;
   const nombres = new Set(destinos.map((d) => d.nombre));
   const declaradas = conexiones.filter((c) => c.desde.cerebro === origen.nombre && nombres.has(c.hacia.cerebro));
   for (const p of origen.pendientes) {
+    // Interna: el registro dice que este servicio se la pide a su propio servidor. No se busca afuera.
+    if (propiasInternas.some((i) => i.de.svc === p.desde && (i.por === null ? p.base === "" : p.base.includes(i.por) || p.ruta.startsWith(i.por)))) {
+      deAdentro.push({ cerebro: origen.nombre, svc: p.desde, evidencia: p.evidencia });
+      continue;
+    }
     const propias = declaradas.filter((c) => c.desde.svc === p.desde);
     const aplicables = propias.filter((c) => c.por === null || p.base.includes(c.por));
     let unicos: Array<{ destino: string; endpoint: string; puntaje: number }> = [];
@@ -315,7 +334,7 @@ export function crucesDesde(origen: CerebroLiviano, destinos: CerebroLiviano[], 
     else if (unicos.length === 1) out.push({ desde: { cerebro: origen.nombre, svc: p.desde, evidencia: p.evidencia, pantallas: p.pantallas }, hacia: { cerebro: unicos[0]!.destino, endpoint: unicos[0]!.endpoint }, declarada: aplicables.length > 0 });
     else if (unicos.length > 1) entreCerebros.push({ cerebro: origen.nombre, svc: p.desde, evidencia: p.evidencia, metodo: p.metodo, ruta: p.ruta, base: p.base, candidatos: unicos.map((u) => `${u.destino}/${u.endpoint}`) });
   }
-  return { cruces: out, ambiguas, entreCerebros };
+  return { cruces: out, ambiguas, entreCerebros, internas: deAdentro };
 }
 
 /** Lo que alcanza en otro cerebro un cambio que toca estos endpoints: sus pantallas, sus funcionalidades y los servicios que los llaman sin pantalla. */
@@ -363,13 +382,14 @@ export function impactoCruzado(cerebro: string, endpoints: Iterable<string>, cru
 }
 
 /** Lo mismo contra un solo cerebro. */
-export const crucesEntre = (origen: CerebroLiviano, destino: CerebroLiviano, conexiones: Conexion[]): Cruces => crucesDesde(origen, [destino], conexiones);
+export const crucesEntre = (origen: CerebroLiviano, destino: CerebroLiviano, conexiones: Conexion[], internas: Interna[] = []): Cruces => crucesDesde(origen, [destino], conexiones, internas);
 
 /** Todos los cruces de un registro: cada cerebro contra los que tiene comunicados. */
-export function crucesDelRegistro(cerebros: CerebroLiviano[], comunicados: (a: string, b: string) => boolean, conexiones: Conexion[]): Cruces {
-  const total: Cruces = { cruces: [], ambiguas: 0, entreCerebros: [] };
+export function crucesDelRegistro(cerebros: CerebroLiviano[], comunicados: (a: string, b: string) => boolean, conexiones: Conexion[], internas: Interna[] = []): Cruces {
+  const total: Cruces = { cruces: [], ambiguas: 0, entreCerebros: [], internas: [] };
   for (const o of cerebros) {
-    const r = crucesDesde(o, cerebros.filter((d) => comunicados(o.nombre, d.nombre)), conexiones);
+    const r = crucesDesde(o, cerebros.filter((d) => comunicados(o.nombre, d.nombre)), conexiones, internas);
+    total.internas.push(...r.internas);
     total.cruces.push(...r.cruces);
     total.ambiguas += r.ambiguas;
     total.entreCerebros.push(...r.entreCerebros);
@@ -537,5 +557,5 @@ export function derivaCruzadaDe(nombre: string, cruces: Cruces, vecinos: string[
     if (x.hacia.cerebro === nombre) (entrantes.get(x.hacia.endpoint) ?? entrantes.set(x.hacia.endpoint, new Set()).get(x.hacia.endpoint)!).add(`${x.desde.cerebro}/${x.desde.svc}`);
   }
   for (const d of cruces.entreCerebros) if (d.cerebro === nombre) disputadas.set(d.evidencia, d.candidatos);
-  return { vecinos: [...vecinos].sort(cmp), salientes, entrantes, disputadas };
+  return { vecinos: [...vecinos].sort(cmp), salientes, entrantes, disputadas, internas: new Set(cruces.internas.filter((i) => i.cerebro === nombre).map((i) => i.evidencia)) };
 }

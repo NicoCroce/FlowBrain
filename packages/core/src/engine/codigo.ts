@@ -947,6 +947,8 @@ export interface DerivaCruzada {
   entrantes: Map<string, Set<string>>;
   /** Llamadas que coinciden con endpoints de más de un cerebro y no se unieron a ninguno, por su evidencia. */
   disputadas: Map<string, string[]>;
+  /** Llamadas que el registro declara internas del propio servicio, por su evidencia: no son deriva. */
+  internas?: Set<string>;
 }
 
 /**
@@ -991,7 +993,7 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
   }
   const disputadas = pend.filter((l) => x?.disputadas.has(l.evidencia)).map((l) => ({ desde: l.desde, llamada: l.referencia, ev: l.evidencia, candidatos: x!.disputadas.get(l.evidencia)! }));
   const sinEndpoint = pend
-    .filter((l) => l.motivo.startsWith("base dinámica y ningún endpoint") && !x?.salientes.has(l.evidencia) && !x?.disputadas.has(l.evidencia))
+    .filter((l) => l.motivo.startsWith("base dinámica y ningún endpoint") && !x?.salientes.has(l.evidencia) && !x?.disputadas.has(l.evidencia) && !x?.internas?.has(l.evidencia))
     .map((l) => {
       const m = rutaDe(l.referencia);
       const otros = m ? endpoints.filter((n) => rutaCoincide(String(n.atributos["ruta"]), normalizarRuta(m[2]!)) && n.atributos["metodo"] !== m[1]).map((n) => n.id).sort(cmp) : [];
@@ -1007,6 +1009,7 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
           comunicadoCon: x.vecinos,
           atendidasEnOtrosCerebros: [...afuera.entries()].sort(([a], [b]) => cmp(a, b)).map(([cerebro, v]) => ({ cerebro, llamadas: v.llamadas, endpoints: v.endpoints.size, ejemplos: v.ejemplos })),
           ...(disputadas.length ? { disputadasEntreCerebros: disputadas } : {}),
+          ...(x.internas?.size ? { internasDelServicio: pend.filter((l) => x.internas!.has(l.evidencia)).length } : {}),
         }
       : {}),
     llamadasAmbiguas: ambiguas,

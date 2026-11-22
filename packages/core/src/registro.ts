@@ -51,6 +51,24 @@ export const RegistroSchema = z
           .strict(),
       )
       .optional(),
+    /**
+     * Llamadas que un servicio se hace a sí mismo (una URL relativa a su propio servidor: traducciones, configuración,
+     * un archivo estático): no van a ningún otro cerebro. Sin `por`, todas las de URL relativa; con `por`, las que lo
+     * llevan en la base de la URL o al principio de la ruta.
+     */
+    internas: z
+      .array(
+        z
+          .object({
+            de: z.string().regex(REF_SERVICIO, "se espera cerebro/svc-id"),
+            por: z.string().min(1).optional(),
+            origen: z.enum(["persona", "modelo"]).optional(),
+            evidencia: z.array(z.string().min(1)).optional(),
+            nota: z.string().min(1).optional(),
+          })
+          .strict(),
+      )
+      .optional(),
     /** Preguntas abiertas que dejó `cerebros proponer`; informativas. */
     preguntas: z.array(z.string()).optional(),
     /** Lo que detectó `cerebros proponer`; informativo. */
@@ -79,11 +97,19 @@ export interface Conexion {
   nota: string | null;
 }
 
+/** Llamadas de un servicio a su propio servidor: no cruzan a ningún cerebro. */
+export interface Interna {
+  de: { cerebro: string; svc: string };
+  /** Qué las distingue (en la base de la URL o al principio de la ruta); `null`: todas las de URL relativa. */
+  por: string | null;
+}
+
 export interface Registro {
   /** Carpeta donde está `flowbrain.yaml`. */
   carpeta: string;
   cerebros: Cerebro[];
   conexiones: Conexion[];
+  internas: Interna[];
   /** ¿Está activa la comunicación entre estos dos cerebros? */
   comunicados(a: string, b: string): boolean;
   /** Cerebros comunicados con uno dado, en orden. */
@@ -133,11 +159,13 @@ export function interpretarRegistro(texto: string, carpeta: string): Registro {
     return { cerebro: m[1]!, svc: m[2]! };
   };
   const conexiones = (r.data.conexiones ?? []).map((c) => ({ desde: ref(c.desde), hacia: ref(c.hacia), por: c.por ?? null, origen: c.origen ?? ("persona" as const), evidencia: c.evidencia ?? [], nota: c.nota ?? null }));
+  const internas = (r.data.internas ?? []).map((i) => ({ de: ref(i.de), por: i.por ?? null }));
   const comunicados = (a: string, b: string) => a !== b && pares.get(clave(a, b)) === true;
   return {
     carpeta: base,
     cerebros,
     conexiones,
+    internas,
     comunicados,
     vecinos: (n) => cerebros.filter((c) => comunicados(n, c.nombre)),
     cerebro: (n) => cerebros.find((c) => c.nombre === n) ?? null,
