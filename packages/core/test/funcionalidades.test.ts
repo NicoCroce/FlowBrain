@@ -232,3 +232,41 @@ describe("código compartido, decisiones y equipos", () => {
     expect(() => compile({ ...e, paginas })).toThrow(CompileError);
   });
 });
+
+describe("tests de una funcionalidad", () => {
+  it("son suyos los que viven en su código y los que, desde otra carpeta, importan un archivo suyo", async () => {
+    const { fichasDeFuncionalidades } = await import("../src/index.js");
+    const nodo = (id: string, tipo: string) => ({ actualizado: null, aliases: [], atributos: {}, estado: "vigente", id, nombre: id, origen: "parser", pagina: null, resumen: null, tecnologia: [], tipo, verificado: null });
+    const graph = { version: 1, nodes: [nodo("feat-pagos", "feat"), nodo("feat-envios", "feat")], edges: [] } as never;
+    const arc = (importa: string[] = [], casos?: Array<{ nombre: string; linea: number }>) => ({ simbolos: [], importa, invoca: [], ...(casos ? { casos } : {}) });
+    const estructura = new Map([
+      ["repo-a:src/pagos/cobrar.ts", arc()],
+      ["repo-a:src/pagos/cobrar.test.ts", arc(["src/pagos/cobrar.ts"], [{ nombre: "cobra", linea: 3 }, { nombre: "rechaza", linea: 9 }])],
+      ["repo-a:tests/e2e/pagos.spec.ts", arc(["src/pagos/cobrar.ts", "src/envios/enviar.ts"], [{ nombre: "paga y envía", linea: 5 }])],
+      // Importa dos archivos de pagos y uno de envíos: es de pagos. Y uno dentro de pagos que importa envíos sigue siendo de pagos.
+      ["repo-a:src/pagos/reembolso.ts", arc()],
+      ["repo-a:tests/e2e/reembolso.spec.ts", arc(["src/pagos/cobrar.ts", "src/pagos/reembolso.ts", "src/envios/enviar.ts"], [{ nombre: "reembolsa", linea: 2 }])],
+      ["repo-a:src/pagos/con-envio.test.ts", arc(["src/envios/enviar.ts"], [{ nombre: "cobra el envío", linea: 2 }])],
+      ["repo-a:tests/e2e/suelto.spec.ts", arc([], [{ nombre: "no es de nadie", linea: 1 }])],
+      ["repo-a:src/envios/enviar.ts", arc()],
+      ["repo-a:src/envios/generado.test.ts", arc([], [])],
+      // Importa un archivo de pagos, pero no es un test: no cuenta.
+      ["repo-a:src/otros/usa.ts", arc(["src/pagos/cobrar.ts"])],
+    ]);
+    const feats = [{ id: "feat-pagos", codigo: ["repo-a:src/pagos"], cuerpo: "" }, { id: "feat-envios", codigo: ["repo-a:src/envios"], cuerpo: "" }];
+    const [envios, pagos] = fichasDeFuncionalidades(graph, feats as never, [], estructura);
+    expect(pagos!.tests.map((t) => [t.archivo, t.por, t.casos.length])).toEqual([
+      ["repo-a:src/pagos/cobrar.test.ts", "ubicacion", 2],
+      ["repo-a:src/pagos/con-envio.test.ts", "ubicacion", 1],
+      ["repo-a:tests/e2e/pagos.spec.ts", "importa", 1],
+      ["repo-a:tests/e2e/reembolso.spec.ts", "importa", 1],
+    ]);
+    // Un test sin casos legibles igual se lista; el e2e que toca las dos por igual es de las dos.
+    expect(envios!.tests.map((t) => [t.archivo, t.por, t.casos.length])).toEqual([
+      ["repo-a:src/envios/generado.test.ts", "ubicacion", 0],
+      ["repo-a:tests/e2e/pagos.spec.ts", "importa", 1],
+    ]);
+    // Los tests no cuentan como archivos propios de la funcionalidad.
+    expect(pagos!.dominio).toEqual([]);
+  });
+});

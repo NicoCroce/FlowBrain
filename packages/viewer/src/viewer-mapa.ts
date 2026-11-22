@@ -200,7 +200,7 @@ export const MAPA_JS =
       if (e.s === id) { otro = e.h; grupo = salen; }
       else if (e.h === id || e.p === id) { otro = e.s; grupo = entran; }
       else return;
-      if (tipo(otro) === "archivo" || otro === id) return;
+      if (tipo(otro) === "archivo" || tipo(otro) === "test" || otro === id) return;
       var g = grupo[e.v] = grupo[e.v] || {};
       (g[otro] = g[otro] || []).push(e.ev);
     });

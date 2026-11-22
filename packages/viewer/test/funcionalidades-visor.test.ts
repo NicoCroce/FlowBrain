@@ -50,6 +50,24 @@ describe("visor: funcionalidades, dependencias y mapa 3D", () => {
     expect(html).toContain("function impacto(deps, origen)");
   });
 
+  it("tests: capa propia en el mapa 3D, colgada de la funcionalidad que prueban, y sección en la ficha", () => {
+    const { graph, funcionalidades } = compile(conFuncionalidades());
+    const test = "repo-tienda:apps/web/src/main.tsx";
+    const conTests = funcionalidades.map((f) => (f.id === "feat-carrito" ? { ...f, tests: [{ archivo: test, por: "ubicacion" as const, casos: [{ nombre: "suma un producto", linea: 3 }, { nombre: "se vacía al pagar", linea: 9 }] }] } : f));
+    const m = mapa3dDelGrafo(graph, conTests);
+    expect(m.aristas).toContainEqual([test, "feat-carrito", "prueba", 2]);
+    expect(m.padres.feat[test]).toBe("feat-carrito");
+    const html = renderViewer(graph, conTests);
+    // El archivo de test se dibuja como tipo `test` (se prende y apaga aparte); los demás siguen siendo archivos.
+    expect(html).toMatch(/"id":"repo-tienda:apps\/web\/src\/main\.tsx"[^}]*"t":"test"/);
+    expect(html).toContain('["test", "Tests", "Test"]');
+    expect(html).toContain("suma un producto");
+    // Un build anterior, sin `tests` en las fichas, se sigue pudiendo dibujar.
+    const viejas = funcionalidades.map((f) => { const { tests: _t, ...resto } = f; return resto; }) as typeof funcionalidades;
+    expect(() => mapa3dDelGrafo(graph, viejas)).not.toThrow();
+    expect(renderViewer(graph, viejas)).not.toContain('"t":"test"');
+  });
+
   it("el mapa 3D cuelga endpoints, tablas y archivos de su funcionalidad o de su servicio", () => {
     const { graph, funcionalidades } = compile(conFuncionalidades());
     const m = mapa3dDelGrafo(graph, funcionalidades);

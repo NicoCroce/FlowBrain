@@ -47,10 +47,20 @@ export interface ArchivoCrudo {
   /** Llamadas de sus métodos y funciones a símbolos de otros archivos o clases del repo. */
   invoca?: Invocacion[];
   sinResolver?: LlamadaSinResolver[];
+  /** Si es un archivo de test: los casos que define. */
+  casos?: CasoDeTest[];
   /** Componentes de interfaz que el archivo exporta, si es parte de una librería (un sistema de diseño, un kit de UI). */
   componentes?: ComponenteCrudo[];
   /** Componentes que el archivo toma de otro paquete (`import { Button } from "@empresa/ui"`) y dónde los usa. */
   usaPaquetes?: UsoDePaquete[];
+}
+
+export interface CasoDeTest {
+  /** Como lo nombra el test: la frase de `it("…")`, o el nombre de la función pasado a palabras. */
+  nombre: string;
+  linea: number;
+  /** Los `describe`/`context` que lo contienen, de afuera hacia adentro. */
+  grupo?: string;
 }
 
 export interface ComponenteCrudo {

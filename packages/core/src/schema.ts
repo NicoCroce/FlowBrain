@@ -257,6 +257,8 @@ export const ArchivosSchema = z
             .array(z.object({ desde: z.string(), archivo: z.string(), simbolo: z.string(), linea: z.number().int().positive(), via: z.string().optional() }).strict())
             .optional(),
           sinResolver: z.array(z.object({ desde: z.string(), linea: z.number().int().positive(), llamada: z.string(), candidatos: z.array(z.string()).optional() }).strict()).optional(),
+          /** Casos de prueba, si es un archivo de test. */
+          casos: z.array(z.object({ nombre: z.string().min(1), linea: z.number().int().positive(), grupo: z.string().optional() }).strict()).optional(),
           componentes: z.array(z.object({ nombre: z.string().min(1), linea: z.number().int().positive() }).strict()).optional(),
           usaPaquetes: z
             .array(z.object({ desde: z.string().nullable(), paquete: z.string().min(1), simbolo: z.string().min(1), linea: z.number().int().positive() }).strict())

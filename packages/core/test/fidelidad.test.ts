@@ -53,7 +53,7 @@ const extraccion = JSON.stringify({
     { verbo: "llama_a", desde: "svc-web", referencia: "GET ${url}", motivo: "URL sin ruta reconocible", evidencia: `${R}:web/api.ts#L14`, candidatos: [], llamada: { metodo: "GET", ruta: null, base: "${url}" } },
   ],
 });
-const ficha = { id: "feat-pedidos", codigo: [`${R}:api`, `${R}:web/Pedidos.tsx`, `${R}:web/Ayuda.tsx`, `${R}:web/api.ts`], cuerpo: "", archivos: 5, implementan: [], expone: [], usa: [], datos: [], usaFuncionalidades: [], usadaPor: [], recorridos: [], dominio: [], pantallas: [] } as Ficha;
+const ficha = { id: "feat-pedidos", codigo: [`${R}:api`, `${R}:web/Pedidos.tsx`, `${R}:web/Ayuda.tsx`, `${R}:web/api.ts`], cuerpo: "", archivos: 5, implementan: [], expone: [], usa: [], datos: [], usaFuncionalidades: [], usadaPor: [], recorridos: [], dominio: [], pantallas: [], tests: [] } as Ficha;
 const ctx = crearContexto(graph, [], new Map(), crearIndiceCodigo(graph, [ficha], [archivos], [extraccion]));
 
 describe("fidelidad por archivo", () => {

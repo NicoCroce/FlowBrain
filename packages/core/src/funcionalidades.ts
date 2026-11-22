@@ -59,6 +59,8 @@ export interface Ficha {
   dominio: ElementoDominio[];
   /** Pantallas del front cuyo componente está en `codigo`, con su navegación y su recorrido hasta las llamadas al back. */
   pantallas: PantallaFicha[];
+  /** Archivos de test que la prueban, con sus casos. */
+  tests: TestDeFicha[];
 }
 
 export interface PantallaFicha {
@@ -109,6 +111,26 @@ export interface EstructuraArchivo {
   invoca: Array<{ desde: string; archivo: string; simbolo: string; linea: number; via?: string | undefined }>;
   /** Llamadas que el parser no pudo atribuir (tipo `any`, interfaz sin implementación conocida). */
   sinResolver?: Array<{ desde: string; linea: number; llamada: string; candidatos?: string[] | undefined }> | undefined;
+  /** Casos de prueba que define, si es un archivo de test. Vacío: es un test, pero no se le pudieron leer los casos. */
+  casos?: CasoDeTest[] | undefined;
+}
+
+export interface CasoDeTest {
+  nombre: string;
+  linea: number;
+  /** Los `describe`/`context` que lo contienen, de afuera hacia adentro. */
+  grupo?: string | undefined;
+}
+
+/** Un archivo de test de una funcionalidad. */
+export interface TestDeFicha {
+  archivo: string;
+  casos: CasoDeTest[];
+  /**
+   * Por qué es de esta funcionalidad: `ubicacion`, está dentro de su `codigo`; `importa`, está en otro lado y de
+   * ninguna otra funcionalidad importa más archivos que de esta.
+   */
+  por: "ubicacion" | "importa";
 }
 
 /** Lo que toca un paso: una tabla (`lee_de`/`escribe_en`), un servicio o externo (`llama_a`) o una cola (`publica_en`/`consume_de`). */
@@ -445,6 +467,28 @@ export function fichasDeFuncionalidades(
   const recorrido = rec.desdeEndpoint;
   const dominiosDe = new Map<string, Set<string>>();
 
+  // Tests de cada funcionalidad. Un test que vive en el código de una funcionalidad es de esa. Uno que vive afuera
+  // (una carpeta `tests/` aparte) es de la funcionalidad de la que más archivos importa; si empatan, de todas ellas.
+  const testsDe = new Map<string, TestDeFicha[]>();
+  for (const [k, e] of estructura) {
+    // Es un test si el índice le leyó casos (`casos` viene, aunque vacío, en todo archivo de test).
+    if (!e.casos) continue;
+    const agregar = (id: string, por: TestDeFicha["por"]) => (testsDe.get(id) ?? testsDe.set(id, []).get(id)!).push({ archivo: k, casos: e.casos!, por });
+    const dueñasDelTest = feats.filter((f) => enCodigo(k, f.codigo));
+    if (dueñasDelTest.length) {
+      for (const f of dueñasDelTest) agregar(f.id, "ubicacion");
+      continue;
+    }
+    const repo = k.slice(0, k.indexOf(":"));
+    const cuenta = new Map<string, number>();
+    for (const i of e.importa) {
+      if (ES_TEST.test(i)) continue;
+      for (const f of feats) if (enCodigo(`${repo}:${i}`, f.codigo)) cuenta.set(f.id, (cuenta.get(f.id) ?? 0) + 1);
+    }
+    const max = Math.max(0, ...cuenta.values());
+    for (const [id, n] of cuenta) if (n === max) agregar(id, "importa");
+  }
+
   const fichas = feats.map((f): Ficha => {
     const usa = new Map<string, Uso>();
     const datos = new Map<string, Dato>();
@@ -482,7 +526,9 @@ export function fichasDeFuncionalidades(
     propios.forEach(agregarDominio);
     for (const r of recorridos) for (const p of r.pasos) agregarDominio(EV.exec(p.evidencia)![1]!);
     dominiosDe.set(f.id, dominio);
+    const tests = (testsDe.get(f.id) ?? []).sort((a, b) => cmp(a.archivo, b.archivo));
     return {
+      tests,
       recorridos,
       dominio: [],
       id: f.id,

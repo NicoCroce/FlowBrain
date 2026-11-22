@@ -83,7 +83,7 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
       const j = JSON.parse(c) as { repo: string; commit?: string; raiz?: string; archivos: Array<{ ruta: string } & Partial<EstructuraArchivo>> };
       if (j.commit) commits[j.repo] = j.commit;
       if (j.raiz) raices[j.repo] = j.raiz;
-      for (const a of j.archivos ?? []) estructura.set(`${j.repo}:${a.ruta}`, { simbolos: a.simbolos ?? [], importa: a.importa ?? [], invoca: a.invoca ?? [], sinResolver: a.sinResolver });
+      for (const a of j.archivos ?? []) estructura.set(`${j.repo}:${a.ruta}`, { simbolos: a.simbolos ?? [], importa: a.importa ?? [], invoca: a.invoca ?? [], sinResolver: a.sinResolver, ...(a.casos ? { casos: a.casos } : {}) });
     } catch {
       /* ignorado */
     }
@@ -334,6 +334,12 @@ export function funcionalidad(ctx: Contexto, p: FuncionalidadParams) {
     implementan: f.implementan,
     usa: f.usaFuncionalidades,
     usadaPor: f.usadaPor,
+    // Cuánto está probada: archivos de test y casos, con los primeros nombres de cada uno. Un build viejo no los trae.
+    tests: {
+      archivos: (f.tests ?? []).length,
+      casos: (f.tests ?? []).reduce((n, t) => n + t.casos.length, 0),
+      lista: [...(f.tests ?? [])].sort((a, b) => b.casos.length - a.casos.length || cmp(a.archivo, b.archivo)).map((t) => ({ archivo: t.archivo, casos: t.casos.length, por: t.por, ejemplos: t.casos.slice(0, 5).map((c) => `${c.nombre} (L${c.linea})`) })),
+    },
     expone: f.expone.map((ep) => {
       const h = ix.recorredor.atiende(ep);
       return { endpoint: ep, atiende: h ? cita(ix, clave(h.archivo, h.simbolo)) : null };

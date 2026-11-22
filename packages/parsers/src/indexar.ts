@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { type PaqueteDelRepo, aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
+import { type PaqueteDelRepo, ES_TEST, aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
 import { correrExtractores, RUTA_INFORME_EXTRACTORES, type InformeExtractor } from "./extractores.js";
 import { leerRepo, podarPaquetes } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
@@ -12,6 +12,7 @@ import { infraParser } from "./infra-parser.js";
 import type { Extraccion, Forma, LlamadaCruda, Parser, RepoFuente } from "./tipos.js";
 import { paqueteDe } from "./tipos.js";
 import { libreriasPorAlias } from "./alias.js";
+import { casosDeTest, ES_CODIGO_DE_TEST } from "./casos-de-test.js";
 
 /** Parsers en orden de prioridad: los posteriores pisan formas y, si son autoritativos, endpoints. */
 export const PARSERS: Parser[] = [tsParser, phpParser, openapiParser, esquemaParser, infraParser];
@@ -154,6 +155,39 @@ export const esArchivoDeTest = (ruta: string) =>
   /(^|\/)(__tests__|__mocks__|tests?|e2e|cypress|fixtures)\//.test(ruta) || /\.(test|spec|e2e-spec|cy)\.[cm]?[jt]sx?$/.test(ruta) || /Test\.php$/.test(ruta);
 
 /**
+ * Lee los casos de cada archivo de test del repo, en cualquier lenguaje (por el texto, sin su parser). Un test de un
+ * lenguaje que ningún parser lee entra igual al índice, sin símbolos: lo que importa de él son sus casos.
+ */
+const PARECE_TEST = /[a-z0-9](Test|Tests|Spec)\.(php|java|kt|cs|scala|swift|groovy)$|(^|\/)test_[^/]+\.py$/;
+
+export function agregarCasosDeTest(repo: RepoFuente, x: Extraccion): void {
+  const porRuta = new Map(x.archivos.map((a) => [a.ruta, a]));
+  let nuevos = false;
+  for (const ruta of repo.archivos) {
+    // Por ubicación o nombre (`x.test.ts`, `tests/`) es un test seguro; por sufijo (`XTest.php`, `test_x.py`) solo si
+    // adentro hay casos: una entidad que se llama `WellnessTest` no es un test.
+    const seguro = ES_TEST.test(ruta);
+    if ((!seguro && !PARECE_TEST.test(ruta)) || !ES_CODIGO_DE_TEST.test(ruta) || /(^|\/)(__mocks__|fixtures)\//.test(ruta)) continue;
+    let texto: string;
+    try {
+      texto = readFileSync(join(repo.raiz, ruta), "utf8");
+    } catch {
+      continue;
+    }
+    if (texto.length > 1_000_000) continue;
+    const casos = casosDeTest(texto);
+    if (!casos.length && !seguro) continue;
+    const a = porRuta.get(ruta);
+    if (a) a.casos = casos;
+    else if (casos.length) {
+      x.archivos.push({ ruta, lenguaje: ruta.slice(ruta.lastIndexOf(".") + 1).toLowerCase(), simbolos: [], casos });
+      nuevos = true;
+    }
+  }
+  if (nuevos) x.archivos.sort((a, b) => cmp(a.ruta, b.ruta));
+}
+
+/**
  * Une extracciones: archivos por ruta (gana el primero), endpoints autoritativos por paquete, formas pisadas en orden.
  * Descarta endpoints, llamadas y accesos a tablas de archivos de test, y deja un solo endpoint por (paquete, método,
  * ruta): el de menor (archivo, línea).
@@ -262,6 +296,7 @@ export async function indexar(
   const x = fusionar(await Promise.all(PARSERS.filter((p) => p.detect(repo)).map((p) => p.extract(repo))));
   // Extractores escritos para este repo (`extractors/<repo>/`): completan lo que los parsers no entienden.
   const extractores = await correrExtractores(raizBrain, repoId, repo, x);
+  agregarCasosDeTest(repo, x);
   const ev = (archivo: string, linea: number) => `${repoId}:${archivo}#L${linea}`;
   // Lo que alguien resolvió leyendo el código y dejó en `calls.yaml`: llamadas HTTP que el parser no vio o no pudo
   // rutear (acá, antes de unirlas a endpoints) y llamadas entre métodos (más abajo). Sobrevive a reindexar.

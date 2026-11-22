@@ -44,6 +44,8 @@ export function fidelidadDelVisor(f: FidelidadVisor | undefined) {
 
 /** Lo que el visor embebe de un brain. */
 export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor) {
+  // Los archivos de test de alguna funcionalidad se dibujan como tipo propio (`test`), para prenderlos y apagarlos aparte.
+  const tests = new Set(funcionalidades.flatMap((f) => (f.tests ?? []).map((t) => t.archivo)));
   return {
     fidelidad: fidelidadDelVisor(fidelidad),
     dependencias: dependenciasDelGrafo(graph, funcionalidades),
@@ -71,7 +73,7 @@ export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidel
       o: n.origen,
       p: n.pagina,
       r: n.resumen,
-      t: n.tipo,
+      t: n.tipo === "archivo" && tests.has(n.id) ? "test" : n.tipo,
       ver: n.verificado,
       // Atributos para la ficha técnica (columnas de una tabla, método y ruta de un endpoint, infraestructura de un
       // servicio). Los archivos no tienen ficha y las pantallas ya vienen en `pantallas`.
@@ -102,7 +104,7 @@ export function paginaDelVisor(datos: unknown): string {
   --fondo: #0A0C11; --panel: #0D1016; --tarjeta: #10141C; --hover: #171B25; --text: #E6E8EE; --claro: #D5DAE4; --medio: #A3ABBD; --suave: #8A93A6;
   --borde: #1F2433; --borde2: #2A3142; --linea: #3A4256; --acento: #9DB4FF; --primario: #4F6BFF;
   --feat: #F5A524; --pantalla: #E879F9; --componente: #A3E635; --endpoint: #7DD3FC; --tabla: #4ADE80; --svc: #5B7CFF; --repo: #B794F6; --lib: #FDE68A; --ext: #F472B6; --queue: #FB7185;
-  --db: #14B8A6; --team: #FCA5A5; --decision: #C4B5FD; --contrato: #64748B; --archivo: #94A3B8; --dudoso: #F87171;
+  --db: #14B8A6; --team: #FCA5A5; --decision: #C4B5FD; --contrato: #64748B; --archivo: #94A3B8; --test: #2DD4BF; --dudoso: #F87171;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; background: var(--fondo); color: var(--text); font: 14px/1.5 var(--sans); }
@@ -282,6 +284,7 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .fd-hacer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .fd-quien { padding: 2px 9px; border: 1px solid var(--borde); border-radius: 8px; font-size: 12px; color: var(--suave); white-space: nowrap; } .fd-quien.vos { color: var(--feat); }
 .fd-pregunta { display: flex; flex-direction: column; gap: 6px; } .fd-opciones { display: flex; flex-wrap: wrap; gap: 8px; } .fd-opciones small { color: var(--suave); margin-left: 4px; }
+.tf { margin: 0; padding: 6px 0; border-top: 1px solid var(--borde); } .tf summary { cursor: pointer; overflow-wrap: anywhere; } .tf summary code { font-size: 12px; } .tf .lista { margin-top: 6px; }
 .fd-ok { margin: 0; font-size: 13px; color: var(--tabla); }
 .fd-ed { margin-top: 4px; padding: 12px 14px; border: 1px solid var(--borde2); border-radius: 10px; background: var(--fondo); display: flex; flex-direction: column; gap: 12px; }
 .fd-linea { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }

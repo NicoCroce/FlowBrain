@@ -50,7 +50,10 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 29 | Fidelidad: pantalla en el visor | Hecho (decisión 177); rehecha en el 30b |
 | 30 | Fidelidad: editar desde el visor | Hecho (decisión 178); falta usarlo en un navegador |
 | 30b | Fidelidad: cadena, tareas con sugerencia y plan para el agente | Hecho (decisión 179) |
-| 31 | Reglas de negocio | Pendiente |
+| 31a | Tests por funcionalidad | Hecho (decisión 180) |
+| 31b | Especificaciones: tipo, página, guía para el agente y consulta | Pendiente |
+| 31c | Pantalla Especificaciones | Pendiente |
+| 31d | Archivos sin asociar, con funcionalidad recomendada | Pendiente |
 | 32 a 35 | Entre cerebros: `deriva`, `paridad`, su pantalla y la CLI | Pendiente |
 | 36 a 39 | Otros: llamada interna, `riesgo` con tipos, `deriva` por campos, `infra` | Pendiente |
 | 40 a 43 | Parsers genéricos: rutas por archivo, clientes HTTP, layout y contexto, cron y gRPC | Pendiente |
@@ -273,9 +276,12 @@ El visor hoy es un archivo estático. Un servidor local (`flowbrain viewer --ser
 ### Paso 30b · Fidelidad que se explica sola
 Cada fila con su cadena de trazabilidad y, por cada falta, qué pasa, qué hacer y quién lo resuelve. Sugerencia de funcionalidad por vecinos de carpeta. Plan en texto para un modelo (`flowbrain fidelity --plan`, `fidelidad` con `plan: true`, y desde la pantalla). `signal` en vez de `señal`.
 
-### Paso 31 · Reglas de negocio
+### Paso 31 · Especificaciones (antes "reglas de negocio")
 
-Un tipo de página `regla`, unido a las funcionalidades que la cumplen y al código que la aplica (con evidencia). Decisión de esquema: va con `SCHEMA.md`.
+- **31a · Tests por funcionalidad.** Leer los casos de cada archivo de test y unirlos a su funcionalidad: ficha, MCP y capa del mapa 3D.
+- **31b · Especificaciones.** Cada requisito de negocio o de producto de una funcionalidad, en llano, con los archivos que lo cumplen y los casos que lo verifican; propuesto por el agente con una guía y confirmado por una persona. Decisión de esquema: va con `SCHEMA.md`.
+- **31c · Pantalla Especificaciones.** Por funcionalidad: cada requisito, sus archivos, sus tests y cuáles no tienen test.
+- **31d · Sin asociar.** Los archivos sin funcionalidad en un apartado propio, agrupados por carpeta, con la funcionalidad recomendada y asociación en un clic; dejan de puntuar en Fidelidad.
 
 ---
 

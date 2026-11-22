@@ -99,6 +99,9 @@ export const PRODUCTO_JS = String.raw`
     if (nr) chips.push(plural(nr, "relacionada", "relacionadas"));
     if (nt) chips.push(plural(nt, "tabla", "tablas"));
     if (api) chips.push("API: " + api);
+    var casos = 0;
+    grupo.forEach(function (x) { (x.tests || []).forEach(function (t) { casos += t.casos.length; }); });
+    chips.push(casos ? plural(casos, "test", "tests") : "sin tests");
     var cuerpo = "<h3>" + esc(nombre(f.id)) + "</h3>" +
       (desc ? "<p>" + esc(desc) + "</p>" : '<p class="pendiente">Sin descripción todavía</p>') +
       '<div class="chips">' + chips.map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") + "</div>";
@@ -231,6 +234,18 @@ export const PRODUCTO_JS = String.raw`
     var decisiones = desde("decidido_por").map(function (d) { return "<li>" + esc(nombre(d)) + (porId[d] && porId[d].r ? "<br><small>" + esc(porId[d].r) + "</small>" : "") + "</li>"; });
     var codigo = f.codigo.map(function (c) { return "<li><code>" + esc(c) + "</code></li>"; });
     var cuerpo = markdown(f.cuerpo);
+    // Tests: cada archivo con sus casos (los primeros a la vista, el resto plegado). Sin tests, se dice.
+    var tests = f.tests || [], totalCasos = 0;
+    tests.forEach(function (t) { totalCasos += t.casos.length; });
+    var caso = function (c) { return "<li>" + (c.grupo ? "<small>" + esc(c.grupo) + " ›</small> " : "") + esc(c.nombre) + " <small>L" + c.linea + "</small></li>"; };
+    var pruebas = tests.length
+      ? "<p><small>Lo que hoy se prueba de esta funcionalidad, tal como lo nombran sus tests. Tocá un archivo para ver sus casos.</small></p>" +
+        tests.slice().sort(function (a, b) { return b.casos.length - a.casos.length || (a.archivo < b.archivo ? -1 : 1); }).map(function (t, i) {
+          var ruta = t.archivo.slice(t.archivo.indexOf(":") + 1);
+          return '<details class="tf"' + (i === 0 ? " open" : "") + "><summary><code>" + esc(ruta) + "</code> <small>· " + plural(t.casos.length, "caso", "casos") + (t.por === "importa" ? " · fuera de su código: es de esta porque es de la que más importa" : "") + "</small></summary>" +
+            (t.casos.length ? '<ul class="lista">' + t.casos.map(caso).join("") + "</ul>" : "<p><small>Es un test, pero no se le pudieron leer los casos: los arma al correr o no usa un framework conocido.</small></p>") + "</details>";
+        }).join("")
+      : '<p class="aviso">No se encontraron tests de esta funcionalidad: ningún archivo de test vive en su código ni importa un archivo suyo. Si los hay y el índice es anterior a esta versión, se ven al reindexar.</p>';
 
     return '<div class="ficha"><div class="texto">' +
       '<a class="volver" href="#/funcionalidades">← Funcionalidades</a>' +
@@ -241,6 +256,7 @@ export const PRODUCTO_JS = String.raw`
       seccion("Qué consume (" + consume.length + ")", lista(consume)) +
       seccion("Qué expone (" + expone.length + ")", lista(expone)) +
       construida(f) +
+      "<section><h2>Tests (" + (tests.length ? plural(totalCasos, "caso", "casos") + " en " + plural(tests.length, "archivo", "archivos") : "ninguno") + ")</h2>" + pruebas + "</section>" +
       "</div><div>" +
       seccion("Se relaciona con", relacion) +
       seccion("Datos (" + datos.length + ")", lista(datos)) +
