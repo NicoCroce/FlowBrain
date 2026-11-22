@@ -2,8 +2,28 @@
   "archivos": [
     {
       "lenguaje": "typescript",
+      "referencias": [
+        {
+          "archivo": "apps/bff/src/clients/payments.ts",
+          "desde": "crearPago",
+          "linea": 10,
+          "simbolo": "PagoCreado"
+        },
+        {
+          "archivo": "apps/bff/src/clients/payments.ts",
+          "desde": "crearPago",
+          "linea": 11,
+          "simbolo": "PAYMENTS_URL"
+        }
+      ],
       "ruta": "apps/bff/src/clients/payments.ts",
       "simbolos": [
+        {
+          "fin": 3,
+          "linea": 3,
+          "nombre": "PAYMENTS_URL",
+          "tipo": "constante"
+        },
         {
           "fin": 8,
           "linea": 5,
@@ -43,6 +63,20 @@
         }
       ],
       "lenguaje": "typescript",
+      "referencias": [
+        {
+          "archivo": "apps/bff/src/routes/checkout.ts",
+          "desde": "postCheckout",
+          "linea": 14,
+          "simbolo": "CheckoutRequest"
+        },
+        {
+          "archivo": "apps/bff/src/routes/checkout.ts",
+          "desde": "postCheckout",
+          "linea": 14,
+          "simbolo": "CheckoutResponse"
+        }
+      ],
       "ruta": "apps/bff/src/routes/checkout.ts",
       "simbolos": [
         {
@@ -62,6 +96,12 @@
           "linea": 14,
           "nombre": "postCheckout",
           "tipo": "funcion"
+        },
+        {
+          "fin": 19,
+          "linea": 19,
+          "nombre": "router",
+          "tipo": "constante"
         }
       ]
     },
@@ -78,6 +118,14 @@
     },
     {
       "lenguaje": "typescript",
+      "referencias": [
+        {
+          "archivo": "apps/payments/src/clients/pasarela.ts",
+          "desde": "cobrar",
+          "linea": 7,
+          "simbolo": "CargoPasarela"
+        }
+      ],
       "ruta": "apps/payments/src/clients/pasarela.ts",
       "simbolos": [
         {
@@ -119,13 +167,45 @@
         }
       ],
       "lenguaje": "typescript",
+      "referencias": [
+        {
+          "archivo": "apps/payments/src/routes/payments.ts",
+          "desde": "postPayment",
+          "linea": 12,
+          "simbolo": "CrearPagoRequest"
+        },
+        {
+          "archivo": "apps/payments/src/routes/payments.ts",
+          "desde": "postPayment",
+          "linea": 12,
+          "simbolo": "Pago"
+        },
+        {
+          "archivo": "apps/payments/src/routes/payments.ts",
+          "desde": "postPayment",
+          "linea": 21,
+          "simbolo": "prisma"
+        }
+      ],
       "ruta": "apps/payments/src/routes/payments.ts",
       "simbolos": [
+        {
+          "fin": 5,
+          "linea": 5,
+          "nombre": "prisma",
+          "tipo": "constante"
+        },
         {
           "fin": 23,
           "linea": 12,
           "nombre": "postPayment",
           "tipo": "funcion"
+        },
+        {
+          "fin": 25,
+          "linea": 25,
+          "nombre": "router",
+          "tipo": "constante"
         },
         {
           "fin": 33,
@@ -143,6 +223,14 @@
     },
     {
       "lenguaje": "typescript",
+      "referencias": [
+        {
+          "archivo": "apps/payments/src/routes/webhooks.ts",
+          "desde": "postWebhookPasarela",
+          "linea": 7,
+          "simbolo": "EventoPasarela"
+        }
+      ],
       "ruta": "apps/payments/src/routes/webhooks.ts",
       "simbolos": [
         {
@@ -150,6 +238,12 @@
           "linea": 7,
           "nombre": "postWebhookPasarela",
           "tipo": "funcion"
+        },
+        {
+          "fin": 12,
+          "linea": 12,
+          "nombre": "router",
+          "tipo": "constante"
         },
         {
           "fin": 19,
@@ -161,6 +255,20 @@
     },
     {
       "lenguaje": "typescript",
+      "referencias": [
+        {
+          "archivo": "apps/web/src/api/checkout.ts",
+          "desde": "confirmarCheckout",
+          "linea": 8,
+          "simbolo": "CheckoutRequest"
+        },
+        {
+          "archivo": "apps/web/src/api/checkout.ts",
+          "desde": "confirmarCheckout",
+          "linea": 9,
+          "simbolo": "BFF_URL"
+        }
+      ],
       "ruta": "apps/web/src/api/checkout.ts",
       "simbolos": [
         {
@@ -168,6 +276,12 @@
           "linea": 1,
           "nombre": "CheckoutRequest",
           "tipo": "interfaz"
+        },
+        {
+          "fin": 6,
+          "linea": 6,
+          "nombre": "BFF_URL",
+          "tipo": "constante"
         },
         {
           "fin": 11,

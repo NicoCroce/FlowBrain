@@ -181,13 +181,25 @@ describe("php-parser sobre fixtures/repos/envios (Laravel + Eloquent)", () => {
     const a = r.archivos.archivos.find((x) => x.ruta === "app/Http/Controllers/EnvioController.php");
     // La clase y sus métodos con rango; y de quién es cada llamada, por el tipo que el constructor inyecta.
     expect(a?.simbolos.map((s) => `${s.tipo} ${s.nombre} ${s.linea}-${s.fin ?? ""}`)).toEqual([
-      "clase EnvioController 11-",
+      "clase EnvioController 11-35",
       "metodo EnvioController.__construct 13-15",
       "metodo EnvioController.store 17-23",
       "metodo EnvioController.show 25-28",
       "metodo EnvioController.cancelar 30-34",
     ]);
     expect(a?.invoca).toEqual([{ desde: "EnvioController.store", archivo: "app/Services/Correo.php", simbolo: "Correo.despachar", linea: 21 }]);
+    // Las clases que nombra cada método (firma, `new`, `X::`), y la clase base: lo que sigue `riesgo` si cambian.
+    expect(a?.referencias?.map((x) => `${x.desde} → ${x.simbolo} L${x.linea}`)).toEqual([
+      "EnvioController → Controller L11",
+      "EnvioController.__construct → Correo L13",
+      "EnvioController.store → CrearEnvioRequest L17",
+      "EnvioController.store → EnvioResource L17",
+      "EnvioController.store → Tarifa L19",
+      "EnvioController.store → Envio L20",
+      "EnvioController.show → Envio L25",
+      "EnvioController.show → EnvioResource L25",
+      "EnvioController.cancelar → Envio L30",
+    ]);
   });
 
   it("es determinístico", async () => {
@@ -373,6 +385,16 @@ describe("ts-parser: estructura interna (símbolos, imports e invocaciones)", ()
     };
     await w("package.json", [JSON.stringify({ name: "x", dependencies: { "@nestjs/common": "10" } })]);
     await w("src/pagos/domain/pago.ts", ["export interface Pago { id: string }", "export type Estado = 'ok' | 'error';", "export enum Medio { Tarjeta }"]);
+    await w("src/pagos/domain/limites.ts", [
+      'import { Medio, type Estado } from "./pago";',
+      "export const MAXIMO = 10;",
+      "export type Resultado = { estado: Estado };",
+      "export const api = {",
+      "  medio: Medio.Tarjeta,",
+      "  tope: () => MAXIMO * 2,",
+      "};",
+      "export function crear(): Resultado { return { estado: 'ok' }; }",
+    ]);
     await w("src/pagos/domain/pago.port.ts", ['import type { Pago } from "./pago";', "export abstract class PagoPort {", "  abstract guardar(p: Pago): Promise<void>;", "}"]);
     await w("src/pagos/infrastructure/pago.repository.ts", [
       'import { PagoPort } from "../domain/pago.port";',
@@ -411,6 +433,19 @@ describe("ts-parser: estructura interna (símbolos, imports e invocaciones)", ()
     expect(de("src/pagos/domain/pago.ts").simbolos.map((s) => `${s.tipo} ${s.nombre} ${s.linea}-${s.fin}`)).toEqual(["interfaz Pago 1-1", "tipo Estado 2-2", "enum Medio 3-3"]);
     expect(de("src/pagos/http/pago.controller.ts").simbolos.map((s) => `${s.tipo} ${s.nombre} ${s.linea}`)).toEqual(["clase PagoController 3", "metodo PagoController.crear 7"]);
     expect(x.endpoints[0]).toMatchObject({ archivo: "src/pagos/http/pago.controller.ts", linea: 6 });
+  });
+
+  it("registra quién nombra un tipo, interfaz, enum, clase o constante del repo, y las constantes como símbolos", async () => {
+    const x = await tsParser.extract(leerRepo(dir));
+    const de = (r: string) => x.archivos.find((a) => a.ruta === r)!;
+    const refs = (r: string) => (de(r).referencias ?? []).map((y) => `${y.desde} → ${y.simbolo} L${y.linea}`);
+    expect(de("src/pagos/domain/limites.ts").simbolos.map((s) => `${s.tipo} ${s.nombre}`)).toEqual(["constante MAXIMO", "tipo Resultado", "objeto api", "metodo api.tope", "funcion crear"]);
+    // Un tipo dentro de otro, un enum en un objeto, una constante en un método del objeto y un tipo en una firma.
+    expect(refs("src/pagos/domain/limites.ts")).toEqual(["Resultado → Estado L3", "api → Medio L5", "api.tope → MAXIMO L6", "crear → Resultado L8"]);
+    // En la firma de un método abstracto, en la herencia y en la inyección por constructor (que es de la clase).
+    expect(refs("src/pagos/domain/pago.port.ts")).toEqual(["PagoPort.guardar → Pago L3"]);
+    expect(refs("src/pagos/infrastructure/pago.repository.ts")).toEqual(["PagoRepository → PagoPort L3", "PagoRepository.guardar → Pago L4"]);
+    expect(refs("src/pagos/http/pago.controller.ts")).toEqual(["PagoController → PagoService L5"]);
   });
 
   it("registra imports del repo y llamadas entre métodos; un método abstracto va a su implementación", async () => {
@@ -1192,6 +1227,7 @@ describe("extractores del proyecto", () => {
     await writeFile(join(repo, "src/rutas.go"), ["package main", "", 'r.POST("/api/pedidos", h.Crear)', ""].join("\n"));
     await writeFile(join(repo, "src/handler.go"), ["package main", "", "func (h *PedidosHandler) Crear(c *gin.Context) {", "  h.repo.Guardar(p)", "}", ""].join("\n"));
     await writeFile(join(repo, "src/repo.go"), ["package main", "", "func (r *PedidosRepo) Guardar(p Pedido) {", '  r.db.Exec("UPDATE pedidos SET estado = ?, total = ? WHERE id = ?")', "}", ""].join("\n"));
+    await writeFile(join(repo, "src/pedido.go"), ["package main", "", "type Pedido struct {", "  Estado string", "}", ""].join("\n"));
     await mkdir(join(brain, "extractors/repo-pedidos"), { recursive: true });
     await mkdir(join(brain, "technology"), { recursive: true });
     await mkdir(join(brain, "product"), { recursive: true });
@@ -1199,7 +1235,12 @@ describe("extractores del proyecto", () => {
       simbolos: [
         { archivo: "src/handler.go", nombre: "PedidosHandler.Crear", tipo: "metodo", linea: 3, fin: 5 },
         { archivo: "src/repo.go", nombre: "PedidosRepo.Guardar", tipo: "metodo", linea: 3, fin: 5 },
+        { archivo: "src/pedido.go", nombre: "Pedido", tipo: "tipo", linea: 3, fin: 5 },
         { archivo: "src/no-existe.go", nombre: "Fantasma", tipo: "metodo", linea: 1 },
+      ],
+      referencias: [
+        { desde: { archivo: "src/repo.go", simbolo: "PedidosRepo.Guardar" }, hacia: { archivo: "src/pedido.go", simbolo: "Pedido" }, linea: 3 },
+        { desde: { archivo: "src/repo.go", simbolo: "PedidosRepo.Guardar" }, hacia: { archivo: "src/pedido.go", simbolo: "Fantasma" }, linea: 3 },
       ],
       invocaciones: [
         { desde: { archivo: "src/handler.go", simbolo: "PedidosHandler.Crear" }, hacia: { archivo: "src/repo.go", simbolo: "PedidosRepo.Guardar" }, linea: 4 },
@@ -1221,14 +1262,17 @@ describe("extractores del proyecto", () => {
     expect(r.extractores).toHaveLength(1);
     const inf = r.extractores[0]!;
     expect(inf.error).toBeUndefined();
-    expect(inf.aceptados).toMatchObject({ simbolos: 2, invocaciones: 1, endpoints: 1, accesos: 1 });
-    expect(inf.rechazados).toBe(3);
+    expect(inf.aceptados).toMatchObject({ simbolos: 3, invocaciones: 1, referencias: 1, endpoints: 1, accesos: 1 });
+    expect(inf.rechazados).toBe(4);
     expect(inf.omitidos).toBe(1);
     expect(r.pendientes.some((p) => p.objetivo === "resumen_cte")).toBe(false);
     expect(inf.motivos.join("\n")).toMatch(/el archivo no existe en el repo[\s\S]*la línea no está dentro del símbolo que llama[\s\S]*la línea no existe en ese archivo/);
     const handler = r.archivos.archivos.find((a) => a.ruta === "src/handler.go");
     expect(handler?.simbolos).toEqual([{ linea: 3, nombre: "PedidosHandler.Crear", tipo: "metodo", fin: 5 }]);
     expect(handler?.invoca).toEqual([{ desde: "PedidosHandler.Crear", archivo: "src/repo.go", simbolo: "PedidosRepo.Guardar", linea: 4 }]);
+    // Una referencia une un símbolo con un tipo que nombra; la que apunta a un símbolo que no existe se rechaza.
+    expect(r.archivos.archivos.find((a) => a.ruta === "src/repo.go")?.referencias).toEqual([{ desde: "PedidosRepo.Guardar", archivo: "src/pedido.go", simbolo: "Pedido", linea: 3 }]);
+    expect(inf.motivos.join("\n")).toMatch(/referencias: no existe el símbolo `hacia`/);
     // El acceso existe aunque todavía no haya página de la tabla: queda pendiente, a nombre de `pedidos`.
     expect(r.pendientes.filter((p) => p.verbo === "escribe_en").map((p) => `${p.evidencia} ${p.objetivo}`)).toEqual(["repo-pedidos:src/repo.go#L4 pedidos"]);
   });

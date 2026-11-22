@@ -161,7 +161,7 @@ function extraer(repo: RepoFuente, parser: TSParser): Extraccion {
       const nombre = campo(c, "name")?.text;
       if (!nombre) continue;
       const lineaClase = linea(campo(c, "name")!);
-      simbolos.push({ linea: lineaClase, nombre, tipo: "clase" });
+      simbolos.push({ linea: lineaClase, nombre, tipo: "clase", fin: c.endPosition.row + 1 });
       const base = hijos(c).find((x) => x.type === "base_clause");
       const metodos = new Map<string, Metodo>();
       let tabla: string | null = null;
@@ -186,6 +186,11 @@ function extraer(repo: RepoFuente, parser: TSParser): Extraccion {
         nodo: c,
       };
       if (!clases.has(nombre)) clases.set(nombre, info);
+    }
+    // Interfaces, enums y traits: no tienen métodos que se recorran, pero sus usos se siguen (`referencias`).
+    for (const d of raiz.descendantsOfType(["interface_declaration", "enum_declaration", "trait_declaration"]).filter(Boolean) as Node[]) {
+      const nombre = campo(d, "name")?.text;
+      if (nombre) simbolos.push({ linea: linea(campo(d, "name")!), nombre, tipo: d.type === "enum_declaration" ? "enum" : d.type === "trait_declaration" ? "clase" : "interfaz", fin: d.endPosition.row + 1 });
     }
     for (const f of raiz.descendantsOfType("function_definition").filter(Boolean) as Node[]) {
       const nombre = campo(f, "name")?.text;
@@ -315,6 +320,60 @@ function extraer(repo: RepoFuente, parser: TSParser): Extraccion {
   };
   const esModelo = (n: string) => hereda(clases.get(n)?.extiende ?? null, BASES_MODELO);
   const esEntidad = (c: Clase) => !!atributo(c.nodo, "Entity") || /@(ORM\\)?Entity\b/.test(c.doc);
+
+  // ---------- 1c. Referencias: quién nombra una clase, interfaz, enum o trait del repo ----------
+  // En una firma, una propiedad tipada, `new X`, `X::metodo()`, `X::CONSTANTE`, `instanceof`, `catch`, un atributo o
+  // `extends`/`implements`. Un nombre que declaran dos archivos no se adivina.
+  const declarados = new Map<string, { archivo: string; nombre: string } | null>();
+  const TIPOS_PHP = ["class_declaration", "interface_declaration", "enum_declaration", "trait_declaration"];
+  for (const { archivo, raiz } of arboles) {
+    for (const d of raiz.descendantsOfType(TIPOS_PHP).filter(Boolean) as Node[]) {
+      const nombre = campo(d, "name")?.text;
+      if (nombre) declarados.set(nombre, declarados.has(nombre) ? null : { archivo, nombre });
+    }
+  }
+  const NOMBRA = new Set(["named_type", "base_clause", "class_interface_clause", "object_creation_expression", "binary_expression", "attribute", "qualified_name"]);
+  const nombraTipo = (n: Node): boolean => {
+    const p = n.parent;
+    if (!p) return false;
+    if (NOMBRA.has(p.type)) return true;
+    if (p.type === "scoped_call_expression" || p.type === "scoped_property_access_expression") return campo(p, "name")?.id !== n.id;
+    if (p.type === "class_constant_access_expression") return hijos(p)[0]?.id === n.id;
+    return false;
+  };
+  for (const { archivo, raiz } of arboles) {
+    const arch = porRuta.get(archivo);
+    if (!arch) continue;
+    const refs = new Map<string, { desde: string; archivo: string; simbolo: string; linea: number }>();
+    const llamados = new Set((arch.invoca ?? []).map((i) => `${i.desde}\u0000${i.archivo}\u0000${i.simbolo}`));
+    const anotar = (parte: Node, desde: string) => {
+      for (const n of parte.descendantsOfType("name").filter(Boolean) as Node[]) {
+        if (!nombraTipo(n)) continue;
+        const t = declarados.get(n.text);
+        if (!t || (t.archivo === archivo && t.nombre === desde)) continue;
+        const k = `${desde}\u0000${t.archivo}\u0000${t.nombre}`;
+        if (!refs.has(k) && !llamados.has(k)) refs.set(k, { desde, archivo: t.archivo, simbolo: t.nombre, linea: linea(n) });
+      }
+    };
+    for (const d of raiz.descendantsOfType(TIPOS_PHP).filter(Boolean) as Node[]) {
+      const nombre = campo(d, "name")?.text;
+      if (!nombre) continue;
+      for (const h of hijos(d)) {
+        // Los atributos de la clase son registro (ruta base, entidad), no uso: quedan afuera, como en el ts-parser.
+        if (h.type === "attribute_list") continue;
+        if (h.type !== "declaration_list" && h.type !== "enum_declaration_list") {
+          anotar(h, nombre);
+          continue;
+        }
+        for (const m of hijos(h)) anotar(m, d.type === "class_declaration" && m.type === "method_declaration" && campo(m, "name") ? `${nombre}.${campo(m, "name")!.text}` : nombre);
+      }
+    }
+    for (const f of raiz.descendantsOfType("function_definition").filter(Boolean) as Node[]) {
+      const nombre = campo(f, "name")?.text;
+      if (nombre) anotar(f, nombre);
+    }
+    if (refs.size) arch.referencias = [...refs.values()].sort((a, b) => a.linea - b.linea || (a.desde < b.desde ? -1 : a.desde > b.desde ? 1 : 0) || (a.simbolo < b.simbolo ? -1 : a.simbolo > b.simbolo ? 1 : 0));
+  }
 
   // ---------- 2. Formas: FormRequest y JsonResource ----------
   const formaDeArray = (metodo: Metodo | undefined, valor: (v: Node | null) => string): Forma | null => {

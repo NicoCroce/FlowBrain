@@ -124,6 +124,8 @@ export interface EstructuraArchivo {
   simbolos: Array<{ nombre: string; tipo: string; linea: number; fin?: number | undefined }>;
   importa: string[];
   invoca: Array<{ desde: string; archivo: string; simbolo: string; linea: number; via?: string | undefined }>;
+  /** Tipos, interfaces, enums, clases y constantes del repo que nombra cada símbolo (de `_build/files`). */
+  referencias?: Array<{ desde: string; archivo: string; simbolo: string; linea: number }> | undefined;
   /** Llamadas que el parser no pudo atribuir (tipo `any`, interfaz sin implementación conocida). */
   sinResolver?: Array<{ desde: string; linea: number; llamada: string; candidatos?: string[] | undefined }> | undefined;
   /** Casos de prueba que define, si es un archivo de test. Vacío: es un test, pero no se le pudieron leer los casos. */
@@ -341,7 +343,7 @@ export const LIMITES_PANTALLA: LimitesRecorrido = { pasos: 300, nivel: 12 };
 /** Para las consultas de un agente: completo; el presupuesto de tokens recorta después. */
 export const LIMITES_AGENTE: LimitesRecorrido = { pasos: 200, nivel: 12, cruzarHttp: true };
 const EV = /^([^:]+:[^#]+)(?:#L(\d+))?/;
-const elementos = (e: EstructuraArchivo | undefined) => (e?.simbolos ?? []).filter((s) => s.tipo !== "metodo").map((s) => s.nombre);
+const elementos = (e: EstructuraArchivo | undefined) => (e?.simbolos ?? []).filter((s) => s.tipo !== "metodo" && s.tipo !== "constante").map((s) => s.nombre);
 
 /** Método o función que atiende la línea de un endpoint: el que la contiene, o el siguiente método si la línea es su decorador. */
 export function simboloDeLinea(e: EstructuraArchivo, linea: number): EstructuraArchivo["simbolos"][number] | null {

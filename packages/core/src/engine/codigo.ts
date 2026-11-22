@@ -40,6 +40,10 @@ export interface IndiceCodigo {
   actuales: Record<string, string>;
   /** `repo:ruta#Simbolo` → quién lo llama, con la línea de la llamada. */
   llamadores: Map<string, Array<{ clave: string; linea: number; via?: string | undefined }>>;
+  /** `repo:ruta#Tipo` (tipo, interfaz, enum, clase o constante) → símbolos que lo nombran, con la línea. */
+  usan: Map<string, Array<{ clave: string; linea: number }>>;
+  /** Repos cuyo índice no trae `referencias` (indexado antes de registrarlas, o un parser que no las sigue). */
+  sinReferencias: Set<string>;
   /** Nombre de símbolo → claves `repo:ruta#Simbolo`. */
   porNombre: Map<string, string[]>;
   /** `repo:ruta#Simbolo` → endpoints que atiende. */
@@ -78,12 +82,14 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
   const estructura = new Map<string, EstructuraArchivo>();
   const commits: Record<string, string> = {};
   const raices: Record<string, string> = {};
+  const sinReferencias = new Set<string>();
   for (const c of archivos) {
     try {
       const j = JSON.parse(c) as { repo: string; commit?: string; raiz?: string; archivos: Array<{ ruta: string } & Partial<EstructuraArchivo>> };
       if (j.commit) commits[j.repo] = j.commit;
       if (j.raiz) raices[j.repo] = j.raiz;
-      for (const a of j.archivos ?? []) estructura.set(`${j.repo}:${a.ruta}`, { simbolos: a.simbolos ?? [], importa: a.importa ?? [], invoca: a.invoca ?? [], sinResolver: a.sinResolver, ...(a.casos ? { casos: a.casos } : {}) });
+      for (const a of j.archivos ?? []) estructura.set(`${j.repo}:${a.ruta}`, { simbolos: a.simbolos ?? [], importa: a.importa ?? [], invoca: a.invoca ?? [], sinResolver: a.sinResolver, ...(a.referencias ? { referencias: a.referencias } : {}), ...(a.casos ? { casos: a.casos } : {}) });
+      if (!(j.archivos ?? []).some((a) => a.referencias)) sinReferencias.add(j.repo);
     } catch {
       /* ignorado */
     }
@@ -93,12 +99,17 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
   const recorredor = crearRecorredor(graph, estructura, aristas, sinPagina, LIMITES_AGENTE);
   const llamadores = new Map<string, Array<{ clave: string; linea: number; via?: string | undefined }>>();
   const porNombre = new Map<string, string[]>();
+  const usan = new Map<string, Array<{ clave: string; linea: number }>>();
   for (const [archivo, e] of [...estructura.entries()].sort((a, b) => cmp(a[0], b[0]))) {
     const repo = archivo.slice(0, archivo.indexOf(":"));
     for (const s of e.simbolos) porNombre.set(s.nombre, [...(porNombre.get(s.nombre) ?? []), clave(archivo, s.nombre)]);
     for (const i of e.invoca) {
       const destino = clave(`${repo}:${i.archivo}`, i.simbolo);
       llamadores.set(destino, [...(llamadores.get(destino) ?? []), { clave: clave(archivo, i.desde), linea: i.linea, ...(i.via ? { via: i.via } : {}) }]);
+    }
+    for (const r of e.referencias ?? []) {
+      const destino = clave(`${repo}:${r.archivo}`, r.simbolo);
+      usan.set(destino, [...(usan.get(destino) ?? []), { clave: clave(archivo, r.desde), linea: r.linea }]);
     }
   }
   const atiende = new Map<string, string[]>();
@@ -156,7 +167,7 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
     }
   }
   llamadasPendientes.sort((a, b) => cmp(a.evidencia, b.evidencia) || cmp(a.referencia, b.referencia));
-  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, porNombre, atiende, accesos, llamanEndpoint, tocanTabla, llamadasPendientes, porArchivo };
+  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, usan, sinReferencias, porNombre, atiende, accesos, llamanEndpoint, tocanTabla, llamadasPendientes, porArchivo };
 }
 
 /** Lee el HEAD actual de cada clon indexado, para avisar si el índice quedó atrás. Barato: unas lecturas de `.git`. */
@@ -849,28 +860,40 @@ export function riesgo(ctx: Contexto, p: RiesgoParams) {
 
   const todos = [...ix.estructura.keys()];
   const fuera: string[] = [], ambiguos: string[] = [];
-  const tocados = new Set<string>(), archivos = new Set<string>(), sinSimbolo: string[] = [];
+  const tocados = new Set<string>(), nombrados = new Set<string>(), archivos = new Set<string>(), sinSimbolo: string[] = [];
   for (const e of entradas) {
     const exacto = ix.estructura.has(e.ruta) ? [e.ruta] : p.repo ? (ix.estructura.has(`${p.repo}:${e.ruta}`) ? [`${p.repo}:${e.ruta}`] : []) : todos.filter((k) => k.endsWith(`:${e.ruta}`));
     if (!exacto.length) { fuera.push(e.ruta); continue; }
     if (exacto.length > 1) ambiguos.push(e.ruta);
     for (const archivo of exacto) {
       archivos.add(archivo);
-      const simbolos = ix.estructura.get(archivo)!.simbolos.filter((s) => s.tipo === "metodo" || s.tipo === "funcion");
-      const dentro = e.rangos.length ? simbolos.filter((s) => e.rangos.some(([a, b]) => s.linea <= b && a <= (s.fin ?? s.linea))) : simbolos;
+      const dentro = simbolosTocados(ix.estructura.get(archivo)!.simbolos, e.rangos);
       if (!dentro.length) sinSimbolo.push(archivo);
-      for (const s of dentro) tocados.add(clave(archivo, s.nombre));
+      for (const s of dentro) {
+        tocados.add(clave(archivo, s.nombre));
+        if (!INVOCABLES.has(s.tipo)) nombrados.add(clave(archivo, s.nombre));
+      }
     }
   }
 
-  // Hacia arriba: quién llama a lo tocado.
+  // Hacia arriba: quién llama a lo tocado y quién nombra un tipo o una constante tocados.
   const vistos = new Set(tocados);
   let frente = [...tocados], cortado = false;
   for (let nivel = 1; frente.length; nivel++) {
     if (nivel > prof) { cortado = true; break; }
     const sig: string[] = [];
-    for (const k of frente) for (const l of ix.llamadores.get(k) ?? []) if (!vistos.has(l.clave)) { vistos.add(l.clave); sig.push(l.clave); }
+    for (const k of frente) for (const l of [...(ix.llamadores.get(k) ?? []), ...(ix.usan.get(k) ?? [])]) if (!vistos.has(l.clave)) { vistos.add(l.clave); sig.push(l.clave); }
     frente = sig;
+  }
+  // Usos directos de cada tipo o constante tocados; los que nadie nombra dicen por qué.
+  const usos: string[] = [], sinUsos: string[] = [], sinRegistro = new Set<string>();
+  for (const k of [...nombrados].sort(cmp)) {
+    const us = ix.usan.get(k) ?? [];
+    for (const u of [...us].sort((a, b) => cmp(a.clave, b.clave))) usos.push(`${partes(k).simbolo} ← ${cita(ix, u.clave, u.linea)}`);
+    if (us.length) continue;
+    const repo = k.slice(0, k.indexOf(":"));
+    if (ix.sinReferencias.has(repo)) sinRegistro.add(repo);
+    else sinUsos.push(partes(k).simbolo);
   }
   const alcanzados = [...vistos].sort(cmp);
   const endpoints = [...new Set(alcanzados.flatMap((k) => ix.atiende.get(k) ?? []))].sort(cmp);
@@ -913,18 +936,46 @@ export function riesgo(ctx: Contexto, p: RiesgoParams) {
     tablas: [...tablas.entries()].sort((a, b) => cmp(a[0], b[0])).map(([t, v]) => `${[...v].sort(cmp).join(" y ")} ${t}`),
     otrosRepos,
     ...humano,
+    usos,
     llamadores: alcanzados.filter((k) => !tocados.has(k)).map((k) => cita(ix, k)),
     avisos: [
       ...(fuera.length ? [`archivos fuera del índice (no se pudo medir su alcance): ${fuera.join(", ")}`] : []),
       ...(ambiguos.length ? [`ruta en varios repos, se tomaron todos (pasá repo): ${ambiguos.join(", ")}`] : []),
-      ...(sinSimbolo.length ? [`cambios fuera de funciones y métodos (tipos, constantes, configuración): ${[...new Set(sinSimbolo)].sort(cmp).join(", ")}`] : []),
+      ...(sinSimbolo.length ? [`cambios fuera de todo símbolo (imports, código suelto de nivel superior, configuración): ${[...new Set(sinSimbolo)].sort(cmp).join(", ")}`] : []),
+      ...(sinUsos.length ? [`tipos o constantes que ningún símbolo indexado nombra (si se usan, es fuera del código analizado: otro repo, plantillas, texto o reflexión): ${sinUsos.join(", ")}`] : []),
+      ...(sinRegistro.size ? [`el índice de ${[...sinRegistro].sort(cmp).join(", ")} no registra quién usa tipos y constantes (indexado antes de registrarlos, o su parser no los sigue): corré \`flowbrain index\` y \`flowbrain compile\` para seguirlos`] : []),
       ...(cortado ? [`hay más llamadores por encima de la profundidad ${prof}`] : []),
       ...sinResolverConNombre(ix, [...tocados]),
       ...avisosIndice(ix),
     ],
     indice: versiones(ix),
   };
-  return ajustarLista(res, ["llamadores", "cambia", "pantallas", "endpoints"], p.budget_tokens);
+  return ajustarLista(res, ["llamadores", "usos", "cambia", "pantallas", "endpoints"], p.budget_tokens);
+}
+
+const INVOCABLES = new Set(["metodo", "funcion"]);
+/** Símbolos que se siguen por sus usos (`referencias`), no por sus llamadas. */
+const NOMBRABLES = new Set(["tipo", "interfaz", "enum", "constante", "clase", "objeto"]);
+/** Clases y objetos contienen métodos: cuentan solo si el cambio cae en una línea suya que no es de un método. */
+const CONTENEDORES = new Set(["clase", "objeto"]);
+
+/**
+ * Símbolos que tocan los rangos (vacío = el archivo entero): funciones y métodos; tipos, interfaces, enums y
+ * constantes; y una clase o un objeto si el cambio cae fuera de sus métodos (una propiedad, un decorador, la firma).
+ */
+export function simbolosTocados<S extends { nombre: string; tipo: string; linea: number; fin?: number | undefined }>(simbolos: S[], rangos: Array<[number, number]>): S[] {
+  const seguidos = simbolos.filter((s) => INVOCABLES.has(s.tipo) || NOMBRABLES.has(s.tipo));
+  if (!rangos.length) return seguidos;
+  const cruza = (s: S, a: number, b: number) => s.linea <= b && a <= (s.fin ?? s.linea);
+  return seguidos.filter((s) =>
+    rangos.some(([a, b]) => {
+      if (!cruza(s, a, b)) return false;
+      if (!CONTENEDORES.has(s.tipo)) return true;
+      const metodos = simbolos.filter((m) => INVOCABLES.has(m.tipo) && m.nombre.startsWith(`${s.nombre}.`));
+      for (let l = Math.max(a, s.linea); l <= Math.min(b, s.fin ?? s.linea); l++) if (!metodos.some((m) => m.linea <= l && l <= (m.fin ?? m.linea))) return true;
+      return false;
+    }),
+  );
 }
 
 // ------------------------------------------------------------------ deriva de contratos

@@ -29,6 +29,18 @@ export interface Invocacion {
   via?: string;
 }
 
+/**
+ * Un símbolo que nombra a otro que no se invoca: un tipo, interfaz, enum, clase o constante del repo (en una firma,
+ * una anotación, un `new`, `Estado.Activo`, `LIMITE`). Mismo formato que `Invocacion`; si cambia el referido, el que
+ * lo nombra queda alcanzado (lo usa `riesgo`).
+ */
+export interface Referencia {
+  desde: string;
+  archivo: string;
+  simbolo: string;
+  linea: number;
+}
+
 /** Llamada que el análisis no pudo atribuir a un símbolo del repo (tipo `any`, interfaz sin implementación conocida). */
 export interface LlamadaSinResolver {
   desde: string;
@@ -46,6 +58,8 @@ export interface ArchivoCrudo {
   importa?: string[];
   /** Llamadas de sus métodos y funciones a símbolos de otros archivos o clases del repo. */
   invoca?: Invocacion[];
+  /** Tipos, interfaces, enums, clases y constantes del repo que nombran sus símbolos (sin repetir lo que ya está en `invoca`). */
+  referencias?: Referencia[];
   sinResolver?: LlamadaSinResolver[];
   /** Si es un archivo de test: los casos que define. */
   casos?: CasoDeTest[];

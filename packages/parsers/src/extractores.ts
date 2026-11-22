@@ -20,6 +20,7 @@ import { paqueteDe, type Extraccion, type RepoFuente } from "./tipos.js";
  * {
  *   "simbolos":     [{ "archivo": "src/Pedidos.go", "nombre": "PedidosHandler.Crear", "tipo": "metodo", "linea": 20, "fin": 41 }],
  *   "invocaciones": [{ "desde": { "archivo": "…", "simbolo": "…" }, "hacia": { "archivo": "…", "simbolo": "…" }, "linea": 27 }],
+ *   "referencias":  [{ "desde": { "archivo": "src/Pedidos.go", "simbolo": "PedidosHandler.Crear" }, "hacia": { "archivo": "src/tipos.go", "simbolo": "EstadoPedido" }, "linea": 30 }],
  *   "endpoints":    [{ "metodo": "POST", "ruta": "/pedidos", "archivo": "src/rutas.go", "linea": 12, "handler": { "archivo": "src/Pedidos.go", "simbolo": "PedidosHandler.Crear" } }],
  *   "llamadas":     [{ "archivo": "src/api.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" }, { "archivo": "…", "linea": 9, "metodo": "POST", "ruta": "/v1/charges", "host": "api.stripe.com" }],
  *   "pantallas":    [{ "ruta": "/pedidos", "archivo": "src/rutas.tsx", "linea": 8, "componente": { "archivo": "…", "simbolo": "Pedidos" } }],
@@ -40,6 +41,9 @@ import { paqueteDe, type Extraccion, type RepoFuente } from "./tipos.js";
  * de nombres propia), y `quitar` borra lo que el parser inventó (una llamada, una pantalla, una navegación, un endpoint, un
  * acceso a una tabla o un evento).
  *
+ * `referencias` son los tipos, interfaces, enums, clases o constantes que nombra un símbolo (en su firma o su cuerpo),
+ * sin llamarlos: con eso `riesgo` sigue un cambio en un tipo o una constante hasta quienes lo usan.
+ *
  * `componentes` son los componentes de interfaz que exporta una librería (un sistema de diseño) y `usos`, los que un
  * archivo toma de otro paquete (`paquete` es el nombre con el que se publica, el de su manifiesto); con eso las pantallas
  * se unen a los componentes que dibujan, también entre repos y entre cerebros. `desde` es el símbolo que lo usa.
@@ -55,7 +59,7 @@ export const RUTA_INFORME_EXTRACTORES = (repo: string) => `_build/extractors/${r
 
 const INTERPRETES: Record<string, string> = { ".mjs": "node", ".js": "node", ".cjs": "node", ".py": "python3", ".sh": "sh", ".rb": "ruby", ".php": "php" };
 const TIEMPO_MS = 180_000;
-const TIPOS = ["simbolos", "invocaciones", "endpoints", "llamadas", "pantallas", "navegaciones", "accesos", "esquema", "eventos", "importa", "componentes", "usos", "quitar"] as const;
+const TIPOS = ["simbolos", "invocaciones", "referencias", "endpoints", "llamadas", "pantallas", "navegaciones", "accesos", "esquema", "eventos", "importa", "componentes", "usos", "quitar"] as const;
 type Tipo = (typeof TIPOS)[number];
 
 export interface InformeExtractor {
@@ -177,6 +181,21 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
       }
       if (arc.sinResolver) arc.sinResolver = arc.sinResolver.filter((r) => !(r.desde === de!["simbolo"] && r.linea === d["linea"]));
       inf.aceptados.invocaciones++;
+    }
+    for (const d of lista(salida["referencias"])) {
+      const de = d["desde"] as Record<string, unknown> | undefined, a = d["hacia"] as Record<string, unknown> | undefined;
+      const s = simbolo(de?.["archivo"], de?.["simbolo"]);
+      const m = !s ? "no existe el símbolo `desde` (declaralo en `simbolos`)" : !simbolo(a?.["archivo"], a?.["simbolo"]) ? "no existe el símbolo `hacia` (declaralo en `simbolos`)" : !esLinea(d["linea"]) || d["linea"] < s.linea || d["linea"] > (s.fin ?? s.linea) ? "la línea no está dentro del símbolo que lo nombra" : null;
+      if (m) {
+        rechazar("referencias", d, m);
+        continue;
+      }
+      const arc = archivoDe(de!["archivo"] as string);
+      if (!(arc.referencias ?? []).some((i) => i.desde === de!["simbolo"] && i.archivo === a!["archivo"] && i.simbolo === a!["simbolo"])) {
+        (arc.referencias ??= []).push({ desde: de!["simbolo"] as string, archivo: a!["archivo"] as string, simbolo: a!["simbolo"] as string, linea: d["linea"] as number });
+        arc.referencias.sort((p, q) => p.linea - q.linea || cmp(p.desde, q.desde) || cmp(p.simbolo, q.simbolo));
+      }
+      inf.aceptados.referencias++;
     }
     for (const d of lista(salida["endpoints"])) {
       const h = d["handler"] as Record<string, unknown> | null | undefined;

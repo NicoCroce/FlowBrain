@@ -307,7 +307,7 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "riesgo",
     {
       description:
-        "Riesgo de un cambio antes de hacerlo o de mergearlo: con un diff (`git diff`) o una lista de archivos, dice qué métodos cambian, quién los llama y qué queda alcanzado (funcionalidades, endpoints, pantallas, tablas, otros repos que lo consumen por HTTP, equipos y decisiones), con un `nivel` de alcance (bajo, medio, alto) y sus `motivos`. Los `avisos` listan lo que no se pudo medir.",
+        "Riesgo de un cambio antes de hacerlo o de mergearlo: con un diff (`git diff`) o una lista de archivos, dice qué métodos, tipos y constantes cambian, quién los llama o los usa y qué queda alcanzado (funcionalidades, endpoints, pantallas, tablas, otros repos que lo consumen por HTTP, equipos y decisiones), con un `nivel` de alcance (bajo, medio, alto) y sus `motivos`. Los `avisos` listan lo que no se pudo medir.",
       inputSchema: {
         diff: z.string().min(1).optional().describe("diff unificado, tal como lo da git diff"),
         archivos: z.array(z.string().min(1)).optional().describe("archivos tocados (ruta o repo:ruta), si no hay diff"),

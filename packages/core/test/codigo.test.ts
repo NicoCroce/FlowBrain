@@ -3,12 +3,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, archivosDeDiff, buscarNodo, crearContexto, deriva, paridad, paridadEntre, riesgo, type Graph, type GraphEdge, type GraphNode, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, cobertura, leerControles, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, archivosDeDiff, simbolosTocados, buscarNodo, crearContexto, deriva, paridad, paridadEntre, riesgo, type Graph, type GraphEdge, type GraphNode, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, cobertura, leerControles, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
 let ctx: Contexto;
 let sinIndice: Contexto;
+let archivosCheckout: string[], extraccionCheckout: string, salidasCheckout: ReturnType<typeof compile>, contratosCheckout: Contrato[];
 beforeAll(async () => {
   const base = await leerEntradas(FIXTURE);
   const paginas = base.paginas.map((p) =>
@@ -41,6 +42,7 @@ beforeAll(async () => {
   const contratos = base.contratos.map((c) => JSON.parse(c.contenido) as Contrato);
   const salidas = compile(entradas);
   ctx = contextoDeSalidas(salidas, contratos, { archivos: archivos.map((a) => a.contenido), extracciones: [extraccion] });
+  [archivosCheckout, extraccionCheckout, salidasCheckout, contratosCheckout] = [archivos.map((a) => a.contenido), extraccion, salidas, contratos];
   sinIndice = contextoDeSalidas(salidas, contratos);
 });
 
@@ -56,6 +58,7 @@ const RIESGO_CLIENTE = {
   otrosRepos: [],
   pantallas: ["svc-web:pantalla:/checkout"],
   tablas: [],
+  usos: [],
 };
 
 const SIMBOLOS_CHECKOUT = [
@@ -127,6 +130,56 @@ describe("consultas de código", () => {
     expect(r.tablas).toEqual(["escribe_en tabla-pagos"]);
     expect(r.avisos).toContain("archivos fuera del índice (no se pudo medir su alcance): docs/LEEME.md");
     expect(() => riesgo(ctx, {})).toThrow(ConsultaError);
+  });
+
+  it("riesgo sigue un tipo o una constante cambiados hasta quienes los usan", () => {
+    const diffDe = (ruta: string, desde: number, n: number) => [`--- a/${ruta}`, `+++ b/${ruta}`, `@@ -${desde},${n} +${desde},${n} @@`, "+x"].join("\n");
+    // La interfaz `PagoCreado` (L5-8) la usa `crearPago`, que llama `postCheckout`, que atiende el endpoint del checkout.
+    const r = riesgo(ctx, { diff: diffDe("apps/bff/src/clients/payments.ts", 6, 1) }) as typeof RIESGO_CLIENTE;
+    expect(r.cambia).toEqual(["PagoCreado @ repo-tienda:apps/bff/src/clients/payments.ts#L5"]);
+    expect(r.usos).toEqual(["PagoCreado ← crearPago @ repo-tienda:apps/bff/src/clients/payments.ts#L10"]);
+    expect(r.llamadores).toEqual(["crearPago @ repo-tienda:apps/bff/src/clients/payments.ts#L10", "postCheckout @ repo-tienda:apps/bff/src/routes/checkout.ts#L14"]);
+    expect(r.endpoints).toEqual(["svc-bff:POST:/checkout"]);
+    expect(r.pantallas).toEqual(["svc-web:pantalla:/checkout"]);
+    expect(r.nivel).toBe("medio");
+    expect(r.avisos).toEqual([]);
+    // Una constante (`PAYMENTS_URL`, L3) igual.
+    const c = riesgo(ctx, { diff: diffDe("apps/bff/src/clients/payments.ts", 3, 1) }) as typeof RIESGO_CLIENTE;
+    expect(c.cambia).toEqual(["PAYMENTS_URL @ repo-tienda:apps/bff/src/clients/payments.ts#L3"]);
+    expect(c.endpoints).toEqual(["svc-bff:POST:/checkout"]);
+    // Una constante que solo usa código suelto (`router.post(…)`) lo dice, en vez de quedar muda.
+    const s = riesgo(ctx, { diff: diffDe("apps/bff/src/routes/checkout.ts", 19, 1) }) as typeof RIESGO_CLIENTE;
+    expect(s.cambia).toEqual(["router @ repo-tienda:apps/bff/src/routes/checkout.ts#L19"]);
+    expect(s.avisos).toEqual(["tipos o constantes que ningún símbolo indexado nombra (si se usan, es fuera del código analizado: otro repo, plantillas, texto o reflexión): router"]);
+    // Un import no cae en ningún símbolo.
+    expect((riesgo(ctx, { diff: diffDe("apps/bff/src/routes/checkout.ts", 2, 1) }) as typeof RIESGO_CLIENTE).avisos[0]).toMatch(/^cambios fuera de todo símbolo/);
+  });
+
+  it("riesgo avisa cuando el índice no registra los usos de tipos (indexado con una versión anterior)", () => {
+    const viejo = archivosCheckout.map((c) => {
+      const j = JSON.parse(c) as { archivos: Array<{ referencias?: unknown }> };
+      for (const a of j.archivos) delete a.referencias;
+      return JSON.stringify(j);
+    });
+    const v = contextoDeSalidas(salidasCheckout, contratosCheckout, { archivos: viejo, extracciones: [extraccionCheckout] });
+    const r = riesgo(v, { diff: ["--- a/apps/bff/src/clients/payments.ts", "+++ b/apps/bff/src/clients/payments.ts", "@@ -6,1 +6,1 @@", "+x"].join("\n") }) as typeof RIESGO_CLIENTE;
+    expect(r.cambia).toEqual(["PagoCreado @ repo-tienda:apps/bff/src/clients/payments.ts#L5"]);
+    expect(r.endpoints).toEqual([]);
+    expect(r.avisos).toEqual(["el índice de repo-tienda no registra quién usa tipos y constantes (indexado antes de registrarlos, o su parser no los sigue): corré `flowbrain index` y `flowbrain compile` para seguirlos"]);
+  });
+
+  it("simbolosTocados: una clase cuenta solo si el cambio cae fuera de sus métodos", () => {
+    const simbolos = [
+      { nombre: "Servicio", tipo: "clase", linea: 1, fin: 20 },
+      { nombre: "Servicio.crear", tipo: "metodo", linea: 5, fin: 10 },
+      { nombre: "Estado", tipo: "enum", linea: 22, fin: 25 },
+      { nombre: "Pago", tipo: "modelo", linea: 30 },
+    ];
+    expect(simbolosTocados(simbolos, [[6, 7]]).map((s) => s.nombre)).toEqual(["Servicio.crear"]);
+    expect(simbolosTocados(simbolos, [[3, 3]]).map((s) => s.nombre)).toEqual(["Servicio"]);
+    expect(simbolosTocados(simbolos, [[9, 12]]).map((s) => s.nombre)).toEqual(["Servicio", "Servicio.crear"]);
+    expect(simbolosTocados(simbolos, [[23, 23]]).map((s) => s.nombre)).toEqual(["Estado"]);
+    expect(simbolosTocados(simbolos, []).map((s) => s.nombre)).toEqual(["Servicio", "Servicio.crear", "Estado"]);
   });
 
   it("buscar_nodo encuentra símbolos de código, con archivo y línea, y texto dentro de nombres y páginas", () => {

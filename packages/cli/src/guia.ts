@@ -358,6 +358,8 @@ $ARGUMENTS
      "simbolos":     [{ "archivo": "src/pedidos/handler.go", "nombre": "PedidosHandler.Crear", "tipo": "metodo", "linea": 20, "fin": 41 }],
      "invocaciones": [{ "desde": { "archivo": "src/pedidos/handler.go", "simbolo": "PedidosHandler.Crear" },
                         "hacia": { "archivo": "src/pedidos/repo.go", "simbolo": "PedidosRepo.Guardar" }, "linea": 27 }],
+     "referencias":  [{ "desde": { "archivo": "src/pedidos/handler.go", "simbolo": "PedidosHandler.Crear" },
+                        "hacia": { "archivo": "src/pedidos/tipos.go", "simbolo": "EstadoPedido" }, "linea": 30 }],
      "endpoints":    [{ "metodo": "POST", "ruta": "/api/pedidos", "archivo": "src/rutas.go", "linea": 12,
                         "handler": { "archivo": "src/pedidos/handler.go", "simbolo": "PedidosHandler.Crear" } }],
      "llamadas":     [{ "archivo": "src/api/pedidos.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" },
@@ -379,6 +381,9 @@ $ARGUMENTS
    - Un **símbolo** es una función, método o componente con su rango (\`linea\`–\`fin\`): es lo que permite saber que una
      llamada o un acceso ocurre *dentro* de ese método. Declará los que los parsers no tengan.
    - Una **invocación** une dos símbolos que ya existen; la \`linea\` cae dentro del que llama.
+   - Una **referencia** une un símbolo con un tipo, interfaz, enum, clase o constante que nombra sin llamarlo (declarado
+     en \`simbolos\` con \`tipo\` \`tipo\`, \`interfaz\`, \`enum\`, \`clase\` o \`constante\`): con eso \`riesgo\` sigue un cambio
+     en un tipo hasta quienes lo usan.
    - El **endpoint** cita la línea donde se declara la ruta. Si la ruta se declara en un archivo de rutas y la atiende
      un método de otro lado (\`r.POST("/x", h.Crear)\`, \`path("x/", views.crear)\`, \`get "/x", to: "x#crear"\`), decí cuál con
      \`handler\` (un símbolo que exista): de ahí arrancan el recorrido y la traza. Sin \`handler\`, el método es el que

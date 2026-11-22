@@ -12,6 +12,7 @@ import {
   type AccesoTabla,
   type ArchivoCrudo,
   type LlamadaSinResolver,
+  type Referencia,
   type EndpointCrudo,
   type Extraccion,
   type Forma,
@@ -854,6 +855,77 @@ function extraer(repo: RepoFuente): Extraccion {
     ver(cuerpo);
   };
 
+  /**
+   * Símbolo de nivel superior que no se invoca y que nombra un identificador: tipo, interfaz, enum, clase o constante
+   * (`const` que no es una función) del repo. Las funciones ya están en `invoca`.
+   */
+  const referido = (id: ts.Identifier): { archivo: string; simbolo: string } | null => {
+    const p = id.parent;
+    // `a.b`: `b` es un miembro, nunca un símbolo de nivel superior.
+    if ((ts.isPropertyAccessExpression(p) || ts.isQualifiedName(p)) && (p as ts.PropertyAccessExpression).name === id) return null;
+    const d = resolver(id)?.declarations?.[0];
+    if (!d) return null;
+    const sf = d.getSourceFile();
+    if (!delRepo(sf)) return null;
+    if ((ts.isInterfaceDeclaration(d) || ts.isTypeAliasDeclaration(d) || ts.isEnumDeclaration(d) || ts.isClassDeclaration(d)) && d.name && ts.isSourceFile(d.parent)) return { archivo: rel(sf), simbolo: d.name.text };
+    if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && !funcionLiteral(d.initializer) && d.parent.flags & ts.NodeFlags.Const && ts.isVariableStatement(d.parent.parent) && ts.isSourceFile(d.parent.parent.parent)) {
+      return { archivo: rel(sf), simbolo: d.name.text };
+    }
+    return null;
+  };
+  /** Referencias de `nodo` (atribuidas a `desde`) a tipos, interfaces, enums, clases y constantes del repo. */
+  const referenciasDe = (nodo: ts.Node, desde: string, archivo: string, out: Map<string, Referencia>) => {
+    const ver = (n: ts.Node): void => {
+      if (ts.isIdentifier(n)) {
+        const r = referido(n);
+        if (r && !(r.archivo === archivo && r.simbolo === desde)) {
+          const k = `${desde}\u0000${r.archivo}\u0000${r.simbolo}`;
+          if (!out.has(k)) out.set(k, { desde, archivo: r.archivo, simbolo: r.simbolo, linea: linea(n) });
+        }
+        return;
+      }
+      ts.forEachChild(n, ver);
+    };
+    ver(nodo);
+  };
+  /** Cada parte de una sentencia de nivel superior con el símbolo al que pertenece (el mismo nombre que en `simbolos`). */
+  const partesDe = (st: ts.Statement): Array<[ts.Node, string]> => {
+    if (ts.isFunctionDeclaration(st) && st.name) return [[st, st.name.text]];
+    if ((ts.isInterfaceDeclaration(st) || ts.isTypeAliasDeclaration(st) || ts.isEnumDeclaration(st)) && st.name) return [[st, st.name.text]];
+    if (ts.isClassDeclaration(st) && st.name) {
+      const c = st.name.text;
+      // Los decoradores de la clase quedan afuera: son registro (`@Module({ providers: [X] })`), no uso; el cambio de
+      // un servicio no alcanza al módulo que lo declara. Los de un método sí cuentan (un guard, un pipe, un DTO).
+      const out: Array<[ts.Node, string]> = [...(st.heritageClauses ?? []), ...(st.typeParameters ?? [])].map((n) => [n, c] as [ts.Node, string]);
+      for (const m of st.members) {
+        const nm = nombreMiembro(m);
+        out.push([m, nm && esFuncionMiembro(m) ? `${c}.${nm}` : c]);
+      }
+      return out;
+    }
+    if (!ts.isVariableStatement(st)) return [];
+    const out: Array<[ts.Node, string]> = [];
+    const constante = !!(st.declarationList.flags & ts.NodeFlags.Const);
+    for (const d of st.declarationList.declarations) {
+      if (!ts.isIdentifier(d.name) || !d.initializer) continue;
+      const nombre = d.name.text;
+      if (funcionLiteral(d.initializer)) {
+        out.push([d, nombre]);
+        continue;
+      }
+      let o: ts.Expression = d.initializer;
+      while (ts.isAsExpression(o) || ts.isSatisfiesExpression(o) || ts.isParenthesizedExpression(o)) o = o.expression;
+      const fns = ts.isObjectLiteralExpression(o) ? funcionesDeObjeto(o) : [];
+      if (fns.length) {
+        const propias = new Map(fns.map(([m, nodo]) => [nodo, `${nombre}.${m}`]));
+        if (d.type) out.push([d.type, nombre]);
+        for (const p of (o as ts.ObjectLiteralExpression).properties) out.push([p, propias.get(p) ?? nombre]);
+        if (ts.isAsExpression(d.initializer) || ts.isSatisfiesExpression(d.initializer)) out.push([d.initializer.type, nombre]);
+      } else if (constante) out.push([d, nombre]);
+    }
+    return out;
+  };
+
   // ---------- Eventos y colas ----------
   // Quien publica con una clave (`emit("x")`, `enqueue(JOB)`) llama, en diferido, a quien se suscribe con la misma
   // clave (`@OnEvent("x")`, `on("x", h)`, `register(JOB, { handle })`). La clave es un literal o una constante del
@@ -1335,6 +1407,7 @@ function extraer(repo: RepoFuente): Extraccion {
 
     // Símbolos, formas de tipos, imports e invocaciones.
     const invoca = new Map<string, { desde: string; archivo: string; simbolo: string; linea: number }>();
+    const referencias = new Map<string, Referencia>();
     const sinResolver: LlamadaSinResolver[] = [];
     const importa = new Set<string>();
     for (const st of sf.statements) {
@@ -1366,8 +1439,9 @@ function extraer(repo: RepoFuente): Extraccion {
             // `const api = { remove: (id) => http.delete(…) }`: cada función del objeto es un símbolo `api.remove`.
             let o: ts.Expression = d.initializer;
             while (ts.isAsExpression(o) || ts.isSatisfiesExpression(o) || ts.isParenthesizedExpression(o)) o = o.expression;
-            if (!ts.isObjectLiteralExpression(o)) continue;
-            const fns = funcionesDeObjeto(o);
+            const fns = ts.isObjectLiteralExpression(o) ? funcionesDeObjeto(o) : [];
+            // Una constante de nivel superior (`const LIMITE = 10`, `const ESTADOS = {…}`): sus usos van en `referencias`.
+            if (!fns.length && st.declarationList.flags & ts.NodeFlags.Const) simbolos.push({ linea: linea(st), nombre: d.name.text, tipo: "constante", fin: finDe(st) });
             if (fns.length) simbolos.push({ linea: linea(st), nombre: d.name.text, tipo: "objeto", fin: finDe(st) });
             for (const [m, nodo, cuerpo] of fns) {
               const sim = `${d.name.text}.${m}`;
@@ -1384,6 +1458,7 @@ function extraer(repo: RepoFuente): Extraccion {
       const forma = formaDe(st);
       if (forma && !(forma.nombre in formas)) formas[forma.nombre] = forma.forma;
     }
+    for (const st of sf.statements) for (const [n, desde] of partesDe(st)) referenciasDe(n, desde, archivo, referencias);
     // Un componente de un solo archivo es una función con el nombre del archivo, que abarca todo el archivo: tiene las
     // funciones de su `<script>` y hace lo que su código suelto hace (`onMounted(() => cargar())`). Así una pantalla
     // que lo dibuja llega a sus llamadas y navegaciones.
@@ -1393,6 +1468,7 @@ function extraer(repo: RepoFuente): Extraccion {
       for (const st of sf.statements) {
         const propia = (ts.isFunctionDeclaration(st) && st.name) || (ts.isVariableStatement(st) && st.declarationList.declarations.some((d) => funcionLiteral(d.initializer)));
         if (!propia && !ts.isImportDeclaration(st)) invocacionesDe(st, comp, archivo, invoca, sinResolver);
+        if (!partesDe(st).length && !ts.isImportDeclaration(st)) referenciasDe(st, comp, archivo, referencias);
       }
       // Las funciones del `<script>` que el código suelto no llama las usa el template (`@click="guardar"`): también son suyas.
       const llamadas = new Set([...invoca.values()].filter((i) => i.desde === comp && i.archivo === archivo).map((i) => i.simbolo));
@@ -1419,6 +1495,9 @@ function extraer(repo: RepoFuente): Extraccion {
     if (usaPaquetes.length) arc.usaPaquetes = usaPaquetes;
     if (importa.size) arc.importa = [...importa].sort(cmp);
     if (invoca.size) arc.invoca = [...invoca.values()];
+    const llamados = new Set([...invoca.values()].map((i) => `${i.desde}\u0000${i.archivo}\u0000${i.simbolo}`));
+    const refs = [...referencias.entries()].filter(([k]) => !llamados.has(k)).map(([, r]) => r);
+    if (refs.length) arc.referencias = refs.sort((a, b) => a.linea - b.linea || cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo));
     if (sinResolver.length) arc.sinResolver = sinResolver.sort((a, b) => a.linea - b.linea || cmp(a.llamada, b.llamada));
     out.archivos.push(arc);
     porRuta.set(archivo, arc);
