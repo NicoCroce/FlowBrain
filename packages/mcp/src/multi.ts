@@ -11,6 +11,7 @@ import {
   impactoCruzado,
   impactoDe,
   leerRegistro,
+  paridadEntre,
   pistas,
   resumenConexiones,
   riesgo,
@@ -194,6 +195,26 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
 
   return {
     registro,
+    /**
+     * Paridad con cada servicio en su cerebro. Cada lado se nombra `cerebro/svc-x`, o solo `cerebro` si ese cerebro
+     * tiene un único servicio con endpoints o pantallas; sin cerebro, es un servicio del cerebro consultado.
+     */
+    async paridad(args: { viejo: string; nuevo: string; budget_tokens?: number | null }, nombre?: string) {
+      const r = await registro();
+      const lado = async (ref: string) => {
+        const i = ref.indexOf("/");
+        const partido = i > 0 && r.cerebro(ref.slice(0, i)) ? { cerebro: ref.slice(0, i), svc: ref.slice(i + 1) } : r.cerebro(ref) ? { cerebro: ref, svc: "" } : null;
+        const c = partido ? r.cerebro(partido.cerebro)! : (await elegir(nombre)).c;
+        const ctx = await cargador(c.raiz)();
+        if (partido && !partido.svc) {
+          const svcs = ctx.graph.nodes.filter((n) => n.tipo === "svc" && (ctx.salientes.get(n.id) ?? []).some((e) => e.verbo === "contiene")).map((n) => n.id).sort(cmp);
+          if (svcs.length !== 1) throw new ConsultaError("parametro_invalido", `el cerebro ${c.nombre} tiene ${svcs.length} servicios con endpoints o pantallas${svcs.length ? ` (${svcs.join(", ")})` : ""}: decí cuál, como ${c.nombre}/svc-…`);
+          return { ctx, svc: svcs[0]!, cerebro: c.nombre };
+        }
+        return { ctx, svc: partido ? partido.svc : ref, cerebro: c.nombre };
+      };
+      return paridadEntre(await lado(args.viejo), await lado(args.nuevo), args.budget_tokens);
+    },
     async cruzadas(nombre?: string) {
       const { r, c } = await elegir(nombre);
       return cruzadasDe(r, c.nombre);
@@ -205,6 +226,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       "En `impacto`, `enOtrosCerebros` sigue el cambio a los cerebros que llaman a los endpoints alcanzados: sus funcionalidades y pantallas también quedan afectadas. `servicios` son llamadas que no salen de una pantalla (un job, otro back); `alcanceDeLosServicios` es lo que, en ese cerebro, llega a esas llamadas, y desde ahí el impacto sigue al salto siguiente (`salto` 2, 3…).",
       "`llamaAOtrosCerebros` son los endpoints de otro cerebro que llaman las pantallas de la respuesta: la otra mitad de la pantalla o de la funcionalidad; para ver qué ejecutan, `recorrido` con ese endpoint y `cerebro`.",
       "`conexiones` resume qué servicios de un cerebro llaman a servicios de otro.",
+      "`paridad` compara servicios de cerebros distintos: nombrá cada lado como `cerebro/svc-x`, o solo `cerebro` si tiene un único servicio. Es el caso de una migración con el sistema viejo en un cerebro y el nuevo en otro.",
       "`deriva` cruza cerebros: `atendidasEnOtrosCerebros` son llamadas de este cerebro que atiende un endpoint de otro (no son deriva); `llamadasSinEndpoint` quedan solo las que no atiende ni este cerebro ni los comunicados; un endpoint que llama otro cerebro no figura como sin llamadas, y `consumidoresIndexados` incluye a los de otros cerebros como `cerebro/servicio`.",
       "`usadoEnOtrosCerebros` son componentes de este cerebro (un sistema de diseño, una librería) que dibujan pantallas de otro cerebro: un cambio en ellos las afecta, y con ellas a sus funcionalidades. `usaDeOtrosCerebros` son los componentes de otro cerebro que dibujan las pantallas de la respuesta. `dependenDesdeOtrosCerebros`: repos de otro cerebro que declaran en su manifiesto depender de un paquete de este. Salen de los imports y los manifiestos, sin depender de la comunicación entre cerebros.",
     ].join("\n"),

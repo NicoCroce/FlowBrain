@@ -115,7 +115,8 @@ Comandos:
   impact <pieza>                           qué se ve afectado si cambia una tabla, endpoint, servicio, feat o símbolo
   risk [archivo...] [--diff <archivo|->]  alcance de un cambio: desde un diff (git diff | flowbrain risk --diff -) o archivos
          [--repo <repo-id>]                 tocados, qué funcionalidades, endpoints, pantallas, tablas y repos alcanza
-  parity <svc-viejo> <svc-nuevo>           qué falta migrar de un servicio a otro: endpoints, pantallas y tablas
+  parity <svc-viejo> <svc-nuevo>           qué falta migrar de un servicio a otro: endpoints, pantallas y tablas; con
+                                            varios cerebros cada lado puede ser cerebro/svc-x, o cerebro si tiene uno solo
   coverage                                  cuánto del código quedó conectado: pantallas con llamadas, llamadas con
                                             ruta, endpoints con método y que llegan a una tabla, accesos con columnas;
                                             más el informe de los extractores del proyecto y los controles (checks.yaml)
@@ -398,6 +399,12 @@ export async function ejecutar(
     if (comando === "connections") {
       if (!raizRegistro) throw new ConsultaError("parametro_invalido", `conexiones necesita un registro: no hay ${ARCHIVO_REGISTRO} en ${raiz}`);
       return { codigo: 0, stdout: stringifyCanonical(await crearMulti(raizRegistro, { cwd }).conexiones(o.brain)), stderr: "" };
+    }
+    if (comando === "parity" && raizRegistro) {
+      // Con un registro, cada lado puede estar en su cerebro (`cerebro/svc-x`, o `cerebro` si tiene un solo servicio).
+      if (!arg || !positionals[2]) throw new ConsultaError("parametro_invalido", "uso: flowbrain parity <viejo> <nuevo>, cada uno como svc-x, cerebro/svc-x o cerebro");
+      const b = o.budget === undefined ? undefined : o.budget === "none" ? null : entero(o.budget, "--budget");
+      return { codigo: 0, stdout: stringifyCanonical(await crearMulti(raizRegistro, { cwd }).paridad({ viejo: arg, nuevo: positionals[2], ...(b !== undefined ? { budget_tokens: b } : {}) }, o.brain)), stderr: "" };
     }
     if (raizRegistro && comando === "status" && !o.brain) {
       // Con varios cerebros y sin --brain: el estado de cada uno, en vez de pedir que elija.

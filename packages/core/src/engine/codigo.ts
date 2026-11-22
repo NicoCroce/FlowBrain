@@ -1040,18 +1040,43 @@ export interface ParidadParams {
  * fijo que el otro no (`/api`), lo descuenta. No compara comportamiento: dice qué falta y dónde difieren los datos.
  */
 export function paridad(ctx: Contexto, p: ParidadParams) {
-  for (const id of [p.viejo, p.nuevo]) if (ctx.nodo.get(id)?.tipo !== "svc") throw new ConsultaError("nodo_inexistente", `no existe el servicio: ${id}`);
+  return paridadEntre({ ctx, svc: p.viejo }, { ctx, svc: p.nuevo }, p.budget_tokens);
+}
+
+/** Un lado de la comparación: un servicio de un brain. Con `cerebro`, el servicio vive en otro cerebro que el otro lado. */
+export interface LadoParidad {
+  ctx: Contexto;
+  svc: string;
+  cerebro?: string;
+}
+
+/**
+ * La misma paridad, con cada servicio en su propio brain: el caso de una migración con el sistema viejo y el nuevo en
+ * cerebros distintos. Las tablas se comparan por nombre sin separadores, porque cada cerebro le puso su id a la página.
+ */
+export function paridadEntre(viejo: LadoParidad, nuevo: LadoParidad, budget_tokens?: number | null) {
+  const p = { viejo: viejo.svc, nuevo: nuevo.svc, budget_tokens };
+  for (const l of [viejo, nuevo]) if (l.ctx.nodo.get(l.svc)?.tipo !== "svc") throw new ConsultaError("nodo_inexistente", `no existe el servicio: ${l.svc}${l.cerebro ? ` en el cerebro ${l.cerebro}` : ""}`);
+  const entreCerebros = viejo.ctx !== nuevo.ctx;
+  // Entre cerebros, la misma tabla puede tener la página con otro id (`tabla-club-has-users` y `tabla-clubhasusers`):
+  // se compara el nombre sin separadores ni mayúsculas. En un mismo brain, el id.
+  const tabla = (id: string) => (entreCerebros ? id.replace(/^(tabla|db)-/, "").replace(/[^a-z0-9]/gi, "").toLowerCase() : id);
+  const sinPar = (xs: string[], otros: string[], clave: (x: string) => string) => {
+    const o = new Set(otros.map(clave));
+    return xs.filter((x) => !o.has(clave(x))).sort(cmp);
+  };
+  const claveAcceso = (a: string) => `${a.slice(0, a.indexOf(" "))} ${tabla(a.slice(a.indexOf(" ") + 1))}`;
   const forma = (ruta: string) => ruta.replace(/\{[^}]*\}/g, "{}").toLowerCase();
-  const piezas = (svc: string, tipo: "endpoint" | "pantalla") =>
-    (ctx.salientes.get(svc) ?? [])
-      .filter((e) => e.verbo === "contiene" && ctx.nodo.get(e.hasta)?.tipo === tipo)
+  const piezas = (l: LadoParidad, tipo: "endpoint" | "pantalla") =>
+    (l.ctx.salientes.get(l.svc) ?? [])
+      .filter((e) => e.verbo === "contiene" && l.ctx.nodo.get(e.hasta)?.tipo === tipo)
       .map((e) => {
-        const a = ctx.nodo.get(e.hasta)!.atributos as { metodo?: string; ruta: string };
+        const a = l.ctx.nodo.get(e.hasta)!.atributos as { metodo?: string; ruta: string };
         return { id: e.hasta, metodo: a.metodo ?? "", ruta: forma(a.ruta) };
       });
-  const tablasDe = (id: string) => (ctx.salientes.get(id) ?? []).filter((e) => e.verbo === "lee_de" || e.verbo === "escribe_en").map((e) => `${e.verbo} ${e.hasta}`);
+  const tablasDe = (l: LadoParidad, id: string) => (l.ctx.salientes.get(id) ?? []).filter((e) => e.verbo === "lee_de" || e.verbo === "escribe_en").map((e) => `${e.verbo} ${e.hasta}`);
   const comparar = (tipo: "endpoint" | "pantalla") => {
-    const v = piezas(p.viejo, tipo), n = piezas(p.nuevo, tipo);
+    const v = piezas(viejo, tipo), n = piezas(nuevo, tipo);
     // Prefijo fijo de un lado (`/api`): el primer segmento que comparten todas sus rutas. Se descuenta solo si así
     // coinciden más piezas que sin descontar nada.
     const comun = (xs: typeof v) => {
@@ -1069,8 +1094,8 @@ export function paridad(ctx: Contexto, p: ParidadParams) {
     const enViejo = new Map(v.map((x) => [clave(x, pv), x.id]));
     const iguales = v.filter((x) => enNuevo.has(clave(x, pv))).map((x) => ({ viejo: x.id, nuevo: enNuevo.get(clave(x, pv))! }));
     const difieren = iguales.flatMap((par) => {
-      const a = new Set(tablasDe(par.viejo)), b = new Set(tablasDe(par.nuevo));
-      const soloViejo = [...a].filter((t) => !b.has(t)).sort(cmp), soloNuevo = [...b].filter((t) => !a.has(t)).sort(cmp);
+      const a = [...new Set(tablasDe(viejo, par.viejo))], b = [...new Set(tablasDe(nuevo, par.nuevo))];
+      const soloViejo = sinPar(a, b, claveAcceso), soloNuevo = sinPar(b, a, claveAcceso);
       return soloViejo.length || soloNuevo.length ? [{ ...par, soloViejo, soloNuevo }] : [];
     });
     return {
@@ -1080,19 +1105,21 @@ export function paridad(ctx: Contexto, p: ParidadParams) {
       difierenEnTablas: difieren,
     };
   };
-  const tablasSvc = (svc: string) => new Set([svc, ...piezas(svc, "endpoint").map((x) => x.id)].flatMap((id) => (ctx.salientes.get(id) ?? []).filter((e) => e.verbo === "lee_de" || e.verbo === "escribe_en").map((e) => e.hasta)));
-  const tv = tablasSvc(p.viejo), tn = tablasSvc(p.nuevo);
+  const tablasSvc = (l: LadoParidad) => new Set([l.svc, ...piezas(l, "endpoint").map((x) => x.id)].flatMap((id) => (l.ctx.salientes.get(id) ?? []).filter((e) => e.verbo === "lee_de" || e.verbo === "escribe_en").map((e) => e.hasta)));
+  const tv = tablasSvc(viejo), tn = tablasSvc(nuevo);
   const endpoints = comparar("endpoint"), pantallas = comparar("pantalla");
   const res = {
     viejo: p.viejo,
     nuevo: p.nuevo,
+    ...(entreCerebros ? { cerebros: { viejo: viejo.cerebro ?? null, nuevo: nuevo.cerebro ?? null } } : {}),
     endpoints,
     pantallas,
-    tablasSinMigrar: [...tv].filter((t) => !tn.has(t)).sort(cmp),
+    tablasSinMigrar: sinPar([...tv], [...tn], tabla),
     avisos: [
       ...(endpoints.total.viejo + pantallas.total.viejo === 0 ? [`${p.viejo} no tiene endpoints ni pantallas indexados`] : []),
       ...(endpoints.total.nuevo + pantallas.total.nuevo === 0 ? [`${p.nuevo} no tiene endpoints ni pantallas indexados`] : []),
       "se emparejó por método y ruta: una pieza renombrada figura como faltante de un lado y nueva del otro",
+      ...(entreCerebros ? ["cada servicio está en su cerebro: las tablas se comparan por nombre, sin guiones ni mayúsculas (`tabla-club-has-users` y `tabla-clubhasusers` son la misma); una tabla renombrada figura como diferencia"] : []),
     ],
   };
   // Recorte por presupuesto: primero lo nuevo, después las diferencias, al final lo que falta (lo que más importa).

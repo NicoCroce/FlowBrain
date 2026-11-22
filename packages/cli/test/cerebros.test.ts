@@ -175,6 +175,14 @@ describe("varios cerebros por MCP", () => {
     const cli = JSON.parse((await brain(["drift", "--brain", "front"])).stdout) as Deriva;
     expect([cli.llamadasSinEndpoint.length, cli.comunicadoCon]).toEqual([0, ["back"]]);
 
+    // Paridad entre cerebros: el servicio viejo en un cerebro y el nuevo en otro. No depende de la comunicación.
+    type Paridad = { viejo: string; nuevo: string; cerebros: Record<string, string>; endpoints: { total: Record<string, number>; faltan: string[] } };
+    const par = (await llamar("paridad", { viejo: "legado/svc-tienda-vieja", nuevo: "back" })) as unknown as Paridad;
+    expect([par.viejo, par.nuevo, par.cerebros]).toEqual(["svc-tienda-vieja", "svc-tienda-api", { viejo: "legado", nuevo: "back" }]);
+    expect(par.endpoints).toMatchObject({ total: { viejo: 2, nuevo: 2, migrados: 2 }, faltan: [] });
+    expect((JSON.parse((await brain(["parity", "legado", "back/svc-tienda-api"])).stdout) as Paridad).endpoints.total).toEqual({ viejo: 2, nuevo: 2, migrados: 2 });
+    expect((await llamar("paridad", { viejo: "legado/svc-no-existe", nuevo: "back" }))["error"]).toMatchObject({ codigo: "nodo_inexistente" });
+
     // Se apaga la comunicación en el registro: sin reiniciar ni reindexar, deja de haber pistas y cruces.
     await new Promise((r) => setTimeout(r, 20));
     await registro(["comunicacion:", "  - { entre: [front, back], activa: false }"]);

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, archivosDeDiff, buscarNodo, crearContexto, deriva, paridad, riesgo, type Graph, type GraphEdge, type GraphNode, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, cobertura, leerControles, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, archivosDeDiff, buscarNodo, crearContexto, deriva, paridad, paridadEntre, riesgo, type Graph, type GraphEdge, type GraphNode, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, cobertura, leerControles, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -306,5 +306,26 @@ describe("paridad de una migración", () => {
     });
     expect(r.tablasSinMigrar).toEqual(["tabla-auditoria"]);
     expect(() => paridad(ctx2, { viejo: "svc-viejo", nuevo: "tabla-turno" })).toThrow(ConsultaError);
+  });
+
+  it("con cada servicio en su cerebro da lo mismo, y dice de qué cerebro es cada lado", () => {
+    const solo = (svc: string) => {
+      const ids = new Set([svc, "tabla-turno", "tabla-auditoria", ...eps.filter((e) => e.id.startsWith(`${svc}:`)).map((e) => e.id)]);
+      return crearContexto({ version: 1, nodes: graph.nodes.filter((n) => ids.has(n.id)), edges: graph.edges.filter((e) => ids.has(e.desde) && ids.has(e.hasta)) }, [], new Map());
+    };
+    const r = paridadEntre({ ctx: solo("svc-viejo"), svc: "svc-viejo", cerebro: "legado" }, { ctx: solo("svc-nuevo"), svc: "svc-nuevo", cerebro: "back" });
+    const junto = paridad(ctx2, { viejo: "svc-viejo", nuevo: "svc-nuevo" });
+    expect(r.endpoints).toEqual(junto.endpoints);
+    expect(r.tablasSinMigrar).toEqual(["tabla-auditoria"]);
+    expect(r).toMatchObject({ cerebros: { viejo: "legado", nuevo: "back" } });
+    expect(r.avisos.join(" ")).toContain("las tablas se comparan por nombre, sin guiones ni mayúsculas");
+    // La misma tabla con otro id de página en cada cerebro no es una diferencia.
+    const conOtroId = (g: Graph): Graph => JSON.parse(JSON.stringify(g).replaceAll("tabla-turno", "tabla-Tur_no").replaceAll("tabla-auditoria", "tabla-audi-toria")) as Graph;
+    const nuevoRenombrado = crearContexto(conOtroId({ version: 1, nodes: graph.nodes.filter((n) => !n.id.startsWith("svc-viejo")), edges: graph.edges.filter((e) => !e.desde.startsWith("svc-viejo")) }), [], new Map());
+    const rr = paridadEntre({ ctx: solo("svc-viejo"), svc: "svc-viejo", cerebro: "legado" }, { ctx: nuevoRenombrado, svc: "svc-nuevo", cerebro: "back" });
+    expect(rr.endpoints.difierenEnTablas).toEqual([{ viejo: "svc-viejo:POST:/turnos", nuevo: "svc-nuevo:POST:/api/turnos", soloViejo: ["escribe_en tabla-auditoria"], soloNuevo: [] }]);
+    expect(rr.tablasSinMigrar).toEqual(["tabla-auditoria"]);
+    expect(junto).not.toHaveProperty("cerebros");
+    expect(() => paridadEntre({ ctx: solo("svc-viejo"), svc: "svc-nuevo", cerebro: "legado" }, { ctx: solo("svc-nuevo"), svc: "svc-nuevo", cerebro: "back" })).toThrow(/no existe el servicio: svc-nuevo en el cerebro legado/);
   });
 });

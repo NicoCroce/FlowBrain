@@ -140,6 +140,8 @@ export interface Multi {
   resolver(cerebro?: string): Promise<CerebroResuelto>;
   /** Resumen de las llamadas entre el cerebro y sus vecinos. */
   conexiones(cerebro?: string): Promise<unknown>;
+  /** Paridad entre dos servicios que pueden estar en cerebros distintos (`cerebro/svc-x`). */
+  paridad(args: { viejo: string; nuevo: string; budget_tokens?: number | null }, cerebro?: string): Promise<unknown>;
 }
 
 export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): McpServer {
@@ -333,9 +335,21 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     {
       description:
         "Paridad de una migración entre dos servicios (el que se reemplaza y el que lo reemplaza): qué endpoints o pantallas ya están del otro lado, cuáles faltan, cuáles son nuevos, en cuáles difieren las tablas que tocan, y qué tablas del viejo todavía no usa el nuevo.",
-      inputSchema: { viejo: z.string().min(1).describe("id del servicio de origen"), nuevo: z.string().min(1).describe("id del servicio que lo reemplaza"), ...presupuesto, ...deCerebro },
+      inputSchema: { viejo: z.string().min(1).describe("id del servicio de origen; con varios cerebros, `cerebro/svc-x` o solo `cerebro` si tiene un único servicio"), nuevo: z.string().min(1).describe("id del servicio que lo reemplaza; igual que `viejo`"), ...presupuesto, ...deCerebro },
     },
-    async (a) => correr("paridad", a, (ctx, args) => paridad(ctx, args)),
+    async (a) => {
+      if (!multi) return correr("paridad", a, (ctx, args) => paridad(ctx, args));
+      // Con varios cerebros, cada lado puede estar en el suyo.
+      const { cerebro, ...resto } = a;
+      try {
+        const r = await multi.paridad(limpio(resto), cerebro);
+        return responder(() => r);
+      } catch (e) {
+        return responder(() => {
+          throw e;
+        });
+      }
+    },
   );
 
   server.registerTool(
