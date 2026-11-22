@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buscarNodo, cargarContexto, compileDir, impactoDe, infra, stringifyCanonical } from "@flowbrain/core";
+import { buscarNodo, cargarContexto, compileDir, deriva, impactoDe, infra, stringifyCanonical } from "@flowbrain/core";
 import { correrExtractores, endpointsAlcanzables, esquemaParser, extraccionVacia, escribirIndex, infraParser, indexar, leerRepo, openapiParser, phpParser, tsParser, type Extraccion, type ResultadoIndex } from "../src/index.js";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -69,6 +69,92 @@ describe("index → compile de punta a punta", () => {
     await compileDir(dir);
     expect(await readFile(join(dir, "_build/graph.json"), "utf8")).toBe(await readFile(F("checkout/expected/graph.json"), "utf8"));
     expect(await escribirIndex(dir, await indexar(F("repos/tienda"), dir))).toEqual([]);
+  });
+});
+
+describe("deriva compara campos (fixtures/repos/campos: axios tipado contra Express)", () => {
+  let dir: string;
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), "brain-campos-"));
+    await cp(F("campos-brain/technology"), join(dir, "technology"), { recursive: true });
+  });
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("el ts-parser registra lo que cada llamada manda, pasa por query y espera, por evidencia", async () => {
+    const r = await indexar(F("repos/campos"), dir);
+    const L = (n: number) => `repo-campos:apps/web/src/api.ts#L${n}`;
+    expect(r.campos[L(25)]).toEqual({
+      envia: { tipo: "NuevoPedido", forma: { cantidad: "number", cupon: "string", "nota?": "string", productoId: "string" } },
+      espera: { tipo: "Pedido", forma: { entregaEstimada: "string", estado: "string", id: "string", total: "number" } },
+    });
+    expect(r.campos[L(30)]!.query).toEqual({ tipo: "FiltroPedidos", forma: { "orden?": "string", pagina: "number" } });
+    expect(Object.keys(r.campos[L(30)]!.espera!.forma!)).toEqual(["items", "total"]);
+    // Un FormData no tiene campos que comparar: queda el tipo, sin forma.
+    expect(r.campos[L(35)]).toEqual({ envia: { tipo: "FormData" } });
+    // Una llamada directa sin cuerpo se sabe que no manda nada; un GET sin `params`, que no manda query.
+    expect(r.campos[L(44)]).toEqual({ envia: { tipo: "sin cuerpo", forma: {} } });
+    expect(r.campos[L(39)]!.query).toEqual({ tipo: "sin query", forma: {} });
+    // `params` en una config condicional es opcional; la query escrita en la URL también cuenta.
+    expect(r.campos[L(48)]!.query!.forma).toEqual({ "orden?": "string", q: "string", limite: "string" });
+    // Un cuerpo `x-www-form-urlencoded` armado como texto: sus claves.
+    expect(r.campos[L(53)]).toEqual({ envia: { tipo: "formulario", forma: { email: "string" } } });
+    // El `<T>` de una envoltura que lo pasa tal cual es la respuesta; el de una que desenvuelve `Envelope<T>`, no.
+    expect(r.campos[L(70)]).toBeUndefined();
+    expect(r.campos[L(71)]!.espera!.tipo).toBe("Pedido");
+    expect(Object.keys(r.campos)).toHaveLength(8);
+  });
+
+  it("deriva lista lo que se manda de más, lo requerido que falta, lo esperado que no viene y lo que no se puede comparar", async () => {
+    await escribirIndex(dir, await indexar(F("repos/campos"), dir));
+    await compileDir(dir);
+    const r = deriva(await cargarContexto(dir), { budget_tokens: null }) as unknown as {
+      campos: { llamadasUnidas: number; comparadas: number; sinDiferencias: number; conDiferencias: number; noComparables: Array<{ lado: string; motivo: string; llamadas: number; tipos?: string[] }> };
+      camposQueNoCoinciden: Array<Record<string, unknown>>;
+      avisos: string[];
+    };
+    // /buscar y /clave no tienen endpoint: no están unidas, no se comparan.
+    expect(r.campos).toMatchObject({ llamadasUnidas: 7, comparadas: 5, sinDiferencias: 1, conDiferencias: 4 });
+    expect(r.camposQueNoCoinciden).toEqual([
+      {
+        llamada: "POST /pedidos",
+        ev: "repo-campos:apps/web/src/api.ts#L25",
+        endpoint: "svc-api:POST:/pedidos",
+        evEndpoint: "repo-campos:apps/api/src/rutas.ts#L29",
+        cuerpo: { front: "NuevoPedido", back: "CrearPedido", mandaYElBackNoDeclara: ["cupon"], requeridosQueNoManda: ["direccion"] },
+        respuesta: { front: "Pedido", back: "PedidoCreado", esperaYNoViene: ["entregaEstimada"] },
+      },
+      {
+        llamada: "POST /pedidos/{id}/confirmar",
+        ev: "repo-campos:apps/web/src/api.ts#L44",
+        endpoint: "svc-api:POST:/pedidos/{id}/confirmar",
+        evEndpoint: "repo-campos:apps/api/src/rutas.ts#L55",
+        cuerpo: { front: "sin cuerpo", back: "Confirmacion", requeridosQueNoManda: ["motivo"] },
+      },
+      {
+        llamada: "GET /pedidos/{id}",
+        ev: "repo-campos:apps/web/src/api.ts#L39",
+        endpoint: "svc-api:GET:/pedidos/{id}",
+        evEndpoint: "repo-campos:apps/api/src/rutas.ts#L41",
+        respuesta: { front: "Pedido", back: "PedidoDetalle", distintoNombre: ["entregaEstimada ↔ entrega_estimada"] },
+      },
+      {
+        llamada: "GET /pedidos/{id}",
+        ev: "repo-campos:apps/web/src/api.ts#L71",
+        endpoint: "svc-api:GET:/pedidos/{id}",
+        evEndpoint: "repo-campos:apps/api/src/rutas.ts#L41",
+        respuesta: { front: "Pedido", back: "PedidoDetalle", distintoNombre: ["entregaEstimada ↔ entrega_estimada"] },
+      },
+    ]);
+    // Lo que no se compara se dice con su motivo, y no cuenta como coincidencia.
+    const motivos = r.campos.noComparables.map((n) => `${n.lado}: ${n.motivo}${n.tipos ? ` (${n.tipos.join(", ")})` : ""}`);
+    expect(motivos).toEqual([
+      "respuesta: la llamada no tipa la respuesta",
+      "cuerpo: la llamada manda un tipo sin campos que comparar (FormData)",
+      "query: el back no declara el tipo de la query",
+    ]);
+    expect(r.avisos.some((a) => a.includes("primer nivel"))).toBe(true);
   });
 });
 
@@ -1336,6 +1422,24 @@ describe("extractores del proyecto", () => {
     expect(inf.find((i) => i.extractor === "60-quitar.mjs")).toMatchObject({ aceptados: { quitar: 2 }, rechazados: 1 });
     for (const n of ["50-mas.mjs", "60-quitar.mjs"]) await rm(join(brain, "extractors/repo-pedidos", n));
     for (const n of ["src/app.dart", "src/pedidos.dart"]) await rm(join(repo, n));
+  });
+
+  it("un extractor que corrige una llamada conserva los campos del parser y puede declarar los suyos", async () => {
+    await extractor("70-campos.mjs", {
+      llamadas: [
+        { archivo: "src/repo.go", linea: 4, metodo: "POST", ruta: "/pedidos", base: "API" },
+        { archivo: "src/repo.go", linea: 3, metodo: "GET", ruta: "/pedidos", base: "API", espera: { items: "Pedido[]", "total?": "number" }, esperaTipo: "Listado", envia: ["no", "vale"] },
+      ],
+    });
+    const x = extraccionVacia("prueba");
+    // Lo que "leyó un parser" en la línea 4: con el cuerpo, pero sin la ruta.
+    x.llamadas.push({ paquete: "", archivo: "src/repo.go", linea: 4, metodo: "POST", url: { base: "dinamica", host: null, ruta: null, texto: "${u}" }, dato: "Pedido", campos: { envia: { tipo: "Pedido", forma: { estado: "string" } } } });
+    await correrExtractores(brain, "repo-pedidos", leerRepo(repo), x);
+    const por = (l: number) => x.llamadas.find((y) => y.linea === l)!;
+    expect(por(4)).toMatchObject({ url: { ruta: "/pedidos" }, campos: { envia: { tipo: "Pedido", forma: { estado: "string" } } } });
+    // `envia` que no es un objeto de textos se ignora; `espera` queda con el tipo declarado.
+    expect(por(3).campos).toEqual({ espera: { tipo: "Listado", forma: { items: "Pedido[]", "total?": "number" } } });
+    await rm(join(brain, "extractors/repo-pedidos/70-campos.mjs"));
   });
 
   it("un extractor que falla no rompe la indexación: queda anotado", async () => {

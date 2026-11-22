@@ -363,7 +363,8 @@ $ARGUMENTS
      "endpoints":    [{ "metodo": "POST", "ruta": "/api/pedidos", "archivo": "src/rutas.go", "linea": 12,
                         "handler": { "archivo": "src/pedidos/handler.go", "simbolo": "PedidosHandler.Crear" } }],
      "llamadas":     [{ "archivo": "src/api/pedidos.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" },
-                      { "archivo": "src/pagos/stripe.go", "linea": 18, "metodo": "POST", "ruta": "/v1/charges", "host": "api.stripe.com" }],
+                      { "archivo": "src/pagos/stripe.go", "linea": 18, "metodo": "POST", "ruta": "/v1/charges", "host": "api.stripe.com",
+                        "envia": { "monto": "number", "moneda": "string", "nota?": "string" }, "espera": { "id": "string" } }],
      "pantallas":    [{ "ruta": "/pedidos", "archivo": "src/rutas.tsx", "linea": 8,
                         "componente": { "archivo": "src/pedidos/Pedidos.tsx", "simbolo": "Pedidos" } }],
      "navegaciones": [{ "archivo": "src/pedidos/Pedidos.tsx", "linea": 14, "desde": "Pedidos", "ruta": "/pedidos/{id}", "tipo": "navega" }],
@@ -390,6 +391,10 @@ $ARGUMENTS
      contiene la línea o el que empieza hasta 40 líneas después.
    - Una **llamada** con \`host\` va a ese sistema (un tercero, como una pasarela de pagos, o un servicio propio por su
      nombre de host); sin \`host\`, se resuelve por la ruta contra los endpoints conocidos.
+     Con \`envia\`, \`query\` y \`espera\` (campo → tipo, \`?\` al final del campo si es opcional) dice lo que la llamada
+     manda en el cuerpo, en la query y lo que lee de la respuesta; opcional \`enviaTipo\`, \`queryTipo\`, \`esperaTipo\` con el
+     nombre del tipo. Con eso \`deriva\` compara los campos contra el tipo que declara el back. Si corregís una llamada que
+     el parser ya tipaba, sus campos se conservan.
    - Una **navegación** dice qué símbolo navega en \`desde\` (la función o el componente, el mismo nombre que en
      \`simbolos\`); si es más fácil, la ruta de la pantalla desde la que se navega (\`"/pedidos"\`). Sin \`desde\`, cuenta
      para cualquier pantalla que alcance ese archivo.

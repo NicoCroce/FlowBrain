@@ -142,6 +142,27 @@ describe("pantalla Contratos: deriva", () => {
     expect(v.cifras()[0]).toBe("1 llamadas que nadie atiende");
   });
 
+  it("muestra los campos que no coinciden, con evidencia de los dos lados, y lo que no se pudo comparar", () => {
+    const conCampos = {
+      ...deriva,
+      campos: { llamadasUnidas: 3, comparadas: 2, sinDiferencias: 1, conDiferencias: 1, noComparables: [{ lado: "cuerpo", motivo: "la llamada manda un tipo sin campos que comparar", llamadas: 1, tipos: ["FormData"] }] },
+      camposQueNoCoinciden: [{ llamada: "POST ${api}/turnos", ev: "repo-a:src/api.ts#L20", endpoint: "svc-nuevo:POST:/api/turnos", cerebro: "back", evEndpoint: "repo-b:src/turnos.ts#L8", cuerpo: { front: "NuevoTurno", back: "CrearTurno", requeridosQueNoManda: ["fecha"] }, respuesta: { front: "Turno", back: "TurnoDto", distintoNombre: ["horaInicio ↔ hora_inicio"] } }],
+    };
+    const v = montar(datosDelVisor(graph, [], undefined, conCampos));
+    expect(v.cifras()).toContain("1 con campos que no coinciden");
+    const p = v.pagina();
+    expect(p).toContain("Campos que no coinciden <small>1</small>");
+    expect(p).toContain("<code>POST ${api}/turnos</code> <small>→ <code>back/POST /api/turnos</code> · llama <code>repo-a:src/api.ts#L20</code> · atiende <code>repo-b:src/turnos.ts#L8</code></small>");
+    expect(p).toContain("Cuerpo (<code>NuevoTurno</code> → <code>CrearTurno</code>): requeridos que no manda: <code>fecha</code>");
+    expect(p).toContain("distinto nombre: <code>horaInicio ↔ hora_inicio</code>");
+    expect(p).toContain("Cuerpo: la llamada manda un tipo sin campos que comparar <small>1 llamada · <code>FormData</code></small>");
+    // Una deriva sin la comparación (calculada antes) lo dice en vez de mostrar una lista vacía.
+    expect(montar(datosDelVisor(graph, [], undefined, deriva)).pagina()).toContain("no trae la comparación de campos");
+    // Un índice anterior: el motivo se lee en la sección, no solo en los avisos.
+    const viejo = { ...conCampos, camposQueNoCoinciden: [], avisos: ["el índice de repo-a no trae los campos de las llamadas (se indexó antes de registrarlos): corré `flowbrain index`"] };
+    expect(montar(datosDelVisor(graph, [], undefined, viejo)).pagina()).toMatch(/Campos que no coinciden <small>1<\/small><\/h3><\/summary><p class="aviso">el índice de repo-a no trae los campos/);
+  });
+
   it("sin índice de código explica qué hace falta", () => {
     expect(derivaDelVisor(undefined)).toBeNull();
     expect(montar(datosDelVisor(graph)).pagina()).toContain("No hay índice de código");

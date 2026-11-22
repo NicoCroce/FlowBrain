@@ -60,7 +60,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 35 | Las consultas de la CLI cruzan cerebros | Hecho (decisión 188) |
 | 36 | Llamada interna del front y ruta comodín | Hecho (decisión 189) |
 | 37 | `riesgo` sigue tipos y constantes | Hecho (decisión 190) |
-| 38 y 39 | Otros: `deriva` por campos, `infra` | Pendiente |
+| 38 | `deriva` compara campos | Hecho (decisión 191) |
+| 39 | Otros: Kubernetes, Helm, Terraform y serverless en `infra` | Pendiente |
 | 40 a 43 | Parsers genéricos: rutas por archivo, clientes HTTP, layout y contexto, cron y gRPC | Pendiente |
 
 ---

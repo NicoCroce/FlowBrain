@@ -8,6 +8,7 @@ import {
   crucesDelRegistro,
   deriva,
   derivaCruzadaDe,
+  contratoDeEndpoint,
   impactoCruzado,
   impactoDe,
   leerRegistro,
@@ -190,8 +191,16 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
   };
 
   /** Lo que cruza de cerebro visto desde uno, para `deriva`: con los vecinos que estén compilados. */
-  const cruzadasDe = async (r: Registro, nombre: string) =>
-    derivaCruzadaDe(nombre, await crucesDe(r), (await todoDe(r)).livianos.map((l) => l.nombre).filter((n) => n !== nombre && r.comunicados(nombre, n)));
+  const cruzadasDe = async (r: Registro, nombre: string) => {
+    const vecinos = (await todoDe(r)).livianos.map((l) => l.nombre).filter((n) => n !== nombre && r.comunicados(nombre, n));
+    // El contrato de los endpoints de cada vecino, para comparar los campos de lo que este cerebro les manda.
+    const contextos = new Map<string, Contexto>();
+    for (const v of vecinos) {
+      const reg = r.cerebro(v);
+      if (reg) contextos.set(v, await cargador(reg.raiz)());
+    }
+    return { ...derivaCruzadaDe(nombre, await crucesDe(r), vecinos), contratoDe: (cerebro: string, endpoint: string) => (contextos.has(cerebro) ? contratoDeEndpoint(contextos.get(cerebro)!, endpoint) : null) };
+  };
 
   return {
     registro,
@@ -227,7 +236,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       "`llamaAOtrosCerebros` son los endpoints de otro cerebro que llaman las pantallas de la respuesta: la otra mitad de la pantalla o de la funcionalidad; para ver qué ejecutan, `recorrido` con ese endpoint y `cerebro`.",
       "`conexiones` resume qué servicios de un cerebro llaman a servicios de otro.",
       "`paridad` compara servicios de cerebros distintos: nombrá cada lado como `cerebro/svc-x`, o solo `cerebro` si tiene un único servicio. Es el caso de una migración con el sistema viejo en un cerebro y el nuevo en otro.",
-      "`deriva` cruza cerebros: `atendidasEnOtrosCerebros` son llamadas de este cerebro que atiende un endpoint de otro (no son deriva); `llamadasSinEndpoint` quedan solo las que no atiende ni este cerebro ni los comunicados; un endpoint que llama otro cerebro no figura como sin llamadas, y `consumidoresIndexados` incluye a los de otros cerebros como `cerebro/servicio`.",
+      "`deriva` cruza cerebros: `atendidasEnOtrosCerebros` son llamadas de este cerebro que atiende un endpoint de otro (no son deriva); `llamadasSinEndpoint` quedan solo las que no atiende ni este cerebro ni los comunicados; un endpoint que llama otro cerebro no figura como sin llamadas, y `consumidoresIndexados` incluye a los de otros cerebros como `cerebro/servicio`. Los campos de una llamada que atiende otro cerebro se comparan con el contrato del endpoint en ese cerebro (`camposQueNoCoinciden` trae `cerebro`).",
       "`usadoEnOtrosCerebros` son componentes de este cerebro (un sistema de diseño, una librería) que dibujan pantallas de otro cerebro: un cambio en ellos las afecta, y con ellas a sus funcionalidades. `usaDeOtrosCerebros` son los componentes de otro cerebro que dibujan las pantallas de la respuesta. `dependenDesdeOtrosCerebros`: repos de otro cerebro que declaran en su manifiesto depender de un paquete de este. Salen de los imports y los manifiestos, sin depender de la comunicación entre cerebros.",
     ].join("\n"),
     async resolver(nombre?: string): Promise<CerebroResuelto> {

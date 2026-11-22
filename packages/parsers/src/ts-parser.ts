@@ -23,6 +23,8 @@ import {
   type Simbolo,
   type ComponenteCrudo,
   type UsoDePaquete,
+  type CamposLlamada,
+  type LadoLlamada,
 } from "./tipos.js";
 
 /**
@@ -1298,17 +1300,21 @@ function extraer(repo: RepoFuente): Extraccion {
   };
 
   // ---------- Llamadas HTTP salientes: la forma de la llamada y las funciones que la envuelven ----------
-  const formaSaliente = (call: ts.CallExpression): { url: ts.Expression; base: ts.Expression | null; metodo: string; cuerpo?: ts.Expression | undefined } | null => {
+  const formaSaliente = (call: ts.CallExpression): FormaSaliente | null => {
     const c = call.expression;
     let url: ts.Expression | undefined;
     let base: ts.Expression | null = null;
     let metodo = "GET";
     let cuerpo: ts.Expression | undefined;
+    let config: ts.Expression | undefined;
+    // Se sabe qué lleva: la config está escrita en la llamada (o no hay), no viene armada de otro lado.
+    let directa = true;
     if (ts.isIdentifier(c) && c.text === "fetch" && !resolver(c)?.declarations?.length) {
       url = call.arguments[0];
       let init = call.arguments[1];
       // `fetch(url, { method: "POST", body } as any)`: las opciones también vienen envueltas en un cast.
       while (init && (ts.isAsExpression(init) || ts.isParenthesizedExpression(init) || ts.isSatisfiesExpression(init) || ts.isTypeAssertionExpression(init))) init = init.expression;
+      directa = !init || ts.isObjectLiteralExpression(init);
       if (init && ts.isObjectLiteralExpression(init)) {
         const m = propiedad(init, "method");
         if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
@@ -1320,7 +1326,10 @@ function extraer(repo: RepoFuente): Extraccion {
       base = ax.baseURL;
       metodo = c.name.text.toUpperCase();
       url = call.arguments[0];
-      if (["post", "put", "patch"].includes(c.name.text)) cuerpo = call.arguments[1];
+      const conCuerpo = ["post", "put", "patch"].includes(c.name.text);
+      if (conCuerpo) cuerpo = call.arguments[1];
+      config = call.arguments[conCuerpo ? 2 : 1];
+      directa = !call.arguments.some((a) => ts.isSpreadElement(a));
     } else if (ts.isIdentifier(c) && axiosDe(c)) {
       const cfg = call.arguments[0];
       if (!cfg || !ts.isObjectLiteralExpression(cfg)) return null;
@@ -1328,12 +1337,116 @@ function extraer(repo: RepoFuente): Extraccion {
       const m = propiedad(cfg, "method");
       if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
       cuerpo = propiedad(cfg, "data");
+      config = cfg;
     } else return null;
     // `_method` en el cuerpo de un POST (Symfony, Laravel, Rails): el back lo atiende como ese método.
     if (metodo === "POST" && cuerpo) metodo = metodoSobrescrito(cuerpo, call) ?? metodo;
-    return url ? { url, base, metodo, cuerpo } : null;
+    return url ? { url, base, metodo, cuerpo, config, directa } : null;
   };
   /** `{ _method: "PUT" }`, o un `FormData` al que la misma función le hace `.append("_method", "PUT")`. */
+  /**
+   * Lado de una llamada a partir de un tipo: su nombre y, si es un objeto con campos conocidos, sus campos de primer
+   * nivel. Lo que no tiene campos que comparar queda sin `forma`: `any`/`unknown`, primitivos, arreglos, tipos de
+   * librería (`FormData`, `Blob`, `URLSearchParams`) y objetos de claves libres (`Record<string, …>`).
+   */
+  const ladoDeTipo = (t: ts.Type, en: ts.Node, nombre: string): LadoLlamada => {
+    const tipo = nombre.length > 80 ? `${nombre.slice(0, 77)}...` : nombre;
+    const partes = (t.isUnion() ? t.types : [t]).filter((x) => !(x.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null | ts.TypeFlags.Void)));
+    const sinCampos = (x: ts.Type) => {
+      if (x.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never | ts.TypeFlags.StringLike | ts.TypeFlags.NumberLike | ts.TypeFlags.BooleanLike | ts.TypeFlags.BigIntLike | ts.TypeFlags.ESSymbolLike | ts.TypeFlags.TypeParameter)) return true;
+      if (!(x.flags & (ts.TypeFlags.Object | ts.TypeFlags.Intersection)) || checker.isArrayType(x) || checker.isTupleType(x) || checker.getIndexInfosOfType(x).length) return true;
+      const s = x.aliasSymbol ?? x.getSymbol();
+      const d = s?.declarations?.[0];
+      // Un tipo con nombre declarado fuera del repo es de una librería; un literal anónimo (`{ a: string }`) vale.
+      return !!d && !delRepo(d.getSourceFile()) && !s!.name.startsWith("__");
+    };
+    if (!partes.length || partes.some(sinCampos)) return { tipo };
+    const forma: Forma = {};
+    const opcional = new Set<string>();
+    const vistos = new Map<string, number>();
+    for (const x of partes) {
+      for (const p of checker.getPropertiesOfType(x)) {
+        if (p.flags & ts.SymbolFlags.Method || p.name.startsWith("__")) continue;
+        const pt = checker.getTypeOfSymbolAtLocation(p, en);
+        const texto = limpiar(checker.typeToString(pt));
+        vistos.set(p.name, (vistos.get(p.name) ?? 0) + 1);
+        if (p.flags & ts.SymbolFlags.Optional || (pt.isUnion() && pt.types.some((y) => y.flags & ts.TypeFlags.Undefined))) opcional.add(p.name);
+        forma[p.name] ??= /\bany\b/.test(texto) || texto.length > 80 ? "unknown" : texto;
+      }
+    }
+    // Un campo que no está en todas las variantes de una unión puede faltar.
+    for (const [k, n] of vistos) if (n < partes.length) opcional.add(k);
+    const out: Forma = {};
+    for (const k of Object.keys(forma).sort(cmp).slice(0, 60)) out[opcional.has(k) ? `${k}?` : k] = forma[k]!;
+    return { tipo, forma: out };
+  };
+  const ladoDeExpr = (e: ts.Expression): LadoLlamada => {
+    let x = e;
+    if (ts.isCallExpression(x) && x.expression.getText() === "JSON.stringify" && x.arguments[0]) x = x.arguments[0];
+    const t = checker.getTypeAtLocation(x);
+    return ladoDeTipo(t, x, nombreTipoDeExpr(x) ?? limpiar(checker.typeToString(t)));
+  };
+  /** Claves de un texto `a=1&b=${x}` (un cuerpo `x-www-form-urlencoded` o la query de una URL), si lo es. */
+  const clavesDeFormulario = (texto: string): Forma | null => {
+    if (!/^[\w.[\]-]+=/.test(texto)) return null;
+    const forma: Forma = {};
+    for (const m of texto.matchAll(/(?:^|&)([\w.[\]-]+)=/g)) forma[m[1]!] = "string";
+    return forma;
+  };
+  const sinVacio = (t: ts.Type) => (t.isUnion() ? t.types.filter((x) => !(x.flags & (ts.TypeFlags.Undefined | ts.TypeFlags.Null | ts.TypeFlags.Void))) : [t]);
+  /**
+   * Lo que una llamada manda (cuerpo), pasa por query (`params` de la config, o la query de la URL) y espera (el
+   * genérico `<T>` de la respuesta). En una llamada directa (no una envoltura) sin cuerpo ni `params`, se sabe que no
+   * manda nada: queda con forma vacía.
+   */
+  const camposDeLlamada = (call: ts.CallExpression, f: FormaSaliente): CamposLlamada | null => {
+    const c: CamposLlamada = {};
+    const conCuerpo = ["POST", "PUT", "PATCH"].includes(f.metodo);
+    if (f.cuerpo) {
+      const t = checker.getTypeAtLocation(f.cuerpo);
+      const texto = ts.isStringLiteralLike(f.cuerpo) ? f.cuerpo.text : ts.isTemplateExpression(f.cuerpo) ? f.cuerpo.getText().slice(1, -1) : null;
+      const formulario = texto !== null ? clavesDeFormulario(texto) : null;
+      if (formulario) c.envia = { tipo: "formulario", forma: formulario };
+      else if (!sinVacio(t).length) {
+        if (conCuerpo && f.directa) c.envia = { tipo: "sin cuerpo", forma: {} };
+      } else c.envia = ladoDeExpr(f.cuerpo);
+    } else if (conCuerpo && f.directa) c.envia = { tipo: "sin cuerpo", forma: {} };
+    // `params` de la config: por su tipo, así vale también una variable o un `cond ? { params } : undefined`.
+    const enUrl = /\?(.*)$/.exec(f.url.getText().replace(/^[`'"]|[`'"]$/g, ""))?.[1];
+    const deUrl = enUrl ? clavesDeFormulario(enUrl) : null;
+    let query: LadoLlamada | null = null;
+    if (f.config) {
+      const tc = checker.getTypeAtLocation(f.config);
+      const partes = sinVacio(tc);
+      const conParams = partes.map((x) => x.getProperty("params")).filter((x): x is ts.Symbol => !!x);
+      if (conParams.length) {
+        const lados = conParams.map((x) => {
+          const t = checker.getTypeOfSymbolAtLocation(x, f.config!);
+          return ladoDeTipo(t, f.config!, limpiar(checker.typeToString(t)));
+        });
+        const params = ts.isObjectLiteralExpression(f.config) ? propiedad(f.config, "params") : undefined;
+        const tipo = (params ? nombreTipoDeExpr(params) : null) ?? lados[0]!.tipo;
+        if (lados.some((l) => !l.forma)) query = { tipo };
+        else {
+          const forma: Forma = {};
+          for (const l of lados) for (const [k, v] of Object.entries(l.forma!)) forma[k] ??= v;
+          // Si alguna variante de la config no lleva `params` (`cond ? { params } : undefined`), ningún campo es seguro.
+          // (sin `strictNullChecks` el `undefined` no queda en el tipo: también se mira la forma de la expresión).
+          let e: ts.Expression = f.config;
+          while (ts.isParenthesizedExpression(e) || ts.isAsExpression(e)) e = e.expression;
+          const condicional = ts.isConditionalExpression(e) || (ts.isBinaryExpression(e) && [ts.SyntaxKind.AmpersandAmpersandToken, ts.SyntaxKind.BarBarToken, ts.SyntaxKind.QuestionQuestionToken].includes(e.operatorToken.kind));
+          const opcional = condicional || conParams.length < (tc.isUnion() ? tc.types.length : 1);
+          query = { tipo, forma: opcional ? Object.fromEntries(Object.entries(forma).map(([k, v]) => [k.endsWith("?") ? k : `${k}?`, v])) : forma };
+        }
+      } else if (partes.every((x) => !(x.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)))) query = { tipo: "sin query", forma: {} };
+    } else if (f.directa) query = { tipo: "sin query", forma: {} };
+    if (deUrl) query = { tipo: query?.forma && Object.keys(query.forma).length ? query.tipo : "query de la URL", forma: { ...(query?.forma ?? {}), ...deUrl } };
+    if (query && (query.tipo !== "sin query" || f.metodo === "GET")) c.query = query;
+    // El `<T>` de una envoltura que lo transforma (`Envelope<T>` → `data.data`) no es la respuesta HTTP: no se usa.
+    const gen = f.directa || f.generico ? call.typeArguments?.[0] : undefined;
+    if (gen) c.espera = ladoDeTipo(checker.getTypeFromTypeNode(gen), gen, limpiar(gen.getText()));
+    return c.envia || c.query || c.espera ? c : null;
+  };
   const metodoSobrescrito = (cuerpo: ts.Expression, call: ts.Node): string | null => {
     let c: ts.Expression = cuerpo;
     while (ts.isAsExpression(c) || ts.isParenthesizedExpression(c)) c = c.expression;
@@ -1369,8 +1482,19 @@ function extraer(repo: RepoFuente): Extraccion {
    * Funciones del repo que envuelven una llamada HTTP pasándole la URL que reciben por parámetro
    * (`const get = (url) => cliente.get(url)`): la llamada real, con su ruta, está en quien las invoca.
    */
-  const envolturas = new Map<ts.Node, { idx: number; metodo: string; base: ts.Expression | null }>();
-  const envolturaDe = (call: ts.CallExpression): { idx: number; metodo: string; base: ts.Expression | null } | null => {
+  /**
+   * Una envoltura del repo: qué argumento es la URL, con qué método y base. `generico`: su `<T>` llega tal cual al
+   * cliente HTTP (`get<T>(url) { return axios.get<T>(url) }`), así que es el tipo de la respuesta; si lo envuelve
+   * (`axios.get<Envelope<T>>` y devuelve `data.data`), no lo es.
+   */
+  type Envoltura = { idx: number; metodo: string; base: ts.Expression | null; generico: boolean };
+  const envolturas = new Map<ts.Node, Envoltura>();
+  const genericoPropio = (call: ts.CallExpression) => {
+    const g = call.typeArguments?.[0];
+    const d = g && ts.isTypeReferenceNode(g) ? checker.getSymbolAtLocation(g.typeName)?.declarations?.[0] : undefined;
+    return !!d && ts.isTypeParameterDeclaration(d);
+  };
+  const envolturaDe = (call: ts.CallExpression): Envoltura | null => {
     if (!envolturas.size) return null;
     const c = call.expression;
     const nombre = ts.isIdentifier(c) ? c : ts.isPropertyAccessExpression(c) ? c.name : null;
@@ -1388,7 +1512,7 @@ function extraer(repo: RepoFuente): Extraccion {
           const url = f ? f.url : e ? n.arguments[e.idx] : undefined;
           const p = url ? parametroDe(url) : null;
           if (p && !envolturas.has(p.fn)) {
-            envolturas.set(p.fn, { idx: p.idx, metodo: f ? f.metodo : e!.metodo, base: f ? f.base : e!.base });
+            envolturas.set(p.fn, { idx: p.idx, metodo: f ? f.metodo : e!.metodo, base: f ? f.base : e!.base, generico: genericoPropio(n) && (f ? true : e!.generico) });
             nuevas++;
           }
         }
@@ -1651,14 +1775,15 @@ function extraer(repo: RepoFuente): Extraccion {
 
     // Salientes: fetch(url, init), axios.m(url, body), axios(config), instancia.m(url, body), y las funciones del
     // repo que envuelven alguna de esas pasándole la URL que reciben.
-    const emitir = (call: ts.CallExpression, f: { url: ts.Expression; base: ts.Expression | null; metodo: string; cuerpo?: ts.Expression | undefined }): boolean => {
+    const emitir = (call: ts.CallExpression, f: FormaSaliente): boolean => {
       let partes = evaluar(f.url);
       const primera = partes[0];
       const absoluta = primera && "lit" in primera && /^https?:\/\//.test(primera.lit);
       if (f.base && !absoluta) partes = [...evaluar(f.base), ...partes];
       // Una URL que no se puede analizar igual es una llamada HTTP: queda sin ruta, para que se vea que falta.
       const u = analizarUrl(partes) ?? { base: "dinamica" as const, host: null, ruta: null, texto: f.url.getText().replace(/\s+/g, " ").slice(0, 80) };
-      const llamada: LlamadaCruda = { paquete, archivo, linea: linea(call), metodo: f.metodo, url: u, dato: f.cuerpo ? nombreTipoDeExpr(f.cuerpo) : null };
+      const campos = camposDeLlamada(call, f);
+      const llamada: LlamadaCruda = { paquete, archivo, linea: linea(call), metodo: f.metodo, url: u, dato: f.cuerpo ? nombreTipoDeExpr(f.cuerpo) : null, ...(campos ? { campos } : {}) };
       out.llamadas.push(llamada);
       return true;
     };
@@ -1673,7 +1798,7 @@ function extraer(repo: RepoFuente): Extraccion {
       if (!e) return false;
       const url = call.arguments[e.idx];
       if (!url || parametroDe(url)) return !!url;
-      return emitir(call, { url, base: e.base, metodo: e.metodo });
+      return emitir(call, { url, base: e.base, metodo: e.metodo, generico: e.generico });
     };
 
     // Prisma: x.<modelo>.<op>(…)
@@ -1768,6 +1893,19 @@ function extraer(repo: RepoFuente): Extraccion {
   });
   ordenar(out);
   return out;
+}
+
+/** Una llamada HTTP saliente reconocida: URL, base, método, y el cuerpo y la config (axios) si los tiene. */
+interface FormaSaliente {
+  url: ts.Expression;
+  base: ts.Expression | null;
+  metodo: string;
+  cuerpo?: ts.Expression | undefined;
+  config?: ts.Expression | undefined;
+  /** Llamada directa al cliente HTTP (no una envoltura del repo): lo que no lleva, se sabe que no lo manda. */
+  directa?: boolean;
+  /** Envoltura cuyo `<T>` llega tal cual al cliente: es el tipo de la respuesta. */
+  generico?: boolean;
 }
 
 function propiedad(o: ts.ObjectLiteralExpression, nombre: string): ts.Expression | undefined {

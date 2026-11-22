@@ -1,6 +1,6 @@
 import { cmp } from "../canonical.js";
 import { capaDe, ES_TEST, type Ficha } from "../funcionalidades.js";
-import { dentroDe, type Graph } from "../schema.js";
+import { dentroDe, type Contrato, type Graph } from "../schema.js";
 import { ajustarLista, crearIndiceCodigo, pantallasSinLlamadas } from "./codigo.js";
 import { crearContexto, type Contexto } from "./contexto.js";
 import { ConsultaError, normalizar } from "./herramientas.js";
@@ -145,7 +145,7 @@ export interface OpcionesFidelidad {
 }
 
 /** Un contexto con índice de código desde los contenidos de `_build`, para quien no tiene uno armado (el visor). */
-export const contextoDeFuentes = (graph: Graph, fichas: Ficha[], archivos: string[], extracciones: string[]): Contexto => crearContexto(graph, [], new Map(), crearIndiceCodigo(graph, fichas, archivos, extracciones));
+export const contextoDeFuentes = (graph: Graph, fichas: Ficha[], archivos: string[], extracciones: string[], contratos: Contrato[] = []): Contexto => crearContexto(graph, contratos, new Map(), crearIndiceCodigo(graph, fichas, archivos, extracciones));
 
 /** Lo mismo que `fidelidadDeArchivos`, desde los contenidos de `_build` (para quien no tiene un contexto armado). */
 export function fidelidadDeFuentes(graph: Graph, fichas: Ficha[], archivos: string[], extracciones: string[], opciones: OpcionesFidelidad = {}) {

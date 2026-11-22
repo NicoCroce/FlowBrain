@@ -128,6 +128,25 @@ export interface LlamadaCruda {
   url: UrlAnalizada;
   /** Nombre del tipo del cuerpo enviado, si se puede determinar. */
   dato: string | null;
+  /** Lo que la llamada manda y espera, campo por campo, si el parser lo determina (lo compara `deriva` con el back). */
+  campos?: CamposLlamada;
+}
+
+/**
+ * Un lado de lo que una llamada manda o espera: el tipo con que el código lo nombra y, si es un objeto, sus campos de
+ * primer nivel (`nombre` → tipo; la clave termina en `?` si es opcional). Sin `forma`, el tipo no tiene campos que
+ * comparar (`FormData`, `string`, `any`, un arreglo).
+ */
+export interface LadoLlamada {
+  tipo: string;
+  forma?: Forma;
+}
+
+/** Cuerpo (`envia`), parámetros de query (`query`) y tipo con que se lee la respuesta (`espera`). Ausente = no se sabe. */
+export interface CamposLlamada {
+  envia?: LadoLlamada;
+  query?: LadoLlamada;
+  espera?: LadoLlamada;
 }
 
 export interface AccesoTabla {

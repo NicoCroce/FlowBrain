@@ -69,6 +69,9 @@ export interface DerivaVisor {
   comunicadoCon?: string[];
   atendidasEnOtrosCerebros?: Array<{ cerebro: string; llamadas: number; endpoints: number }>;
   disputadasEntreCerebros?: Array<{ desde: string; llamada: string; ev: string; candidatos: string[] }>;
+  /** Comparación de campos (ausente en una deriva calculada antes de que existiera). */
+  campos?: { llamadasUnidas: number; comparadas: number; sinDiferencias: number; conDiferencias: number; noComparables: Array<{ lado: string; motivo: string; llamadas: number; tipos?: string[] }> };
+  camposQueNoCoinciden?: Array<{ llamada: string; ev: string; endpoint: string; cerebro?: string; evEndpoint: string } & Partial<Record<"cuerpo" | "query" | "respuesta", Record<string, unknown>>>>;
   avisos: string[];
 }
 
@@ -82,6 +85,9 @@ export function derivaDelVisor(d: DerivaVisor | undefined) {
     atendidas: (d.atendidasEnOtrosCerebros ?? []).map((x) => ({ cerebro: x.cerebro, llamadas: x.llamadas, endpoints: x.endpoints })),
     sinLlamadas: d.endpointsSinLlamadasDetectadas.map((x) => ({ e: x.endpoint, ev: x.ev })),
     consumidores: d.consumidoresIndexados,
+    // Campos: `null` si la deriva no los trae. l: llamada, ev, e: endpoint, c: cerebro, eb: evidencia del endpoint.
+    campos: d.campos ?? null,
+    difieren: (d.camposQueNoCoinciden ?? []).map((x) => ({ l: x.llamada, ev: x.ev, e: x.endpoint, ...(x.cerebro ? { c: x.cerebro } : {}), eb: x.evEndpoint, ...(x.cuerpo ? { cuerpo: x.cuerpo } : {}), ...(x.query ? { query: x.query } : {}), ...(x.respuesta ? { respuesta: x.respuesta } : {}) })),
     // `null`: no se cruzó con otros cerebros (un brain solo). Vacío: se cruzó y no tiene comunicación con ninguno.
     comunicadoCon: d.comunicadoCon ?? null,
     avisos: d.avisos,

@@ -4,7 +4,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { cmp } from "@flowbrain/core";
-import { paqueteDe, type Extraccion, type RepoFuente } from "./tipos.js";
+import { paqueteDe, type CamposLlamada, type Extraccion, type Forma, type RepoFuente } from "./tipos.js";
 
 /**
  * Extractores del proyecto: programas chicos, escritos para un repo en particular (por una persona o por un modelo que
@@ -22,7 +22,7 @@ import { paqueteDe, type Extraccion, type RepoFuente } from "./tipos.js";
  *   "invocaciones": [{ "desde": { "archivo": "…", "simbolo": "…" }, "hacia": { "archivo": "…", "simbolo": "…" }, "linea": 27 }],
  *   "referencias":  [{ "desde": { "archivo": "src/Pedidos.go", "simbolo": "PedidosHandler.Crear" }, "hacia": { "archivo": "src/tipos.go", "simbolo": "EstadoPedido" }, "linea": 30 }],
  *   "endpoints":    [{ "metodo": "POST", "ruta": "/pedidos", "archivo": "src/rutas.go", "linea": 12, "handler": { "archivo": "src/Pedidos.go", "simbolo": "PedidosHandler.Crear" } }],
- *   "llamadas":     [{ "archivo": "src/api.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" }, { "archivo": "…", "linea": 9, "metodo": "POST", "ruta": "/v1/charges", "host": "api.stripe.com" }],
+ *   "llamadas":     [{ "archivo": "src/api.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" }, { "archivo": "…", "linea": 9, "metodo": "POST", "ruta": "/v1/charges", "host": "api.stripe.com", "envia": { "monto": "number", "nota?": "string" }, "espera": { "id": "string" } }],
  *   "pantallas":    [{ "ruta": "/pedidos", "archivo": "src/rutas.tsx", "linea": 8, "componente": { "archivo": "…", "simbolo": "Pedidos" } }],
  *   "navegaciones": [{ "archivo": "…", "linea": 14, "desde": "PedidosPage.irAlDetalle", "ruta": "/pedidos/{id}", "tipo": "navega" }],
  *   "eventos":      [{ "archivo": "…", "linea": 50, "nombre": "pago.confirmado", "direccion": "publica" }],
@@ -119,6 +119,8 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
   const informes: InformeExtractor[] = [];
   // Lo que vino de los parsers: es lo único que un extractor puede corregir o quitar.
   const delParser = { llamadas: new Set(x.llamadas), pantallas: new Set(x.pantallas), navegaciones: new Set(x.navegaciones), endpoints: new Set(x.endpoints), tablas: new Set(x.tablas), eventos: new Set(x.eventos ?? []) };
+  /** Campos que el parser vio en una línea que un extractor corrige, para no perderlos al reemplazar la llamada. */
+  const camposPrevios = new Map<string, CamposLlamada>();
   /** Líneas que algún extractor ya corrigió: la segunda llamada en la misma línea se suma a la primera. */
   const corregidas = new Set<string>();
 
@@ -226,14 +228,23 @@ export async function correrExtractores(raizBrain: string, repoId: string, repo:
       const l = { archivo: d["archivo"] as string, linea: d["linea"] as number, metodo: (d["metodo"] as string).toUpperCase(), ruta: d["ruta"] as string };
       const base = esTexto(d["base"]) ? d["base"] : null;
       const host = esTexto(d["host"]) ? (d["host"] as string).replace(/^[a-z]+:\/\//i, "").replace(/[/:].*$/, "").toLowerCase() : null;
-      // Reemplaza a las que el parser haya dejado en esa línea, con o sin ruta: el extractor leyó mejor.
+      // Reemplaza a las que el parser haya dejado en esa línea, con o sin ruta: el extractor leyó mejor. Lo que el
+      // parser supo de sus campos (cuerpo, query, respuesta) se conserva si el extractor no dice otra cosa.
       const clave = `${l.archivo}#${l.linea}`;
+      const previos = x.llamadas.find((y) => delParser.llamadas.has(y) && y.archivo === l.archivo && y.linea === l.linea)?.campos ?? camposPrevios.get(clave);
+      if (previos) camposPrevios.set(clave, previos);
       if (!corregidas.has(clave)) {
         corregidas.add(clave);
         x.llamadas = x.llamadas.filter((y) => !(delParser.llamadas.has(y) && y.archivo === l.archivo && y.linea === l.linea));
       }
+      const propios: CamposLlamada = {};
+      for (const k of ["envia", "query", "espera"] as const) {
+        const f = d[k];
+        if (f && typeof f === "object" && !Array.isArray(f) && Object.values(f).every(esTexto)) propios[k] = { tipo: esTexto(d[`${k}Tipo`]) ? (d[`${k}Tipo`] as string) : "declarado por extractor", forma: f as Forma };
+      }
+      const campos = { ...previos, ...propios };
       if (!x.llamadas.some((y) => y.archivo === l.archivo && y.linea === l.linea && y.metodo === l.metodo && y.url.ruta === l.ruta)) {
-        x.llamadas.push({ paquete: paqueteDe(repo, l.archivo), ...l, url: host ? { base: "literal", host, ruta: l.ruta, texto: `https://${host}${l.ruta}` } : { base: base ? "dinamica" : "relativa", host: null, ruta: l.ruta, texto: base ? `\${${base}}${l.ruta}` : l.ruta }, dato: null });
+        x.llamadas.push({ paquete: paqueteDe(repo, l.archivo), ...l, url: host ? { base: "literal", host, ruta: l.ruta, texto: `https://${host}${l.ruta}` } : { base: base ? "dinamica" : "relativa", host: null, ruta: l.ruta, texto: base ? `\${${base}}${l.ruta}` : l.ruta }, dato: null, ...(Object.keys(campos).length ? { campos } : {}) });
       }
       inf.aceptados.llamadas++;
     }

@@ -119,6 +119,41 @@ describe("consultas de código", () => {
     expect(deriva(ctx, {})).not.toHaveProperty("atendidasEnOtrosCerebros");
   });
 
+  it("deriva compara campos de una llamada que atiende otro cerebro, con el contrato de ese cerebro", () => {
+    const L8 = "repo-tienda:apps/web/src/api/checkout.ts#L8";
+    const L30 = "repo-tienda:apps/web/src/api/checkout.ts#L30";
+    type R = { campos: { llamadasUnidas: number; comparadas: number; noComparables: Array<{ lado: string; motivo: string; llamadas: number }> }; camposQueNoCoinciden: Array<Record<string, unknown>>; avisos: string[] };
+    // El índice viejo (sin `campos`) no compara: lo dice y pide reindexar.
+    const viejo = deriva(ctx, { budget_tokens: null }) as unknown as R;
+    expect(viejo.campos.comparadas).toBe(0);
+    expect(viejo.avisos.join(" ")).toContain("el índice de repo-tienda no trae los campos de las llamadas");
+    const extraccion = JSON.stringify({
+      ...JSON.parse(extraccionCheckout),
+      campos: {
+        [L8]: { envia: { tipo: "CheckoutRequest", forma: { carritoId: "string", medioDePago: "string" } }, espera: { tipo: "Confirmacion", forma: { pedidoId: "string", estado: "string", recibo: "string" } } },
+        [L30]: { query: { tipo: "Filtro", forma: { desde: "string" } }, espera: { tipo: "Resumen", forma: { total: "number", "items?": "unknown[]" } } },
+      },
+    });
+    const nuevo = contextoDeSalidas(salidasCheckout, contratosCheckout, { archivos: archivosCheckout, extracciones: [extraccion] });
+    const vacio = { vecinos: ["otro"], entrantes: new Map(), disputadas: new Map() };
+    const salientes = new Map([[L30, { cerebro: "otro", endpoint: "svc-x:GET:/checkout" }]]);
+    const contrato = { ev: "repo-otro:src/checkout.ts#L5", request: null, response: "ResumenDto | Vacio", query: "FiltroDto", tipos: { ResumenDto: { total: "number" }, Vacio: { ok: "boolean" }, FiltroDto: { desde: "string", hasta: "string" } } };
+    const r = deriva(nuevo, { budget_tokens: null, cruzadas: { ...vacio, salientes, contratoDe: (c, e) => (c === "otro" && e === "svc-x:GET:/checkout" ? contrato : null) } }) as unknown as R;
+    // En este cerebro (L8, contra el contrato del bff) y en el otro (L30, contra el contrato que da `contratoDe`).
+    expect(r.campos).toMatchObject({ llamadasUnidas: 3, comparadas: 2 });
+    expect(r.camposQueNoCoinciden).toEqual([
+      { llamada: "GET ${base}/checkout", ev: L30, endpoint: "svc-x:GET:/checkout", cerebro: "otro", evEndpoint: contrato.ev, query: { front: "Filtro", back: "FiltroDto", requeridosQueNoManda: ["hasta"] }, respuesta: { front: "Resumen", back: "ResumenDto | Vacio", opcionalesQueNoVienen: ["items"] } },
+      { llamada: "POST /checkout", ev: L8, endpoint: "svc-bff:POST:/checkout", evEndpoint: "repo-tienda:apps/bff/src/routes/checkout.ts#L14", respuesta: { front: "Confirmacion", back: "CheckoutResponse", esperaYNoViene: ["recibo"] } },
+    ]);
+    // La llamada del bff al servicio de pagos no tiene campos registrados: no se compara, y se dice.
+    expect(r.campos.noComparables.find((n) => n.lado === "cuerpo")).toMatchObject({ motivo: "no se sabe qué cuerpo manda la llamada", llamadas: 1 });
+    // Sin el contrato del otro cerebro, esa llamada no se compara: no es coincidencia.
+    const sin = deriva(nuevo, { budget_tokens: null, cruzadas: { ...vacio, salientes } }) as unknown as R;
+    expect(sin.campos.comparadas).toBe(1);
+    expect(sin.campos.noComparables.map((n) => n.motivo)).toContain("no se cargó el contrato del endpoint en otro");
+    expect(sin.avisos.join(" ")).not.toContain("no trae los campos");
+  });
+
   it("riesgo: de un diff a los métodos que cambian, quién los llama y lo que queda alcanzado", () => {
     const diff = ["diff --git a/apps/bff/src/clients/payments.ts b/apps/bff/src/clients/payments.ts", "--- a/apps/bff/src/clients/payments.ts", "+++ b/apps/bff/src/clients/payments.ts", "@@ -11,2 +11,3 @@ export async function crearPago", "-  viejo", "+  nuevo", "+  otro"].join("\n");
     expect(archivosDeDiff(diff)).toEqual([{ ruta: "apps/bff/src/clients/payments.ts", rangos: [[11, 13]] }]);

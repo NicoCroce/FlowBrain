@@ -1,7 +1,8 @@
 /**
  * "Contratos" (`#/contratos`): dos controles sobre lo que los servicios se prometen entre sí.
  * - Deriva: llamadas que nadie atiende y endpoints que nadie llama, por cerebro. Viene calculada por el motor (con los
- *   cruces entre cerebros): lo que atiende o llama otro cerebro comunicado no es deriva, y se muestra aparte.
+ *   cruces entre cerebros): lo que atiende o llama otro cerebro comunicado no es deriva, y se muestra aparte. También
+ *   los campos de cada llamada unida que no coinciden con lo que declara el endpoint, y lo que no se pudo comparar.
  * - Paridad: se eligen dos servicios (el que se reemplaza y el que lo reemplaza, del mismo cerebro o de dos) y se ve qué
  *   ya está del otro lado, qué falta y dónde difieren las tablas. Se calcula acá, con la misma regla que `paridad` del
  *   motor: método y ruta sin el nombre de los parámetros, prefijo fijo descontado, y entre cerebros las tablas por
@@ -78,7 +79,8 @@ export const CONTRATOS_JS = String.raw`
     var cifras = '<div class="fd-cifras">' + cifra(d.sinEndpoint.length, "llamadas que nadie atiende", d.sinEndpoint.length ? "var(--dudoso)" : "var(--tabla)") +
       (d.comunicadoCon ? cifra(atendidas, "llamadas que atiende otro cerebro") : "") +
       (d.disputadas.length ? cifra(d.disputadas.length, "en disputa entre cerebros", "var(--feat)") : "") +
-      cifra(d.sinLlamadas.length, "endpoints que nadie llama", d.sinLlamadas.length ? "var(--feat)" : "") + "</div>";
+      cifra(d.sinLlamadas.length, "endpoints que nadie llama", d.sinLlamadas.length ? "var(--feat)" : "") +
+      (d.campos && d.campos.llamadasUnidas ? cifra(d.campos.conDiferencias, "con campos que no coinciden", d.campos.conDiferencias ? "var(--dudoso)" : "var(--tabla)") : "") + "</div>";
     var cruce = d.comunicadoCon === null ? ""
       : d.comunicadoCon.length ? '<p class="subtitulo">Cruzado con ' + d.comunicadoCon.map(esc).join(", ") + ": lo que atiende o llama uno de esos cerebros no cuenta como deriva.</p>"
       : '<p class="aviso">Este cerebro no tiene la comunicación activa con ningún otro: todo lo que llame afuera figura como sin endpoint. Se activa en <code>flowbrain.yaml</code> (<code>comunicacion</code>).</p>';
@@ -114,12 +116,38 @@ export const CONTRATOS_JS = String.raw`
     var sinLlHtml = svcs.length ? "<p><small>Candidatos a borrar, o llamados por algo que no está indexado. Antes de borrar uno, revisá su impacto.</small></p>" + porSvc
       : '<p class="aviso">Este cerebro no tiene servicios con endpoints: no hay nada que alguien pueda dejar de llamar.</p>';
 
+    // Campos: lo que cada llamada unida manda y espera contra lo que declara el endpoint.
+    var ETIQUETAS = { mandaYElBackNoDeclara: "manda y el back no declara", requeridosQueNoManda: "requeridos que no manda", opcionalesQueElBackRequiere: "manda como opcionales y el back los requiere", esperaYNoViene: "espera y no vienen", opcionalesQueNoVienen: "opcionales que no vienen", distintoNombre: "distinto nombre" };
+    var LADOS = { cuerpo: "Cuerpo", query: "Query", respuesta: "Respuesta" };
+    var camposHtml;
+    if (!d.campos) camposHtml = '<p class="aviso">Esta deriva no trae la comparación de campos: recompilá con una versión nueva de FlowBrain.</p>';
+    else if (!d.campos.llamadasUnidas) camposHtml = '<p class="aviso">Ninguna llamada de este cerebro está unida a un endpoint, así que no hay campos que comparar.</p>';
+    else {
+      var dif = d.difieren.filter(function (x) { return contiene(x.l + " " + x.ev + " " + x.e + " " + JSON.stringify([x.cuerpo, x.query, x.respuesta]), q); });
+      var resumen = "<p><small>" + plural(d.campos.llamadasUnidas, "llamada unida", "llamadas unidas") + " a un endpoint; " + plural(d.campos.comparadas, "se comparó", "se compararon") + " (" + d.campos.sinDiferencias.toLocaleString("es") + " sin diferencias). Se compara el primer nivel del objeto, por nombre.</small></p>";
+      var filas = dif.length ? listaCortada("campos", dif, function (x) {
+        var notas = ["cuerpo", "query", "respuesta"].filter(function (k) { return x[k]; }).map(function (k) {
+          var o = x[k];
+          var partes = Object.keys(ETIQUETAS).filter(function (e) { return o[e]; }).map(function (e) { return ETIQUETAS[e] + ": " + o[e].map(function (c) { return "<code>" + esc(c) + "</code>"; }).join(", "); });
+          return '<div class="fd-nota">' + LADOS[k] + " (<code>" + esc(o.front) + "</code> → <code>" + esc(o.back) + "</code>): " + partes.join(" · ") + "</div>";
+        }).join("");
+        return "<li><code>" + esc(x.l) + "</code> <small>→ <code>" + esc(x.c ? x.c + "/" + pieza(x.e) : pieza(x.e)) + "</code> · llama <code>" + esc(x.ev) + "</code> · atiende <code>" + esc(x.eb) + "</code></small>" + notas + "</li>";
+      }) : d.difieren.length ? '<p class="aviso">Ninguna coincide con «' + esc(S.q.trim()) + "».</p>" : d.campos.comparadas ? '<p class="fd-ok">En lo que se pudo comparar, lo que se manda y se espera coincide con lo que declara el back.</p>' : "";
+      var noComp = d.campos.noComparables.length
+        ? '<h4>No se pudieron comparar <small>no cuentan como coincidencia</small></h4><ul class="lista">' + d.campos.noComparables.map(function (n) { return "<li>" + LADOS[n.lado] + ": " + esc(n.motivo) + " <small>" + plural(n.llamadas, "llamada", "llamadas") + (n.tipos ? " · " + n.tipos.map(function (t) { return "<code>" + esc(t) + "</code>"; }).join(", ") : "") + "</small></li>"; }).join("") + "</ul>"
+        : "";
+      // Un índice anterior no trae lo que manda cada llamada: que se lea acá, no solo en los avisos.
+      var viejo = d.avisos.filter(function (a) { return a.indexOf("no trae los campos") >= 0; });
+      camposHtml = (viejo.length ? '<p class="aviso">' + esc(viejo[0]) + "</p>" : "") + resumen + filas + noComp;
+    }
+
     var avisos = d.avisos.length ? seccion("Lo que no se pudo medir", d.avisos.length, '<ul class="lista">' + d.avisos.map(function (a) { return "<li><small>" + esc(a) + "</small></li>"; }).join("") + "</ul>", false) : "";
     return selector + cruce + cifras + buscador("Buscar una ruta, un servicio o un archivo…") +
       seccion("Llamadas que nadie atiende", d.sinEndpoint.length, sinEpHtml, true) +
       (atHtml ? seccion("Las atiende otro cerebro", atendidas, "<p><small>No son deriva: están unidas a un endpoint de un cerebro comunicado.</small></p>" + atHtml, false) : "") +
       (dispHtml ? seccion("Coinciden con varios endpoints", d.disputadas.length + d.ambiguas.length, dispHtml, true) : "") +
-      seccion("Endpoints que nadie llama", d.sinLlamadas.length, sinLlHtml, true) + avisos;
+      seccion("Endpoints que nadie llama", d.sinLlamadas.length, sinLlHtml, true) +
+      seccion("Campos que no coinciden", d.campos ? d.campos.conDiferencias : 0, camposHtml, true) + avisos;
   }
 
   // ---------- Paridad ----------

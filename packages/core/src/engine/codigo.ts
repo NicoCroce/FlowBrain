@@ -58,6 +58,25 @@ export interface IndiceCodigo {
   llamadasPendientes: Array<{ desde: string; referencia: string; motivo: string; evidencia: string; candidatos: number; llamada?: { metodo: string; ruta: string | null; base: string } }>;
   /** Archivo (`repo:ruta`) → cuánto de lo que el índice vio ahí quedó unido: lo usa `fidelidad`. */
   porArchivo: Map<string, DatosArchivo>;
+  /** Llamadas HTTP unidas a un endpoint de este brain, una por evidencia. */
+  llamadasUnidas: Array<{ desde: string; endpoint: string; evidencia: string }>;
+  /** Evidencia de una llamada → lo que manda y espera, campo por campo (`campos` de la extracción). */
+  camposDeLlamada: Map<string, CamposDeLlamada>;
+  /** Repos cuya extracción no trae `campos` (indexados antes de registrarlos). */
+  sinCampos: Set<string>;
+}
+
+/** Un lado de una llamada: el tipo con que la nombra el código y sus campos de primer nivel, si es un objeto. */
+export interface LadoDeLlamada {
+  tipo: string;
+  forma?: Record<string, string>;
+}
+
+/** Lo que una llamada manda (`envia`), pasa por query (`query`) y espera de la respuesta (`espera`). */
+export interface CamposDeLlamada {
+  envia?: LadoDeLlamada;
+  query?: LadoDeLlamada;
+  espera?: LadoDeLlamada;
 }
 
 /** Lo que sale de un archivo según la extracción: llamadas a otros servicios y accesos a tablas. */
@@ -158,16 +177,23 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
     tocanTabla.set(a.hasta, lista);
   }
   const llamadasPendientes: IndiceCodigo["llamadasPendientes"] = [];
+  const camposDeLlamada = new Map<string, CamposDeLlamada>();
+  const sinCampos = new Set<string>();
   for (const c of extracciones) {
     try {
-      const j = JSON.parse(c) as { pendientes?: Array<{ verbo: string; desde: string; referencia: string; motivo: string; evidencia: string; candidatos?: unknown[]; llamada?: { metodo: string; ruta: string | null; base: string } }> };
+      const j = JSON.parse(c) as { repo?: string; campos?: Record<string, CamposDeLlamada>; pendientes?: Array<{ verbo: string; desde: string; referencia: string; motivo: string; evidencia: string; candidatos?: unknown[]; llamada?: { metodo: string; ruta: string | null; base: string } }> };
       for (const p of j.pendientes ?? []) if (p.verbo === "llama_a") llamadasPendientes.push({ desde: p.desde, referencia: p.referencia, motivo: p.motivo, evidencia: p.evidencia, candidatos: p.candidatos?.length ?? 0, ...(p.llamada ? { llamada: p.llamada } : {}) });
+      if (j.campos) for (const [ev, k] of Object.entries(j.campos)) camposDeLlamada.set(ev, k);
+      else if (j.repo) sinCampos.add(j.repo);
     } catch {
       /* ignorado */
     }
   }
+  const unidas = new Map<string, { desde: string; endpoint: string; evidencia: string }>();
+  for (const a of aristas) if (a.verbo === "llama_a" && a.endpoint && !unidas.has(a.evidencia)) unidas.set(a.evidencia, { desde: a.desde, endpoint: a.endpoint, evidencia: a.evidencia });
+  const llamadasUnidas = [...unidas.values()].sort((a, b) => cmp(a.evidencia, b.evidencia));
   llamadasPendientes.sort((a, b) => cmp(a.evidencia, b.evidencia) || cmp(a.referencia, b.referencia));
-  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, usan, sinReferencias, porNombre, atiende, accesos, llamanEndpoint, tocanTabla, llamadasPendientes, porArchivo };
+  return { fichas: new Map(fichas.map((f) => [f.id, f])), dependencias: dependenciasDelGrafo(graph, fichas), estructura, recorredor, commits, raices, actuales: {}, llamadores, usan, sinReferencias, porNombre, atiende, accesos, llamanEndpoint, tocanTabla, llamadasPendientes, porArchivo, llamadasUnidas, camposDeLlamada, sinCampos };
 }
 
 /** Lee el HEAD actual de cada clon indexado, para avisar si el índice quedó atrás. Barato: unas lecturas de `.git`. */
@@ -1000,6 +1026,155 @@ export interface DerivaCruzada {
   disputadas: Map<string, string[]>;
   /** Llamadas que el registro declara internas del propio servicio, por su evidencia: no son deriva. */
   internas?: Set<string>;
+  /** Contrato de un endpoint de otro cerebro (el que atiende una llamada saliente): para comparar campos. */
+  contratoDe?: (cerebro: string, endpoint: string) => ContratoEndpoint | null;
+}
+
+/** Lo que declara un endpoint: los tipos de cuerpo, query y respuesta, y las formas que conoce su contrato. */
+export interface ContratoEndpoint {
+  ev: string;
+  request: string | null;
+  response: string | null;
+  query: string | null;
+  tipos: Record<string, Record<string, string>>;
+}
+
+/** El contrato de un endpoint de este brain (`null` si no existe). */
+export function contratoDeEndpoint(ctx: Contexto, endpoint: string): ContratoEndpoint | null {
+  const n = ctx.nodo.get(endpoint);
+  if (n?.tipo !== "endpoint") return null;
+  const a = n.atributos as { evidencia?: string; request?: string | null; response?: string | null; query?: string | null };
+  return { ev: String(a.evidencia ?? ""), request: a.request ?? null, response: a.response ?? null, query: a.query ?? null, tipos: ctx.contratos.get(endpoint.slice(0, endpoint.indexOf(":")))?.tipos ?? {} };
+}
+
+type Campos = Map<string, { opcional: boolean; tipo: string }>;
+
+/** Campos de una forma: la clave con `?` o el tipo con `undefined` marcan un campo opcional. */
+function camposDeForma(f: Record<string, string>): Campos {
+  const out: Campos = new Map();
+  for (const [k, t] of Object.entries(f)) {
+    const nombre = k.endsWith("?") ? k.slice(0, -1) : k;
+    out.set(nombre, { opcional: k.endsWith("?") || /(^|\|)\s*undefined\s*(\||$)/.test(t), tipo: t });
+  }
+  return out;
+}
+
+/**
+ * Los campos de un tipo declarado por el back, con las formas de su contrato. Una unión (`A | B`) junta los campos de
+ * todas sus partes (opcional el que falta en alguna). Sin forma para alguna parte, o si es un arreglo, no se compara.
+ */
+function camposDelBack(nombre: string, tipos: Record<string, Record<string, string>>): Campos | { motivo: string } {
+  const partes = nombre.split(" | ").map((x) => x.trim()).filter((x) => x && x !== "null" && x !== "undefined");
+  if (!partes.length) return { motivo: `el back declara \`${nombre}\`, sin campos` };
+  if (partes.some((x) => x.endsWith("[]"))) return { motivo: `el back declara un arreglo (\`${nombre}\`): se comparan objetos` };
+  const sin = partes.filter((x) => !tipos[x]);
+  if (sin.length) return { motivo: `el back declara \`${sin.join(" | ")}\` y el contrato no tiene su forma` };
+  // Una forma vacía es un tipo de claves libres (`Record<string, …>`, un arreglo asociativo): acepta cualquier campo.
+  if (partes.every((x) => !Object.keys(tipos[x]!).length)) return { motivo: `el back declara \`${nombre}\`, sin campos declarados (acepta cualquiera)` };
+  const out: Campos = new Map();
+  const vistos = new Map<string, number>();
+  for (const x of partes)
+    for (const [k, v] of camposDeForma(tipos[x]!)) {
+      vistos.set(k, (vistos.get(k) ?? 0) + 1);
+      const ya = out.get(k);
+      out.set(k, { opcional: (ya?.opcional ?? false) || v.opcional, tipo: ya?.tipo ?? v.tipo });
+    }
+  for (const [k, n] of vistos) if (n < partes.length) out.get(k)!.opcional = true;
+  return out;
+}
+
+/** Nombre sin separadores ni mayúsculas: `player_id` y `playerId` se parecen. */
+const compactar = (k: string) => k.replace(/[_-]/g, "").toLowerCase();
+
+/** Lo que una llamada manda (o pasa por query) contra lo que el back declara recibir. */
+function compararEntrada(front: Campos, back: Campos) {
+  const sobran = [...front.keys()].filter((k) => !back.has(k));
+  const faltan = [...back.entries()].filter(([k, v]) => !v.opcional && !front.has(k)).map(([k]) => k);
+  const parecidos: string[] = [];
+  for (const k of [...sobran]) {
+    const b = [...back.keys()].find((x) => !front.has(x) && compactar(x) === compactar(k));
+    if (!b) continue;
+    parecidos.push(`${k} ↔ ${b}`);
+    sobran.splice(sobran.indexOf(k), 1);
+    if (faltan.includes(b)) faltan.splice(faltan.indexOf(b), 1);
+  }
+  // Mandado como opcional y requerido por el back: puede faltar.
+  const puedeFaltar = [...back.entries()].filter(([k, v]) => !v.opcional && front.get(k)?.opcional).map(([k]) => k);
+  return { sobran: sobran.sort(cmp), faltan: faltan.sort(cmp), puedeFaltar: puedeFaltar.sort(cmp), parecidos: parecidos.sort(cmp) };
+}
+
+/** Lo que una llamada espera de la respuesta contra lo que el back declara devolver. */
+function compararRespuesta(front: Campos, back: Campos) {
+  const faltantes = [...front.keys()].filter((k) => !back.has(k));
+  const parecidos: string[] = [];
+  const quedan = faltantes.filter((k) => {
+    const b = [...back.keys()].find((x) => !front.has(x) && compactar(x) === compactar(k));
+    if (b) parecidos.push(`${k} ↔ ${b}`);
+    return !b;
+  });
+  return {
+    noVienen: quedan.filter((k) => !front.get(k)!.opcional).sort(cmp),
+    opcionalesQueNoVienen: quedan.filter((k) => front.get(k)!.opcional).sort(cmp),
+    parecidos: parecidos.sort(cmp),
+  };
+}
+
+type LadoComparado = "cuerpo" | "query" | "respuesta";
+
+/**
+ * Compara, campo por campo, una llamada unida a un endpoint con lo que el endpoint declara. Cada lado (cuerpo, query,
+ * respuesta) es comparable solo si los dos tienen forma: si no, se dice por qué, sin contarlo como coincidencia.
+ */
+function compararLlamada(k: CamposDeLlamada | undefined, c: ContratoEndpoint, metodo: string) {
+  const diferencias: Record<string, unknown> = {};
+  const noComparables: Array<{ lado: LadoComparado; motivo: string; tipo?: string }> = [];
+  let comparados = 0;
+  const conCuerpo = !["GET", "DELETE", "HEAD", "OPTIONS"].includes(metodo);
+  const entrada = (lado: "cuerpo" | "query", front: LadoDeLlamada | undefined, back: string | null) => {
+    if (!front && !back) return;
+    if (lado === "cuerpo" && !front && !conCuerpo) return;
+    // No manda nada y el back no declara nada: no hay qué comparar.
+    if (!back && front?.forma && !Object.keys(front.forma).length) return;
+    if (!front) return void noComparables.push({ lado, motivo: lado === "cuerpo" ? "no se sabe qué cuerpo manda la llamada" : "no se sabe qué query manda la llamada" });
+    if (!front.forma) return void noComparables.push({ lado, motivo: "la llamada manda un tipo sin campos que comparar", tipo: front.tipo });
+    if (!back) return void noComparables.push({ lado, motivo: lado === "cuerpo" ? "el back no declara el tipo del cuerpo" : "el back no declara el tipo de la query" });
+    const b = camposDelBack(back, c.tipos);
+    if ("motivo" in b) return void noComparables.push({ lado, motivo: b.motivo.replace(/`[^`]*`/, "un tipo"), tipo: back });
+    comparados++;
+    const r = compararEntrada(camposDeForma(front.forma), b);
+    if (r.sobran.length || r.faltan.length || r.puedeFaltar.length || r.parecidos.length)
+      diferencias[lado] = {
+        front: front.tipo,
+        back,
+        ...(r.sobran.length ? { mandaYElBackNoDeclara: r.sobran } : {}),
+        ...(r.faltan.length ? { requeridosQueNoManda: r.faltan } : {}),
+        ...(r.puedeFaltar.length ? { opcionalesQueElBackRequiere: r.puedeFaltar } : {}),
+        ...(r.parecidos.length ? { distintoNombre: r.parecidos } : {}),
+      };
+  };
+  entrada("cuerpo", k?.envia, conCuerpo || k?.envia ? c.request : null);
+  entrada("query", k?.query, c.query);
+  const f = k?.espera;
+  if (!f) noComparables.push({ lado: "respuesta", motivo: "la llamada no tipa la respuesta" });
+  else if (!f.forma) noComparables.push({ lado: "respuesta", motivo: "la llamada espera un tipo sin campos que comparar", tipo: f.tipo });
+  else if (!c.response) noComparables.push({ lado: "respuesta", motivo: "el back no declara el tipo de respuesta" });
+  else {
+    const b = camposDelBack(c.response, c.tipos);
+    if ("motivo" in b) noComparables.push({ lado: "respuesta", motivo: b.motivo.replace(/`[^`]*`/, "un tipo"), tipo: c.response });
+    else {
+      comparados++;
+      const r = compararRespuesta(camposDeForma(f.forma), b);
+      if (r.noVienen.length || r.opcionalesQueNoVienen.length || r.parecidos.length)
+        diferencias["respuesta"] = {
+          front: f.tipo,
+          back: c.response,
+          ...(r.noVienen.length ? { esperaYNoViene: r.noVienen } : {}),
+          ...(r.opcionalesQueNoVienen.length ? { opcionalesQueNoVienen: r.opcionalesQueNoVienen } : {}),
+          ...(r.parecidos.length ? { distintoNombre: r.parecidos } : {}),
+        };
+    }
+  }
+  return { diferencias, noComparables, comparados };
 }
 
 /**
@@ -1052,6 +1227,7 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
     });
   const ambiguas = pend.filter((l) => l.motivo === "varios endpoints coinciden").map((l) => ({ desde: l.desde, llamada: l.referencia, ev: l.evidencia, candidatos: l.candidatos }));
   const sinAnalizar = pend.filter((l) => l.motivo === "URL sin ruta reconocible").length;
+  const campos = compararCampos(ctx, ix, p.nodo, pend, x);
   const res = {
     ...(p.nodo ? { nodo: p.nodo } : {}),
     llamadasSinEndpoint: sinEndpoint,
@@ -1065,6 +1241,8 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
       : {}),
     llamadasAmbiguas: ambiguas,
     endpointsSinLlamadasDetectadas: sinLlamadas,
+    campos: campos.resumen,
+    camposQueNoCoinciden: campos.difieren,
     consumidoresIndexados: Object.fromEntries(svcs.map((s) => [s, [...(consumidores.get(s) ?? [])].sort(cmp)])),
     avisos: [
       ...svcs.filter((s) => !(consumidores.get(s)?.size ?? 0)).map((s) => `${s} no tiene consumidores indexados${x?.vecinos.length ? ` (ni acá ni en ${x.vecinos.join(", ")})` : ""}: no se puede decir qué endpoints suyos no se usan`),
@@ -1072,11 +1250,78 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
       ...(x && sinEndpoint.length ? [`las llamadas sin endpoint no las atiende ni este cerebro ni ${x.vecinos.join(", ") || "ningún otro"}: o la ruta ya no existe, o el servicio que la atiende no está indexado o no está comunicado`] : []),
       ...(disputadas.length ? [`${disputadas.length} llamadas coinciden con endpoints de más de un cerebro: falta declarar a qué servicio va cada base de URL (flowbrain evidence las lista)`] : []),
       ...(sinAnalizar ? [`${sinAnalizar} llamadas con URL armada en tiempo de ejecución no se pudieron analizar: alguna puede ser la que usa un endpoint listado como sin llamadas`] : []),
+      ...campos.avisos,
       ...avisosIndice(ix),
     ],
     indice: versiones(ix),
   };
-  return ajustarLista(res, ["endpointsSinLlamadasDetectadas", "llamadasAmbiguas", ...(disputadas.length ? (["disputadasEntreCerebros"] as never[]) : []), "llamadasSinEndpoint"], p.budget_tokens);
+  return ajustarLista(res, ["camposQueNoCoinciden", "endpointsSinLlamadasDetectadas", "llamadasAmbiguas", ...(disputadas.length ? (["disputadasEntreCerebros"] as never[]) : []), "llamadasSinEndpoint"], p.budget_tokens);
+}
+
+/**
+ * Campos de cada llamada unida a un endpoint (en este brain, o en otro con `cruzadas.contratoDe`) contra lo que el
+ * endpoint declara: lo que se manda de más, lo requerido que no se manda y lo que se espera de la respuesta y no viene.
+ * Lo que no se puede comparar (un lado sin tipo o sin forma) se cuenta por motivo, nunca como coincidencia.
+ */
+function compararCampos(ctx: Contexto, ix: IndiceCodigo, nodo: string | undefined, pend: IndiceCodigo["llamadasPendientes"], x: DerivaCruzada | undefined) {
+  const svcDe = (ep: string) => ep.slice(0, ep.indexOf(":"));
+  const unidas: Array<{ llamada: string; ev: string; endpoint: string; cerebro?: string; contrato: ContratoEndpoint | null }> = [];
+  for (const u of ix.llamadasUnidas) {
+    if (nodo && u.desde !== nodo && svcDe(u.endpoint) !== nodo) continue;
+    const a = ctx.nodo.get(u.endpoint)?.atributos as { metodo?: string; ruta?: string } | undefined;
+    unidas.push({ llamada: `${a?.metodo ?? ""} ${a?.ruta ?? ""}`.trim(), ev: u.evidencia, endpoint: u.endpoint, contrato: contratoDeEndpoint(ctx, u.endpoint) });
+  }
+  for (const l of pend) {
+    const d = x?.salientes.get(l.evidencia);
+    if (d) unidas.push({ llamada: l.referencia, ev: l.evidencia, endpoint: d.endpoint, cerebro: d.cerebro, contrato: x?.contratoDe?.(d.cerebro, d.endpoint) ?? null });
+  }
+  const difieren: Array<Record<string, unknown>> = [];
+  const motivos = new Map<string, { lado: LadoComparado; motivo: string; llamadas: number; tipos: Set<string>; ejemplos: Array<{ llamada: string; ev: string }> }>();
+  let comparadas = 0;
+  let iguales = 0;
+  const anotar = (lado: LadoComparado, motivo: string, tipo: string | undefined, u: (typeof unidas)[number]) => {
+    const k = `${lado}\u0000${motivo}`;
+    const v = motivos.get(k) ?? motivos.set(k, { lado, motivo, llamadas: 0, tipos: new Set(), ejemplos: [] }).get(k)!;
+    v.llamadas++;
+    if (tipo) v.tipos.add(tipo);
+    if (v.ejemplos.length < 3) v.ejemplos.push({ llamada: u.llamada, ev: u.ev });
+  };
+  for (const u of unidas) {
+    if (!u.contrato) {
+      anotar("respuesta", u.cerebro ? `no se cargó el contrato del endpoint en ${u.cerebro}` : "el endpoint no tiene contrato", undefined, u);
+      continue;
+    }
+    const metodo = /^(\w+)/.exec(u.endpoint.slice(u.endpoint.indexOf(":") + 1))?.[1] ?? "";
+    const r = compararLlamada(ix.camposDeLlamada.get(u.ev), u.contrato, metodo);
+    for (const n of r.noComparables) anotar(n.lado, n.motivo, n.tipo, u);
+    if (!r.comparados) continue;
+    comparadas++;
+    if (!Object.keys(r.diferencias).length) iguales++;
+    else difieren.push({ llamada: u.llamada, ev: u.ev, endpoint: u.endpoint, ...(u.cerebro ? { cerebro: u.cerebro } : {}), evEndpoint: u.contrato.ev, ...r.diferencias });
+  }
+  // Primero lo que rompe: requeridos que no se mandan y campos esperados que no vienen.
+  const grave = (d: Record<string, unknown>) =>
+    (((d["cuerpo"] as { requeridosQueNoManda?: string[] } | undefined)?.requeridosQueNoManda?.length ?? 0) +
+      ((d["query"] as { requeridosQueNoManda?: string[] } | undefined)?.requeridosQueNoManda?.length ?? 0) +
+      ((d["respuesta"] as { esperaYNoViene?: string[] } | undefined)?.esperaYNoViene?.length ?? 0));
+  difieren.sort((a, b) => grave(b) - grave(a) || cmp(String(a["ev"]), String(b["ev"])));
+  const resumen = {
+    llamadasUnidas: unidas.length,
+    comparadas,
+    sinDiferencias: iguales,
+    conDiferencias: difieren.length,
+    noComparables: [...motivos.values()]
+      .sort((a, b) => b.llamadas - a.llamadas || cmp(a.lado, b.lado) || cmp(a.motivo, b.motivo))
+      .map((v) => ({ lado: v.lado, motivo: v.motivo, llamadas: v.llamadas, ...(v.tipos.size ? { tipos: [...v.tipos].sort(cmp).slice(0, 5) } : {}), ejemplos: v.ejemplos })),
+  };
+  const sinCampos = [...ix.sinCampos].sort(cmp);
+  const entrantes = nodo ? [...(x?.entrantes.keys() ?? [])].some((e) => svcDe(e) === nodo) : (x?.entrantes.size ?? 0) > 0;
+  const avisos = [
+    ...(sinCampos.length ? [`el índice de ${sinCampos.join(", ")} no trae los campos de las llamadas (se indexó antes de registrarlos): corré \`flowbrain index\` para que \`deriva\` los compare`] : []),
+    ...(unidas.length ? ["los campos se comparan en el primer nivel del objeto (no adentro de `data`), por nombre; un lado sin tipo o sin forma figura en `campos.noComparables`, no como coincidencia"] : []),
+    ...(entrantes ? ["los campos de las llamadas que llegan desde otros cerebros se comparan en la deriva del cerebro que llama"] : []),
+  ];
+  return { resumen, difieren, avisos };
 }
 
 // ------------------------------------------------------------------ paridad entre dos servicios

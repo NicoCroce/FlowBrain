@@ -9,7 +9,7 @@ import { tsParser } from "./ts-parser.js";
 import { phpParser } from "./php-parser.js";
 import { esquemaParser } from "./esquema-parser.js";
 import { infraParser } from "./infra-parser.js";
-import type { Extraccion, Forma, LlamadaCruda, Parser, RepoFuente } from "./tipos.js";
+import type { CamposLlamada, Extraccion, Forma, LlamadaCruda, Parser, RepoFuente } from "./tipos.js";
 import { paqueteDe } from "./tipos.js";
 import { libreriasPorAlias } from "./alias.js";
 import { casosDeTest, ES_CODIGO_DE_TEST } from "./casos-de-test.js";
@@ -81,6 +81,11 @@ export interface ResultadoIndex {
   /** Todas las aristas resueltas, una por evidencia: la vista por método y por funcionalidad necesita cada acceso. */
   accesos: AristaExtraida[];
   pendientes: Pendiente[];
+  /**
+   * Lo que cada llamada HTTP manda y espera, campo por campo, por su evidencia (`repo:ruta#Ln`), esté unida o no a un
+   * endpoint: `deriva` lo compara con el tipo que declara el back. Siempre presente (vacío si el parser no lo sabe).
+   */
+  campos: Record<string, CamposLlamada>;
   /** Tablas del esquema (DDL, migraciones, modelos de ORM, extractores) que todavía no tienen página: el borrador las propone. */
   tablasSinPagina?: Array<{ tabla: string; evidencia: string }>;
   contratos: Contrato[];
@@ -538,6 +543,7 @@ export async function indexar(
     aristas: aristasFinales,
     accesos,
     pendientes,
+    campos: Object.fromEntries(x.llamadas.filter((l) => l.campos).map((l) => [ev(l.archivo, l.linea), l.campos!] as const).sort(([a], [b]) => cmp(a, b))),
     ...(tablasSinPagina.size ? { tablasSinPagina: [...tablasSinPagina.values()].sort((a, b) => cmp(a.tabla, b.tabla)) } : {}),
     contratos: contratos.sort((a, b) => cmp(a.svc, b.svc)),
     archivos: {
@@ -636,7 +642,7 @@ export async function escribirIndex(raizBrain: string, r: ResultadoIndex): Promi
   const rutas = rutasIndex(r.repo);
   const salidas: Record<string, string> = {
     [rutas.archivos]: stringifyCanonical(r.archivos),
-    [rutas.extraccion]: stringifyCanonical({ accesos: r.accesos, aristas: r.aristas, pendientes: r.pendientes, repo: r.repo, servicios: r.servicios }),
+    [rutas.extraccion]: stringifyCanonical({ accesos: r.accesos, aristas: r.aristas, campos: r.campos, pendientes: r.pendientes, repo: r.repo, servicios: r.servicios }),
   };
   for (const c of r.contratos) salidas[rutas.contrato(c.svc)] = stringifyCanonical(c);
   if (r.extractores.length) salidas[RUTA_INFORME_EXTRACTORES(r.repo)] = stringifyCanonical({ extractores: r.extractores, repo: r.repo });

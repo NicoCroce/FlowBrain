@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { compileDir, contextoDeFuentes, deriva, fidelidadDeArchivos, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
+import { compileDir, contextoDeFuentes, deriva, fidelidadDeArchivos, type Contrato, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
 import { renderViewerCerebros, type CerebroVisor, type PorPaquetes } from "./cerebros.js";
 import { renderViewer, type DerivaVisor, type FidelidadVisor } from "./viewer.js";
 
@@ -24,9 +24,9 @@ const jsonDe = async (dir: string) => Promise.all((await readdir(dir).catch(() =
 /** `flowbrain compile` completo: grafo, índices, páginas y el visor, con la fidelidad de cada archivo indexado. */
 export const compileDirConVisor = (raiz: string) =>
   compileDir(raiz, async (s) => {
-    const [archivos, extracciones] = await Promise.all([jsonDe(join(raiz, "_build/files")), jsonDe(join(raiz, "_build/extraction"))]);
+    const [archivos, extracciones, contratos] = await Promise.all([jsonDe(join(raiz, "_build/files")), jsonDe(join(raiz, "_build/extraction")), jsonDe(join(raiz, "_build/contracts"))]);
     if (!archivos.length) return visor(s);
-    const ctx = contextoDeFuentes(s.graph, s.funcionalidades, archivos, extracciones);
+    const ctx = contextoDeFuentes(s.graph, s.funcionalidades, archivos, extracciones, contratos.map((c) => JSON.parse(c) as Contrato));
     return visor(s, fidelidadDeArchivos(ctx), deriva(ctx, { budget_tokens: null }) as unknown as DerivaVisor);
   });
 
