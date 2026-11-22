@@ -709,3 +709,11 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
    - **Un contexto por cerebro para el visor** (`contextoDeFuentes`): la fidelidad y la deriva salen del mismo índice, sin armarlo dos veces.
    - **Verificado** con tests (336) y en un navegador con un proyecto real de siete cerebros: la deriva de cada cerebro y la paridad entre las dos APIs dieron los mismos números que la consola (126 de 1.035 migrados, 909 faltan, 119 con tablas distintas, 81 tablas sin tocar).
    - **Queda fuera:** el paso 35 (`screen`, `feature` y `trace` de la consola).
+
+188. **2026-11-22 · La consola cruza cerebros como el MCP.** Con varios cerebros, el MCP anotaba en cada respuesta lo que cruza a otro cerebro (pistas, llamadas que entran y salen, impacto en cadena, componentes de otro cerebro) y la consola no: `flowbrain screen` de un front no decía qué endpoints del back llamaba la pantalla.
+   - **Una sola implementación.** La consola no copia la lógica: resuelve el cerebro con el mismo `crearMulti` del servidor y le pide las mismas anotaciones (`anotar`), con el nombre y los argumentos que la consulta tiene en el MCP. Lo que el MCP aprenda a cruzar, la consola lo hereda.
+   - **Qué comandos:** `search`, `traverse`, `contract`, `trace`, `feature`, `flow`, `screen`, `callers`, `impact`, `risk`, `drift` e `infra` (el plan pedía `screen`, `feature` y `trace`; hacerlo para todos costaba lo mismo). La respuesta suma `cerebro`, `sinRevisar` si corresponde, y los mismos campos que el MCP (`llamaAOtrosCerebros`, `llamadoDesdeOtrosCerebros`, `enOtrosCerebros`, `otrosCerebros`, `usadoEnOtrosCerebros`…).
+   - **`drift` dejó su camino propio** (185): ahora cruza por la misma anotación que en el MCP.
+   - **Con un solo cerebro, o sin registro, nada cambia:** ni campos nuevos ni carga extra.
+   - **Verificado** con tests (336, con casos nuevos de `impact`, `search` y `flow` por consola) y, solo leyendo, sobre un proyecto real de siete cerebros: `screen`, `feature` y `trace` de una pantalla del front muestran el endpoint de la API que llama, e `impact` de ese endpoint en la API llega a 3 funcionalidades y 7 pantallas del front.
+   - Con esto queda cerrada la fase 9.

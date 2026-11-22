@@ -175,6 +175,18 @@ describe("varios cerebros por MCP", () => {
     const cli = JSON.parse((await brain(["drift", "--brain", "front"])).stdout) as Deriva;
     expect([cli.llamadasSinEndpoint.length, cli.comunicadoCon]).toEqual([0, ["back"]]);
 
+    // La consola cruza igual que el MCP: misma respuesta, con el cerebro y lo que hay en los otros.
+    const porConsola = async (args: string[]) => JSON.parse((await brain(args)).stdout) as Record<string, unknown>;
+    const impCli = await porConsola(["impact", "GET /pedidos", "--brain", "back"]);
+    expect([impCli["cerebro"], impCli["enOtrosCerebros"]]).toEqual(["back", imp["enOtrosCerebros"]]);
+    const busca = await porConsola(["search", "/pedidos", "--brain", "front"]);
+    expect([busca["cerebro"], busca["otrosCerebros"]]).toEqual(["front", [{ cerebro: "back", coincidencias: 2, nodos: ["svc-tienda-api:GET:/pedidos", "svc-tienda-api:POST:/pedidos"] }]]);
+    // El endpoint del back dice quién lo llama desde otro cerebro, también al pedir su recorrido.
+    const flujo = await porConsola(["flow", "GET /pedidos", "--brain", "back"]);
+    expect((flujo["llamadoDesdeOtrosCerebros"] as { total: number; llamadas: Array<Record<string, unknown>> }).llamadas[0]).toMatchObject({ endpoint: "svc-tienda-api:GET:/pedidos", cerebro: "front", desde: "svc-tienda-web" });
+    // El legado no se revisó: la consola también lo marca.
+    expect((await porConsola(["search", "/pedidos", "--brain", "legado"]))["sinRevisar"]).toBe(true);
+
     // Paridad entre cerebros: el servicio viejo en un cerebro y el nuevo en otro. No depende de la comunicación.
     type Paridad = { viejo: string; nuevo: string; cerebros: Record<string, string>; endpoints: { total: Record<string, number>; faltan: string[] } };
     const par = (await llamar("paridad", { viejo: "legado/svc-tienda-vieja", nuevo: "back" })) as unknown as Paridad;
@@ -192,6 +204,7 @@ describe("varios cerebros por MCP", () => {
     const apagada = (await llamar("deriva")) as unknown as Deriva;
     expect([apagada.llamadasSinEndpoint.length, apagada.comunicadoCon]).toEqual([2, []]);
     expect(apagada.avisos.join(" ")).toContain("no tiene la comunicación activa con ningún otro");
+    expect(await porConsola(["search", "/pedidos", "--brain", "front"])).not.toHaveProperty("otrosCerebros");
   });
 
   it("una conexión declarada con `por` decide a cuál de dos servicios con las mismas rutas va cada llamada", async () => {

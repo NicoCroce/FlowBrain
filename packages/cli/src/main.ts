@@ -418,11 +418,14 @@ export async function ejecutar(
         return { codigo, stdout: todos.map((t) => `== ${t.nombre} ==\n${textoEstado(t.e)}`).join("\n"), stderr: "" };
       }
     }
+    // Con varios cerebros, las consultas cruzan como en el MCP: se anota lo que atiende, llama o usa otro cerebro.
+    let cruzar: { nombre: string } | null = null;
     if (raizRegistro && comando !== "hook") {
       const registro = await leerRegistro(raiz);
       const c = o.brain ? registro.cerebro(o.brain) : (registro.deDirectorio(cwd) ?? (registro.cerebros.length === 1 ? registro.cerebros[0]! : null));
       if (!c) throw new ConsultaError("parametro_invalido", o.brain ? `no existe el cerebro: ${o.brain}` : `hay varios cerebros (${registro.cerebros.map((x) => x.nombre).join(", ")}); elegí uno con --brain`);
       raiz = c.raiz;
+      if (registro.cerebros.length > 1) cruzar = { nombre: c.nombre };
     } else if (o.brain) throw new ConsultaError("parametro_invalido", `--brain necesita un registro: no hay ${ARCHIVO_REGISTRO} en ${raiz}`);
 
     if (comando === "compile") {
@@ -570,57 +573,64 @@ export async function ejecutar(
       ...(o.projection !== undefined ? { proyeccion: o.projection as Proyeccion } : {}),
       ...(budget !== undefined ? { budget_tokens: budget } : {}),
     };
-    const ctx: Contexto = await cargarContexto(raiz);
+    const resuelto = cruzar && CRUZAN.has(comando) ? await crearMulti(raizRegistro!, { cwd }).resolver(cruzar.nombre) : null;
+    const ctx: Contexto = resuelto ? resuelto.ctx : await cargarContexto(raiz);
+    // La consulta que se corre, con el nombre y los argumentos que tiene en el MCP: con eso se anotan los cruces.
+    let consulta: { herramienta: string; args: Record<string, unknown> } | null = null;
+    const q = <A extends object>(herramienta: string, args: A): A => {
+      consulta = { herramienta, args: args as Record<string, unknown> };
+      return args;
+    };
     let resultado: unknown;
     switch (comando) {
       case "search":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <texto>");
-        resultado = buscarNodo(ctx, { texto: arg, ...opt("tipos", lista(o.types)), ...opt("limite", entero(o.limit, "--limit")), ...comunes });
+        resultado = buscarNodo(ctx, q("buscar_nodo", { texto: arg, ...opt("tipos", lista(o.types)), ...opt("limite", entero(o.limit, "--limit")), ...comunes }));
         break;
       case "traverse":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <nodo>");
-        resultado = recorrerGrafo(ctx, {
+        resultado = recorrerGrafo(ctx, q("recorrer_grafo", {
           nodo: arg,
           ...opt("verbos", lista(o.verbs)),
           ...opt("direccion", o.direction as "out" | "in" | "both" | undefined),
           ...opt("profundidad", entero(o.depth, "--depth")),
           ...comunes,
-        });
+        }));
         break;
       case "contract":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <nodo>");
-        resultado = contratoDe(ctx, { nodo: arg, ...opt("endpoint", o.endpoint), ...comunes });
+        resultado = contratoDe(ctx, q("contrato_de", { nodo: arg, ...opt("endpoint", o.endpoint), ...comunes }));
         break;
       case "trace": {
         const desde = o.from ?? arg;
         if (!desde) throw new ConsultaError("parametro_invalido", "falta --from");
-        resultado = trazar(ctx, { desde, ...opt("hasta", o.to), ...comunes });
+        resultado = trazar(ctx, q("trazar", { desde, ...opt("hasta", o.to), ...comunes }));
         break;
       }
       case "feature":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <id>");
-        resultado = funcionalidad(ctx, { id: arg, ...opt("budget_tokens", comunes.budget_tokens) });
+        resultado = funcionalidad(ctx, q("funcionalidad", { id: arg, ...opt("budget_tokens", comunes.budget_tokens) }));
         break;
       case "flow":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <endpoint o símbolo>");
-        resultado = recorrido(ctx, { desde: arg, ...opt("budget_tokens", comunes.budget_tokens) });
+        resultado = recorrido(ctx, q("recorrido", { desde: arg, ...opt("budget_tokens", comunes.budget_tokens) }));
         break;
       case "screen":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta </ruta>");
-        resultado = pantalla(ctx, { ruta: arg, ...opt("budget_tokens", comunes.budget_tokens) });
+        resultado = pantalla(ctx, q("pantalla", { ruta: arg, ...opt("budget_tokens", comunes.budget_tokens) }));
         break;
       case "callers":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <símbolo>");
-        resultado = quienLlama(ctx, { simbolo: arg, ...opt("profundidad", entero(o.depth, "--depth")), ...opt("budget_tokens", comunes.budget_tokens) });
+        resultado = quienLlama(ctx, q("quien_llama", { simbolo: arg, ...opt("profundidad", entero(o.depth, "--depth")), ...opt("budget_tokens", comunes.budget_tokens) }));
         break;
       case "impact":
         if (!arg) throw new ConsultaError("parametro_invalido", "falta <pieza>");
-        resultado = impactoDe(ctx, { pieza: arg, ...opt("budget_tokens", comunes.budget_tokens) });
+        resultado = impactoDe(ctx, q("impacto", { pieza: arg, ...opt("budget_tokens", comunes.budget_tokens) }));
         break;
       case "risk": {
         const diff = o.diff === undefined ? undefined : o.diff === "-" ? await stdin() : await readFile(resolve(cwd, o.diff), "utf8");
         const archivos = positionals.slice(1);
-        resultado = riesgo(ctx, { ...opt("diff", diff), ...(archivos.length ? { archivos } : {}), ...opt("repo", o.repo), ...opt("profundidad", entero(o.depth, "--depth")), ...opt("budget_tokens", comunes.budget_tokens) });
+        resultado = riesgo(ctx, q("riesgo", { ...opt("diff", diff), ...(archivos.length ? { archivos } : {}), ...opt("repo", o.repo), ...opt("profundidad", entero(o.depth, "--depth")), ...opt("budget_tokens", comunes.budget_tokens) }));
         break;
       }
       case "parity":
@@ -675,11 +685,11 @@ export async function ejecutar(
         break;
       }
       case "drift":
-        // Con un registro de varios cerebros, la deriva cruza: lo que atiende otro cerebro no es deriva.
-        resultado = deriva(ctx, { ...opt("nodo", arg), ...opt("budget_tokens", comunes.budget_tokens), ...(raizRegistro && (await leerRegistro(raizRegistro)).cerebros.length > 1 ? { cruzadas: await crearMulti(raizRegistro, { cwd }).cruzadas(o.brain) } : {}) });
+        // Con varios cerebros la deriva cruza (se rehace al anotar): lo que atiende otro cerebro no es deriva.
+        resultado = deriva(ctx, q("deriva", { ...opt("nodo", arg), ...opt("budget_tokens", comunes.budget_tokens) }));
         break;
       case "infra":
-        resultado = infra(ctx, { ...opt("nodo", arg), ...opt("texto", o.text), ...opt("budget_tokens", comunes.budget_tokens) });
+        resultado = infra(ctx, q("infra", { ...opt("nodo", arg), ...opt("texto", o.text), ...opt("budget_tokens", comunes.budget_tokens) }));
         break;
       case "eval": {
         const archivo = resolve(raiz, arg ?? "evals/questions.json");
@@ -701,6 +711,10 @@ export async function ejecutar(
       default:
         return { codigo: 2, stdout: "", stderr: `comando desconocido: ${comando}\n\n${AYUDA}` };
     }
+    const pedida = consulta as { herramienta: string; args: Record<string, unknown> } | null;
+    if (resuelto && pedida && typeof resultado === "object" && resultado !== null && !Array.isArray(resultado)) {
+      resultado = { ...resultado, cerebro: resuelto.nombre, ...(resuelto.sinRevisar ? { sinRevisar: true } : {}), ...(await resuelto.anotar(pedida.herramienta, pedida.args, resultado)) };
+    }
     return { codigo: 0, stdout: stringifyCanonical(resultado), stderr: "" };
   } catch (e) {
     if (e instanceof CompileError) return { codigo: 1, stdout: "", stderr: e.errores.map(formatError).join("\n") + "\n" };
@@ -710,6 +724,9 @@ export async function ejecutar(
     throw e;
   }
 }
+
+/** Comandos de consulta que, con varios cerebros, anotan lo que cruza a otros (los mismos que cruzan en el MCP). */
+const CRUZAN = new Set(["search", "traverse", "contract", "trace", "feature", "flow", "screen", "callers", "impact", "risk", "drift", "infra"]);
 
 /** Omite la clave si el valor es undefined (exactOptionalPropertyTypes). */
 function opt<K extends string, V>(k: K, v: V | undefined): { [P in K]?: V } {
