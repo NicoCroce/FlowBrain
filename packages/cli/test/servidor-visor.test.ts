@@ -101,15 +101,16 @@ describe("flowbrain viewer --serve", () => {
     expect((await pedir("GET", "/flowbrain.yaml")).estado).toBe(404);
   });
 
-  it("sumar un archivo a una funcionalidad escribe su página, recompila y el puntaje sube", async () => {
+  it("sumar un archivo a una funcionalidad escribe su página y recompila: deja de estar sin asociar", async () => {
     // El pedido de arriba ya lo sumó: la página quedó con la entrada y con su comentario.
     const pagina = await readFile(join(reg, "tienda/product/feat-pedidos.md"), "utf8");
     expect(pagina).toContain(`  - ${R}:src/main.ts\n  - ${AVISOS}\n---\n# Pedidos`);
     expect(pagina).toContain("# lo que ve el cliente");
     const m = await medir();
     expect(m.funcionalidades).toEqual(["feat-pedidos"]);
-    expect(m.puntaje).toBe(20);
-    expect(m.faltas.join(" ")).not.toContain("no pertenece");
+    // Tener funcionalidad no cambia el puntaje: siguen faltando sus dos llamadas.
+    expect(m.puntaje).toBe(0);
+    expect((await ejecutar(["unassigned", "--root", join(reg, "tienda")], {}, dir)).stdout).not.toContain("src/avisos.ts");
     // Repetirlo no escribe nada.
     expect((await editar({ tipo: "funcionalidad", funcionalidad: "feat-pedidos" })).json).toMatchObject({ cambio: false, faltaReindexar: false });
   });
@@ -137,7 +138,7 @@ describe("flowbrain viewer --serve", () => {
     expect(calls).toContain(`hacia: "${AVISOS}#registrar"`);
     // Guardado, pero todavía no medido: lo dice la página al recargar.
     expect((await pedir("GET", "/")).cuerpo).toContain('"sinAplicar":["tienda"]');
-    expect((await medir()).puntaje).toBe(20);
+    expect((await medir()).puntaje).toBe(0);
     const ap = await pedir("POST", "/api/aplicar", { cuerpo: { cerebro: "tienda" } });
     expect(ap.json).toMatchObject({ cerebro: "tienda", errores: [], sinAplicar: [] });
     expect(await medir()).toMatchObject({ puntaje: 100, faltas: [] });

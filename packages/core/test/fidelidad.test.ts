@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConsultaError, crearContexto, crearIndiceCodigo, fidelidad, fidelidadDeArchivos, fidelidadDeFuentes, planDeFidelidad, type Ficha, type Graph, type GraphEdge, type GraphNode } from "../src/index.js";
+import { ConsultaError, crearContexto, crearIndiceCodigo, fidelidad, fidelidadDeArchivos, fidelidadDeFuentes, planDeFidelidad, sinAsociar, type Ficha, type Graph, type GraphEdge, type GraphNode } from "../src/index.js";
 
 /**
  * Un back y un front mínimos, armados a mano para que cada archivo tenga una falta distinta y conocida:
@@ -64,30 +64,31 @@ describe("fidelidad por archivo", () => {
     expect(sinDatos).toEqual([`${R}:web/datos.json`]);
     // Los tests no entran.
     expect(medidos.map((a) => a.archivo)).not.toContain(`${R}:web/api.test.ts`);
-    expect(de("web/Ayuda.tsx").signals).toEqual({ pantallas: { ok: 0, total: 1 }, funcionalidad: { ok: 1, total: 1 } });
+    expect(de("web/Ayuda.tsx").signals).toEqual({ pantallas: { ok: 0, total: 1 } });
     expect(de("web/Pedidos.tsx")).toMatchObject({ puntaje: 100, faltas: [], funcionalidades: ["feat-pedidos"] });
   });
 
   it("endpoints: uno llega a una tabla y tiene respuesta; el otro, ninguna de las dos", () => {
     const a = de("api/pedidos.ts");
-    expect(a.signals).toEqual({ llamadas: { ok: 1, total: 1 }, entradas: { ok: 1, total: 2 }, contrato: { ok: 1, total: 2 }, funcionalidad: { ok: 1, total: 1 } });
-    // (2·1 + 2·0,5 + 1·0,5 + 1·1) / 6 = 75
-    expect(a.puntaje).toBe(75);
+    expect(a.signals).toEqual({ llamadas: { ok: 1, total: 1 }, entradas: { ok: 1, total: 2 }, contrato: { ok: 1, total: 2 } });
+    // (2·1 + 2·0,5 + 1·0,5) / 5 = 70
+    expect(a.puntaje).toBe(70);
     expect(a.faltas).toEqual(["1 endpoint cuyo recorrido no llega a nada (DELETE /pedidos/{id})", "1 endpoint sin tipo de respuesta"]);
   });
 
   it("llamadas sin resolver y tablas sin página, con su línea", () => {
     const a = de("api/servicio.ts");
     expect(a.signals).toMatchObject({ llamadas: { ok: 1, total: 2 }, datos: { ok: 1, total: 2 } });
-    expect(a.puntaje).toBe(60);
+    expect(a.puntaje).toBe(50);
     expect(a.faltas[0]).toContain("1 llamada sin resolver (L6)");
     expect(a.faltas[1]).toContain("1 acceso a tablas sin página (auditoria; L8)");
   });
 
-  it("HTTP sin ruta y archivos sin funcionalidad", () => {
-    expect(de("web/api.ts")).toMatchObject({ signals: { http: { ok: 1, total: 2 } }, puntaje: 67 });
+  it("HTTP sin ruta; no tener funcionalidad no resta puntaje", () => {
+    expect(de("web/api.ts")).toMatchObject({ signals: { http: { ok: 1, total: 2 } }, puntaje: 50 });
     expect(de("web/api.ts").faltas[0]).toContain("1 llamada HTTP sin ruta (L14)");
-    expect(de("web/suelto.ts")).toMatchObject({ puntaje: 0, funcionalidades: [] });
+    expect(de("web/suelto.ts")).toMatchObject({ puntaje: 100, funcionalidades: [], sinAsociar: true, faltas: [], tareas: [] });
+    expect(de("web/api.ts").sinAsociar).toBeUndefined();
   });
 });
 
@@ -106,28 +107,21 @@ describe("tareas: qué hacer para llegar a 100", () => {
     expect(de("web/Ayuda.tsx").tareas.map((t) => t.signal)).toEqual(["pantallas"]);
   });
 
-  it("a un archivo sin funcionalidad le sugiere la de sus vecinos de carpeta", () => {
-    const a = de("web/suelto.ts");
-    expect(a.tareas).toEqual([expect.objectContaining({ signal: "funcionalidad", resuelve: "persona" })]);
-    expect(a.sugerida).toEqual({ id: "feat-pedidos", motivo: "3 archivos de web/ son de feat-pedidos" });
-    expect(de("web/api.ts").sugerida).toBeUndefined();
-  });
-
   it("plan para el modelo: tareas por archivo, cómo se resuelve cada tipo y qué correr al terminar", () => {
     const plan = planDeFidelidad(medidos);
-    expect(plan).toContain("llevar a 100 el puntaje de fidelidad de 5 archivos");
-    expect(plan).toContain(`### ${R}:web/suelto.ts (0/100)\nPista: 3 archivos de web/ son de feat-pedidos (\`feat-pedidos\`).\n- [ ] funcionalidad: No es parte de ninguna funcionalidad ni librería.`);
+    expect(plan).toContain("llevar a 100 el puntaje de fidelidad de 4 archivos");
+    expect(plan).not.toContain("web/suelto.ts");
     expect(plan).toContain("- [ ] llamadas: 1 llamada que no se sabe a qué método va: el código no lo dice con tipos (L6).");
     expect(plan).toContain("- **llamadas**: Abrí el archivo");
     expect(plan).toContain("flowbrain brains apply");
     // El archivo completo no entra; los de menor puntaje van primero.
     expect(plan).not.toContain("web/Pedidos.tsx");
-    expect(plan.indexOf("web/suelto.ts")).toBeLessThan(plan.indexOf("api/pedidos.ts"));
+    expect(plan.indexOf("web/Ayuda.tsx")).toBeLessThan(plan.indexOf("api/pedidos.ts"));
     // Solo un tipo de relación, y con tope.
     const soloHttp = planDeFidelidad(medidos, { signals: ["http"] });
     expect(soloHttp).toContain("de 1 archivo");
     expect(soloHttp).not.toContain("**llamadas**");
-    expect(planDeFidelidad(medidos, { limite: 2 })).toContain("quedan 3 más para otra tanda");
+    expect(planDeFidelidad(medidos, { limite: 2 })).toContain("quedan 2 más para otra tanda");
     expect(planDeFidelidad([])).toContain("No hay nada para hacer");
     // Desde la herramienta, con los mismos filtros que el informe.
     expect(fidelidad(ctx, { plan: true, signal: "http" })).toEqual({ herramienta: "fidelidad", archivos: 1, plan: soloHttp });
@@ -153,16 +147,16 @@ describe("fidelidad con varios cerebros", () => {
 describe("informe de fidelidad", () => {
   it("resume el brain y lista de menor a mayor", () => {
     const r = fidelidad(ctx) as ReturnType<typeof fidelidad> & { lista: Array<{ archivo: string; puntaje: number }>; distribucion: Record<string, number>; archivos: unknown; porFuncionalidad: unknown[] };
-    expect(r.archivos).toEqual({ medidos: 6, sinDatos: 1, completos: 1 });
+    expect(r.archivos).toEqual({ medidos: 6, sinDatos: 1, completos: 2, sinAsociar: 2 });
     expect(Object.values(r.distribucion).reduce((a, b) => a + b, 0)).toBe(6);
     expect(r.lista.map((a) => a.puntaje)).toEqual([...r.lista.map((a) => a.puntaje)].sort((a, b) => a - b));
-    expect(r.lista[0]!.archivo).toBe(`${R}:web/suelto.ts`);
-    expect(r.porFuncionalidad).toContainEqual({ id: "ninguna", archivos: 1, puntaje: 0 });
+    expect(r.lista[0]!.archivo).toBe(`${R}:web/Ayuda.tsx`);
+    expect(r.porFuncionalidad).toContainEqual({ id: "ninguna", archivos: 1, puntaje: 100 });
   });
 
   it("filtra por rango, funcionalidad, tipo y signal", () => {
     const lista = (p: Parameters<typeof fidelidad>[1]) => (fidelidad(ctx, p) as unknown as { lista: Array<{ archivo: string }> }).lista.map((a) => a.archivo.slice(R.length + 1));
-    expect(lista({ min: 60, max: 75 })).toEqual(["api/servicio.ts", "web/api.ts", "api/pedidos.ts"]);
+    expect(lista({ min: 50, max: 75 })).toEqual(["api/servicio.ts", "web/api.ts", "api/pedidos.ts"]);
     expect(lista({ funcionalidad: "ninguna" })).toEqual(["web/suelto.ts"]);
     expect(lista({ funcionalidad: "pedidos", tipo: "tsx" })).toEqual(["web/Ayuda.tsx", "web/Pedidos.tsx"]);
     expect(lista({ signal: "http" })).toEqual(["web/api.ts"]);
@@ -171,8 +165,76 @@ describe("informe de fidelidad", () => {
   });
 
   it("un archivo: su detalle, o por qué no tiene puntaje", () => {
-    expect(fidelidad(ctx, { archivo: "api/servicio.ts" })).toMatchObject({ archivo: `${R}:api/servicio.ts`, puntaje: 60, capa: expect.any(String) });
+    expect(fidelidad(ctx, { archivo: "api/servicio.ts" })).toMatchObject({ archivo: `${R}:api/servicio.ts`, puntaje: 50, capa: expect.any(String) });
     expect(fidelidad(ctx, { archivo: "web/datos.json" })).toMatchObject({ puntaje: null });
     expect(() => fidelidad(ctx, { archivo: "no/existe.ts" })).toThrow(/no hay un archivo indexado/);
+  });
+});
+
+describe("archivos sin asociar", () => {
+  // Un repo con dos funcionalidades y archivos sueltos, cada uno con un indicio distinto.
+  const nd = (id: string, tipo: GraphNode["tipo"], nombre = id, atributos: Record<string, unknown> = {}): GraphNode => ({ ...nodo(id, tipo, atributos), nombre });
+  const A = "repo-a";
+  const arc = (ruta: string, importa: string[] = []) => ({ ruta, lenguaje: "typescript", simbolos: [{ nombre: "f", tipo: "funcion", linea: 1 }], importa, invoca: [] });
+  const indice = JSON.stringify({
+    repo: A,
+    archivos: [
+      arc("src/pagos/cobrar.ts", ["src/shared/dinero.ts", "src/shared/fecha.ts", "src/lib/http.ts"]),
+      arc("src/pagos/reembolso.ts", ["src/shared/dinero.ts"]),
+      arc("src/pagos/extra/nota.ts"),
+      arc("src/envios/enviar.ts", ["src/shared/fecha.ts", "src/lib/http.ts"]),
+      arc("src/shared/dinero.ts"),
+      arc("src/shared/fecha.ts"),
+      arc("src/shared/usa-pagos.ts", ["src/pagos/cobrar.ts"]),
+      arc("src/sueltos/nada.ts"),
+      arc("src/sueltos/nada.test.ts"),
+      arc("src/lib/http.ts"),
+      arc("src/vecinos/a.ts"),
+    ],
+  });
+  const f = (id: string, codigo: string[]) => ({ ...ficha, id, codigo });
+  const g: Graph = { version: 1, nodes: [nd("feat-pagos", "feat", "Pagos"), nd("feat-envios", "feat", "Envíos"), nd("lib-http", "lib", "HTTP", { codigo: [`${A}:src/lib`] })], edges: [] };
+  const c = crearContexto(g, [], new Map(), crearIndiceCodigo(g, [f("feat-pagos", [`${A}:src/pagos/cobrar.ts`, `${A}:src/pagos/reembolso.ts`, `${A}:src/vecinos/b.ts`]), f("feat-envios", [`${A}:src/envios`])], [indice], []));
+  const { sinAsociar: sueltos, archivos: medidos } = fidelidadDeArchivos(c);
+  const de = (ruta: string) => sueltos.find((x) => x.archivo === `${A}:${ruta}`)!;
+
+  it("quedan aparte: ni los de una funcionalidad, ni los de una librería, ni los tests", () => {
+    expect(sueltos.map((x) => x.archivo.slice(A.length + 1))).toEqual(["src/pagos/extra/nota.ts", "src/shared/dinero.ts", "src/shared/fecha.ts", "src/shared/usa-pagos.ts", "src/sueltos/nada.ts", "src/vecinos/a.ts"]);
+    // No tener funcionalidad no dice nada de cuánto se entendió el archivo.
+    expect(medidos.every((a) => a.puntaje === 100)).toBe(true);
+  });
+
+  it("recomienda por quién lo usa, qué usa y, si no hay más, por los vecinos de carpeta", () => {
+    expect(de("src/shared/dinero.ts").recomendada).toEqual({ id: "feat-pagos", motivo: "lo importan 2 archivos de Pagos" });
+    expect(de("src/shared/usa-pagos.ts").recomendada).toEqual({ id: "feat-pagos", motivo: "importa 1 archivo de Pagos" });
+    expect(de("src/pagos/extra/nota.ts").recomendada).toEqual({ id: "feat-pagos", motivo: "2 archivos de src/pagos/ son de Pagos" });
+    expect(de("src/sueltos/nada.ts")).toMatchObject({ otras: [], carpetaLibre: true });
+    expect(de("src/sueltos/nada.ts").recomendada).toBeUndefined();
+  });
+
+  it("lo que usan varias funcionalidades por igual es código compartido: no se recomienda una", () => {
+    const fecha = de("src/shared/fecha.ts");
+    expect(fecha.recomendada).toBeUndefined();
+    expect(fecha.compartido).toEqual({ funcionalidades: 2 });
+    expect(fecha.otras.map((o) => o.id)).toEqual(["feat-envios", "feat-pagos"]);
+  });
+
+  it("la carpeta se puede asociar entera solo si nada de adentro tiene dueño", () => {
+    expect(de("src/shared/dinero.ts").carpetaLibre).toBe(true);
+    // En src/pagos hay archivos de Pagos; y src/pagos/extra está libre.
+    expect(de("src/pagos/extra/nota.ts").carpetaLibre).toBe(true);
+    expect(de("src/vecinos/a.ts").carpetaLibre).toBe(true);
+  });
+
+  it("la consulta los agrupa por carpeta, con la recomendada si la mayoría coincide", () => {
+    const r = sinAsociar(c, { budget_tokens: null }) as unknown as { total: number; conRecomendacion: number; compartidos: number; sinPista: number; carpetas: Array<{ carpeta: string; archivos: number; recomendada?: { id: string; archivos: number }; carpetaLibre: boolean; compartidos?: number }> };
+    expect([r.total, r.conRecomendacion, r.compartidos, r.sinPista]).toEqual([6, 3, 1, 2]);
+    expect(r.carpetas[0]).toMatchObject({ carpeta: `${A}:src/shared`, archivos: 3, recomendada: { id: "feat-pagos", archivos: 2 }, carpetaLibre: true, compartidos: 1 });
+    const solo = sinAsociar(c, { carpeta: "src/pagos", budget_tokens: null }) as unknown as { filtro: { coinciden: number }; carpetas: Array<{ carpeta: string }> };
+    expect(solo.filtro).toEqual({ coinciden: 1 });
+    expect((sinAsociar(c, { funcionalidad: "ninguna", budget_tokens: null }) as unknown as { filtro: { coinciden: number } }).filtro).toEqual({ coinciden: 3 });
+    expect((sinAsociar(c, { funcionalidad: "pagos", budget_tokens: null }) as unknown as { filtro: { coinciden: number } }).filtro).toEqual({ coinciden: 3 });
+    expect(() => sinAsociar(c, { funcionalidad: "no-existe" })).toThrow(ConsultaError);
+    expect((fidelidad(c) as unknown as { avisos: string[] }).avisos.join(" ")).toContain("6 archivos no son de ninguna funcionalidad ni librería");
   });
 });

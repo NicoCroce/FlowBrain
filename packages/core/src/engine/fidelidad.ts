@@ -15,11 +15,11 @@ import { ConsultaError, normalizar } from "./herramientas.js";
  * encontró nada (ni símbolos, ni llamadas, ni accesos) no tiene puntaje: no hay con qué medirlo, y se informa aparte.
  */
 
-export const SIGNALS = ["llamadas", "http", "datos", "entradas", "contrato", "pantallas", "funcionalidad"] as const;
+export const SIGNALS = ["llamadas", "http", "datos", "entradas", "contrato", "pantallas"] as const;
 export type Signal = (typeof SIGNALS)[number];
 
-/** Peso de cada signal en el puntaje. Las que salen del código pesan el doble que las de clasificación. */
-export const PESOS: Record<Signal, number> = { llamadas: 2, http: 2, datos: 2, entradas: 2, contrato: 1, pantallas: 1, funcionalidad: 1 };
+/** Peso de cada signal en el puntaje. Las que dicen por dónde pasa el dato pesan el doble. */
+export const PESOS: Record<Signal, number> = { llamadas: 2, http: 2, datos: 2, entradas: 2, contrato: 1, pantallas: 1 };
 
 /** Qué mide cada signal, para quien lee el informe. */
 export const QUE_MIDE: Record<Signal, string> = {
@@ -29,7 +29,6 @@ export const QUE_MIDE: Record<Signal, string> = {
   entradas: "endpoints atendidos acá cuyo recorrido llega a una tabla, un servicio o una cola",
   contrato: "endpoints atendidos acá con tipo de respuesta",
   pantallas: "pantallas dibujadas acá desde las que se llega a una llamada HTTP",
-  funcionalidad: "el archivo pertenece a una funcionalidad o a una librería",
 };
 
 export interface FidelidadArchivo {
@@ -44,8 +43,31 @@ export interface FidelidadArchivo {
   faltas: string[];
   /** Lo mismo, una por cosa a resolver: qué pasa, qué hacer y quién puede hacerlo. */
   tareas: Tarea[];
-  /** Si no es de ninguna funcionalidad: la de sus vecinos de carpeta, como sugerencia. */
-  sugerida?: { id: string; motivo: string };
+  /** No es de ninguna funcionalidad ni librería. No resta puntaje: se ve en `sinAsociar`. */
+  sinAsociar?: true;
+}
+
+/**
+ * Un archivo que no es de ninguna funcionalidad ni librería. Que un archivo no tenga funcionalidad no dice nada de
+ * cuánto lo entendió el índice, así que no entra en el puntaje: va aparte, con la funcionalidad que se le recomienda.
+ */
+export interface ArchivoSinAsociar {
+  archivo: string;
+  lenguaje: string;
+  capa: string;
+  /** La funcionalidad con más indicios, y por qué. Ausente si no hay indicios o si es código compartido. */
+  recomendada?: Recomendacion;
+  /** Otras con indicios parecidos (hasta 2), por si la primera no es. */
+  otras: Recomendacion[];
+  /** Lo usan archivos de dos o más funcionalidades sin que una domine: no es de una sola. */
+  compartido?: { funcionalidades: number };
+  /** Ningún archivo de su carpeta (ni de las de adentro) tiene dueño: se puede asociar la carpeta entera. */
+  carpetaLibre: boolean;
+}
+
+export interface Recomendacion {
+  id: string;
+  motivo: string;
 }
 
 /** Una cosa que le falta a un archivo para llegar a 100. */
@@ -56,7 +78,7 @@ export interface Tarea {
   /** Qué hay que hacer. */
   hacer: string;
   /**
-   * `persona`: se resuelve con un dato que alguien conoce (a qué funcionalidad va, a qué método llama, qué ruta); el
+   * `persona`: se resuelve con un dato que alguien conoce (a qué método llama, qué ruta); el
    * visor lo pide ahí mismo. `agente`: hay que leer código y escribir archivos del cerebro; va al plan para el modelo.
    */
   resuelve: "persona" | "agente";
@@ -106,7 +128,7 @@ export function fidelidadDeFuentes(graph: Graph, fichas: Ficha[], archivos: stri
 }
 
 /** Puntaje de cada archivo del índice que se puede medir, y cuáles no se pudieron medir. Sin filtros ni recortes. */
-export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad = {}): { archivos: FidelidadArchivo[]; sinDatos: string[] } {
+export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad = {}): { archivos: FidelidadArchivo[]; sinDatos: string[]; sinAsociar: ArchivoSinAsociar[] } {
   const ix = ctx.codigo;
   if (!ix) throw new ConsultaError("parametro_invalido", "no hay índice de código: corré `flowbrain index <repo>` y `flowbrain compile`");
   const archivoDe = (k: string) => k.slice(0, k.lastIndexOf("#"));
@@ -155,9 +177,16 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
   }
 
   const archivos: FidelidadArchivo[] = [], sinDatos: string[] = [];
+  /** Funcionalidades dueñas de cada archivo (los de una librería quedan con lista vacía) y los que no tienen dueño. */
+  const featsDe = new Map<string, string[]>();
+  const sueltos: Array<{ archivo: string; lenguaje: string; capa: string }> = [];
   for (const [archivo, e] of [...ix.estructura.entries()].sort((a, b) => cmp(a[0], b[0]))) {
     const ruta = archivo.slice(archivo.indexOf(":") + 1);
     if (ES_TEST.test(ruta)) continue;
+    const suyos = dueños.filter((x) => dentroDe(archivo, x.codigo));
+    const lenguaje = (ctx.nodo.get(archivo)?.atributos["lenguaje"] as string | undefined) ?? EXT.exec(ruta)?.[1]?.toLowerCase() ?? "otro";
+    if (suyos.length) featsDe.set(archivo, [...new Set(suyos.filter((x) => x.feat).map((x) => x.id))].sort(cmp));
+    else if (hayFuncionalidades) sueltos.push({ archivo, lenguaje, capa: capaDe(ruta) });
     const signals: FidelidadArchivo["signals"] = {};
     const faltas: string[] = [];
     const tareas: Tarea[] = [];
@@ -213,13 +242,6 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
       continue;
     }
 
-    const suyos = dueños.filter((x) => dentroDe(archivo, x.codigo));
-    if (hayFuncionalidades) {
-      signals.funcionalidad = { ok: suyos.length ? 1 : 0, total: 1 };
-      if (!suyos.length) faltas.push("no pertenece a ninguna funcionalidad ni librería: sumalo al `codigo` de la que corresponda");
-      if (!suyos.length) tarea("funcionalidad", "persona", "No es parte de ninguna funcionalidad ni librería", "Sumarlo a la funcionalidad que corresponda.");
-    }
-
     let suma = 0, peso = 0;
     for (const s of SIGNALS) {
       const v = signals[s];
@@ -227,41 +249,96 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
       suma += PESOS[s] * (v.ok / v.total);
       peso += PESOS[s];
     }
-    const lenguaje = (ctx.nodo.get(archivo)?.atributos["lenguaje"] as string | undefined) ?? EXT.exec(ruta)?.[1]?.toLowerCase() ?? "otro";
-    archivos.push({ archivo, puntaje: peso ? Math.round((100 * suma) / peso) : 100, lenguaje, capa: capaDe(ruta), funcionalidades: [...new Set(suyos.filter((x) => x.feat).map((x) => x.id))].sort(cmp), signals, faltas, tareas });
+    archivos.push({ archivo, puntaje: peso ? Math.round((100 * suma) / peso) : 100, lenguaje, capa: capaDe(ruta), funcionalidades: featsDe.get(archivo) ?? [], signals, faltas, tareas, ...(!suyos.length && hayFuncionalidades ? { sinAsociar: true as const } : {}) });
   }
 
-  // A un archivo sin funcionalidad se le sugiere la de sus vecinos: la que más archivos tiene en la carpeta más cercana.
-  const porCarpeta = new Map<string, Map<string, number>>();
+  return { archivos, sinDatos, sinAsociar: recomendar(ctx, sueltos, featsDe) };
+}
+
+const PESO_LO_USAN = 3, PESO_USA = 2, PESO_ENDPOINT = 4, PESO_VECINO = 1, PESO_VECINO_ARRIBA = 0.5, TOPE_VECINOS = 5;
+
+/**
+ * A cada archivo sin dueño, la funcionalidad con más indicios. De más fuerte a más débil: atiende un endpoint que una
+ * funcionalidad llama; lo importan archivos de una funcionalidad; importa archivos de una funcionalidad; sus vecinos
+ * de carpeta (o de la carpeta de arriba) son de una funcionalidad. Si lo usan dos o más funcionalidades y ninguna
+ * junta el 60 % de los usos, no se recomienda ninguna: es código compartido.
+ */
+function recomendar(ctx: Contexto, sueltos: Array<{ archivo: string; lenguaje: string; capa: string }>, featsDe: Map<string, string[]>): ArchivoSinAsociar[] {
+  const ix = ctx.codigo!;
+  const nombre = (id: string) => ctx.nodo.get(id)?.nombre ?? id;
   const carpetasDe = (archivo: string) => {
     const out: string[] = [];
     for (let i = archivo.lastIndexOf("/"); i > archivo.indexOf(":"); i = archivo.lastIndexOf("/", i - 1)) out.push(archivo.slice(0, i));
     return out;
   };
-  for (const a of archivos) {
-    const carpeta = carpetasDe(a.archivo)[0];
-    if (!carpeta) continue;
-    const m = porCarpeta.get(carpeta) ?? porCarpeta.set(carpeta, new Map()).get(carpeta)!;
-    for (const f of a.funcionalidades) m.set(f, (m.get(f) ?? 0) + 1);
-  }
-  for (const a of archivos) {
-    if (!a.tareas.some((t) => t.signal === "funcionalidad")) continue;
-    // Solo la carpeta propia y la de arriba: más lejos ya no es una pista.
-    for (const carpeta of carpetasDe(a.archivo).slice(0, 2)) {
-      const m = porCarpeta.get(carpeta);
-      if (!m?.size) continue;
-      const [id, n] = [...m.entries()].sort((x, y) => y[1] - x[1] || cmp(x[0], y[0]))[0]!;
-      const nombre = ctx.nodo.get(id)?.nombre ?? id;
-      a.sugerida = { id, motivo: `${cuantos(n, "archivo", "archivos")} de ${carpeta.slice(carpeta.indexOf(":") + 1)}/ ${n === 1 ? "es" : "son"} de ${nombre}` };
-      break;
+  // Quién importa a quién, y qué carpetas tienen adentro algún archivo con dueño.
+  const loImportan = new Map<string, string[]>();
+  const porCarpeta = new Map<string, Map<string, number>>();
+  const conDueño = new Set<string>();
+  for (const [k, feats] of featsDe) {
+    const cs = carpetasDe(k);
+    for (const c of cs) conDueño.add(c);
+    if (cs[0]) {
+      const m = porCarpeta.get(cs[0]) ?? porCarpeta.set(cs[0], new Map()).get(cs[0])!;
+      for (const f of feats) m.set(f, (m.get(f) ?? 0) + 1);
     }
+    const repo = k.slice(0, k.indexOf(":"));
+    for (const i of ix.estructura.get(k)?.importa ?? []) (loImportan.get(`${repo}:${i}`) ?? loImportan.set(`${repo}:${i}`, []).get(`${repo}:${i}`)!).push(k);
   }
-  return { archivos, sinDatos };
+  // Endpoints atendidos en cada archivo y qué funcionalidades los llaman (desde sus pantallas o su código).
+  const endpointsDe = new Map<string, string[]>();
+  for (const [k, eps] of ix.atiende) {
+    const a = k.slice(0, k.lastIndexOf("#"));
+    endpointsDe.set(a, [...(endpointsDe.get(a) ?? []), ...eps]);
+  }
+  const llaman = new Map<string, Set<string>>();
+  for (const f of ix.fichas.values()) {
+    for (const ep of [...f.usa.flatMap((u) => (u.endpoint ? [u.endpoint] : [])), ...f.pantallas.flatMap((x) => x.endpoints)]) (llaman.get(ep) ?? llaman.set(ep, new Set()).get(ep)!).add(f.id);
+  }
+
+  return sueltos.map(({ archivo, lenguaje, capa }) => {
+    const repo = archivo.slice(0, archivo.indexOf(":"));
+    const cuenta = new Map<string, { loUsan: number; usa: number; endpoints: number; vecinos: number; arriba: number; carpeta: string }>();
+    const de = (id: string) => cuenta.get(id) ?? cuenta.set(id, { loUsan: 0, usa: 0, endpoints: 0, vecinos: 0, arriba: 0, carpeta: "" }).get(id)!;
+    for (const k of loImportan.get(archivo) ?? []) for (const f of featsDe.get(k) ?? []) de(f).loUsan++;
+    for (const i of ix.estructura.get(archivo)?.importa ?? []) for (const f of featsDe.get(`${repo}:${i}`) ?? []) de(f).usa++;
+    for (const ep of new Set(endpointsDe.get(archivo) ?? [])) for (const f of llaman.get(ep) ?? []) de(f).endpoints++;
+    const [propia, arriba] = carpetasDe(archivo);
+    for (const [f, n] of porCarpeta.get(propia ?? "") ?? []) Object.assign(de(f), { vecinos: n, carpeta: propia });
+    for (const [f, n] of porCarpeta.get(arriba ?? "") ?? []) Object.assign(de(f), { arriba: n, carpeta: de(f).carpeta || arriba });
+    const corta = (c: string) => c.slice(c.indexOf(":") + 1);
+    const candidatas = [...cuenta.entries()]
+      .map(([id, c]) => ({
+        id,
+        puntos: PESO_ENDPOINT * c.endpoints + PESO_LO_USAN * c.loUsan + PESO_USA * c.usa + PESO_VECINO * Math.min(c.vecinos, TOPE_VECINOS) + PESO_VECINO_ARRIBA * Math.min(c.arriba, TOPE_VECINOS),
+        motivo: [
+          ...(c.endpoints ? [`atiende ${cuantos(c.endpoints, "endpoint", "endpoints")} que llama ${nombre(id)}`] : []),
+          ...(c.loUsan ? [`lo ${c.loUsan === 1 ? "importa" : "importan"} ${cuantos(c.loUsan, "archivo", "archivos")} de ${nombre(id)}`] : []),
+          ...(c.usa ? [`importa ${cuantos(c.usa, "archivo", "archivos")} de ${nombre(id)}`] : []),
+          ...(c.vecinos ? [`${cuantos(c.vecinos, "vecino", "vecinos")} de carpeta ${c.vecinos === 1 ? "es" : "son"} de ${nombre(id)}`] : c.arriba ? [`${cuantos(c.arriba, "archivo", "archivos")} de ${corta(arriba!)}/ ${c.arriba === 1 ? "es" : "son"} de ${nombre(id)}`] : []),
+        ]
+          .slice(0, 2)
+          .join("; "),
+      }))
+      .sort((a, b) => b.puntos - a.puntos || cmp(a.id, b.id));
+    const usos = [...cuenta.values()].reduce((n, c) => n + c.loUsan, 0);
+    const queLoUsan = [...cuenta.entries()].filter(([, c]) => c.loUsan);
+    const compartido = queLoUsan.length >= 2 && Math.max(...queLoUsan.map(([, c]) => c.loUsan)) < 0.6 * usos;
+    const [primera, ...resto] = candidatas;
+    return {
+      archivo,
+      lenguaje,
+      capa,
+      ...(primera && !compartido ? { recomendada: { id: primera.id, motivo: primera.motivo } } : {}),
+      otras: (compartido ? candidatas : resto).filter((c) => !primera || c.puntos >= 0.4 * primera.puntos).slice(0, 2).map((c) => ({ id: c.id, motivo: c.motivo })),
+      ...(compartido ? { compartido: { funcionalidades: queLoUsan.length } } : {}),
+      carpetaLibre: !!propia && !conDueño.has(propia),
+    };
+  });
 }
 
 /** Cómo resuelve el agente cada tipo de falta. Lo usan el plan del CLI y del MCP, y el que arma el visor. */
 export const COMO_RESOLVER: Record<Signal, string> = {
-  funcionalidad: "Decidí a qué funcionalidad pertenece el archivo (por lo que hace y por sus vecinos de carpeta) y sumá `repo:ruta` a la lista `codigo` del frontmatter de la página de esa funcionalidad. Si es de una carpeta entera, sumá la carpeta. Si ninguna funcionalidad lo cubre, proponé una nueva siguiendo `flowbrain feature --guide`.",
   llamadas: "Abrí el archivo en la línea indicada, identificá a qué método concreto va la llamada y declarala en `calls.yaml` del cerebro, sección `llamadas`: `{ desde: \"repo:ruta#Simbolo\", linea: N, hacia: \"repo:ruta#Clase.metodo\", origen: \"modelo\" }`. `flowbrain calls` lista las llamadas con sus candidatos.",
   http: "Abrí el archivo en la línea indicada y reconstruí la ruta leyendo de dónde sale la URL. Declarala en `calls.yaml`, sección `http`: `{ desde: \"repo:ruta#Simbolo\", linea: N, metodo: \"GET\", ruta: \"/ruta/{id}\", origen: \"modelo\" }`. Si la ruta ya se leyó y nadie la atiende, verificá con `flowbrain drift` si el endpoint existe con otra forma o si es de un servicio sin indexar.",
   datos: "Para una tabla sin página, creá su página en el cerebro (mirá una página de tabla existente como modelo). Para accesos sin columnas, el índice no sabe leer cómo este código nombra las columnas: seguí `flowbrain coverage --guide` y escribí o ajustá un extractor.",
@@ -324,7 +401,6 @@ export function planDeFidelidad(archivos: FidelidadArchivo[], opciones: Opciones
     ...elegidos.flatMap(({ a, tareas }) => [
       "",
       `### ${a.archivo} (${a.puntaje}/100)`,
-      ...(a.sugerida && tareas.some((t) => t.signal === "funcionalidad") ? [`Pista: ${a.sugerida.motivo} (\`${a.sugerida.id}\`).`] : []),
       ...tareas.map((t) => `- [ ] ${t.signal}: ${t.que}${t.lineas.length ? ` (${lineas(t.lineas)})` : ""}.`),
     ]),
     "",
@@ -351,7 +427,7 @@ function agrupar(xs: FidelidadArchivo[], claves: (x: FidelidadArchivo) => string
  * lista de archivos; el resumen de arriba es siempre el del brain entero.
  */
 export function fidelidad(ctx: Contexto, p: FidelidadParams = {}) {
-  const { archivos, sinDatos } = fidelidadDeArchivos(ctx);
+  const { archivos, sinDatos, sinAsociar: sueltos } = fidelidadDeArchivos(ctx);
 
   if (p.archivo) {
     const q = p.archivo.replace(/#.*$/, "");
@@ -374,7 +450,7 @@ export function fidelidad(ctx: Contexto, p: FidelidadParams = {}) {
   const tipo = p.tipo ? normalizar(p.tipo.replace(/^\./, "")) : null;
   const filtrados = archivos
     .filter((a) => a.puntaje >= min && a.puntaje <= max)
-    .filter((a) => !p.funcionalidad || (feat ? a.funcionalidades.includes(feat) : a.funcionalidades.length === 0))
+    .filter((a) => !p.funcionalidad || (feat ? a.funcionalidades.includes(feat) : !!a.sinAsociar))
     .filter((a) => !tipo || normalizar(a.lenguaje) === tipo || EXT.exec(a.archivo)?.[1]?.toLowerCase() === tipo)
     .filter((a) => {
       const v = p.signal ? a.signals[p.signal as Signal] : undefined;
@@ -402,7 +478,7 @@ export function fidelidad(ctx: Contexto, p: FidelidadParams = {}) {
   const r = {
     herramienta: "fidelidad",
     puntaje: promedio(archivos),
-    archivos: { medidos: archivos.length, sinDatos: sinDatos.length, completos: archivos.filter((a) => a.puntaje === 100).length },
+    archivos: { medidos: archivos.length, sinDatos: sinDatos.length, completos: archivos.filter((a) => a.puntaje === 100).length, sinAsociar: sueltos.length },
     distribucion: Object.fromEntries(TRAMOS.map(([k, a, b]) => [k, archivos.filter((x) => x.puntaje >= a && x.puntaje <= b).length])),
     porSignal,
     porFuncionalidad: agrupar(archivos, (a) => (a.funcionalidades.length ? a.funcionalidades : ["ninguna"])),
@@ -413,9 +489,77 @@ export function fidelidad(ctx: Contexto, p: FidelidadParams = {}) {
     ...(filtrados.length > limite ? { listaOmitidos: filtrados.length - limite } : {}),
     avisos: [
       ...(sinDatos.length ? [`${sinDatos.length} archivos sin puntaje: el índice no encontró símbolos, llamadas ni accesos en ellos (configuración, datos, o un lenguaje sin parser). Ejemplos: ${sinDatos.slice(0, 3).join(", ")}`] : []),
-      ...(ctx.codigo!.fichas.size ? [] : ["el brain no tiene funcionalidades: la signal `funcionalidad` no se mide"]),
+      ...(sueltos.length ? [`${sueltos.length} archivos no son de ninguna funcionalidad ni librería. No restan puntaje: \`sin_asociar\` los lista por carpeta con la funcionalidad recomendada`] : []),
       "una llamada HTTP con ruta que no se unió a un endpoint de este cerebro cuenta como entendida: puede ir a otro cerebro (ver `conexiones`)",
     ],
   };
   return ajustarLista(r, ["lista", "porFuncionalidad", "porLenguaje"], p.budget_tokens);
+}
+
+export interface SinAsociarParams {
+  /** Solo los archivos de esta carpeta o de las de adentro (`repo:ruta` o `ruta`). */
+  carpeta?: string;
+  /** Solo los que tienen recomendada esta funcionalidad (id, sufijo o nombre); `ninguna` para los que no tienen pista. */
+  funcionalidad?: string;
+  /** Cuántas carpetas listar, de la que más archivos tiene a la que menos (por defecto 30). */
+  limite?: number;
+  budget_tokens?: number | null;
+}
+
+export const COMO_ASOCIAR =
+  "Para asociar: sumá `repo:ruta` (el archivo, o la carpeta si `carpetaLibre`) a la lista `codigo` del frontmatter de la página de la funcionalidad y compilá. La recomendación es una pista: abrí el archivo antes de decidir. Lo `compartido` no va a una funcionalidad: va al `codigo` de una página `lib` (código común) o queda sin asociar. Si ninguna funcionalidad lo cubre, proponé una nueva con `flowbrain feature --guide`.";
+
+/**
+ * Archivos que no son de ninguna funcionalidad ni librería, agrupados por carpeta, con la funcionalidad que se le
+ * recomienda a cada grupo y por qué. Es la lista de trabajo para completar el catálogo de funcionalidades.
+ */
+export function sinAsociar(ctx: Contexto, p: SinAsociarParams = {}) {
+  const { sinAsociar: todos } = fidelidadDeArchivos(ctx);
+  if (!ctx.codigo!.fichas.size) return { herramienta: "sin_asociar", total: 0, carpetas: [], avisos: ["el brain no tiene funcionalidades: no hay a qué asociar. Primero `flowbrain feature --guide`"] };
+  const q = p.carpeta?.replace(/\/+$/, "");
+  let feat: string | null = null;
+  const sinPista = !!p.funcionalidad && normalizar(p.funcionalidad) === "ninguna";
+  if (p.funcionalidad && !sinPista) {
+    const n = normalizar(p.funcionalidad);
+    const ids = [...ctx.codigo!.fichas.keys()].filter((id) => normalizar(id) === n || normalizar(id) === `feat-${n}` || normalizar(ctx.nodo.get(id)?.nombre ?? "") === n);
+    if (ids.length !== 1) throw new ConsultaError("nodo_inexistente", `no se pudo resolver la funcionalidad: ${p.funcionalidad}`);
+    feat = ids[0]!;
+  }
+  const carpetaDe = (a: string) => (a.lastIndexOf("/") > a.indexOf(":") ? a.slice(0, a.lastIndexOf("/")) : a.slice(0, a.indexOf(":") + 1));
+  const filtrados = todos
+    .filter((a) => !q || carpetaDe(a.archivo) === q || carpetaDe(a.archivo).startsWith(`${q}/`) || carpetaDe(a.archivo).endsWith(`:${q}`) || a.archivo.includes(`:${q}/`))
+    .filter((a) => (sinPista ? !a.recomendada : !feat || a.recomendada?.id === feat));
+  const grupos = new Map<string, ArchivoSinAsociar[]>();
+  for (const a of filtrados) (grupos.get(carpetaDe(a.archivo)) ?? grupos.set(carpetaDe(a.archivo), []).get(carpetaDe(a.archivo))!).push(a);
+  const carpetas = [...grupos.entries()]
+    .map(([carpeta, xs]) => {
+      // La recomendada de la carpeta: la que más archivos suyos tienen recomendada.
+      const votos = new Map<string, number>();
+      for (const x of xs) if (x.recomendada) votos.set(x.recomendada.id, (votos.get(x.recomendada.id) ?? 0) + 1);
+      const [id, n] = [...votos.entries()].sort((a, b) => b[1] - a[1] || cmp(a[0], b[0]))[0] ?? [];
+      return {
+        carpeta,
+        archivos: xs.length,
+        // Solo si la recomiendan más de la mitad de sus archivos: con menos, la carpeta no es de una sola.
+        ...(id && 2 * n! > xs.length ? { recomendada: { id, nombre: ctx.nodo.get(id)?.nombre ?? id, archivos: n! } } : {}),
+        carpetaLibre: xs[0]!.carpetaLibre,
+        ...(xs.some((x) => x.compartido) ? { compartidos: xs.filter((x) => x.compartido).length } : {}),
+        lista: xs.slice(0, 8).map((x) => ({ archivo: x.archivo, ...(x.recomendada ? { recomendada: x.recomendada.id, motivo: x.recomendada.motivo } : {}), ...(x.otras.length ? { otras: x.otras.map((o) => o.id) } : {}), ...(x.compartido ? { compartido: `lo usan ${x.compartido.funcionalidades} funcionalidades` } : {}) })),
+        ...(xs.length > 8 ? { masArchivos: xs.length - 8 } : {}),
+      };
+    })
+    .sort((a, b) => b.archivos - a.archivos || cmp(a.carpeta, b.carpeta));
+  const limite = p.limite ?? 30;
+  const r = {
+    herramienta: "sin_asociar",
+    total: todos.length,
+    conRecomendacion: todos.filter((a) => a.recomendada).length,
+    compartidos: todos.filter((a) => a.compartido).length,
+    sinPista: todos.filter((a) => !a.recomendada && !a.compartido).length,
+    ...(q || p.funcionalidad ? { filtro: { coinciden: filtrados.length } } : {}),
+    carpetas: carpetas.slice(0, limite),
+    ...(carpetas.length > limite ? { carpetasOmitidas: carpetas.length - limite } : {}),
+    avisos: todos.length ? [COMO_ASOCIAR] : ["todos los archivos del índice son de alguna funcionalidad o librería"],
+  };
+  return ajustarLista(r, "carpetas", p.budget_tokens);
 }

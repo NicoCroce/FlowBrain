@@ -250,7 +250,9 @@ $ARGUMENTS
 4. **Compilar y verificar.** \`flowbrain compile\` dentro de \`.flowbrain/<cerebro>/\` después de cada tanda (si no
    compila, el error dice qué página corregir). Al final, \`flowbrain status --brain <cerebro>\`: las pantallas y
    endpoints sin funcionalidad tienen que haber bajado; los que quedan, revisalos uno por uno (¿falta sumar su carpeta
-   a un \`codigo\`?). Después \`flowbrain brains viewer\` regenera el mapa.
+   a un \`codigo\`?). \`flowbrain unassigned --brain <cerebro>\` lista los archivos que no quedaron en ninguna
+   funcionalidad, por carpeta, con la que se les recomienda y el motivo: asociá los que correspondan (lo marcado
+   como compartido va a una página \`lib\`, no a una funcionalidad). Después \`flowbrain brains viewer\` regenera el mapa.
 
 5. **Informar al usuario**, corto: cuántas funcionalidades quedaron por cerebro, qué uniste o descartaste y por qué,
    las preguntas abiertas que necesitan respuesta de una persona, y cómo verlas:

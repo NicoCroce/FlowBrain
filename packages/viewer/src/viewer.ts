@@ -1,4 +1,4 @@
-import { CIERRE_DEL_PLAN, COMO_RESOLVER, dependenciasDelGrafo, REGLAS_DEL_PLAN, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { CIERRE_DEL_PLAN, COMO_RESOLVER, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoSinAsociar, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
 import { mapa3dDelGrafo } from "./mapa3d.js";
@@ -6,6 +6,7 @@ import { GRAFO3D_JS } from "./viewer-3d.js";
 import { MAPA_JS } from "./viewer-mapa.js";
 import { PANTALLAS_JS } from "./viewer-pantallas.js";
 import { PRODUCTO_JS } from "./viewer-producto.js";
+import { SIN_ASOCIAR_JS } from "./viewer-sin-asociar.js";
 
 /**
  * Visor estático (`_build/viewer.html`): un único HTML con el grafo embebido, sin servidor ni red. Vistas:
@@ -22,6 +23,20 @@ const seguroEnScript = (s: string) => s.replace(/<\/(script)/gi, "<\\/$1").repla
 export interface FidelidadVisor {
   archivos: FidelidadArchivo[];
   sinDatos: string[];
+  /** Archivos sin funcionalidad ni librería, con la recomendada. Ausente en quien arma la fidelidad a mano. */
+  sinAsociar?: ArchivoSinAsociar[];
+}
+
+/** Los archivos sin asociar en formato corto: a: archivo, l: lenguaje, k: capa, g: recomendada [id, motivo], o: otras, m: funcionalidades que lo comparten, cl: carpeta libre. */
+export function sinAsociarDelVisor(f: FidelidadVisor | undefined) {
+  if (!f?.sinAsociar) return null;
+  return f.sinAsociar.map((x) => ({
+    a: x.archivo, l: x.lenguaje, k: x.capa,
+    ...(x.recomendada ? { g: [x.recomendada.id, x.recomendada.motivo] } : {}),
+    ...(x.otras.length ? { o: x.otras.map((o) => [o.id, o.motivo]) } : {}),
+    ...(x.compartido ? { m: x.compartido.funcionalidades } : {}),
+    ...(x.carpetaLibre ? { cl: 1 } : {}),
+  }));
 }
 
 /** Fidelidad en el formato corto que embebe el visor: una fila por archivo medido. */
@@ -29,12 +44,12 @@ export function fidelidadDelVisor(f: FidelidadVisor | undefined) {
   if (!f) return null;
   return {
     // a: archivo, p: puntaje, l: lenguaje, k: capa, f: funcionalidades, s: signal → [ok, total],
-    // t: tareas [signal, 1 si la resuelve una persona, qué pasa, qué hacer, líneas], g: funcionalidad sugerida [id, motivo].
+    // t: tareas [signal, 1 si la resuelve una persona, qué pasa, qué hacer, líneas], u: 1 si no es de ninguna funcionalidad ni librería.
     archivos: f.archivos.map((x) => ({
       a: x.archivo, p: x.puntaje, l: x.lenguaje, k: x.capa, f: x.funcionalidades,
       s: Object.fromEntries(Object.entries(x.signals).map(([k, v]) => [k, [v.ok, v.total]])),
       t: x.tareas.map((t) => [t.signal, t.resuelve === "persona" ? 1 : 0, t.que, t.hacer, t.lineas]),
-      ...(x.sugerida ? { g: [x.sugerida.id, x.sugerida.motivo] } : {}),
+      ...(x.sinAsociar ? { u: 1 } : {}),
     })),
     // Los textos del plan para el modelo: los mismos que usan el CLI y el MCP.
     plan: { reglas: REGLAS_DEL_PLAN, como: COMO_RESOLVER, cierre: CIERRE_DEL_PLAN },
@@ -49,6 +64,7 @@ export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidel
   const tests = new Set(funcionalidades.flatMap((f) => (f.tests ?? []).map((t) => t.archivo)));
   return {
     fidelidad: fidelidadDelVisor(fidelidad),
+    sinAsociar: sinAsociarDelVisor(fidelidad),
     dependencias: dependenciasDelGrafo(graph, funcionalidades),
     funcionalidades,
     // Pantallas del front con su envoltura y a dónde llevan; el recorrido de cada una viene en su funcionalidad.
@@ -310,6 +326,11 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 #especificaciones .fd-herr select { flex: 0 0 auto; width: auto; }
 .es-falta { color: var(--dudoso); border-color: #5B2A2A; }
 .es-fila { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; } .es-fila .fd-plan { flex: 1 1 100%; margin: 4px 0 0; }
+.sa-fila { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.sa-que { flex: 1 1 320px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13px; } .sa-que > div { flex: 1 1 100%; color: var(--claro); } .sa-que small { color: var(--suave); }
+.sa-rec a { color: var(--feat); text-decoration: none; font-weight: 500; } .sa-rec a:hover { text-decoration: underline; }
+.sa-otra { flex: 1 1 100%; max-width: 520px; } .sa-acc { margin-bottom: 8px; }
+#sinasociar .fd-herr select { flex: 0 0 auto; width: auto; max-width: 280px; } #sinasociar .es-cab h3 code { font-size: 14px; }
 
 a.nb { text-decoration: none; }
 
@@ -403,13 +424,14 @@ a.nb { text-decoration: none; }
 <body>
 <header id="cabecera">
   <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>FlowBrain</div>
-  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/especificaciones" data-vista="especificaciones">Especificaciones</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/fidelidad" data-vista="fidelidad">Fidelidad</a></nav>
+  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/especificaciones" data-vista="especificaciones">Especificaciones</a><a href="#/sin-asociar" data-vista="sinasociar">Sin asociar</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/fidelidad" data-vista="fidelidad">Fidelidad</a></nav>
   <div id="presets" class="oculto"></div>
 </header>
 <div id="producto" class="pagina"></div>
 <div id="impacto" class="pagina oculto"></div>
 <div id="fidelidad" class="pagina oculto"></div>
 <div id="especificaciones" class="pagina oculto"></div>
+<div id="sinasociar" class="pagina oculto"></div>
 <div id="app" class="oculto">
   <aside class="m3-panel m3-izq">
     <div class="m3-busca">
@@ -479,6 +501,7 @@ a.nb { text-decoration: none; }
 <script>${seguroEnScript(PANTALLAS_JS)}</script>
 <script>${seguroEnScript(FIDELIDAD_JS)}</script>
 <script>${seguroEnScript(ESPECIFICACIONES_JS)}</script>
+<script>${seguroEnScript(SIN_ASOCIAR_JS)}</script>
 <script>${seguroEnScript(MAPA_JS)}</script>
 </body>
 </html>

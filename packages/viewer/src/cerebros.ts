@@ -104,6 +104,8 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
           plan: partes.find((p) => p.fidelidad)!.fidelidad!.plan,
         }
       : null,
+    // Sin asociar de todos los cerebros, cada uno con el suyo (`c`); `null` si ninguno tiene índice de código.
+    sinAsociar: partes.some((p) => p.sinAsociar) ? partes.flatMap((p, i) => (p.sinAsociar ?? []).map((a) => ({ ...a, c: i }))) : null,
     conexiones,
     // Trazas de punta a punta que cruzan de un cerebro a otro; ya vienen con los ids prefijados.
     cruzado: trazas,

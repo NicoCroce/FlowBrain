@@ -12,6 +12,7 @@ import {
   deriva,
   especificaciones,
   fidelidad,
+  sinAsociar,
   funcionalidad,
   impactoDe,
   infra,
@@ -109,6 +110,7 @@ export const INSTRUCCIONES = [
   "- Cómo se construye, despliega y configura un servicio (imagen, pipeline, variables de entorno, proxy): infra.",
   "- Vecinos de un nodo por tipo de relación: recorrer_grafo.",
   "- Qué tiene que cumplir una funcionalidad (requisitos de negocio y de producto), qué archivo lo cumple y qué test lo verifica: especificaciones.",
+  "- Qué archivos no son de ninguna funcionalidad y a cuál conviene asociar cada uno: sin_asociar.",
   "- Qué tan confiable es lo que el grafo dice de un archivo o una funcionalidad, y qué falta completar: fidelidad.",
   "Cada dato trae evidencia `repo:ruta#Ln`: abrí ese archivo antes de afirmar algo. `avisos` y `truncado` marcan huecos conocidos: ahí falta dato, no significa que no pase nada.",
 ].join("\n");
@@ -357,7 +359,7 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "fidelidad",
     {
       description:
-        "Qué tan entendido quedó cada archivo por el índice, de 0 a 100, y qué le falta con su línea (llamadas sin resolver, HTTP sin ruta, accesos a tablas sin columnas o sin página, endpoints sin recorrido o sin tipo de respuesta, pantallas sin llamadas, archivos sin funcionalidad). Sin argumentos: puntaje general, reparto por tramos, por signal, por funcionalidad, capa y lenguaje, y los archivos de menor puntaje. Con `archivo`: su detalle. Con `plan: true`: las tareas para llevar esos archivos a 100 y cómo se resuelve cada una. Usalo para saber dónde desconfiar del grafo y qué completar primero.",
+        "Qué tan entendido quedó cada archivo por el índice, de 0 a 100, y qué le falta con su línea (llamadas sin resolver, HTTP sin ruta, accesos a tablas sin columnas o sin página, endpoints sin recorrido o sin tipo de respuesta, pantallas sin llamadas). Sin argumentos: puntaje general, reparto por tramos, por signal, por funcionalidad, capa y lenguaje, y los archivos de menor puntaje. Con `archivo`: su detalle. Con `plan: true`: las tareas para llevar esos archivos a 100 y cómo se resuelve cada una. Usalo para saber dónde desconfiar del grafo y qué completar primero.",
       inputSchema: {
         archivo: z.string().min(1).optional().describe("repo:ruta o ruta de un archivo: devuelve solo ese"),
         min: z.number().int().min(0).max(100).optional().describe("puntaje mínimo (0 a 100)"),
@@ -372,6 +374,22 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
       },
     },
     async (a) => correr("fidelidad", a, (ctx, args) => fidelidad(ctx, args)),
+  );
+
+  server.registerTool(
+    "sin_asociar",
+    {
+      description:
+        "Archivos del índice que no son de ninguna funcionalidad ni librería, agrupados por carpeta, con la funcionalidad recomendada para cada uno y el motivo (atiende un endpoint que esa funcionalidad llama, lo importan o importa archivos suyos, o sus vecinos de carpeta son de ella). Marca el código compartido (lo usan varias funcionalidades) y las carpetas que se pueden asociar enteras. Usalo para completar el catálogo de funcionalidades.",
+      inputSchema: {
+        carpeta: z.string().min(1).optional().describe("solo los de esta carpeta o de las de adentro (repo:ruta o ruta)"),
+        funcionalidad: z.string().min(1).optional().describe("solo los que tienen recomendada esta funcionalidad; \"ninguna\" para los que no tienen pista"),
+        limite: z.number().int().positive().optional().describe("cuántas carpetas listar (por defecto 30)"),
+        ...presupuesto,
+        ...deCerebro,
+      },
+    },
+    async (a) => correr("sin_asociar", a, (ctx, args) => sinAsociar(ctx, args)),
   );
 
   if (multi) {

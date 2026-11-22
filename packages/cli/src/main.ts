@@ -13,6 +13,7 @@ import {
   cobertura,
   especificaciones,
   fidelidad,
+  sinAsociar,
   leerControles,
   type InformeExtractorBreve,
   ARCHIVO_LLAMADAS,
@@ -120,9 +121,11 @@ Comandos:
                                             más el informe de los extractores del proyecto y los controles (checks.yaml)
   fidelity [archivo] [--min n] [--max n]    qué tan entendido quedó cada archivo, de 0 a 100, y qué le falta (con su
            [--feature id|ninguna]           línea): llamadas sin resolver, HTTP sin ruta, accesos sin columnas, endpoints
-           [--type ext] [--signal s]        sin recorrido o sin respuesta, pantallas sin llamadas, archivos sin
-           [--limit n] [--plan]             funcionalidad. Lista de menor a mayor; con un archivo, su detalle. Con
+           [--type ext] [--signal s]        sin recorrido o sin respuesta, pantallas sin llamadas. Lista de menor a
+           [--limit n] [--plan]             mayor; con un archivo, su detalle. Con
                                             --plan, un plan en texto para que un modelo lleve esos archivos a 100
+  unassigned [carpeta] [--feature id|ninguna]  archivos que no son de ninguna funcionalidad ni librería, por carpeta, con
+             [--limit n]                    la funcionalidad recomendada y el motivo; marca el código compartido
   calls [--limit n]                         dónde se cortan los recorridos: endpoints que no llegan a una tabla y las
                                             llamadas sin tipo que hay en su camino, con candidatos; se resuelven
                                             declarándolas en calls.yaml (raíz del brain) y reindexando
@@ -616,6 +619,9 @@ export async function ejecutar(
         break;
       case "specs":
         resultado = especificaciones(ctx, { ...opt("funcionalidad", arg), ...opt("estado", o.state), ...opt("tipo", o.type), ...(o.untested ? { sin_test: true } : {}), ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
+      case "unassigned":
+        resultado = sinAsociar(ctx, { ...opt("carpeta", arg), ...opt("funcionalidad", o.feature), ...opt("limite", entero(o.limit, "--limit")), ...opt("budget_tokens", comunes.budget_tokens) });
         break;
       case "fidelity":
         resultado = fidelidad(ctx, {

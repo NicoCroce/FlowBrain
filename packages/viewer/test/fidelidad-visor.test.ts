@@ -54,31 +54,32 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; g
 }
 
 type T = [string, 0 | 1, string, string, number[]];
-const fila = (c: number, a: string, p: number, f: string[], s: Record<string, [number, number]>, t: T[], l = "ts", k = "otros", g?: [string, string]) => ({ a, c, p, l, k, f, s, t, ...(g ? { g } : {}) });
+const fila = (c: number, a: string, p: number, f: string[], s: Record<string, [number, number]>, t: T[], l = "ts", k = "otros", u?: 1) => ({ a, c, p, l, k, f, s, t, ...(u ? { u } : {}) });
 const datos = {
   cerebros: [{ nombre: "front" }, { nombre: "back" }],
   nodes: [{ id: "front/feat-pedidos", n: "Pedidos" }],
   fidelidad: {
     archivos: [
-      fila(0, "front/repo-web:src/Pedidos.tsx", 100, ["front/feat-pedidos"], { pantallas: [1, 1], funcionalidad: [1, 1] }, [], "tsx", "interfaz"),
-      fila(0, "front/repo-web:src/api.ts", 50, ["front/feat-pedidos"], { http: [1, 2], funcionalidad: [1, 1] }, [["http", 1, "1 llamada HTTP cuya ruta no se pudo leer", "Escribir la ruta.", [14]]]),
-      fila(0, "front/repo-web:src/suelto.ts", 0, [], { funcionalidad: [0, 1] }, [["funcionalidad", 1, "No es parte de ninguna funcionalidad ni librería", "Sumarlo a la que corresponda.", []]], "ts", "otros", ["front/feat-pedidos", "2 archivos de src/ son de Pedidos"]),
+      fila(0, "front/repo-web:src/Pedidos.tsx", 100, ["front/feat-pedidos"], { pantallas: [1, 1] }, [], "tsx", "interfaz"),
+      fila(0, "front/repo-web:src/api.ts", 50, ["front/feat-pedidos"], { http: [1, 2] }, [["http", 1, "1 llamada HTTP cuya ruta no se pudo leer", "Escribir la ruta.", [14]]]),
+      // Sin funcionalidad: no resta puntaje ni tiene tareas; se asocia en la pantalla Sin asociar.
+      fila(0, "front/repo-web:src/suelto.ts", 100, [], {}, [], "ts", "otros", 1),
       fila(1, "back/repo-api:src/Servicio.php", 60, [], { llamadas: [1, 2], datos: [1, 2] }, [["llamadas", 1, "1 llamada que no se sabe a qué método va", "Decir a qué método va.", [6]], ["datos", 0, "1 acceso a una tabla sin saber qué columnas toca", "Enseñarlo con un extractor.", []]], "php", "logica"),
     ],
     sinDatos: 2,
     ejemplosSinDatos: ["back/repo-api:config.json"],
-    plan: { reglas: ["Editá solo archivos del cerebro."], como: { funcionalidad: "sumá repo:ruta al codigo", llamadas: "declarala en calls.yaml", http: "declarala en la sección http", datos: "seguí flowbrain coverage --guide" }, cierre: ["Reindexá: flowbrain brains apply <cerebro>."] },
+    plan: { reglas: ["Editá solo archivos del cerebro."], como: { llamadas: "declarala en calls.yaml", http: "declarala en la sección http", datos: "seguí flowbrain coverage --guide" }, cierre: ["Reindexá: flowbrain brains apply <cerebro>."] },
   },
 };
 
 describe("pantalla Fidelidad", () => {
   it("lista los archivos de todos los cerebros, de menor a mayor, con qué falta y qué hacer", () => {
     const v = montar(datos);
-    expect(v.rutas()).toEqual(["src/suelto.ts", "src/api.ts", "src/Servicio.php", "src/Pedidos.tsx"]);
+    expect(v.rutas()).toEqual(["src/api.ts", "src/Servicio.php", "src/Pedidos.tsx", "src/suelto.ts"]);
     expect(v.pagina()).toContain("puntaje promedio");
     expect(v.lista()).toContain("1 llamada HTTP cuya ruta no se pudo leer");
     expect(v.lista()).toContain("Escribir la ruta.");
-    expect(v.lista()).toContain("Pista: 2 archivos de src/ son de Pedidos.");
+    expect(v.lista()).toContain('<a class="chip fd-sinfeat" href="#/sin-asociar"');
     expect(v.lista()).toContain("Completo: todo lo que el índice vio acá quedó unido.");
     // Lo que no se pudo medir se explica, no se esconde.
     expect(v.pagina()).toContain("2 archivos no tienen puntaje");
@@ -89,24 +90,24 @@ describe("pantalla Fidelidad", () => {
   it("cadena de trazabilidad: lo entendido, dónde se corta y lo que no aplica", () => {
     const v = montar(datos);
     const cadenas = [...v.lista().matchAll(/<div class="fd-cadena"[^>]*>(.*?)<\/div>/g)].map((m) => [...m[1]!.matchAll(/class="fd-es (\w+)"[^>]*>([^<]+)</g)].map((e) => `${e[2]}:${e[1]}`));
-    // suelto.ts: solo se mide la funcionalidad, y falta.
-    expect(cadenas[0]).toEqual(["Funcionalidad:no", "Pantalla:na", "HTTP:na", "Endpoint:na", "Llamadas:na", "Datos:na"]);
     // api.ts: una de dos llamadas HTTP quedó sin unir.
-    expect(cadenas[1]).toEqual(["Funcionalidad:ok", "Pantalla:na", "HTTP 1/2:no", "Endpoint:na", "Llamadas:na", "Datos:na"]);
-    expect(cadenas[3]).toEqual(["Funcionalidad:ok", "Pantalla:ok", "HTTP:na", "Endpoint:na", "Llamadas:na", "Datos:na"]);
+    expect(cadenas[0]).toEqual(["Pantalla:na", "HTTP 1/2:no", "Endpoint:na", "Llamadas:na", "Datos:na"]);
+    expect(cadenas[2]).toEqual(["Pantalla:ok", "HTTP:na", "Endpoint:na", "Llamadas:na", "Datos:na"]);
+    // suelto.ts: no hay nada que medir, y que no tenga funcionalidad no entra en la cadena.
+    expect(cadenas[3]).toEqual(["Pantalla:na", "HTTP:na", "Endpoint:na", "Llamadas:na", "Datos:na"]);
   });
 
   it("agrupa por quién resuelve lo que falta; un archivo con las dos cosas está en los dos grupos", () => {
     const v = montar(datos);
-    expect(v.pagina()).toContain('data-grupo="vos">Lo resolvés vos <small>3</small>');
+    expect(v.pagina()).toContain('data-grupo="vos">Lo resolvés vos <small>2</small>');
     expect(v.pagina()).toContain('data-grupo="agente">Lo resuelve el agente <small>1</small>');
-    expect(v.pagina()).toContain('data-grupo="completos">Completos <small>1</small>');
+    expect(v.pagina()).toContain('data-grupo="completos">Completos <small>2</small>');
     v.tocar({ "data-grupo": "agente" });
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
     v.tocar({ "data-grupo": "completos" });
-    expect(v.rutas()).toEqual(["src/Pedidos.tsx"]);
+    expect(v.rutas()).toEqual(["src/Pedidos.tsx", "src/suelto.ts"]);
     v.tocar({ "data-grupo": "vos" });
-    expect(v.rutas()).toEqual(["src/suelto.ts", "src/api.ts", "src/Servicio.php"]);
+    expect(v.rutas()).toEqual(["src/api.ts", "src/Servicio.php"]);
   });
 
   it("los filtros finos y la estadística están plegados; abiertos, filtran por rango, cerebro, tipo, funcionalidad, signal y texto", () => {
@@ -126,7 +127,7 @@ describe("pantalla Fidelidad", () => {
     v.cambiar("fd-feat", "front/feat-pedidos");
     expect(v.rutas()).toEqual(["src/api.ts", "src/Pedidos.tsx"]);
     v.cambiar("fd-feat", "__ninguna");
-    expect(v.rutas()).toEqual(["src/suelto.ts", "src/Servicio.php"]);
+    expect(v.rutas()).toEqual(["src/suelto.ts"]);
     v.cambiar("fd-feat", "");
     v.cambiar("fd-lenguaje", "php");
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
@@ -135,9 +136,9 @@ describe("pantalla Fidelidad", () => {
     v.tocar({ "data-signal": "http" });
     expect(v.rutas()).toEqual(["src/api.ts"]);
     v.tocar({ "data-signal": "http" });
-    v.tocar({ "data-min": "0", "data-max": "19" });
-    expect(v.rutas()).toEqual(["src/suelto.ts"]);
-    v.tocar({ "data-min": "0", "data-max": "19" });
+    v.tocar({ "data-min": "100", "data-max": "100" });
+    expect(v.rutas()).toEqual(["src/Pedidos.tsx", "src/suelto.ts"]);
+    v.tocar({ "data-min": "100", "data-max": "100" });
     v.escribir("a qué método");
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
   });
@@ -167,17 +168,18 @@ describe("pantalla Fidelidad", () => {
     const plan = () => /<textarea id="fd-pl-texto"[^>]*>([\s\S]*?)<\/textarea>/.exec(v.lista())?.[1]?.replace(/&#(\d+);/g, (_, c: string) => String.fromCharCode(Number(c))) ?? "";
     expect(v.lista()).not.toContain("fd-pl-texto");
     v.tocar({ "data-acc": "plan" });
-    expect(plan()).toContain("llevar a 100 el puntaje de fidelidad de 3 archivos");
-    expect(plan()).toContain("### front/repo-web:src/suelto.ts (0/100)\nPista: 2 archivos de src/ son de Pedidos (front/feat-pedidos).\n- [ ] funcionalidad: No es parte de ninguna funcionalidad ni librería.");
+    expect(plan()).toContain("llevar a 100 el puntaje de fidelidad de 2 archivos");
+    expect(plan()).not.toContain("suelto.ts");
     expect(plan()).toContain("- [ ] llamadas: 1 llamada que no se sabe a qué método va (L6).");
     expect(plan()).toContain("- **datos**: seguí flowbrain coverage --guide");
     expect(plan()).toContain("1. Reindexá: flowbrain brains apply <cerebro>.");
     expect(plan()).not.toContain("Pedidos.tsx");
     // Se saca una relación: sus tareas y su explicación salen del plan.
-    v.marcar("fd-pl-s-funcionalidad", false);
-    expect(plan()).toContain("de 2 archivos");
-    expect(plan()).not.toContain("suelto.ts");
-    expect(plan()).not.toContain("**funcionalidad**");
+    v.marcar("fd-pl-s-http", false);
+    expect(plan()).toContain("de 1 archivo ");
+    expect(plan()).not.toContain("src/api.ts");
+    expect(plan()).not.toContain("**http**");
+    v.marcar("fd-pl-s-http", true);
     // El plan sigue a la lista: con un grupo puesto, solo sus archivos.
     v.tocar({ "data-grupo": "agente" });
     expect(plan()).toContain("de 1 archivo ");
@@ -198,19 +200,18 @@ describe("pantalla Fidelidad", () => {
     expect(fija.lista()).not.toContain('data-acc="resolver"');
     expect(fija.lista()).toContain("Lo resolvés vos");
     // El pedido para el agente no necesita servidor.
-    expect(fija.lista().match(/data-acc="pedido"/g)).toHaveLength(3);
+    expect(fija.lista().match(/data-acc="pedido"/g)).toHaveLength(2);
     const servida = montar(datos, { edicion: { token: "t", sinAplicar: ["back"] } });
     expect(servida.pagina()).not.toContain("solo lectura");
-    // Con sugerencia, un botón que suma directo y otro para elegir; lo del agente no tiene botón.
-    expect(servida.lista()).toContain('data-acc="sumar-sugerida" data-a="front/repo-web:src/suelto.ts">Sumar a Pedidos</button>');
-    expect(servida.lista()).toContain(">Otra…</button>");
+    // Lo que resuelve una persona tiene su botón; lo del agente, no. Asociar a una funcionalidad ya no se hace acá.
+    expect(servida.lista()).not.toContain("sumar-sugerida");
     expect(servida.lista()).toContain(">Escribir la ruta</button>");
     expect(servida.lista()).toContain(">Elegir destino</button>");
     expect(servida.lista().match(/Lo resuelve el agente/g)).toHaveLength(1);
     expect(servida.pagina()).toContain('data-acc="aplicar" data-cerebro="back">Reindexar back');
   });
 
-  it("resolver: un clic suma a la funcionalidad sugerida; elegir destino muestra los candidatos como botones", async () => {
+  it("resolver: elegir destino muestra los candidatos como botones y manda los ids del cerebro", async () => {
     const pedidos: Array<{ url: string; metodo: string; token: string | undefined; cuerpo: unknown }> = [];
     const detalle = {
       cerebro: "back", entradas: ["repo-api:src/Servicio.php", "repo-api:src"], funcionalidades: [{ id: "feat-stock", nombre: "Stock" }], dueñas: [],
@@ -219,39 +220,24 @@ describe("pantalla Fidelidad", () => {
     };
     const fetch = (url: string, init: { method: string; body?: string; headers: Record<string, string> }) => {
       pedidos.push({ url, metodo: init.method, token: init.headers["x-flowbrain-token"], cuerpo: init.body ? JSON.parse(init.body) : null });
-      const json = url.startsWith("/api/archivo") ? detalle : { escrito: "front/product/feat-pedidos.md", cambio: true, faltaReindexar: false, mensaje: "Sumado.", sinAplicar: [] };
+      const json = url.startsWith("/api/archivo") ? detalle : { escrito: "back/calls.yaml", cambio: true, faltaReindexar: false, mensaje: "Declarado.", sinAplicar: [] };
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) });
     };
     const v = montar(datos, { edicion: { token: "secreto", sinAplicar: [] }, fetch });
     const esperar = () => new Promise((ok) => setTimeout(ok, 0));
-    // El id que viaja es el del cerebro, sin el prefijo que le pone el visor.
-    v.tocar({ "data-acc": "sumar-sugerida", "data-a": "front/repo-web:src/suelto.ts" });
-    await esperar();
-    expect(pedidos[0]).toEqual({ url: "/api/editar", metodo: "POST", token: "secreto", cuerpo: { tipo: "funcionalidad", funcionalidad: "feat-pedidos", cerebro: "front", archivo: "repo-web:src/suelto.ts" } });
-    expect(v.lista()).toContain("Sumado. (front/product/feat-pedidos.md)");
-    v.tocar({ "data-acc": "recargar" });
-    expect(v.recargas()).toBe(1);
-
     v.tocar({ "data-acc": "resolver", "data-que": "llamadas", "data-a": "back/repo-api:src/Servicio.php" });
     expect(v.lista()).toContain("Leyendo el archivo");
     await esperar();
-    expect(pedidos[1]).toEqual({ url: "/api/archivo?cerebro=back&archivo=repo-api%3Asrc%2FServicio.php", metodo: "GET", token: "secreto", cuerpo: null });
+    // El id que viaja es el del cerebro, sin el prefijo que le pone el visor.
+    expect(pedidos[0]).toEqual({ url: "/api/archivo?cerebro=back&archivo=repo-api%3Asrc%2FServicio.php", metodo: "GET", token: "secreto", cuerpo: null });
     expect(v.lista()).toContain("se llama a <code>repo.traer</code>. ¿A cuál va?");
     expect(v.lista()).toContain('data-acc="declarar-llamada" data-linea="6" data-hacia="repo-api:src/RepoA.php#RepoA.traer">RepoA.traer');
     expect(v.lista()).not.toContain("<select");
     v.tocar({ "data-acc": "declarar-llamada", "data-linea": "6", "data-hacia": "repo-api:src/RepoB.php#RepoB.traer" });
     await esperar();
-    expect(pedidos[2]!.cuerpo).toEqual({ tipo: "llamada", linea: 6, hacia: "repo-api:src/RepoB.php#RepoB.traer", cerebro: "back", archivo: "repo-api:src/Servicio.php" });
-
-    // Elegir otra funcionalidad: un solo selector, y la carpeta como casilla.
-    v.tocar({ "data-acc": "resolver", "data-que": "funcionalidad", "data-a": "front/repo-web:src/suelto.ts" });
-    await esperar();
-    expect(v.lista().match(/<select/g)).toHaveLength(1);
-    expect(v.lista()).toContain("Sumar toda la carpeta <code>src</code>");
-    v.poner("fd-e-feat", "feat-stock");
-    v.marcar("fd-e-carpeta", true, false);
-    v.tocar({ "data-acc": "sumar" });
-    await esperar();
-    expect(pedidos[4]!.cuerpo).toMatchObject({ tipo: "funcionalidad", funcionalidad: "feat-stock", entrada: "repo-api:src" });
+    expect(pedidos[1]!.cuerpo).toEqual({ tipo: "llamada", linea: 6, hacia: "repo-api:src/RepoB.php#RepoB.traer", cerebro: "back", archivo: "repo-api:src/Servicio.php" });
+    expect(v.lista()).toContain("Declarado. (back/calls.yaml)");
+    v.tocar({ "data-acc": "recargar" });
+    expect(v.recargas()).toBe(1);
   });
 });

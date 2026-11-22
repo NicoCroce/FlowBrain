@@ -13,19 +13,18 @@ export const FIDELIDAD_JS = String.raw`
   var raiz = document.getElementById("fidelidad");
   var F = D.fidelidad, CEREBROS = D.cerebros || [];
   var filas = F ? F.archivos : [];
-  var SIGNAL = { llamadas: "Llamadas entre métodos", http: "Llamadas HTTP", datos: "Accesos a tablas", entradas: "Recorrido de endpoints", contrato: "Tipo de respuesta", pantallas: "Pantallas con llamadas", funcionalidad: "Funcionalidad asignada" };
+  var SIGNAL = { llamadas: "Llamadas entre métodos", http: "Llamadas HTTP", datos: "Accesos a tablas", entradas: "Recorrido de endpoints", contrato: "Tipo de respuesta", pantallas: "Pantallas con llamadas" };
   var MIDE = {
     llamadas: "llamadas que el índice pudo atribuir a su destino",
     http: "llamadas HTTP unidas a un endpoint o a un externo",
     datos: "accesos a tablas con página y columnas",
     entradas: "endpoints cuyo recorrido llega a una tabla, un servicio o una cola",
     contrato: "endpoints con tipo de respuesta",
-    pantallas: "pantallas desde las que se llega a una llamada HTTP",
-    funcionalidad: "archivos que pertenecen a una funcionalidad o librería"
+    pantallas: "pantallas desde las que se llega a una llamada HTTP"
   };
-  var ORDEN_SIGNAL = ["llamadas", "http", "datos", "entradas", "contrato", "pantallas", "funcionalidad"];
+  var ORDEN_SIGNAL = ["llamadas", "http", "datos", "entradas", "contrato", "pantallas"];
   // La cadena de trazabilidad: del producto a los datos. Cada eslabón junta una o dos signals.
-  var CADENA = [["Funcionalidad", ["funcionalidad"]], ["Pantalla", ["pantallas"]], ["HTTP", ["http"]], ["Endpoint", ["entradas", "contrato"]], ["Llamadas", ["llamadas"]], ["Datos", ["datos"]]];
+  var CADENA = [["Pantalla", ["pantallas"]], ["HTTP", ["http"]], ["Endpoint", ["entradas", "contrato"]], ["Llamadas", ["llamadas"]], ["Datos", ["datos"]]];
   var CAPA = { entrada: "Entrada", logica: "Lógica", dominio: "Dominio", datos: "Datos", interfaz: "Interfaz", otros: "Otros" };
   var GRUPOS = [["", "Todos"], ["vos", "Lo resolvés vos"], ["agente", "Lo resuelve el agente"], ["completos", "Completos"]];
   var TRAMOS = [[0, 19], [20, 39], [40, 59], [60, 79], [80, 99], [100, 100]];
@@ -43,7 +42,7 @@ export const FIDELIDAD_JS = String.raw`
   } catch (e) { /* sin almacenamiento */ }
   // Edición: solo cuando la página la sirve flowbrain viewer --serve.
   var ED = window.FLOWBRAIN_EDICION || null;
-  // abierto: { a: archivo, que: "funcionalidad" | "llamadas" | "http" }. MSG: { a, texto, ... }. PEDIDO: archivo con su plan a la vista.
+  // abierto: { a: archivo, que: "llamadas" | "http" }. MSG: { a, texto, ... }. PEDIDO: archivo con su plan a la vista.
   var abierto = null, DET = null, MSG = null, ocupado = false, PEDIDO = null;
   // El plan de la lista: qué relaciones entran y cuántos archivos.
   var PL = { abierto: false, signals: {}, limite: 40, copiado: false };
@@ -69,7 +68,7 @@ export const FIDELIDAD_JS = String.raw`
     if (S.cerebro !== "" && String(x.c) !== S.cerebro) return false;
     if (S.lenguaje && x.l !== S.lenguaje) return false;
     if (S.capa && x.k !== S.capa) return false;
-    if (S.feat === NINGUNA ? x.f.length : S.feat && x.f.indexOf(S.feat) < 0) return false;
+    if (S.feat === NINGUNA ? !x.u : S.feat && x.f.indexOf(S.feat) < 0) return false;
     if (S.signal) { var v = x.s[S.signal]; if (!v || v[0] >= v[1]) return false; }
     if (S.q) {
       var q = S.q.trim().toLowerCase();
@@ -152,7 +151,7 @@ export const FIDELIDAD_JS = String.raw`
   var campo = function (id, etiqueta, html) { return '<label class="fd-campo" for="' + id + '"><span class="lbl">' + etiqueta + "</span>" + html + "</label>"; };
   function filtros() {
     var lengs = contar(function (x) { return [x.l]; }), capas = contar(function (x) { return [x.k]; }), feats = contar(function (x) { return x.f; });
-    var sinFeat = filas.filter(function (x) { return !x.f.length; }).length;
+    var sinFeat = filas.filter(function (x) { return x.u; }).length;
     var porCantidad = function (m) { return Object.keys(m).sort(function (a, b) { return m[b] - m[a] || (a < b ? -1 : 1); }); };
     var sel = function (id, todos, ops, actual) { return '<select id="' + id + '"><option value="">' + todos + "</option>" + opciones(ops, actual) + "</select>"; };
     var featOps = Object.keys(feats).sort(function (a, b) { return nombreFeat(a).toLowerCase() < nombreFeat(b).toLowerCase() ? -1 : 1; }).map(function (id) {
@@ -199,7 +198,6 @@ export const FIDELIDAD_JS = String.raw`
     out.push("", "## Archivos");
     elegidos.forEach(function (e) {
       out.push("", "### " + e.x.a + " (" + e.x.p + "/100)");
-      if (e.x.g && e.t.some(function (t) { return t[0] === "funcionalidad"; })) out.push("Pista: " + e.x.g[1] + " (" + e.x.g[0] + ").");
       e.t.forEach(function (t) { out.push("- [ ] " + t[0] + ": " + t[2] + (t[4].length ? " (" + lineas(t[4]) + ")" : "") + "."); });
     });
     out.push("", "## Al terminar", "");
@@ -247,18 +245,13 @@ export const FIDELIDAD_JS = String.raw`
     if (t[1] !== 1) return '<span class="fd-quien">Lo resuelve el agente</span>';
     if (!ED) return '<span class="fd-quien vos">Lo resolvés vos</span>';
     var a = ' data-a="' + esc(x.a) + '"', on = function (que) { return abierto && abierto.a === x.a && abierto.que === que ? " on" : ""; };
-    if (t[0] === "funcionalidad") {
-      return (x.g ? '<button type="button" class="boton fd-pri" data-acc="sumar-sugerida"' + a + ">Sumar a " + esc(nombreFeat(x.g[0])) + "</button>" : "") +
-        '<button type="button" class="boton' + on("funcionalidad") + '" data-acc="resolver" data-que="funcionalidad"' + a + ">" + (x.g ? "Otra…" : "Elegir funcionalidad") + "</button>";
-    }
     if (t[0] === "llamadas") return '<button type="button" class="boton' + on("llamadas") + '" data-acc="resolver" data-que="llamadas"' + a + ">Elegir destino</button>";
     return '<button type="button" class="boton' + on("http") + '" data-acc="resolver" data-que="http"' + a + ">Escribir la ruta</button>";
   }
   function tarea(x, t) {
-    var pista = t[0] === "funcionalidad" && x.g ? " Pista: " + x.g[1] + "." : "";
-    return '<div class="fd-tarea"><div class="fd-que"><p>' + esc(t[2]) + (t[4].length ? ' <span class="fd-ln">' + lineas(t[4]) + "</span>" : "") + "." + esc(pista) + "</p>" +
+    return '<div class="fd-tarea"><div class="fd-que"><p>' + esc(t[2]) + (t[4].length ? ' <span class="fd-ln">' + lineas(t[4]) + "</span>" : "") + ".</p>" +
       '<p class="fd-nota">' + esc(t[3]) + '</p></div><div class="fd-hacer">' + accion(x, t) + "</div></div>" +
-      (abierto && abierto.a === x.a && abierto.que === (t[0] === "funcionalidad" || t[0] === "llamadas" ? t[0] : t[1] === 1 ? "http" : "") ? panel(x) : "");
+      (abierto && abierto.a === x.a && abierto.que === (t[0] === "llamadas" ? t[0] : t[1] === 1 ? "http" : "") ? panel(x) : "");
   }
   function fila(x) {
     var p = partes(x), c = cerebroDe(x);
@@ -268,7 +261,7 @@ export const FIDELIDAD_JS = String.raw`
       '<span class="fd-p" style="color:' + tono(x.p) + ";border-color:" + tono(x.p) + '">' + x.p + "</span>" +
       '<div class="fd-cuerpo"><div class="fd-ruta"><code>' + esc(p.ruta) + "</code>" + (p.repo ? " <small>" + esc(p.repo) + "</small>" : "") + "</div>" +
       '<div class="chips">' + (c && CEREBROS.length > 1 ? '<span class="chip">' + esc(c) + "</span>" : "") + '<span class="chip">' + esc(x.l) + '</span><span class="capa capa-' + esc(x.k) + '">' + esc(CAPA[x.k] || x.k) + "</span>" +
-      (x.f.length ? x.f.map(function (id) { return '<a class="chip" href="#/f/' + encodeURIComponent(id) + '">' + esc(nombreFeat(id)) + "</a>"; }).join("") : '<span class="chip fd-sinfeat">sin funcionalidad</span>') + "</div>" +
+      (x.f.length ? x.f.map(function (id) { return '<a class="chip" href="#/f/' + encodeURIComponent(id) + '">' + esc(nombreFeat(id)) + "</a>"; }).join("") : x.u ? '<a class="chip fd-sinfeat" href="#/sin-asociar" title="No resta puntaje. Se asocia en Sin asociar">sin funcionalidad</a>' : "") + "</div>" +
       cadena(x) +
       (x.t.length ? x.t.map(function (t) { return tarea(x, t); }).join("") : '<p class="fd-ok">Completo: todo lo que el índice vio acá quedó unido.</p>') +
       msg +
@@ -288,15 +281,7 @@ export const FIDELIDAD_JS = String.raw`
   function panel(x) {
     if (!DET) return '<div class="fd-ed"><p class="vacio">Leyendo el archivo…</p></div>';
     var html = "";
-    if (abierto.que === "funcionalidad") {
-      var carpeta = DET.entradas[1];
-      html = DET.funcionalidades.length
-        ? '<div class="fd-linea"><select id="fd-e-feat" aria-label="Funcionalidad">' + DET.funcionalidades.map(function (f) { return '<option value="' + esc(f.id) + '">' + esc(f.nombre) + "</option>"; }).join("") + "</select>" +
-          '<button type="button" class="boton fd-pri" data-acc="sumar">Sumar</button></div>' +
-          (carpeta ? '<label class="fd-casilla"><input type="checkbox" id="fd-e-carpeta"> Sumar toda la carpeta <code>' + esc(carpeta.slice(carpeta.indexOf(":") + 1)) + "</code>, no solo este archivo</label>" : "") +
-          '<p class="fd-nota">Se escribe en la página de esa funcionalidad y el cerebro se recompila solo.</p>'
-        : '<p class="fd-nota">El cerebro ' + esc(DET.cerebro) + " no tiene funcionalidades con página todavía: se crean con <code>/flowbrain-features</code>.</p>";
-    } else if (abierto.que === "llamadas") {
+    if (abierto.que === "llamadas") {
       html = DET.llamadas.length ? DET.llamadas.map(function (l) {
         var donde = '<p class="fd-donde">L' + l.linea + " · en <code>" + esc(l.desde) + "</code> se llama a <code>" + esc(l.llamada) + "</code>. ¿A cuál va?</p>";
         var corto = function (k) { var i = k.lastIndexOf("#"); return esc(k.slice(i + 1)) + " <small>" + esc(k.slice(k.indexOf(":") + 1, i)) + "</small>"; };
@@ -409,8 +394,6 @@ export const FIDELIDAD_JS = String.raw`
     if (acc === "resolver") { resolver(x.a, b.getAttribute("data-que")); return; }
     if (acc === "recargar") { guardar(); location.reload(); return; }
     if (acc === "aplicar") { aplicar(b.getAttribute("data-cerebro")); return; }
-    if (acc === "sumar-sugerida") { enviar(x, { tipo: "funcionalidad", funcionalidad: idLocal(x, x.g[0]) }); return; }
-    if (acc === "sumar") { var carpeta = elem("fd-e-carpeta"); enviar(x, { tipo: "funcionalidad", funcionalidad: valor("fd-e-feat"), entrada: carpeta && carpeta.checked ? DET.entradas[1] : DET.entradas[0] }); return; }
     if (acc === "declarar-http") { var lh = Number(b.getAttribute("data-linea")); enviar(x, { tipo: "http", linea: lh, metodo: b.getAttribute("data-metodo"), ruta: valor("fd-h-r-" + lh) }); return; }
     if (acc === "declarar-llamada") { var ll = Number(b.getAttribute("data-linea")); enviar(x, { tipo: "llamada", linea: ll, hacia: b.getAttribute("data-hacia") || valor("fd-l-" + ll) }); return; }
     if (acc === "orden") { S.orden = S.orden === "asc" ? "desc" : "asc"; refrescar(false); return; }
