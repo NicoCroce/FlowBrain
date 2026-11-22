@@ -322,7 +322,7 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "deriva",
     {
       description:
-        "Deriva de contratos entre servicios: llamadas a rutas que ningún endpoint atiende (y si existen con otro método), llamadas que coinciden con varios endpoints, y endpoints que ningún consumidor indexado llama. Sirve antes de borrar un endpoint o para encontrar integraciones rotas.",
+        "Deriva de contratos entre servicios: llamadas a rutas que ningún endpoint atiende (y si existen con otro método), llamadas que coinciden con varios endpoints, y endpoints que ningún consumidor indexado llama. Con varios cerebros cruza: lo que atiende o llama otro cerebro comunicado no cuenta como deriva. Sirve antes de borrar un endpoint o para encontrar integraciones rotas.",
       inputSchema: { nodo: z.string().min(1).optional().describe("id de un servicio; sin esto, todos"), ...presupuesto, ...deCerebro },
     },
     async (a) => correr("deriva", a, (ctx, args) => deriva(ctx, args)),

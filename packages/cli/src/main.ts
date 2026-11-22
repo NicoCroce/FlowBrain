@@ -130,7 +130,8 @@ Comandos:
   calls [--limit n]                         dónde se cortan los recorridos: endpoints que no llegan a una tabla y las
                                             llamadas sin tipo que hay en su camino, con candidatos; se resuelven
                                             declarándolas en calls.yaml (raíz del brain) y reindexando
-  drift [svc]                              llamadas que ningún endpoint atiende y endpoints que nadie llama
+  drift [svc]                              llamadas que ningún endpoint atiende y endpoints que nadie llama; con varios
+                                            cerebros cruza: lo que atiende o llama otro cerebro comunicado no es deriva
   infra [nodo] [--text <t>]                imágenes, compose, pipelines, variables de entorno y proxy, con su archivo
   eval [archivo] [--min pct]          corre preguntas con respuesta conocida (por defecto evals/questions.json)
                                             y da el porcentaje de aciertos; sale con 1 si queda debajo de --min
@@ -667,7 +668,8 @@ export async function ejecutar(
         break;
       }
       case "drift":
-        resultado = deriva(ctx, { ...opt("nodo", arg), ...opt("budget_tokens", comunes.budget_tokens) });
+        // Con un registro de varios cerebros, la deriva cruza: lo que atiende otro cerebro no es deriva.
+        resultado = deriva(ctx, { ...opt("nodo", arg), ...opt("budget_tokens", comunes.budget_tokens), ...(raizRegistro && (await leerRegistro(raizRegistro)).cerebros.length > 1 ? { cruzadas: await crearMulti(raizRegistro, { cwd }).cruzadas(o.brain) } : {}) });
         break;
       case "infra":
         resultado = infra(ctx, { ...opt("nodo", arg), ...opt("texto", o.text), ...opt("budget_tokens", comunes.budget_tokens) });

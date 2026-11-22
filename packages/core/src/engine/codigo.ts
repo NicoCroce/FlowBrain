@@ -932,20 +932,39 @@ export function riesgo(ctx: Contexto, p: RiesgoParams) {
 export interface DerivaParams {
   /** Servicio a revisar; sin esto, todos. */
   nodo?: string;
+  /** Con varios cerebros: lo que este cerebro llama en otros y lo que otros le llaman. Sin esto, la deriva mira solo este cerebro. */
+  cruzadas?: DerivaCruzada;
   budget_tokens?: number | null;
+}
+
+/** Lo que cruza de cerebro, visto desde uno: sale de los cruces del registro (la misma regla que `impacto` y `conexiones`). */
+export interface DerivaCruzada {
+  /** Cerebros con la comunicación activa con este. */
+  vecinos: string[];
+  /** Llamadas de este cerebro que atiende un endpoint de otro, por su evidencia. */
+  salientes: Map<string, { cerebro: string; endpoint: string }>;
+  /** Endpoints de este cerebro que llama otro: quiénes (`cerebro/servicio`). */
+  entrantes: Map<string, Set<string>>;
+  /** Llamadas que coinciden con endpoints de más de un cerebro y no se unieron a ninguno, por su evidencia. */
+  disputadas: Map<string, string[]>;
 }
 
 /**
  * Deriva entre lo que se llama y lo que se atiende: llamadas a rutas que ningún endpoint conocido atiende (o que
  * existen con otro método), llamadas que coinciden con varios endpoints, y endpoints que nadie llama. Lo último solo
  * dice algo si los consumidores del servicio están indexados: por eso se informa cuántos tiene cada servicio.
+ *
+ * Con un cerebro por repo, casi todo cruza: las llamadas de un front las atiende otro cerebro, y a los endpoints de un
+ * back los llama otro. Con `cruzadas`, una llamada atendida en otro cerebro deja de figurar como "sin endpoint" (queda
+ * solo la que no atiende nadie), y un endpoint que llama otro cerebro deja de figurar como "sin llamadas".
  */
 export function deriva(ctx: Contexto, p: DerivaParams) {
   const ix = indice(ctx);
   if (p.nodo !== undefined && ctx.nodo.get(p.nodo)?.tipo !== "svc") throw new ConsultaError("nodo_inexistente", `no existe el servicio: ${p.nodo}`);
   const endpoints = ctx.graph.nodes.filter((n) => n.tipo === "endpoint");
   const svcDe = (ep: string) => ep.slice(0, ep.indexOf(":"));
-  const llamados = new Set(ctx.graph.edges.filter((e) => e.verbo === "llama_a" && e.endpoint && e.estado !== "deprecado").map((e) => e.endpoint!));
+  const x = p.cruzadas;
+  const llamados = new Set([...ctx.graph.edges.filter((e) => e.verbo === "llama_a" && e.endpoint && e.estado !== "deprecado").map((e) => e.endpoint!), ...(x?.entrantes.keys() ?? [])]);
   // Consumidores de cada servicio: otros servicios o pantallas que le llaman algún endpoint.
   const consumidores = new Map<string, Set<string>>();
   for (const e of ctx.graph.edges) {
@@ -953,14 +972,26 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
     const quien = ctx.nodo.get(e.desde);
     if (quien?.tipo === "svc") consumidores.set(e.hasta, (consumidores.get(e.hasta) ?? new Set()).add(e.desde));
   }
+  for (const [ep, quienes] of x?.entrantes ?? []) for (const q of quienes) consumidores.set(svcDe(ep), (consumidores.get(svcDe(ep)) ?? new Set()).add(q));
   const svcs = (p.nodo ? [p.nodo] : [...new Set(endpoints.map((n) => svcDe(n.id)))]).sort(cmp);
   const sinLlamadas = endpoints
     .filter((n) => svcs.includes(svcDe(n.id)) && !llamados.has(n.id) && (consumidores.get(svcDe(n.id))?.size ?? 0) > 0)
     .map((n) => ({ endpoint: n.id, ev: String(n.atributos["evidencia"] ?? "") }));
   const rutaDe = (ref: string) => /^(\w+) (?:\$\{[^}]*\})?(\/\S*)$/.exec(ref);
   const pend = ix.llamadasPendientes.filter((l) => !p.nodo || l.desde === p.nodo || endpoints.some((n) => svcDe(n.id) === p.nodo && l.motivo.includes(String(n.atributos["ruta"]))));
+  // Las que atiende otro cerebro, por cerebro, con un ejemplo de cada una.
+  const afuera = new Map<string, { llamadas: number; endpoints: Set<string>; ejemplos: Array<{ llamada: string; endpoint: string; ev: string }> }>();
+  for (const l of pend) {
+    const d = x?.salientes.get(l.evidencia);
+    if (!d) continue;
+    const v = afuera.get(d.cerebro) ?? afuera.set(d.cerebro, { llamadas: 0, endpoints: new Set(), ejemplos: [] }).get(d.cerebro)!;
+    v.llamadas++;
+    if (!v.endpoints.has(d.endpoint) && v.ejemplos.length < 5) v.ejemplos.push({ llamada: l.referencia, endpoint: d.endpoint, ev: l.evidencia });
+    v.endpoints.add(d.endpoint);
+  }
+  const disputadas = pend.filter((l) => x?.disputadas.has(l.evidencia)).map((l) => ({ desde: l.desde, llamada: l.referencia, ev: l.evidencia, candidatos: x!.disputadas.get(l.evidencia)! }));
   const sinEndpoint = pend
-    .filter((l) => l.motivo.startsWith("base dinámica y ningún endpoint"))
+    .filter((l) => l.motivo.startsWith("base dinámica y ningún endpoint") && !x?.salientes.has(l.evidencia) && !x?.disputadas.has(l.evidencia))
     .map((l) => {
       const m = rutaDe(l.referencia);
       const otros = m ? endpoints.filter((n) => rutaCoincide(String(n.atributos["ruta"]), normalizarRuta(m[2]!)) && n.atributos["metodo"] !== m[1]).map((n) => n.id).sort(cmp) : [];
@@ -971,17 +1002,27 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
   const res = {
     ...(p.nodo ? { nodo: p.nodo } : {}),
     llamadasSinEndpoint: sinEndpoint,
+    ...(x
+      ? {
+          comunicadoCon: x.vecinos,
+          atendidasEnOtrosCerebros: [...afuera.entries()].sort(([a], [b]) => cmp(a, b)).map(([cerebro, v]) => ({ cerebro, llamadas: v.llamadas, endpoints: v.endpoints.size, ejemplos: v.ejemplos })),
+          ...(disputadas.length ? { disputadasEntreCerebros: disputadas } : {}),
+        }
+      : {}),
     llamadasAmbiguas: ambiguas,
     endpointsSinLlamadasDetectadas: sinLlamadas,
     consumidoresIndexados: Object.fromEntries(svcs.map((s) => [s, [...(consumidores.get(s) ?? [])].sort(cmp)])),
     avisos: [
-      ...svcs.filter((s) => !(consumidores.get(s)?.size ?? 0)).map((s) => `${s} no tiene consumidores indexados: no se puede decir qué endpoints suyos no se usan`),
+      ...svcs.filter((s) => !(consumidores.get(s)?.size ?? 0)).map((s) => `${s} no tiene consumidores indexados${x?.vecinos.length ? ` (ni acá ni en ${x.vecinos.join(", ")})` : ""}: no se puede decir qué endpoints suyos no se usan`),
+      ...(x && !x.vecinos.length ? ["este cerebro no tiene la comunicación activa con ningún otro: lo que llame afuera figura como sin endpoint (flowbrain brains lo muestra)"] : []),
+      ...(x && sinEndpoint.length ? [`las llamadas sin endpoint no las atiende ni este cerebro ni ${x.vecinos.join(", ") || "ningún otro"}: o la ruta ya no existe, o el servicio que la atiende no está indexado o no está comunicado`] : []),
+      ...(disputadas.length ? [`${disputadas.length} llamadas coinciden con endpoints de más de un cerebro: falta declarar a qué servicio va cada base de URL (flowbrain evidence las lista)`] : []),
       ...(sinAnalizar ? [`${sinAnalizar} llamadas con URL armada en tiempo de ejecución no se pudieron analizar: alguna puede ser la que usa un endpoint listado como sin llamadas`] : []),
       ...avisosIndice(ix),
     ],
     indice: versiones(ix),
   };
-  return ajustarLista(res, ["endpointsSinLlamadasDetectadas", "llamadasAmbiguas", "llamadasSinEndpoint"], p.budget_tokens);
+  return ajustarLista(res, ["endpointsSinLlamadasDetectadas", "llamadasAmbiguas", ...(disputadas.length ? (["disputadasEntreCerebros"] as never[]) : []), "llamadasSinEndpoint"], p.budget_tokens);
 }
 
 // ------------------------------------------------------------------ paridad entre dos servicios

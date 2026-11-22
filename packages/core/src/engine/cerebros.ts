@@ -5,6 +5,7 @@ import type { Graph } from "../schema.js";
 import { alcancePorPantalla } from "../pantallas.js";
 import { paqueteDeArchivo, quienesUsan, type PaqueteDelRepo, type RepoLeido } from "../componentes.js";
 import { normalizar, rutaCoincide } from "./herramientas.js";
+import type { DerivaCruzada } from "./codigo.js";
 
 /**
  * Entre cerebros. Cada cerebro es un brain aparte; acá está lo que se calcula al consultar cuando la comunicación
@@ -524,4 +525,17 @@ export function trazasCruzadas(fuentes: FuenteTraza[], cruces: Cruce[]): TrazasC
   // Las claves en orden, para que el resultado no dependa del orden en que se descubrieron.
   out.backs = Object.fromEntries(Object.entries(out.backs).sort(([a], [b]) => cmp(a, b)));
   return out;
+}
+
+/** Los cruces de un registro vistos desde un cerebro: lo que `deriva` necesita para no confundir "lo atiende otro cerebro" con "no lo atiende nadie". */
+export function derivaCruzadaDe(nombre: string, cruces: Cruces, vecinos: string[]): DerivaCruzada {
+  const salientes = new Map<string, { cerebro: string; endpoint: string }>();
+  const entrantes = new Map<string, Set<string>>();
+  const disputadas = new Map<string, string[]>();
+  for (const x of cruces.cruces) {
+    if (x.desde.cerebro === nombre) salientes.set(x.desde.evidencia, { cerebro: x.hacia.cerebro, endpoint: x.hacia.endpoint });
+    if (x.hacia.cerebro === nombre) (entrantes.get(x.hacia.endpoint) ?? entrantes.set(x.hacia.endpoint, new Set()).get(x.hacia.endpoint)!).add(`${x.desde.cerebro}/${x.desde.svc}`);
+  }
+  for (const d of cruces.entreCerebros) if (d.cerebro === nombre) disputadas.set(d.evidencia, d.candidatos);
+  return { vecinos: [...vecinos].sort(cmp), salientes, entrantes, disputadas };
 }

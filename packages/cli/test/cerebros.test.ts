@@ -162,11 +162,28 @@ describe("varios cerebros por MCP", () => {
     expect(imp["enOtrosCerebros"]).toEqual([{ salto: 1, cerebro: "front", funcionalidades: [], pantallas: { total: 0, primeras: [] }, servicios: { total: 1, primeros: [{ svc: "svc-tienda-web", endpoint: "svc-tienda-api:GET:/pedidos", ev: "repo-tienda-web:src/api.ts#L3" }] } }]);
     expect(imp).not.toHaveProperty("llamadoDesdeOtrosCerebros");
 
+    // La deriva cruza: lo que el front llama lo atiende el back, así que no es deriva; y el back tiene quién lo llame.
+    type Deriva = { llamadasSinEndpoint: unknown[]; atendidasEnOtrosCerebros: Array<Record<string, unknown>>; comunicadoCon: string[]; consumidoresIndexados: Record<string, string[]>; endpointsSinLlamadasDetectadas: unknown[]; avisos: string[] };
+    const df = (await llamar("deriva")) as unknown as Deriva;
+    expect(df.llamadasSinEndpoint).toEqual([]);
+    expect(df.atendidasEnOtrosCerebros.map((x) => [x["cerebro"], x["llamadas"], x["endpoints"]])).toEqual([["back", 2, 2]]);
+    const db = (await llamar("deriva", { cerebro: "back" })) as unknown as Deriva;
+    expect(db.consumidoresIndexados).toEqual({ "svc-tienda-api": ["front/svc-tienda-web"] });
+    expect(db.endpointsSinLlamadasDetectadas).toEqual([]);
+    expect(db.avisos.join(" ")).not.toContain("no tiene consumidores indexados");
+    // Por consola, lo mismo.
+    const cli = JSON.parse((await brain(["drift", "--brain", "front"])).stdout) as Deriva;
+    expect([cli.llamadasSinEndpoint.length, cli.comunicadoCon]).toEqual([0, ["back"]]);
+
     // Se apaga la comunicación en el registro: sin reiniciar ni reindexar, deja de haber pistas y cruces.
     await new Promise((r) => setTimeout(r, 20));
     await registro(["comunicacion:", "  - { entre: [front, back], activa: false }"]);
     expect(await llamar("buscar_nodo", { texto: "/pedidos" })).not.toHaveProperty("otrosCerebros");
     expect(await llamar("impacto", { pieza: "GET /pedidos", cerebro: "back" })).not.toHaveProperty("enOtrosCerebros");
+    // Y la deriva vuelve a ver las dos llamadas del front sin quien las atienda, y dice por qué.
+    const apagada = (await llamar("deriva")) as unknown as Deriva;
+    expect([apagada.llamadasSinEndpoint.length, apagada.comunicadoCon]).toEqual([2, []]);
+    expect(apagada.avisos.join(" ")).toContain("no tiene la comunicación activa con ningún otro");
   });
 
   it("una conexión declarada con `por` decide a cuál de dos servicios con las mismas rutas va cada llamada", async () => {

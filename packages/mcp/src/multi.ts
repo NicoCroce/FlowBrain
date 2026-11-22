@@ -6,6 +6,8 @@ import {
   cmp,
   ConsultaError,
   crucesDelRegistro,
+  deriva,
+  derivaCruzadaDe,
   impactoCruzado,
   impactoDe,
   leerRegistro,
@@ -16,6 +18,7 @@ import {
   type CerebroLiviano,
   type Contexto,
   type Cruce,
+  type DerivaCruzada,
   type Graph,
   type Registro,
 } from "@flowbrain/core";
@@ -28,7 +31,7 @@ const mtime = (p: string) => stat(p).then((s) => s.mtimeMs, () => 0);
  * (los que tienen la comunicación activa con él) se lee una versión liviana, para pistas y cruces. El registro se
  * relee cuando cambia: prender o apagar la comunicación no requiere reiniciar el servidor ni reindexar.
  */
-export function crearMulti(carpeta: string, opciones: { cwd?: string; sincronizar?: (raiz: string) => Promise<unknown> } = {}): Multi & { conexiones(cerebro?: string): Promise<unknown>; registro(): Promise<Registro> } {
+export function crearMulti(carpeta: string, opciones: { cwd?: string; sincronizar?: (raiz: string) => Promise<unknown> } = {}): Multi & { conexiones(cerebro?: string): Promise<unknown>; registro(): Promise<Registro>; cruzadas(cerebro?: string): Promise<DerivaCruzada> } {
   let reg: { m: number; r: Registro } | null = null;
   const registro = async () => {
     const m = await mtime(join(carpeta, ARCHIVO_REGISTRO));
@@ -185,8 +188,16 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
     return out;
   };
 
+  /** Lo que cruza de cerebro visto desde uno, para `deriva`: con los vecinos que estén compilados. */
+  const cruzadasDe = async (r: Registro, nombre: string) =>
+    derivaCruzadaDe(nombre, await crucesDe(r), (await todoDe(r)).livianos.map((l) => l.nombre).filter((n) => n !== nombre && r.comunicados(nombre, n)));
+
   return {
     registro,
+    async cruzadas(nombre?: string) {
+      const { r, c } = await elegir(nombre);
+      return cruzadasDe(r, c.nombre);
+    },
     descripcion: [
       "Este servidor tiene varios cerebros, cada uno con sus repos. Por defecto se consulta el del repo donde estás; pasá `cerebro` para consultar otro. Cada respuesta dice de qué `cerebro` salió.",
       "Si la respuesta trae `otrosCerebros`, hay algo con el mismo nombre en otro cerebro: decíselo al usuario en una línea (qué cerebro y qué encontraste) y consultalo solo si la tarea lo necesita o si te lo pide.",
@@ -194,6 +205,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       "En `impacto`, `enOtrosCerebros` sigue el cambio a los cerebros que llaman a los endpoints alcanzados: sus funcionalidades y pantallas también quedan afectadas. `servicios` son llamadas que no salen de una pantalla (un job, otro back); `alcanceDeLosServicios` es lo que, en ese cerebro, llega a esas llamadas, y desde ahí el impacto sigue al salto siguiente (`salto` 2, 3…).",
       "`llamaAOtrosCerebros` son los endpoints de otro cerebro que llaman las pantallas de la respuesta: la otra mitad de la pantalla o de la funcionalidad; para ver qué ejecutan, `recorrido` con ese endpoint y `cerebro`.",
       "`conexiones` resume qué servicios de un cerebro llaman a servicios de otro.",
+      "`deriva` cruza cerebros: `atendidasEnOtrosCerebros` son llamadas de este cerebro que atiende un endpoint de otro (no son deriva); `llamadasSinEndpoint` quedan solo las que no atiende ni este cerebro ni los comunicados; un endpoint que llama otro cerebro no figura como sin llamadas, y `consumidoresIndexados` incluye a los de otros cerebros como `cerebro/servicio`.",
       "`usadoEnOtrosCerebros` son componentes de este cerebro (un sistema de diseño, una librería) que dibujan pantallas de otro cerebro: un cambio en ellos las afecta, y con ellas a sus funcionalidades. `usaDeOtrosCerebros` son los componentes de otro cerebro que dibujan las pantallas de la respuesta. `dependenDesdeOtrosCerebros`: repos de otro cerebro que declaran en su manifiesto depender de un paquete de este. Salen de los imports y los manifiestos, sin depender de la comunicación entre cerebros.",
     ].join("\n"),
     async resolver(nombre?: string): Promise<CerebroResuelto> {
@@ -212,6 +224,8 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
               ? (id: string) => id === pieza0 || id.startsWith(`${pieza0}:componente:`) || texto.includes(JSON.stringify(id))
               : (id: string) => texto.includes(JSON.stringify(id));
           const paquetes = r.cerebros.length > 1 ? await porPaquetes(r, c.nombre, enRespuesta) : {};
+          // La deriva se rehace con lo que cruza: sin eso, todo lo que un front llama figura como "sin endpoint".
+          if (herramienta === "deriva" && r.cerebros.length > 1) return { ...deriva(ctx, { ...(args as { nodo?: string; budget_tokens?: number | null }), cruzadas: await cruzadasDe(r, c.nombre) }), ...paquetes };
           const { propio, vecinos } = await vecindario(r, c.nombre, c.raiz);
           if (!propio || !vecinos.length) return paquetes;
           const extra: Record<string, unknown> = { ...paquetes };

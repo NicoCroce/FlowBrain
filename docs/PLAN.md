@@ -54,7 +54,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 31b | Especificaciones: tipo, página, guía para el agente y consulta | Hecho (decisión 181) |
 | 31c | Pantalla Especificaciones | Hecho (decisión 182) |
 | 31d | Archivos sin asociar, con funcionalidad recomendada | Hecho (decisión 183) |
-| 32 a 35 | Entre cerebros: `deriva`, `paridad`, su pantalla y la CLI | Pendiente |
+| 32 | `deriva` entre cerebros | Hecho (decisión 185) |
+| 33 a 35 | Entre cerebros: `paridad`, la pantalla de deriva y paridad, y la CLI | Pendiente |
 | 36 a 39 | Otros: llamada interna, `riesgo` con tipos, `deriva` por campos, `infra` | Pendiente |
 | 40 a 43 | Parsers genéricos: rutas por archivo, clientes HTTP, layout y contexto, cron y gRPC | Pendiente |
 

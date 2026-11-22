@@ -90,6 +90,32 @@ describe("consultas de código", () => {
     expect(() => deriva(ctx, { nodo: "tabla-pagos" })).toThrow(ConsultaError);
   });
 
+  it("deriva entre cerebros: lo que atiende otro cerebro no es deriva, y un endpoint que llama otro cerebro tiene consumidor", () => {
+    const L30 = "repo-tienda:apps/web/src/api/checkout.ts#L30";
+    type R = { llamadasSinEndpoint: unknown[]; atendidasEnOtrosCerebros: unknown[]; disputadasEntreCerebros?: unknown[]; comunicadoCon: string[]; consumidoresIndexados: Record<string, string[]>; endpointsSinLlamadasDetectadas: Array<{ endpoint: string }>; avisos: string[] };
+    const vacio = { vecinos: ["otro"], salientes: new Map(), entrantes: new Map(), disputadas: new Map() };
+    // La llamada que acá no atiende nadie la atiende un endpoint de otro cerebro: sale de "sin endpoint".
+    const r = deriva(ctx, { cruzadas: { ...vacio, salientes: new Map([[L30, { cerebro: "otro", endpoint: "svc-x:GET:/checkout" }]]), entrantes: new Map([["svc-payments:POST:/payments", new Set(["otro/svc-app"])]]) } }) as unknown as R;
+    expect(r.llamadasSinEndpoint).toEqual([]);
+    expect(r.comunicadoCon).toEqual(["otro"]);
+    expect(r.atendidasEnOtrosCerebros).toEqual([{ cerebro: "otro", llamadas: 1, endpoints: 1, ejemplos: [{ llamada: "GET ${base}/checkout", endpoint: "svc-x:GET:/checkout", ev: L30 }] }]);
+    // Quien llama desde otro cerebro cuenta como consumidor, con su cerebro adelante.
+    expect(r.consumidoresIndexados["svc-payments"]).toEqual(["otro/svc-app", "svc-bff"]);
+    // Sin nadie que la atienda en ningún cerebro, sigue siendo deriva, y se dice dónde se buscó.
+    const sola = deriva(ctx, { cruzadas: vacio }) as unknown as R;
+    expect(sola.llamadasSinEndpoint).toHaveLength(1);
+    expect(sola.atendidasEnOtrosCerebros).toEqual([]);
+    expect(sola.avisos.join(" ")).toContain("no las atiende ni este cerebro ni otro");
+    // Coincide con endpoints de dos cerebros: no es deriva ni está unida; va aparte, con los candidatos.
+    const disp = deriva(ctx, { cruzadas: { ...vacio, disputadas: new Map([[L30, ["a/svc-a:GET:/checkout", "b/svc-b:GET:/checkout"]]]) } }) as unknown as R;
+    expect(disp.llamadasSinEndpoint).toEqual([]);
+    expect(disp.disputadasEntreCerebros).toEqual([{ desde: "svc-web", llamada: "GET ${base}/checkout", ev: L30, candidatos: ["a/svc-a:GET:/checkout", "b/svc-b:GET:/checkout"] }]);
+    // Sin comunicación con nadie, se avisa por qué todo figura como sin endpoint.
+    expect((deriva(ctx, { cruzadas: { ...vacio, vecinos: [] } }) as unknown as R).avisos.join(" ")).toContain("no tiene la comunicación activa con ningún otro");
+    // Sin `cruzadas` (un solo cerebro) la respuesta no cambia de forma.
+    expect(deriva(ctx, {})).not.toHaveProperty("atendidasEnOtrosCerebros");
+  });
+
   it("riesgo: de un diff a los métodos que cambian, quién los llama y lo que queda alcanzado", () => {
     const diff = ["diff --git a/apps/bff/src/clients/payments.ts b/apps/bff/src/clients/payments.ts", "--- a/apps/bff/src/clients/payments.ts", "+++ b/apps/bff/src/clients/payments.ts", "@@ -11,2 +11,3 @@ export async function crearPago", "-  viejo", "+  nuevo", "+  otro"].join("\n");
     expect(archivosDeDiff(diff)).toEqual([{ ruta: "apps/bff/src/clients/payments.ts", rangos: [[11, 13]] }]);
