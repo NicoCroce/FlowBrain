@@ -56,7 +56,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 31d | Archivos sin asociar, con funcionalidad recomendada | Hecho (decisión 183) |
 | 32 | `deriva` entre cerebros | Hecho (decisión 185) |
 | 33 | `paridad` entre cerebros | Hecho (decisión 186) |
-| 34 a 35 | Entre cerebros: la pantalla de deriva y paridad, y la CLI | Pendiente |
+| 34 | Pantalla Contratos: deriva y paridad | Hecho (decisión 187) |
+| 35 | `screen`, `feature` y `trace` de la CLI cruzan cerebros | Pendiente |
 | 36 a 39 | Otros: llamada interna, `riesgo` con tipos, `deriva` por campos, `infra` | Pendiente |
 | 40 a 43 | Parsers genéricos: rutas por archivo, clientes HTTP, layout y contexto, cron y gRPC | Pendiente |
 

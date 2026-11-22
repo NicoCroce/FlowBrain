@@ -1,5 +1,5 @@
 import type { Cruce, DependenciaCruzada, Ficha, Graph, ResumenConexion, TrazasCruzadas, UsoCruzado } from "@flowbrain/core";
-import { datosDelVisor, paginaDelVisor, type DatosVisor, type FidelidadVisor } from "./viewer.js";
+import { datosDelVisor, paginaDelVisor, type DatosVisor, type DerivaVisor, type FidelidadVisor } from "./viewer.js";
 
 /**
  * Visor de varios cerebros: une los datos de cada uno en una sola página. Cada id lleva el nombre de su cerebro
@@ -14,6 +14,8 @@ export interface CerebroVisor {
   funcionalidades: Ficha[];
   /** Fidelidad de sus archivos, ya con las llamadas que cruzan a otros cerebros contadas como unidas. */
   fidelidad?: FidelidadVisor;
+  /** Su deriva, ya cruzada con los cerebros comunicados. */
+  deriva?: DerivaVisor;
 }
 
 /** Reemplaza, a cualquier profundidad, los textos que son ids de nodos del cerebro por su versión con prefijo. */
@@ -37,7 +39,7 @@ export interface PorPaquetes {
 export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas: TrazasCruzadas = { pantallas: {}, backs: {} }, paquetes: PorPaquetes = { componentes: [], dependencias: [] }) {
   const partes = cerebros.map((c, i) => {
     const ids = new Set(c.graph.nodes.map((n) => n.id));
-    const d = conPrefijo(datosDelVisor(c.graph, c.funcionalidades, c.fidelidad), ids, (id) => `${c.nombre}/${id}`) as DatosVisor;
+    const d = conPrefijo(datosDelVisor(c.graph, c.funcionalidades, c.fidelidad, c.deriva), ids, (id) => `${c.nombre}/${id}`) as DatosVisor;
     return { ...d, nodes: d.nodes.map((n) => ({ ...n, c: i })) };
   });
   const svcDe = (ep: string) => ep.slice(0, ep.indexOf(":"));
@@ -103,6 +105,8 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
           plan: partes.find((p) => p.fidelidad)!.fidelidad!.plan,
         }
       : null,
+    // La deriva de cada cerebro que tiene índice de código, con el suyo (`c`).
+    deriva: partes.some((p) => p.deriva) ? partes.flatMap((p, i) => (p.deriva ?? []).map((d) => ({ ...d, c: i }))) : null,
     // Sin asociar de todos los cerebros, cada uno con el suyo (`c`); `null` si ninguno tiene índice de código.
     sinAsociar: partes.some((p) => p.sinAsociar) ? partes.flatMap((p, i) => (p.sinAsociar ?? []).map((a) => ({ ...a, c: i }))) : null,
     conexiones,

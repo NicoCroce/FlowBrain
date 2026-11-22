@@ -1,4 +1,5 @@
 import { CIERRE_DEL_PLAN, COMO_RESOLVER, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type ArchivoSinAsociar, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { CONTRATOS_JS } from "./viewer-contratos.js";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
 import { mapa3dDelGrafo } from "./mapa3d.js";
@@ -59,13 +60,43 @@ export function fidelidadDelVisor(f: FidelidadVisor | undefined) {
   };
 }
 
+/** La deriva de un brain tal como la devuelve el motor (`deriva`, sin recorte). */
+export interface DerivaVisor {
+  llamadasSinEndpoint: Array<{ desde: string; llamada: string; ev: string; existeConOtroMetodo?: string[] }>;
+  llamadasAmbiguas: Array<{ desde: string; llamada: string; ev: string; candidatos: string[] }>;
+  endpointsSinLlamadasDetectadas: Array<{ endpoint: string; ev: string }>;
+  consumidoresIndexados: Record<string, string[]>;
+  comunicadoCon?: string[];
+  atendidasEnOtrosCerebros?: Array<{ cerebro: string; llamadas: number; endpoints: number }>;
+  disputadasEntreCerebros?: Array<{ desde: string; llamada: string; ev: string; candidatos: string[] }>;
+  avisos: string[];
+}
+
+/** La deriva en formato corto. d: desde, l: llamada, ev, o: existe con otro método, k: candidatos; e: endpoint. */
+export function derivaDelVisor(d: DerivaVisor | undefined) {
+  if (!d) return null;
+  return {
+    sinEndpoint: d.llamadasSinEndpoint.map((x) => ({ d: x.desde, l: x.llamada, ev: x.ev, ...(x.existeConOtroMetodo ? { o: x.existeConOtroMetodo } : {}) })),
+    ambiguas: d.llamadasAmbiguas.map((x) => ({ d: x.desde, l: x.llamada, ev: x.ev, k: x.candidatos })),
+    disputadas: (d.disputadasEntreCerebros ?? []).map((x) => ({ d: x.desde, l: x.llamada, ev: x.ev, k: x.candidatos })),
+    atendidas: (d.atendidasEnOtrosCerebros ?? []).map((x) => ({ cerebro: x.cerebro, llamadas: x.llamadas, endpoints: x.endpoints })),
+    sinLlamadas: d.endpointsSinLlamadasDetectadas.map((x) => ({ e: x.endpoint, ev: x.ev })),
+    consumidores: d.consumidoresIndexados,
+    // `null`: no se cruzó con otros cerebros (un brain solo). Vacío: se cruzó y no tiene comunicación con ninguno.
+    comunicadoCon: d.comunicadoCon ?? null,
+    avisos: d.avisos,
+  };
+}
+
 /** Lo que el visor embebe de un brain. */
-export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor) {
+export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor, deriva?: DerivaVisor) {
   // Los archivos de test de alguna funcionalidad se dibujan como tipo propio (`test`), para prenderlos y apagarlos aparte.
   const tests = new Set(funcionalidades.flatMap((f) => (f.tests ?? []).map((t) => t.archivo)));
   return {
     fidelidad: fidelidadDelVisor(fidelidad),
     sinAsociar: sinAsociarDelVisor(fidelidad),
+    // Una entrada por cerebro; `null` si no hay índice de código (sin él no se sabe qué se llama).
+    deriva: deriva ? [derivaDelVisor(deriva)!] : null,
     dependencias: dependenciasDelGrafo(graph, funcionalidades),
     funcionalidades,
     // Pantallas del front con su envoltura y a dónde llevan; el recorrido de cada una viene en su funcionalidad.
@@ -103,8 +134,8 @@ export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidel
 
 export type DatosVisor = ReturnType<typeof datosDelVisor>;
 
-export function renderViewer(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor): string {
-  return paginaDelVisor(datosDelVisor(graph, funcionalidades, fidelidad));
+export function renderViewer(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor, deriva?: DerivaVisor): string {
+  return paginaDelVisor(datosDelVisor(graph, funcionalidades, fidelidad, deriva));
 }
 
 /** La página autocontenida, a partir de los datos (de un brain, o de varios cerebros ya unidos). */
@@ -333,6 +364,11 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .sa-rec a { color: var(--feat); text-decoration: none; font-weight: 500; } .sa-rec a:hover { text-decoration: underline; }
 .sa-otra { flex: 1 1 100%; max-width: 520px; } .sa-acc { margin-bottom: 8px; }
 #sinasociar .fd-herr select { flex: 0 0 auto; width: auto; max-width: 280px; } #sinasociar .es-cab h3 code { font-size: 14px; }
+.ct-sec > summary { cursor: pointer; list-style-position: outside; } .ct-sec > summary h3 { display: inline; margin: 0; font-size: 15px; } .ct-sec > summary small { margin-left: 6px; color: var(--suave); font-weight: 400; font-variant-numeric: tabular-nums; }
+.ct-sec[open] > summary { margin-bottom: 10px; } .ct-sec li code { overflow-wrap: anywhere; } .ct-sec h4 small { color: var(--suave); font-weight: 400; }
+.ct-par { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 12px; align-items: end; margin: 0 0 20px; padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
+.ct-par select { width: 100%; } .ct-barra { margin: -8px 0 20px; } #contratos h2 { margin-top: 24px; }
+@media (max-width: 720px) { .ct-par { grid-template-columns: 1fr; } }
 
 a.nb { text-decoration: none; }
 
@@ -426,7 +462,7 @@ a.nb { text-decoration: none; }
 <body>
 <header id="cabecera">
   <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>FlowBrain</div>
-  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/especificaciones" data-vista="especificaciones">Especificaciones</a><a href="#/sin-asociar" data-vista="sinasociar">Sin asociar</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/fidelidad" data-vista="fidelidad">Fidelidad</a></nav>
+  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Navegación</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/especificaciones" data-vista="especificaciones">Especificaciones</a><a href="#/sin-asociar" data-vista="sinasociar">Sin asociar</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/contratos" data-vista="contratos">Contratos</a><a href="#/fidelidad" data-vista="fidelidad">Fidelidad</a></nav>
   <div id="presets" class="oculto"></div>
 </header>
 <div id="producto" class="pagina"></div>
@@ -434,6 +470,7 @@ a.nb { text-decoration: none; }
 <div id="fidelidad" class="pagina oculto"></div>
 <div id="especificaciones" class="pagina oculto"></div>
 <div id="sinasociar" class="pagina oculto"></div>
+<div id="contratos" class="pagina oculto"></div>
 <div id="app" class="oculto">
   <aside class="m3-panel m3-izq">
     <div class="m3-busca">
@@ -504,6 +541,7 @@ a.nb { text-decoration: none; }
 <script>${seguroEnScript(FIDELIDAD_JS)}</script>
 <script>${seguroEnScript(ESPECIFICACIONES_JS)}</script>
 <script>${seguroEnScript(SIN_ASOCIAR_JS)}</script>
+<script>${seguroEnScript(CONTRATOS_JS)}</script>
 <script>${seguroEnScript(MAPA_JS)}</script>
 </body>
 </html>

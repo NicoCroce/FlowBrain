@@ -144,9 +144,12 @@ export interface OpcionesFidelidad {
   cruzadas?: ReadonlySet<string>;
 }
 
+/** Un contexto con índice de código desde los contenidos de `_build`, para quien no tiene uno armado (el visor). */
+export const contextoDeFuentes = (graph: Graph, fichas: Ficha[], archivos: string[], extracciones: string[]): Contexto => crearContexto(graph, [], new Map(), crearIndiceCodigo(graph, fichas, archivos, extracciones));
+
 /** Lo mismo que `fidelidadDeArchivos`, desde los contenidos de `_build` (para quien no tiene un contexto armado). */
 export function fidelidadDeFuentes(graph: Graph, fichas: Ficha[], archivos: string[], extracciones: string[], opciones: OpcionesFidelidad = {}) {
-  return fidelidadDeArchivos(crearContexto(graph, [], new Map(), crearIndiceCodigo(graph, fichas, archivos, extracciones)), opciones);
+  return fidelidadDeArchivos(contextoDeFuentes(graph, fichas, archivos, extracciones), opciones);
 }
 
 /** Puntaje de cada archivo del índice que se puede medir, y cuáles no se pudieron medir. Sin filtros ni recortes. */

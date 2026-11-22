@@ -1,6 +1,6 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, fidelidadDeFuentes, CompileError, crucesDelRegistro, usosEntreCerebros, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
+import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, contextoDeFuentes, deriva, derivaCruzadaDe, fidelidadDeArchivos, CompileError, crucesDelRegistro, usosEntreCerebros, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
 import { draftDir } from "@flowbrain/indexer";
 import { escribirIndex, fusionar, IGNORAR, indexar, leerRepo, PARSERS, slug } from "@flowbrain/parsers";
 import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@flowbrain/viewer";
@@ -352,11 +352,16 @@ export async function htmlDelVisor(registro: Registro): Promise<string | null> {
     if (archivos.length) conIndice.push({ visible, funcionalidades, extracciones, archivos });
   }
   if (!visibles.length) return null;
-  const cruces: Cruce[] = crucesDelRegistro([...livianos.values()], registro.comunicados, registro.conexiones).cruces;
+  const todos = crucesDelRegistro([...livianos.values()], registro.comunicados, registro.conexiones);
+  const cruces: Cruce[] = todos.cruces;
   // Fidelidad de cada cerebro: una llamada que cruza a otro cerebro cuenta como unida; una que no llega a ninguno, como falta.
   for (const x of conIndice) {
     const cruzadas = new Set(cruces.filter((k) => k.desde.cerebro === x.visible.nombre).map((k) => k.desde.evidencia));
-    x.visible.fidelidad = fidelidadDeFuentes(x.visible.graph, x.funcionalidades, x.archivos, x.extracciones, { cruzadas });
+    const ctx = contextoDeFuentes(x.visible.graph, x.funcionalidades, x.archivos, x.extracciones);
+    x.visible.fidelidad = fidelidadDeArchivos(ctx, { cruzadas });
+    // Y su deriva, con la misma regla: lo que atiende o llama otro cerebro comunicado no es deriva.
+    const vecinos = visibles.map((v) => v.nombre).filter((n) => n !== x.visible.nombre && registro.comunicados(x.visible.nombre, n));
+    x.visible.deriva = deriva(ctx, { budget_tokens: null, ...(visibles.length > 1 ? { cruzadas: derivaCruzadaDe(x.visible.nombre, todos, vecinos) } : {}) }) as unknown as NonNullable<CerebroVisor["deriva"]>;
   }
   const conexiones = resumenConexiones(cruces, registro.conexiones.filter((x) => registro.comunicados(x.desde.cerebro, x.hacia.cerebro)));
   return visorDeCerebros(visibles, cruces, conexiones, trazasCruzadas(fuentes, cruces), usosEntreCerebros([...livianos.values()]));
