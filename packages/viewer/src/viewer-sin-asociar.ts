@@ -225,6 +225,8 @@ export const SIN_ASOCIAR_JS = String.raw`
         var antes = U.length;
         U = U.filter(function (y) { return y.c !== x.c || (entrada ? y.a.indexOf(entrada + "/") !== 0 : y.a !== x.a); });
         hechos += antes - U.length;
+        // Asociado un archivo suelto, su carpeta y las de arriba ya tienen algo con dueño: dejan de poder asociarse enteras.
+        if (!entrada) U.forEach(function (y) { if (y.c === x.c && x.a.indexOf(carpetaDe(y.a) + "/") === 0) delete y.cl; });
         MSG = { texto: r.mensaje + " (" + r.escrito + ")" + (antes - U.length > 1 ? " " + (antes - U.length) + " archivos salieron de la lista." : "") };
         pintarTodo();
       }).catch(function (e) { ocupado = false; MSG = { texto: e.message, error: true }; pintarLista(); });

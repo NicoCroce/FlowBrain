@@ -1,4 +1,4 @@
-import { CIERRE_DEL_PLAN, COMO_RESOLVER, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoSinAsociar, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { CIERRE_DEL_PLAN, COMO_RESOLVER, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type ArchivoSinAsociar, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
 import { mapa3dDelGrafo } from "./mapa3d.js";
@@ -22,7 +22,8 @@ const seguroEnScript = (s: string) => s.replace(/<\/(script)/gi, "<\\/$1").repla
 /** Fidelidad de un brain tal como la calcula el motor (`fidelidadDeArchivos`). */
 export interface FidelidadVisor {
   archivos: FidelidadArchivo[];
-  sinDatos: string[];
+  /** Archivos sin ninguna relación para medir: no tienen puntaje. */
+  inciertos: ArchivoIncierto[];
   /** Archivos sin funcionalidad ni librería, con la recomendada. Ausente en quien arma la fidelidad a mano. */
   sinAsociar?: ArchivoSinAsociar[];
 }
@@ -53,8 +54,8 @@ export function fidelidadDelVisor(f: FidelidadVisor | undefined) {
     })),
     // Los textos del plan para el modelo: los mismos que usan el CLI y el MCP.
     plan: { reglas: REGLAS_DEL_PLAN, como: COMO_RESOLVER, cierre: CIERRE_DEL_PLAN },
-    sinDatos: f.sinDatos.length,
-    ejemplosSinDatos: f.sinDatos.slice(0, 5),
+    // Fidelidad incierta: a: archivo, m: 1 si el índice vio código pero ninguna relación (0: no vio nada), l, k, f.
+    inciertos: f.inciertos.map((x) => ({ a: x.archivo, m: x.motivo === "sin_relaciones" ? 1 : 0, l: x.lenguaje, k: x.capa, f: x.funcionalidades })),
   };
 }
 
@@ -273,6 +274,7 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .fd-cab .subtitulo { margin: 0; } .fd-acc { display: flex; gap: 8px; }
 .fd-fila { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 14px; align-items: start; padding: 12px 0 !important; }
 .fd-p { display: inline-flex; align-items: center; justify-content: center; height: 40px; border: 1px solid; border-radius: 10px; font: 600 16px var(--display); font-variant-numeric: tabular-nums; }
+.fd-inc { color: var(--suave); border-color: var(--borde2); border-style: dashed; }
 .fd-cuerpo { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .fd-ruta code { font-size: 13px; color: var(--text); }
 .fd-sinfeat { color: var(--dudoso); border-color: #5B2A2A; }

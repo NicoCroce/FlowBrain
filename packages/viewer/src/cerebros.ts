@@ -99,8 +99,7 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
     fidelidad: partes.some((p) => p.fidelidad)
       ? {
           archivos: partes.flatMap((p, i) => (p.fidelidad?.archivos ?? []).map((a) => ({ ...a, c: i }))),
-          sinDatos: partes.reduce((n, p) => n + (p.fidelidad?.sinDatos ?? 0), 0),
-          ejemplosSinDatos: partes.flatMap((p) => p.fidelidad?.ejemplosSinDatos ?? []).slice(0, 5),
+          inciertos: partes.flatMap((p, i) => (p.fidelidad?.inciertos ?? []).map((a) => ({ ...a, c: i }))),
           plan: partes.find((p) => p.fidelidad)!.fidelidad!.plan,
         }
       : null,

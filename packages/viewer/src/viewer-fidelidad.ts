@@ -13,6 +13,9 @@ export const FIDELIDAD_JS = String.raw`
   var raiz = document.getElementById("fidelidad");
   var F = D.fidelidad, CEREBROS = D.cerebros || [];
   var filas = F ? F.archivos : [];
+  // Fidelidad incierta: archivos sin ninguna relación para medir. No tienen puntaje ni entran al promedio.
+  var INC = F ? F.inciertos || [] : [];
+  var POR_QUE = ["El índice no encontró nada acá: ni símbolos, ni llamadas, ni accesos. Suele ser configuración, datos o un lenguaje que ningún parser lee.", "El índice vio código, pero ninguna relación para medir: ni llamadas, ni HTTP, ni tablas, ni endpoints, ni pantallas. Suele ser un archivo de tipos o constantes; si no lo es, hay algo que el parser no supo leer."];
   var SIGNAL = { llamadas: "Llamadas entre métodos", http: "Llamadas HTTP", datos: "Accesos a tablas", entradas: "Recorrido de endpoints", contrato: "Tipo de respuesta", pantallas: "Pantallas con llamadas" };
   var MIDE = {
     llamadas: "llamadas que el índice pudo atribuir a su destino",
@@ -26,7 +29,7 @@ export const FIDELIDAD_JS = String.raw`
   // La cadena de trazabilidad: del producto a los datos. Cada eslabón junta una o dos signals.
   var CADENA = [["Pantalla", ["pantallas"]], ["HTTP", ["http"]], ["Endpoint", ["entradas", "contrato"]], ["Llamadas", ["llamadas"]], ["Datos", ["datos"]]];
   var CAPA = { entrada: "Entrada", logica: "Lógica", dominio: "Dominio", datos: "Datos", interfaz: "Interfaz", otros: "Otros" };
-  var GRUPOS = [["", "Todos"], ["vos", "Lo resolvés vos"], ["agente", "Lo resuelve el agente"], ["completos", "Completos"]];
+  var GRUPOS = [["", "Todos"], ["vos", "Lo resolvés vos"], ["agente", "Lo resuelve el agente"], ["completos", "Completos"], ["incierta", "Fidelidad incierta"]];
   var TRAMOS = [[0, 19], [20, 39], [40, 59], [60, 79], [80, 99], [100, 100]];
   var NINGUNA = "__ninguna";
   var PASO = 100;
@@ -60,7 +63,7 @@ export const FIDELIDAD_JS = String.raw`
   var lineas = function (ls) { return ls.length > 6 ? "L" + ls.slice(0, 6).join(", L") + " y " + (ls.length - 6) + " más" : "L" + ls.join(", L"); };
   var paraVos = function (x) { return x.t.some(function (t) { return t[1] === 1; }); };
   var paraAgente = function (x) { return x.t.some(function (t) { return t[1] === 0; }); };
-  var enGrupo = function (x, g) { return g === "vos" ? paraVos(x) : g === "agente" ? paraAgente(x) : g === "completos" ? !x.t.length : true; };
+  var enGrupo = function (x, g) { return g === "vos" ? paraVos(x) : g === "agente" ? paraAgente(x) : g === "completos" ? !x.t.length : g === "incierta" ? false : true; };
 
   function coincide(x) {
     if (!enGrupo(x, S.grupo)) return false;
@@ -128,13 +131,14 @@ export const FIDELIDAD_JS = String.raw`
   function cifras() {
     var p = promedio(filas), completos = filas.filter(function (x) { return x.p === 100; }).length;
     var cifra = function (valor, texto, color) { return '<div class="fd-cifra"><b' + (color ? ' style="color:' + color + '"' : "") + ">" + valor + "</b><span>" + texto + "</span></div>"; };
-    return '<div class="fd-cifras">' + cifra(p, "puntaje promedio", tono(p)) + cifra(filas.length.toLocaleString("es"), "archivos medidos") +
-      cifra(completos.toLocaleString("es"), "en 100") + cifra((filas.length - completos).toLocaleString("es"), "con algo por completar") + cifra(F.sinDatos.toLocaleString("es"), "sin puntaje") + "</div>";
+    return '<div class="fd-cifras">' + cifra(p === null ? "—" : p, "puntaje promedio de lo medido", p === null ? "" : tono(p)) + cifra(filas.length.toLocaleString("es"), "archivos medidos") +
+      cifra(completos.toLocaleString("es"), "en 100") + cifra((filas.length - completos).toLocaleString("es"), "con algo por completar") + cifra(INC.length.toLocaleString("es"), "de fidelidad incierta") + "</div>";
   }
   // Los tres grupos: quién puede resolver lo que falta. Un archivo con cosas de los dos tipos está en los dos.
   function grupos() {
     return '<div class="fd-grupos" role="group" aria-label="Qué ver">' + GRUPOS.map(function (g) {
-      var n = filas.filter(function (x) { return enGrupo(x, g[0]); }).length;
+      var n = g[0] === "incierta" ? INC.length : filas.filter(function (x) { return enGrupo(x, g[0]); }).length;
+      if (g[0] === "incierta" && !n) return "";
       return '<button type="button" class="fd-grupo' + (S.grupo === g[0] ? " on" : "") + '" data-grupo="' + g[0] + '">' + g[1] + " <small>" + n.toLocaleString("es") + "</small></button>";
     }).join("") + "</div>";
   }
@@ -343,7 +347,38 @@ export const FIDELIDAD_JS = String.raw`
       ED.sinAplicar.map(function (c) { return '<button type="button" class="boton" data-acc="aplicar" data-cerebro="' + esc(c) + '">Reindexar ' + esc(c) + "</button>"; }).join(" ") + "</p>";
   }
   function pintarAviso(texto) { var e = elem("fd-aviso"); if (e && e.outerHTML !== undefined) e.outerHTML = aviso(texto); }
+  // El apartado de fidelidad incierta: sin puntaje, con el porqué de cada archivo. Respeta cerebro, tipo, capa, funcionalidad y texto.
+  function inciertas() {
+    var q = S.q.trim().toLowerCase();
+    return INC.filter(function (x) {
+      if (S.cerebro !== "" && String(x.c) !== S.cerebro) return false;
+      if (S.lenguaje && x.l !== S.lenguaje) return false;
+      if (S.capa && x.k !== S.capa) return false;
+      if (S.feat === NINGUNA ? x.f.length : S.feat && x.f.indexOf(S.feat) < 0) return false;
+      return !q || x.a.toLowerCase().indexOf(q) >= 0;
+    }).sort(function (a, b) { return b.m - a.m || (a.a < b.a ? -1 : 1); });
+  }
+  function listaIncierta() {
+    var xs = inciertas(), conCodigo = xs.filter(function (x) { return x.m === 1; }).length;
+    var que = '<p class="aviso">Estos archivos no tienen puntaje: el índice no encontró en ellos ninguna relación para medir, así que no se puede decir cuánto los entendió. No cuentan como 100 ni como 0 y no entran al promedio. ' +
+      "Si en alguno hay código que debería haberse leído, se enseña con un extractor (<code>flowbrain coverage --guide</code>).</p>";
+    if (!xs.length) {
+      return que + '<p class="aviso">Ningún archivo de fidelidad incierta coincide con los filtros. Hay ' + plural(INC.length, "archivo", "archivos") + ' en total. <button type="button" class="boton" data-acc="limpiar">Quitar filtros</button></p>';
+    }
+    var visibles = xs.slice(0, S.ver);
+    return que + '<div class="fd-cab"><p class="subtitulo">' + plural(xs.length, "archivo", "archivos") + " de fidelidad incierta: " + conCodigo.toLocaleString("es") + " con código pero sin relaciones, " + (xs.length - conCodigo).toLocaleString("es") + " donde el índice no vio nada</p></div>" +
+      '<ul class="lista fd-lista">' + visibles.map(function (x) {
+        var p = partes(x), c = cerebroDe(x);
+        return '<li class="fd-fila"><span class="fd-p fd-inc" title="Fidelidad incierta">?</span>' +
+          '<div class="fd-cuerpo"><div class="fd-ruta"><code>' + esc(p.ruta) + "</code>" + (p.repo ? " <small>" + esc(p.repo) + "</small>" : "") + "</div>" +
+          '<div class="chips">' + (c && CEREBROS.length > 1 ? '<span class="chip">' + esc(c) + "</span>" : "") + '<span class="chip">' + esc(x.l) + '</span><span class="capa capa-' + esc(x.k) + '">' + esc(CAPA[x.k] || x.k) + "</span>" +
+          x.f.map(function (id) { return '<a class="chip" href="#/f/' + encodeURIComponent(id) + '">' + esc(nombreFeat(id)) + "</a>"; }).join("") + "</div>" +
+          '<p class="fd-nota">' + POR_QUE[x.m] + "</p></div></li>";
+      }).join("") + "</ul>" +
+      (xs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="btn" data-acc="mas">Mostrar ' + Math.min(PASO, xs.length - visibles.length) + " más</button> <small>" + plural(visibles.length, "visible", "visibles") + " de " + xs.length.toLocaleString("es") + "</small></p>" : "");
+  }
   function lista() {
+    if (S.grupo === "incierta") return listaIncierta();
     var xs = filtradas(), activos = filtrosActivos();
     if (!xs.length) {
       return planDeLista() + '<p class="aviso">Ningún archivo coincide con ' + activos.map(esc).join(", ") + ". " +
@@ -358,7 +393,7 @@ export const FIDELIDAD_JS = String.raw`
   }
 
   // ---------- Página ----------
-  var COMO = '<p class="subtitulo">Cuánto de cada archivo quedó unido en el grafo, de 0 a 100. En cada fila, la cadena muestra qué eslabón se entendió, dónde se corta y qué no aplica; debajo, qué falta y qué hacer.</p>' +
+  var COMO = '<p class="subtitulo">Cuánto de cada archivo quedó unido en el grafo, de 0 a 100. Solo se mide donde hay algo que medir: el resto queda en Fidelidad incierta. En cada fila, la cadena muestra qué eslabón se entendió, dónde se corta y qué no aplica; debajo, qué falta y qué hacer.</p>' +
     '<p class="fd-leyenda"><span class="fd-es ok">Entendido</span><span class="fd-es no">Ahí se corta</span><span class="fd-es na">No aplica</span></p>';
   function pintarLista() { elem("fd-lista").innerHTML = lista(); }
   function pintarTodo() {
@@ -366,12 +401,12 @@ export const FIDELIDAD_JS = String.raw`
       raiz.innerHTML = "<h1>Fidelidad</h1>" + '<p class="aviso">No hay índice de código, así que no hay archivos para medir. La fidelidad sale de lo que deja <code>flowbrain index</code> en <code>_build/files</code> y <code>_build/extraction</code>: corré <code>flowbrain index</code> sobre cada repo y después <code>flowbrain compile</code>.</p>';
       return;
     }
-    var sin = F.sinDatos ? '<p class="aviso">' + plural(F.sinDatos, "archivo no tiene puntaje", "archivos no tienen puntaje") + ": el índice no encontró símbolos, llamadas ni accesos en ellos (configuración, datos, o un lenguaje que ningún parser lee). No cuentan como 0 ni como 100." +
-      (F.ejemplosSinDatos.length ? " Por ejemplo: " + F.ejemplosSinDatos.map(function (a) { return "<code>" + esc(a) + "</code>"; }).join(", ") + "." : "") + " Si hay código ahí, se enseña con un extractor.</p>" : "";
-    if (!filas.length) {
-      raiz.innerHTML = "<h1>Fidelidad</h1>" + '<p class="aviso">El índice no midió ningún archivo.</p>' + sin;
+    if (!filas.length && !INC.length) {
+      raiz.innerHTML = "<h1>Fidelidad</h1>" + '<p class="aviso">El índice no encontró ningún archivo para medir. Corré <code>flowbrain index</code> sobre cada repo y después <code>flowbrain compile</code>.</p>';
       return;
     }
+    if (S.grupo === "incierta" && !INC.length) S.grupo = "";
+    var sin = INC.length && S.grupo !== "incierta" ? '<p class="aviso">' + plural(INC.length, "archivo tiene fidelidad incierta", "archivos tienen fidelidad incierta") + ': no hay en ellos ninguna relación para medir, así que no llevan puntaje ni entran al promedio. <button type="button" class="boton" data-grupo="incierta">Verlos</button></p>' : "";
     raiz.innerHTML = "<h1>Fidelidad</h1>" + COMO + aviso(null) + cifras() + grupos() + herramientas() + '<div id="fd-lista">' + lista() + "</div>" + sin;
   }
   function refrescar(todo) { S.ver = PASO; PL.copiado = false; guardar(); if (todo) pintarTodo(); else pintarLista(); }

@@ -122,7 +122,8 @@ Comandos:
   fidelity [archivo] [--min n] [--max n]    qué tan entendido quedó cada archivo, de 0 a 100, y qué le falta (con su
            [--feature id|ninguna]           línea): llamadas sin resolver, HTTP sin ruta, accesos sin columnas, endpoints
            [--type ext] [--signal s]        sin recorrido o sin respuesta, pantallas sin llamadas. Lista de menor a
-           [--limit n] [--plan]             mayor; con un archivo, su detalle. Con
+           [--limit n] [--plan]             mayor; con un archivo, su detalle. --uncertain lista los de fidelidad
+           [--uncertain]                    incierta (sin nada que medir: no tienen puntaje ni entran al promedio). Con
                                             --plan, un plan en texto para que un modelo lleve esos archivos a 100
   unassigned [carpeta] [--feature id|ninguna]  archivos que no son de ninguna funcionalidad ni librería, por carpeta, con
              [--limit n]                    la funcionalidad recomendada y el motivo; marca el código compartido
@@ -224,6 +225,7 @@ export async function ejecutar(
         signal: { type: "string" },
         state: { type: "string" },
         untested: { type: "boolean" },
+        uncertain: { type: "boolean" },
         plan: { type: "boolean" },
         text: { type: "string" },
         diff: { type: "string" },
@@ -634,6 +636,7 @@ export async function ejecutar(
           ...opt("limite", entero(o.limit, "--limit")),
           ...opt("budget_tokens", comunes.budget_tokens),
           ...(o.plan ? { plan: true } : {}),
+          ...(o.uncertain ? { inciertos: true } : {}),
         });
         // El plan es texto para pegarle a un modelo: sale tal cual, no como JSON.
         if (o.plan) return { codigo: 0, stdout: (resultado as unknown as { plan: string }).plan, stderr: "" };

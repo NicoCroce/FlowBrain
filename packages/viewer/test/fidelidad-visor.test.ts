@@ -66,8 +66,10 @@ const datos = {
       fila(0, "front/repo-web:src/suelto.ts", 100, [], {}, [], "ts", "otros", 1),
       fila(1, "back/repo-api:src/Servicio.php", 60, [], { llamadas: [1, 2], datos: [1, 2] }, [["llamadas", 1, "1 llamada que no se sabe a qué método va", "Decir a qué método va.", [6]], ["datos", 0, "1 acceso a una tabla sin saber qué columnas toca", "Enseñarlo con un extractor.", []]], "php", "logica"),
     ],
-    sinDatos: 2,
-    ejemplosSinDatos: ["back/repo-api:config.json"],
+    inciertos: [
+      { a: "back/repo-api:config.json", m: 0, l: "json", k: "otros", f: [], c: 1 },
+      { a: "front/repo-web:src/tipos.ts", m: 1, l: "ts", k: "dominio", f: ["front/feat-pedidos"], c: 0 },
+    ],
     plan: { reglas: ["Editá solo archivos del cerebro."], como: { llamadas: "declarala en calls.yaml", http: "declarala en la sección http", datos: "seguí flowbrain coverage --guide" }, cierre: ["Reindexá: flowbrain brains apply <cerebro>."] },
   },
 };
@@ -82,7 +84,8 @@ describe("pantalla Fidelidad", () => {
     expect(v.lista()).toContain('<a class="chip fd-sinfeat" href="#/sin-asociar"');
     expect(v.lista()).toContain("Completo: todo lo que el índice vio acá quedó unido.");
     // Lo que no se pudo medir se explica, no se esconde.
-    expect(v.pagina()).toContain("2 archivos no tienen puntaje");
+    expect(v.pagina()).toContain("2 archivos tienen fidelidad incierta");
+    expect(v.pagina()).toContain('data-grupo="incierta">Fidelidad incierta <small>2</small>');
     v.tocar({ "data-acc": "orden" });
     expect(v.rutas()[0]).toBe("src/Pedidos.tsx");
   });
@@ -141,6 +144,27 @@ describe("pantalla Fidelidad", () => {
     v.tocar({ "data-min": "100", "data-max": "100" });
     v.escribir("a qué método");
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
+  });
+
+  it("fidelidad incierta: un apartado sin puntaje, con el porqué de cada archivo, fuera del promedio", () => {
+    const v = montar(datos);
+    // El promedio es solo de los medidos: (50 + 60 + 100 + 100) / 4.
+    expect(v.pagina()).toContain("<b style=\"color:var(--feat)\">77.5</b><span>puntaje promedio de lo medido</span>");
+    expect(v.pagina()).toContain("<b>2</b><span>de fidelidad incierta</span>");
+    v.tocar({ "data-grupo": "incierta" });
+    // Primero los que tienen código; cada uno dice por qué no se lo puede medir.
+    expect(v.rutas()).toEqual(["src/tipos.ts", "config.json"]);
+    expect(v.lista()).toContain('<span class="fd-p fd-inc" title="Fidelidad incierta">?</span>');
+    expect(v.lista()).toContain("El índice vio código, pero ninguna relación para medir");
+    expect(v.lista()).toContain("El índice no encontró nada acá");
+    expect(v.lista()).toContain("2 archivos de fidelidad incierta: 1 con código pero sin relaciones, 1 donde el índice no vio nada");
+    expect(v.lista()).toContain('<a class="chip" href="#/f/front%2Ffeat-pedidos">Pedidos</a>');
+    // No hay plan ni tareas para ellos, y la búsqueda también los filtra.
+    expect(v.lista()).not.toContain('data-acc="plan"');
+    v.escribir("config");
+    expect(v.rutas()).toEqual(["config.json"]);
+    v.escribir("nada-que-coincida");
+    expect(v.lista()).toContain("Ningún archivo de fidelidad incierta coincide con los filtros. Hay 2 archivos en total.");
   });
 
   it("un vacío dice por qué está vacío y ofrece salir", () => {

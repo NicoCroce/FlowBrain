@@ -12,7 +12,8 @@ import { ConsultaError, normalizar } from "./herramientas.js";
  *
  * Cada signal es una proporción (`ok` de `total`) y solo cuenta donde aplica: un archivo sin llamadas HTTP no pierde
  * puntos por HTTP. El puntaje es el promedio de las signals que aplican, con su peso. Un archivo donde el índice no
- * encontró nada (ni símbolos, ni llamadas, ni accesos) no tiene puntaje: no hay con qué medirlo, y se informa aparte.
+ * no encontró ninguna relación para medir (ni llamadas, ni HTTP, ni tablas, ni endpoints, ni pantallas) no tiene
+ * puntaje: su fidelidad es incierta. No cuenta como 100 ni como 0, no entra al promedio y se informa aparte.
  */
 
 export const SIGNALS = ["llamadas", "http", "datos", "entradas", "contrato", "pantallas"] as const;
@@ -46,6 +47,25 @@ export interface FidelidadArchivo {
   /** No es de ninguna funcionalidad ni librería. No resta puntaje: se ve en `sinAsociar`. */
   sinAsociar?: true;
 }
+
+/**
+ * Un archivo de fidelidad incierta: el índice no encontró en él ninguna relación para medir, así que no se puede decir
+ * cuánto lo entendió. `sin_nada`: no vio ni símbolos (configuración, datos, un lenguaje sin parser). `sin_relaciones`:
+ * vio código (clases, funciones, tipos) pero ninguna llamada, acceso, endpoint ni pantalla; puede ser un archivo de
+ * tipos o constantes, o un hueco del parser.
+ */
+export interface ArchivoIncierto {
+  archivo: string;
+  motivo: "sin_nada" | "sin_relaciones";
+  lenguaje: string;
+  capa: string;
+  funcionalidades: string[];
+}
+
+export const POR_QUE_INCIERTA: Record<ArchivoIncierto["motivo"], string> = {
+  sin_nada: "el índice no encontró nada en el archivo: ni símbolos, ni llamadas, ni accesos (configuración, datos, o un lenguaje que ningún parser lee)",
+  sin_relaciones: "el índice vio código, pero ninguna relación para medir: ni llamadas, ni HTTP, ni tablas, ni endpoints, ni pantallas (tipos o constantes, o algo que el parser no supo leer)",
+};
 
 /**
  * Un archivo que no es de ninguna funcionalidad ni librería. Que un archivo no tenga funcionalidad no dice nada de
@@ -99,6 +119,8 @@ export interface FidelidadParams {
   signal?: string;
   /** Cuántos archivos listar, de menor a mayor puntaje (por defecto 30; en un plan, 40). */
   limite?: number;
+  /** En vez del informe, los archivos de fidelidad incierta (sin ninguna relación para medir) y por qué. */
+  inciertos?: boolean;
   /** En vez del informe, un plan en texto para que un modelo lleve a 100 los archivos que pasan los filtros. */
   plan?: boolean;
   budget_tokens?: number | null;
@@ -128,7 +150,7 @@ export function fidelidadDeFuentes(graph: Graph, fichas: Ficha[], archivos: stri
 }
 
 /** Puntaje de cada archivo del índice que se puede medir, y cuáles no se pudieron medir. Sin filtros ni recortes. */
-export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad = {}): { archivos: FidelidadArchivo[]; sinDatos: string[]; sinAsociar: ArchivoSinAsociar[] } {
+export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad = {}): { archivos: FidelidadArchivo[]; inciertos: ArchivoIncierto[]; sinAsociar: ArchivoSinAsociar[] } {
   const ix = ctx.codigo;
   if (!ix) throw new ConsultaError("parametro_invalido", "no hay índice de código: corré `flowbrain index <repo>` y `flowbrain compile`");
   const archivoDe = (k: string) => k.slice(0, k.lastIndexOf("#"));
@@ -176,7 +198,7 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
     if (mudas.has(n.id)) p.mudas.push(String(n.atributos["ruta"] ?? n.id));
   }
 
-  const archivos: FidelidadArchivo[] = [], sinDatos: string[] = [];
+  const archivos: FidelidadArchivo[] = [], inciertos: ArchivoIncierto[] = [];
   /** Funcionalidades dueñas de cada archivo (los de una librería quedan con lista vacía) y los que no tienen dueño. */
   const featsDe = new Map<string, string[]>();
   const sueltos: Array<{ archivo: string; lenguaje: string; capa: string }> = [];
@@ -236,9 +258,9 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
       if (pa.mudas.length) tarea("pantallas", "agente", `${cuantos(pa.mudas.length, "pantalla desde la que no se ve", "pantallas desde las que no se ve")} ninguna llamada al back (${pa.mudas.slice(0, 4).join(", ")}${pa.mudas.length > 4 ? "…" : ""})`, "Buscar cómo pide sus datos (un store, un hook, un cliente propio) y enseñárselo al índice.");
     }
 
-    // Sin símbolos ni nada de lo anterior, el índice no vio nada en el archivo: no hay con qué medirlo.
-    if (!e.simbolos.length && !Object.keys(signals).length) {
-      sinDatos.push(archivo);
+    // Sin ninguna relación que medir, la fidelidad es incierta: no hay con qué decir cuánto se entendió.
+    if (!Object.keys(signals).length) {
+      inciertos.push({ archivo, motivo: e.simbolos.length ? "sin_relaciones" : "sin_nada", lenguaje, capa: capaDe(ruta), funcionalidades: featsDe.get(archivo) ?? [] });
       continue;
     }
 
@@ -249,10 +271,10 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
       suma += PESOS[s] * (v.ok / v.total);
       peso += PESOS[s];
     }
-    archivos.push({ archivo, puntaje: peso ? Math.round((100 * suma) / peso) : 100, lenguaje, capa: capaDe(ruta), funcionalidades: featsDe.get(archivo) ?? [], signals, faltas, tareas, ...(!suyos.length && hayFuncionalidades ? { sinAsociar: true as const } : {}) });
+    archivos.push({ archivo, puntaje: Math.round((100 * suma) / peso), lenguaje, capa: capaDe(ruta), funcionalidades: featsDe.get(archivo) ?? [], signals, faltas, tareas, ...(!suyos.length && hayFuncionalidades ? { sinAsociar: true as const } : {}) });
   }
 
-  return { archivos, sinDatos, sinAsociar: recomendar(ctx, sueltos, featsDe) };
+  return { archivos, inciertos, sinAsociar: recomendar(ctx, sueltos, featsDe) };
 }
 
 const PESO_LO_USAN = 3, PESO_USA = 2, PESO_ENDPOINT = 4, PESO_VECINO = 1, PESO_VECINO_ARRIBA = 0.5, TOPE_VECINOS = 5;
@@ -427,14 +449,32 @@ function agrupar(xs: FidelidadArchivo[], claves: (x: FidelidadArchivo) => string
  * lista de archivos; el resumen de arriba es siempre el del brain entero.
  */
 export function fidelidad(ctx: Contexto, p: FidelidadParams = {}) {
-  const { archivos, sinDatos, sinAsociar: sueltos } = fidelidadDeArchivos(ctx);
+  const { archivos, inciertos, sinAsociar: sueltos } = fidelidadDeArchivos(ctx);
 
   if (p.archivo) {
     const q = p.archivo.replace(/#.*$/, "");
     const hits = archivos.filter((a) => a.archivo === q || a.archivo.endsWith(`:${q}`) || a.archivo.endsWith(`/${q}`));
     if (hits.length === 1) return { herramienta: "fidelidad", ...hits[0]!, queMide: Object.fromEntries(Object.keys(hits[0]!.signals).map((s) => [s, QUE_MIDE[s as Signal]])) };
-    if (sinDatos.some((a) => a === q || a.endsWith(`:${q}`) || a.endsWith(`/${q}`))) return { herramienta: "fidelidad", archivo: q, puntaje: null, motivo: "el índice no encontró símbolos, llamadas ni accesos en este archivo: no hay con qué medirlo" };
+    const inc = inciertos.filter((a) => a.archivo === q || a.archivo.endsWith(`:${q}`) || a.archivo.endsWith(`/${q}`));
+    if (inc.length === 1) return { herramienta: "fidelidad", archivo: inc[0]!.archivo, puntaje: null, incierta: true, motivo: `fidelidad incierta: ${POR_QUE_INCIERTA[inc[0]!.motivo]}`, ...(inc[0]!.funcionalidades.length ? { funcionalidades: inc[0]!.funcionalidades } : {}) };
     throw new ConsultaError(hits.length ? "parametro_invalido" : "nodo_inexistente", hits.length ? `varios archivos coinciden con ${p.archivo}: ${hits.slice(0, 6).map((a) => a.archivo).join(", ")}` : `no hay un archivo indexado que coincida con ${p.archivo}`);
+  }
+
+  if (p.inciertos) {
+    const limite = p.limite ?? 30;
+    const r = {
+      herramienta: "fidelidad",
+      inciertos: inciertos.length,
+      medidos: archivos.length,
+      porMotivo: {
+        sin_relaciones: { archivos: inciertos.filter((a) => a.motivo === "sin_relaciones").length, que: POR_QUE_INCIERTA.sin_relaciones },
+        sin_nada: { archivos: inciertos.filter((a) => a.motivo === "sin_nada").length, que: POR_QUE_INCIERTA.sin_nada },
+      },
+      lista: inciertos.slice(0, limite).map((a) => ({ archivo: a.archivo, motivo: a.motivo, ...(a.funcionalidades.length ? { funcionalidades: a.funcionalidades } : {}) })),
+      ...(inciertos.length > limite ? { listaOmitidos: inciertos.length - limite } : {}),
+      avisos: ["si en un archivo incierto hay código que el índice debería haber leído, se enseña con un extractor: `flowbrain coverage --guide`"],
+    };
+    return ajustarLista(r, "lista", p.budget_tokens);
   }
 
   const min = p.min ?? 0, max = p.max ?? 100;
@@ -478,7 +518,7 @@ export function fidelidad(ctx: Contexto, p: FidelidadParams = {}) {
   const r = {
     herramienta: "fidelidad",
     puntaje: promedio(archivos),
-    archivos: { medidos: archivos.length, sinDatos: sinDatos.length, completos: archivos.filter((a) => a.puntaje === 100).length, sinAsociar: sueltos.length },
+    archivos: { medidos: archivos.length, inciertos: inciertos.length, completos: archivos.filter((a) => a.puntaje === 100).length, sinAsociar: sueltos.length },
     distribucion: Object.fromEntries(TRAMOS.map(([k, a, b]) => [k, archivos.filter((x) => x.puntaje >= a && x.puntaje <= b).length])),
     porSignal,
     porFuncionalidad: agrupar(archivos, (a) => (a.funcionalidades.length ? a.funcionalidades : ["ninguna"])),
@@ -488,7 +528,7 @@ export function fidelidad(ctx: Contexto, p: FidelidadParams = {}) {
     lista: filtrados.slice(0, limite).map((a) => ({ archivo: a.archivo, puntaje: a.puntaje, ...(a.funcionalidades.length ? { funcionalidades: a.funcionalidades } : {}), faltas: a.faltas })),
     ...(filtrados.length > limite ? { listaOmitidos: filtrados.length - limite } : {}),
     avisos: [
-      ...(sinDatos.length ? [`${sinDatos.length} archivos sin puntaje: el índice no encontró símbolos, llamadas ni accesos en ellos (configuración, datos, o un lenguaje sin parser). Ejemplos: ${sinDatos.slice(0, 3).join(", ")}`] : []),
+      ...(inciertos.length ? [`${inciertos.length} archivos de fidelidad incierta: el índice no encontró en ellos ninguna relación para medir. No tienen puntaje ni entran al promedio. Con \`inciertos: true\` se listan`] : []),
       ...(sueltos.length ? [`${sueltos.length} archivos no son de ninguna funcionalidad ni librería. No restan puntaje: \`sin_asociar\` los lista por carpeta con la funcionalidad recomendada`] : []),
       "una llamada HTTP con ruta que no se unió a un endpoint de este cerebro cuenta como entendida: puede ir a otro cerebro (ver `conexiones`)",
     ],

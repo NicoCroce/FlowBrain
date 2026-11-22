@@ -359,7 +359,7 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "fidelidad",
     {
       description:
-        "Qué tan entendido quedó cada archivo por el índice, de 0 a 100, y qué le falta con su línea (llamadas sin resolver, HTTP sin ruta, accesos a tablas sin columnas o sin página, endpoints sin recorrido o sin tipo de respuesta, pantallas sin llamadas). Sin argumentos: puntaje general, reparto por tramos, por signal, por funcionalidad, capa y lenguaje, y los archivos de menor puntaje. Con `archivo`: su detalle. Con `plan: true`: las tareas para llevar esos archivos a 100 y cómo se resuelve cada una. Usalo para saber dónde desconfiar del grafo y qué completar primero.",
+        "Qué tan entendido quedó cada archivo por el índice, de 0 a 100, y qué le falta con su línea (llamadas sin resolver, HTTP sin ruta, accesos a tablas sin columnas o sin página, endpoints sin recorrido o sin tipo de respuesta, pantallas sin llamadas). Sin argumentos: puntaje general, reparto por tramos, por signal, por funcionalidad, capa y lenguaje, y los archivos de menor puntaje. Con `archivo`: su detalle. Los archivos donde no hay ninguna relación para medir tienen fidelidad incierta: no llevan puntaje ni entran al promedio (`inciertos: true` los lista). Con `plan: true`: las tareas para llevar esos archivos a 100 y cómo se resuelve cada una. Usalo para saber dónde desconfiar del grafo y qué completar primero.",
       inputSchema: {
         archivo: z.string().min(1).optional().describe("repo:ruta o ruta de un archivo: devuelve solo ese"),
         min: z.number().int().min(0).max(100).optional().describe("puntaje mínimo (0 a 100)"),
@@ -368,6 +368,7 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
         tipo: z.string().min(1).optional().describe("lenguaje o extensión: php, ts, vue"),
         signal: z.enum(SIGNALS).optional().describe("solo archivos a los que les falta esta signal"),
         limite: z.number().int().positive().optional().describe("cuántos archivos listar (por defecto 30; en un plan, 40)"),
+        inciertos: z.boolean().optional().describe("en vez del informe, los archivos de fidelidad incierta (sin ninguna relación para medir, sin puntaje) y por qué"),
         plan: z.boolean().optional().describe("en vez del informe, un plan en texto con las tareas de los archivos que pasan los filtros y cómo se resuelve cada una"),
         ...presupuesto,
         ...deCerebro,

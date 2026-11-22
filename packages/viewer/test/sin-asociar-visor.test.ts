@@ -137,6 +137,13 @@ describe("pantalla Sin asociar", () => {
     expect(v.archivos()).toEqual(["dinero.ts", "moneda.ts", "fecha.ts", "Texto.php"]);
     expect(v.lista()).toContain("Ahora es parte de Pagos. (front/product/feat-pagos.md)");
 
+    // Asociar un archivo suelto de una carpeta libre le saca a la carpeta la opción de asociarse entera.
+    const otro = montar(datos(), { edicion: { token: "secreto", sinAplicar: [] }, fetch });
+    otro.tocar({ "data-acc": "asociar", "data-a": `${W}src/shared/moneda.ts`, "data-f": "front/feat-pagos" });
+    await esperar();
+    expect(otro.lista()).not.toContain(`data-k="0|${W}src/shared"`);
+    pedidos.pop();
+
     v.tocar({ "data-acc": "asociar-carpeta", "data-k": `0|${W}src/shared`, "data-f": "front/feat-pagos" });
     await esperar();
     expect(pedidos[1]).toMatchObject({ archivo: "repo-web:src/shared/dinero.ts", funcionalidad: "feat-pagos", entrada: "repo-web:src/shared" });

@@ -57,11 +57,13 @@ const ficha = { id: "feat-pedidos", codigo: [`${R}:api`, `${R}:web/Pedidos.tsx`,
 const ctx = crearContexto(graph, [], new Map(), crearIndiceCodigo(graph, [ficha], [archivos], [extraccion]));
 
 describe("fidelidad por archivo", () => {
-  const { archivos: medidos, sinDatos } = fidelidadDeArchivos(ctx);
+  const { archivos: medidos, inciertos } = fidelidadDeArchivos(ctx);
   const de = (ruta: string) => medidos.find((a) => a.archivo === `${R}:${ruta}`)!;
 
   it("mide solo lo que aplica a cada archivo y no puntúa donde no hay nada que medir", () => {
-    expect(sinDatos).toEqual([`${R}:web/datos.json`]);
+    // Sin ninguna relación que medir no hay puntaje: la fidelidad es incierta, y se dice por qué.
+    expect(inciertos.map((a) => [a.archivo.slice(R.length + 1), a.motivo, a.funcionalidades])).toEqual([["web/datos.json", "sin_nada", []], ["web/suelto.ts", "sin_relaciones", []]]);
+    expect(medidos.map((a) => a.archivo)).not.toContain(`${R}:web/suelto.ts`);
     // Los tests no entran.
     expect(medidos.map((a) => a.archivo)).not.toContain(`${R}:web/api.test.ts`);
     expect(de("web/Ayuda.tsx").signals).toEqual({ pantallas: { ok: 0, total: 1 } });
@@ -87,8 +89,8 @@ describe("fidelidad por archivo", () => {
   it("HTTP sin ruta; no tener funcionalidad no resta puntaje", () => {
     expect(de("web/api.ts")).toMatchObject({ signals: { http: { ok: 1, total: 2 } }, puntaje: 50 });
     expect(de("web/api.ts").faltas[0]).toContain("1 llamada HTTP sin ruta (L14)");
-    expect(de("web/suelto.ts")).toMatchObject({ puntaje: 100, funcionalidades: [], sinAsociar: true, faltas: [], tareas: [] });
     expect(de("web/api.ts").sinAsociar).toBeUndefined();
+    expect(fidelidadDeArchivos(ctx).sinAsociar.map((a) => a.archivo)).toContain(`${R}:web/suelto.ts`);
   });
 });
 
@@ -147,17 +149,17 @@ describe("fidelidad con varios cerebros", () => {
 describe("informe de fidelidad", () => {
   it("resume el brain y lista de menor a mayor", () => {
     const r = fidelidad(ctx) as ReturnType<typeof fidelidad> & { lista: Array<{ archivo: string; puntaje: number }>; distribucion: Record<string, number>; archivos: unknown; porFuncionalidad: unknown[] };
-    expect(r.archivos).toEqual({ medidos: 6, sinDatos: 1, completos: 2, sinAsociar: 2 });
-    expect(Object.values(r.distribucion).reduce((a, b) => a + b, 0)).toBe(6);
+    expect(r.archivos).toEqual({ medidos: 5, inciertos: 2, completos: 1, sinAsociar: 2 });
+    expect(Object.values(r.distribucion).reduce((a, b) => a + b, 0)).toBe(5);
     expect(r.lista.map((a) => a.puntaje)).toEqual([...r.lista.map((a) => a.puntaje)].sort((a, b) => a - b));
     expect(r.lista[0]!.archivo).toBe(`${R}:web/Ayuda.tsx`);
-    expect(r.porFuncionalidad).toContainEqual({ id: "ninguna", archivos: 1, puntaje: 100 });
+    expect((r as unknown as { avisos: string[] }).avisos.join(" ")).toContain("2 archivos de fidelidad incierta");
   });
 
   it("filtra por rango, funcionalidad, tipo y signal", () => {
     const lista = (p: Parameters<typeof fidelidad>[1]) => (fidelidad(ctx, p) as unknown as { lista: Array<{ archivo: string }> }).lista.map((a) => a.archivo.slice(R.length + 1));
     expect(lista({ min: 50, max: 75 })).toEqual(["api/servicio.ts", "web/api.ts", "api/pedidos.ts"]);
-    expect(lista({ funcionalidad: "ninguna" })).toEqual(["web/suelto.ts"]);
+    expect(lista({ funcionalidad: "ninguna" })).toEqual([]);
     expect(lista({ funcionalidad: "pedidos", tipo: "tsx" })).toEqual(["web/Ayuda.tsx", "web/Pedidos.tsx"]);
     expect(lista({ signal: "http" })).toEqual(["web/api.ts"]);
     expect(() => fidelidad(ctx, { min: 80, max: 20 })).toThrow(ConsultaError);
@@ -166,7 +168,10 @@ describe("informe de fidelidad", () => {
 
   it("un archivo: su detalle, o por qué no tiene puntaje", () => {
     expect(fidelidad(ctx, { archivo: "api/servicio.ts" })).toMatchObject({ archivo: `${R}:api/servicio.ts`, puntaje: 50, capa: expect.any(String) });
-    expect(fidelidad(ctx, { archivo: "web/datos.json" })).toMatchObject({ puntaje: null });
+    expect(fidelidad(ctx, { archivo: "web/datos.json" })).toMatchObject({ puntaje: null, incierta: true, motivo: expect.stringContaining("no encontró nada") });
+    expect(fidelidad(ctx, { archivo: "web/suelto.ts" })).toMatchObject({ puntaje: null, incierta: true, motivo: expect.stringContaining("vio código, pero ninguna relación") });
+    // La lista de inciertos, con cuántos hay de cada motivo.
+    expect(fidelidad(ctx, { inciertos: true })).toMatchObject({ inciertos: 2, medidos: 5, porMotivo: { sin_relaciones: { archivos: 1 }, sin_nada: { archivos: 1 } }, lista: [{ archivo: `${R}:web/datos.json`, motivo: "sin_nada" }, { archivo: `${R}:web/suelto.ts`, motivo: "sin_relaciones" }] });
     expect(() => fidelidad(ctx, { archivo: "no/existe.ts" })).toThrow(/no hay un archivo indexado/);
   });
 });
@@ -200,8 +205,9 @@ describe("archivos sin asociar", () => {
 
   it("quedan aparte: ni los de una funcionalidad, ni los de una librería, ni los tests", () => {
     expect(sueltos.map((x) => x.archivo.slice(A.length + 1))).toEqual(["src/pagos/extra/nota.ts", "src/shared/dinero.ts", "src/shared/fecha.ts", "src/shared/usa-pagos.ts", "src/sueltos/nada.ts", "src/vecinos/a.ts"]);
-    // No tener funcionalidad no dice nada de cuánto se entendió el archivo.
-    expect(medidos.every((a) => a.puntaje === 100)).toBe(true);
+    // Ninguno tiene relaciones que medir: no llevan puntaje, ni 100 ni 0.
+    expect(medidos).toEqual([]);
+    expect(fidelidadDeArchivos(c).inciertos.every((a) => a.motivo === "sin_relaciones")).toBe(true);
   });
 
   it("recomienda por quién lo usa, qué usa y, si no hay más, por los vecinos de carpeta", () => {
