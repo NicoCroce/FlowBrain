@@ -123,6 +123,15 @@ puntos_de_entrada:                # solo para svc; rutas relativas al único rep
   arranque: apps/payments/src/main.ts
 codigo:                           # para feat y lib: carpetas (o archivos) que la componen, en uno o varios repos
   - repo-tienda:apps/web/src/features/checkout
+especificaciones:                 # solo para feat: requisitos de negocio y de producto, en llano
+  - id: tarjeta-vencida           # obligatorio, único en la funcionalidad (minúsculas, números y guiones)
+    texto: No se puede pagar con una tarjeta vencida.   # obligatorio, hasta 400 caracteres
+    tipo: negocio                 # obligatorio: negocio | producto
+    archivos:                     # opcional: dónde se cumple, repo:ruta con #Ln opcional
+      - repo-tienda:apps/bff/src/pagos/validar.ts#L18
+    tests:                        # opcional: repo:ruta::nombre del caso, o repo:ruta (el archivo entero)
+      - repo-tienda:apps/bff/test/validar.test.ts::rechaza una tarjeta vencida
+    estado: propuesta             # opcional: propuesta (por defecto) | confirmada
 relaciones:                       # opcional
   - verbo: llama_a                # obligatorio
     destino: svc-auth             # obligatorio, id existente, nunca null
@@ -250,6 +259,7 @@ Vista de producto de cada `feat`, derivada de las rutas de `codigo` y de `_build
 - `cuerpo`: el Markdown de la página sin la sección de backlinks.
 - `recorridos`: por cada endpoint de `expone`, los pasos desde el método que lo atiende siguiendo `invoca` (hasta 6 niveles y 40 pasos), cada uno con su `capa`, `evidencia`, `nivel`, quién lo llama (`desde`) y lo que `toca` (`lee_de`/`escribe_en` una tabla o `llama_a` un servicio, si la línea de la extracción cae dentro del método; `sinPagina: true` si la tabla no tiene página). Se omiten funciones sueltas que no tocan nada. Un paso de repositorio (`*Repository*`, `*.dao.*`, `*.sql.*`) que no toca ninguna tabla, ni él ni lo que llama, lleva `aviso`; un recorrido cortado lleva `truncado: true`.
 - `tests`: archivos de test de la funcionalidad, cada uno con sus `casos` y `por`: `ubicacion` (vive dentro de su `codigo`) o `importa` (vive afuera y de ninguna otra funcionalidad importa más archivos; si empatan, es de todas ellas). Un test dentro del código de una funcionalidad es solo de esa.
+- `especificaciones`: las de la página, cruzadas con el índice. `tests` trae cada caso encontrado (`archivo`, `caso`, `linea`) o el archivo entero con cuántos `casos` tiene; el caso se busca por nombre (o `grupo › nombre`), sin distinguir mayúsculas ni espacios, porque la línea se corre con cada cambio. `rotos`: archivos y casos que el índice no encuentra. De un repo sin indexar no se marca nada. `estado` es `propuesta` salvo que la página diga `confirmada`.
 - `dominio`: archivos de capa `dominio` de `codigo` o importados por ella o por los pasos de los recorridos, con sus clases, interfaces, tipos y enums (`elementos`), cuántas funciones tienen, la `feat` dueña si es otra (`de`) y las demás que también lo usan (`usadoPor`).
 
 ### `_drafts/` (fuera de la compilación)
@@ -318,6 +328,7 @@ Todas las herramientas ordenan sus resultados por confianza descendente y despu�
 
 Consultas de código y producto (necesitan `flowbrain index` + `flowbrain compile`; sin índice, error `parametro_invalido`). Todas devuelven `avisos` (huecos conocidos: falta de dato, no "no pasa nada") e `indice` (repo → commit de HEAD al indexar, 12 caracteres). Con presupuesto excedido recortan listas desde el final y agregan `truncado: true` y `omitidos: n`.
 
+- **`especificaciones`:** sin argumentos, por funcionalidad: cuántas tiene, cuántas confirmadas, cuántas sin test, sus casos de test y cuántos de esos casos no verifican ninguna (`casosSinEspecificacion`). Con `funcionalidad`: cada requisito con `archivos`, `tests`, `sinTest` y `rotos`, y los casos sueltos (hasta 40). Filtros: `estado`, `tipo`, `sin_test`. Un caso cuenta como verificador si una especificación lo nombra o nombra su archivo entero.
 - **`funcionalidad`:** por id, sufijo (`billing` → `feat-billing`) o nombre. Endpoints que expone con el método que atiende cada uno, lo que consume (y de qué funcionalidad), tablas con su evidencia, relaciones y el dominio compartido con otras.
 - **`recorrido`:** desde un endpoint (id, `MÉTODO /ruta` o `/ruta`; hasta 3 si coinciden varios) o un símbolo (`Clase.metodo`, `funcion`, `ruta#Simbolo`). Pasos `{n, simbolo, ev, toca?, aviso?}` en orden de llamada; `toca` es `verbo destino`, con `(tabla sin página en el brain)` si la tabla existe en el código pero no tiene página.
 - **`quien_llama`:** BFS inverso sobre `invoca` (profundidad 1–6, por defecto 3); una clase incluye sus métodos. Devuelve las llamadas con la línea de cada una, los endpoints alcanzados (por el método que los atiende), las funcionalidades dueñas del código alcanzado y las que consumen esos endpoints.

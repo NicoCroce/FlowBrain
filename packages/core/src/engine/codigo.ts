@@ -340,6 +340,8 @@ export function funcionalidad(ctx: Contexto, p: FuncionalidadParams) {
       casos: (f.tests ?? []).reduce((n, t) => n + t.casos.length, 0),
       lista: [...(f.tests ?? [])].sort((a, b) => b.casos.length - a.casos.length || cmp(a.archivo, b.archivo)).map((t) => ({ archivo: t.archivo, casos: t.casos.length, por: t.por, ejemplos: t.casos.slice(0, 5).map((c) => `${c.nombre} (L${c.linea})`) })),
     },
+    // Requisitos declarados en su página: `especificaciones(funcionalidad)` da el detalle.
+    especificaciones: resumenDeEspecificaciones(f),
     expone: f.expone.map((ep) => {
       const h = ix.recorredor.atiende(ep);
       return { endpoint: ep, atiende: h ? cita(ix, clave(h.archivo, h.simbolo)) : null };
@@ -363,6 +365,102 @@ export function funcionalidad(ctx: Contexto, p: FuncionalidadParams) {
     indice: versiones(ix),
   };
   return ajustarLista(res, ["dominioCompartido", "datosVia", "consume", "pantallas", "expone", "datos"], p.budget_tokens);
+}
+
+// ------------------------------------------------------------------ especificaciones
+
+export interface EspecificacionesParams {
+  /** id, sufijo o nombre de una funcionalidad. Sin ella: el resumen de todas. */
+  funcionalidad?: string;
+  estado?: string;
+  tipo?: string;
+  /** Solo las que no tienen ningún caso de test que las verifique. */
+  sin_test?: boolean;
+  budget_tokens?: number | null;
+}
+
+/** Casos de test de la funcionalidad que ninguna especificación nombra (ni por caso ni por archivo entero). */
+function casosSinEspecificacion(f: Ficha) {
+  const enteros = new Set<string>();
+  const nombrados = new Set<string>();
+  for (const e of f.especificaciones ?? []) for (const t of e.tests) t.linea === undefined ? enteros.add(t.archivo) : nombrados.add(`${t.archivo}#${t.linea}`);
+  return (f.tests ?? []).flatMap((t) => (enteros.has(t.archivo) ? [] : t.casos.filter((c) => !nombrados.has(`${t.archivo}#${c.linea}`)).map((c) => ({ archivo: t.archivo, caso: c.nombre, linea: c.linea }))));
+}
+
+function resumenDeEspecificaciones(f: Ficha) {
+  const es = f.especificaciones ?? [];
+  return {
+    total: es.length,
+    confirmadas: es.filter((e) => e.estado === "confirmada").length,
+    sinTest: es.filter((e) => e.tests.length === 0).length,
+    ...(es.some((e) => e.rotos.length) ? { conReferenciasRotas: es.filter((e) => e.rotos.length).length } : {}),
+  };
+}
+
+const COMO_COMPLETAR = "Las especificaciones se escriben en `especificaciones` de la página de la funcionalidad (product/feat-*.md). La guía para deducirlas del código y de los tests: `flowbrain specs --guide`.";
+
+/**
+ * Requisitos de negocio y de producto de cada funcionalidad: qué tiene que cumplirse, qué archivos lo cumplen y qué
+ * casos de test lo verifican. Los declara la página de la funcionalidad; acá se cruzan con el índice.
+ */
+export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) {
+  const ix = indice(ctx);
+  if (p.estado && p.estado !== "propuesta" && p.estado !== "confirmada") throw new ConsultaError("parametro_invalido", `estado desconocido: ${p.estado}. Los que hay: propuesta, confirmada`);
+  if (p.tipo && p.tipo !== "negocio" && p.tipo !== "producto") throw new ConsultaError("parametro_invalido", `tipo desconocido: ${p.tipo}. Los que hay: negocio, producto`);
+  const pasa = (e: NonNullable<Ficha["especificaciones"]>[number]) => (!p.estado || e.estado === p.estado) && (!p.tipo || e.tipo === p.tipo) && (!p.sin_test || e.tests.length === 0);
+
+  if (!p.funcionalidad) {
+    const fichas = [...ix.fichas.values()];
+    const filas = fichas
+      .map((f) => {
+        const es = (f.especificaciones ?? []).filter(pasa);
+        const casos = (f.tests ?? []).reduce((n, t) => n + t.casos.length, 0);
+        return { id: f.id, nombre: nombre(ctx, f.id), especificaciones: es.length, confirmadas: es.filter((e) => e.estado === "confirmada").length, sinTest: es.filter((e) => e.tests.length === 0).length, casosDeTest: casos, casosSinEspecificacion: casosSinEspecificacion(f).length };
+      })
+      .sort((a, b) => b.especificaciones - a.especificaciones || b.casosDeTest - a.casosDeTest || cmp(a.id, b.id));
+    const todas = fichas.flatMap((f) => (f.especificaciones ?? []).filter(pasa));
+    const res = {
+      herramienta: "especificaciones",
+      total: todas.length,
+      confirmadas: todas.filter((e) => e.estado === "confirmada").length,
+      propuestas: todas.filter((e) => e.estado === "propuesta").length,
+      sinTest: todas.filter((e) => e.tests.length === 0).length,
+      conReferenciasRotas: todas.filter((e) => e.rotos.length).length,
+      funcionalidadesSinEspecificaciones: fichas.filter((f) => !(f.especificaciones ?? []).length).length,
+      funcionalidades: filas,
+      avisos: [...(fichas.length === 0 ? ["no hay funcionalidades: primero `flowbrain feature --guide`"] : []), ...(todas.length === 0 && fichas.length ? [COMO_COMPLETAR] : []), ...avisosIndice(ix)],
+    };
+    return ajustarLista(res, "funcionalidades", p.budget_tokens);
+  }
+
+  const f = resolverFeat(ctx, ix, p.funcionalidad);
+  const sueltos = casosSinEspecificacion(f);
+  const lista = (f.especificaciones ?? []).filter(pasa).map((e) => ({
+    id: e.id,
+    texto: e.texto,
+    tipo: e.tipo,
+    estado: e.estado,
+    archivos: e.archivos,
+    tests: e.tests.map((t) => (t.caso ? `${t.archivo}::${t.caso}${t.linea ? ` (L${t.linea})` : ""}` : `${t.archivo} (${t.casos ?? "?"} casos)`)),
+    ...(e.tests.length === 0 ? { sinTest: true as const } : {}),
+    ...(e.rotos.length ? { rotos: e.rotos } : {}),
+  }));
+  const res = {
+    herramienta: "especificaciones",
+    funcionalidad: f.id,
+    nombre: nombre(ctx, f.id),
+    ...resumenDeEspecificaciones(f),
+    especificaciones: lista,
+    // Casos de test que no verifican ninguna especificación declarada: o falta escribirla, o falta unirlos.
+    casosSinEspecificacion: { total: sueltos.length, lista: sueltos.slice(0, 40).map((c) => `${c.archivo}::${c.caso} (L${c.linea})`) },
+    avisos: [
+      ...((f.especificaciones ?? []).length === 0 ? [COMO_COMPLETAR] : []),
+      ...((f.especificaciones ?? []).some((e) => e.rotos.length) ? ["hay referencias que el índice ya no encuentra (`rotos`): un archivo movido o un caso renombrado; corregilas en la página"] : []),
+      ...avisosIndice(ix),
+    ],
+    indice: versiones(ix),
+  };
+  return ajustarLista(res, "especificaciones", p.budget_tokens);
 }
 
 // ------------------------------------------------------------------ recorrido

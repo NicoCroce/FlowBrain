@@ -174,6 +174,29 @@ export const RelacionSchema = z
   })
   .strict();
 
+export const TIPOS_ESPECIFICACION = ["negocio", "producto"] as const;
+export const ESTADOS_ESPECIFICACION = ["propuesta", "confirmada"] as const;
+/** Caso de test que verifica una especificación: `repo:ruta` (el archivo entero) o `repo:ruta::nombre del caso`. */
+export const TEST_REF = /^(repo-[a-z0-9-]+):([^\s#:]+)(?:::(.+))?$/;
+
+/**
+ * Un requisito de una funcionalidad, en llano: qué tiene que cumplirse para que el caso de uso pase. `negocio` es una
+ * regla del negocio (vale aunque cambie la pantalla); `producto`, cómo se comporta el producto para quien lo usa.
+ */
+export const EspecificacionSchema = z
+  .object({
+    id: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "id de especificación: minúsculas, números y guiones"),
+    texto: z.string().min(1).max(400, "texto: máximo 400 caracteres"),
+    tipo: z.enum(TIPOS_ESPECIFICACION),
+    /** Archivos que la cumplen: `repo:ruta`, con `#Ln` si se sabe la línea. */
+    archivos: z.array(z.string()).optional(),
+    /** Casos de test que la verifican. */
+    tests: z.array(z.string()).optional(),
+    /** `propuesta` (la dedujo un modelo, por defecto) o `confirmada` (la revisó una persona). */
+    estado: z.enum(ESTADOS_ESPECIFICACION).optional(),
+  })
+  .strict();
+
 export const FrontmatterSchema = z
   .object({
     id: z.string(),
@@ -195,9 +218,11 @@ export const FrontmatterSchema = z
     puntos_de_entrada: z.record(z.string().regex(/^[a-z0-9_]+$/), z.string().min(1)).optional(),
     codigo: z.array(z.string()).optional(),
     relaciones: z.array(RelacionSchema).optional(),
+    especificaciones: z.array(EspecificacionSchema).optional(),
   })
   .strict();
 
+export type Especificacion = z.infer<typeof EspecificacionSchema>;
 export type Frontmatter = z.infer<typeof FrontmatterSchema>;
 export type Relacion = z.infer<typeof RelacionSchema>;
 

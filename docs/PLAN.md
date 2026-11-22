@@ -51,7 +51,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 30 | Fidelidad: editar desde el visor | Hecho (decisión 178); falta usarlo en un navegador |
 | 30b | Fidelidad: cadena, tareas con sugerencia y plan para el agente | Hecho (decisión 179) |
 | 31a | Tests por funcionalidad | Hecho (decisión 180) |
-| 31b | Especificaciones: tipo, página, guía para el agente y consulta | Pendiente |
+| 31b | Especificaciones: tipo, página, guía para el agente y consulta | Hecho (decisión 181) |
 | 31c | Pantalla Especificaciones | Pendiente |
 | 31d | Archivos sin asociar, con funcionalidad recomendada | Pendiente |
 | 32 a 35 | Entre cerebros: `deriva`, `paridad`, su pantalla y la CLI | Pendiente |

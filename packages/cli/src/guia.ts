@@ -450,3 +450,88 @@ $ARGUMENTS
    - Que los extractores, el perfil y los controles quedaron en \`.flowbrain/<cerebro>/\`, se pueden leer y versionar, y
      corren solos en cada indexación; \`coverage\` avisa si alguno queda viejo.
 `;
+
+export const NOMBRE_ESPECIFICACIONES = "flowbrain-specs";
+
+/**
+ * Guía para que un modelo deduzca las especificaciones de cada funcionalidad: qué tiene que cumplirse, en llano, con el
+ * archivo que lo cumple y el caso de test que lo verifica. Es el texto del comando `/flowbrain-specs` (lo escribe
+ * `flowbrain install`) y lo que imprime `flowbrain specs --guide`.
+ *
+ * El índice sabe qué tests tiene cada funcionalidad y cómo se llama cada caso; lo que no sabe es qué regla de negocio
+ * hay detrás de un caso ni qué reglas viven en el código sin test. Eso lo lee el modelo y lo confirma una persona.
+ */
+export const GUIA_ESPECIFICACIONES = `---
+description: Deduce las especificaciones de negocio y de producto de cada funcionalidad de FlowBrain
+---
+
+Vas a escribir las especificaciones de las funcionalidades de este proyecto en FlowBrain: cada requisito que tiene que
+cumplirse para que el caso de uso pase, dicho como lo diría alguien de negocio o de producto, con el archivo que lo
+cumple y el caso de test que lo verifica. Quedan como propuestas: las confirma una persona.
+
+$ARGUMENTS
+
+## Reglas
+
+- **No modifiques los repositorios del proyecto.** Solo editás \`.flowbrain/<cerebro>/product/feat-*.md\`.
+- **No abras archivos de entorno reales** (\`.env\` y parecidos).
+- **Todo sale del código y de los tests.** Una especificación que no podés señalar en un archivo no va. Lo que parezca
+  una regla pero no encuentres dónde se cumple, va a "Preguntas abiertas" de la página.
+- **En llano.** Una oración que entienda quien no programa, afirmativa y comprobable: "No se puede pagar con una
+  tarjeta vencida", "El listado muestra primero los pedidos más nuevos". Sin nombres de clases, archivos ni endpoints
+  en el texto: eso va en \`archivos\`.
+- **Una regla por especificación.** Si un caso de test comprueba dos cosas, son dos especificaciones con el mismo test.
+- **No cambies una especificación \`confirmada\`**: la revisó una persona. Si el código la contradice, decilo.
+- No inventes tests: \`tests\` solo nombra casos que existen. Una especificación sin test es un dato útil, no un error.
+- Respondé en el idioma del usuario. El texto de cada especificación, en el idioma del producto.
+
+## Qué es cada tipo
+
+- \`negocio\`: una regla que vale aunque cambie la pantalla. Límites, permisos, cálculos, estados válidos, qué se
+  guarda y cuándo ("Un pedido cancelado no se puede volver a pagar").
+- \`producto\`: cómo se comporta el producto para quien lo usa. Qué ve, qué puede hacer, qué pasa cuando algo falla
+  ("Si el pago falla, el carrito queda como estaba y se muestra el motivo").
+
+## Pasos
+
+1. **Ver el estado.** Parado en el proyecto, por cada cerebro (\`flowbrain brains\` los lista):
+   \`flowbrain specs --brain <cerebro>\` lista cada funcionalidad con cuántas especificaciones tiene, cuántos casos de
+   test y cuántos de esos casos todavía no verifican ninguna. Si no hay funcionalidades, primero \`/flowbrain-features\`.
+   Empezá por las que tienen más casos de test sin especificación. Si el usuario nombró funcionalidades, solo esas.
+
+2. **Por cada funcionalidad**, juntar de dónde salen las reglas:
+   - \`flowbrain specs <feat> --brain <cerebro>\`: las que ya tiene y los casos de test sueltos, cada uno con su
+     archivo y su línea.
+   - \`flowbrain feature <feat> --brain <cerebro>\`: pantallas, endpoints, tablas y archivos de test.
+   - **Leé los tests**: el nombre del caso y sus \`expect\`/\`assert\` dicen la regla. Varios casos que comprueban lo mismo
+     con distintos datos son una sola especificación con varios tests.
+   - **Leé el código que no tiene test**: validaciones, guardas y condiciones en el recorrido de cada endpoint
+     (\`flowbrain flow "<MÉTODO /ruta>"\`) y en cada pantalla (\`flowbrain screen <ruta>\`): permisos, límites, estados,
+     mensajes de error. Esas son las especificaciones sin test.
+
+3. **Escribirlas** en el frontmatter de \`.flowbrain/<cerebro>/product/<feat>.md\`:
+
+   \`\`\`yaml
+   especificaciones:
+     - id: tarjeta-vencida            # corto, único en la funcionalidad; no lo cambies después
+       texto: No se puede pagar con una tarjeta vencida.
+       tipo: negocio                  # negocio | producto
+       archivos:                      # dónde se cumple; con #Ln si sabés la línea
+         - repo-tienda:src/pagos/validar-tarjeta.ts#L18
+       tests:                         # "repo:ruta::nombre del caso", o "repo:ruta" si es el archivo entero
+         - repo-tienda:tests/pagos/validar-tarjeta.test.ts::rechaza una tarjeta vencida
+       estado: propuesta
+   \`\`\`
+
+   El nombre del caso va tal como lo lista \`flowbrain specs <feat>\` (sin el \`(L12)\`). Entre 3 y 15 por funcionalidad
+   suele alcanzar: las reglas que alguien de producto reconocería, no una por cada \`if\`.
+
+4. **Compilar y revisar.** \`flowbrain compile\` dentro de \`.flowbrain/<cerebro>/\` (si no compila, el error dice qué
+   línea corregir). Después \`flowbrain specs <feat> --brain <cerebro>\`: \`rotos\` son referencias que el índice no
+   encontró (ruta mal escrita, caso con otro nombre): corregilas. Los \`casosSinEspecificacion\` que queden, revisalos:
+   ¿falta una especificación o el caso prueba un detalle técnico que no es un requisito?
+
+5. **Informar al usuario**, corto: por funcionalidad, cuántas especificaciones propusiste, cuántas no tienen test (y
+   cuáles son las más riesgosas de dejar así), las preguntas abiertas, y que para confirmarlas alcanza con cambiar
+   \`estado: propuesta\` por \`estado: confirmada\` en la página después de leerlas.
+`;

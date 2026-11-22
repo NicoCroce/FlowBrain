@@ -17,6 +17,8 @@ import {
   endpointId,
   evidenciaValida,
   CODIGO,
+  EVIDENCIA,
+  TEST_REF,
   normalizarRuta,
   verboAdmite,
   type Estado,
@@ -141,6 +143,9 @@ export function compile(entradas: Entradas): Salidas {
     }
     if (fm.codigo && fm.tipo !== "feat" && fm.tipo !== "lib") {
       errores.push({ archivo: f.ruta, linea: L(["codigo"]), mensaje: "codigo solo aplica a feat y lib" });
+    }
+    if (fm.especificaciones && fm.tipo !== "feat") {
+      errores.push({ archivo: f.ruta, linea: L(["especificaciones"]), mensaje: "especificaciones solo aplica a feat" });
     }
     if (fm.puntos_de_entrada && (fm.vive_en?.length ?? 0) !== 1) {
       errores.push({
@@ -334,6 +339,22 @@ export function compile(entradas: Entradas): Salidas {
     campo("vive_en", fm.vive_en);
     campo("pertenece_a", fm.pertenece_a);
 
+    // especificaciones de una feat: ids únicos y referencias bien formadas a repos que existen. Que el archivo o el
+    // caso sigan en el índice no es un error de compilación (el índice puede estar viejo): queda marcado en la ficha.
+    const idsEspec = new Set<string>();
+    (fm.tipo === "feat" ? (fm.especificaciones ?? []) : []).forEach((e, i) => {
+      if (idsEspec.has(e.id)) errores.push({ archivo: ruta, linea: L(["especificaciones", i, "id"]), mensaje: `especificaciones: id repetido: ${e.id}` });
+      idsEspec.add(e.id);
+      const ref = (campo: "archivos" | "tests", re: RegExp, forma: string) =>
+        (e[campo] ?? []).forEach((r, j) => {
+          const m = re.exec(r);
+          if (!m) return void errores.push({ archivo: ruta, linea: L(["especificaciones", i, campo, j]), mensaje: `especificaciones.${e.id}.${campo} con formato inválido: "${r}" (se espera ${forma})` });
+          if (!esRepo(m[1]!) && !rotos.has(m[1]!)) errores.push({ archivo: ruta, linea: L(["especificaciones", i, campo, j]), mensaje: `especificaciones.${e.id}.${campo}: repo inexistente: ${m[1]}` });
+        });
+      ref("archivos", EVIDENCIA, '"repo-x:ruta/al/archivo" o con "#L12"');
+      ref("tests", TEST_REF, '"repo-x:ruta/al/test" o "repo-x:ruta/al/test::nombre del caso"');
+    });
+
     // codigo de una feat: cada servicio que vive en ese repo la implementa (o el repo, si no tiene servicios).
     (fm.tipo === "feat" || fm.tipo === "lib" ? (fm.codigo ?? []) : []).forEach((c, i) => {
       const m = CODIGO.exec(c);
@@ -412,7 +433,7 @@ export function compile(entradas: Entradas): Salidas {
   if (errores.length > 0) throw new CompileError(ordenarErrores(errores));
 
   // ---------- 5. Relaciones finas, dedupe y orden ----------
-  const featsPagina = paginas.filter((p) => p.fm.tipo === "feat").map((p) => ({ id: p.fm.id, codigo: p.fm.codigo ?? [], cuerpo: p.cuerpo }));
+  const featsPagina = paginas.filter((p) => p.fm.tipo === "feat").map((p) => ({ id: p.fm.id, codigo: p.fm.codigo ?? [], cuerpo: p.cuerpo, especificaciones: p.fm.especificaciones ?? [] }));
   const extracciones = [...(entradas.extracciones ?? [])].sort(porRuta).map((f) => f.contenido);
   const accesos = aristasDeExtracciones(extracciones);
   const sinPagina = tablasSinPagina(extracciones);

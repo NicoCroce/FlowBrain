@@ -21,6 +21,7 @@ Grafo de conocimiento de un sistema de software, hecho para que un agente de có
 | Llamadas sin endpoint y endpoints sin uso | `deriva` | `flowbrain drift` |
 | Qué falta migrar de un servicio a otro | `paridad` | `flowbrain parity <viejo> <nuevo>` |
 | Cómo se construye y despliega | `infra` | `flowbrain infra` |
+| Qué tiene que cumplir una funcionalidad, qué archivo lo cumple y qué test lo verifica | `especificaciones` | `flowbrain specs [feat]` |
 | Qué tan entendido quedó cada archivo (0 a 100), qué le falta y un plan para llevarlo a 100 | `fidelidad` | `flowbrain fidelity [--plan]` |
 | Qué llamadas cruzan entre cerebros | `conexiones` | `flowbrain connections` |
 | Buscar un nodo / recorrer el grafo | `buscar_nodo`, `recorrer_grafo` | `flowbrain search`, `flowbrain traverse` |
@@ -38,7 +39,7 @@ cd /ruta/al/proyecto
 pnpm -s -C /ruta/a/flowbrain flowbrain install "$PWD"
 ```
 
-`install` deja el comando `flowbrain` en el PATH, los hooks de Claude Code y los comandos `/flowbrain-study`, `/flowbrain-index` y `/flowbrain-features`; crea `.flowbrain/` en el proyecto, pregunta dónde están los repositorios y si va un cerebro por repo o uno solo, indexa todo y deja el visor en `.flowbrain/flowbrain.html`. Al final imprime la línea del servidor MCP:
+`install` deja el comando `flowbrain` en el PATH, los hooks de Claude Code y los comandos `/flowbrain-study`, `/flowbrain-index`, `/flowbrain-features` y `/flowbrain-specs`; crea `.flowbrain/` en el proyecto, pregunta dónde están los repositorios y si va un cerebro por repo o uno solo, indexa todo y deja el visor en `.flowbrain/flowbrain.html`. Al final imprime la línea del servidor MCP:
 
 ```bash
 claude mcp add --scope user flowbrain -- flowbrain serve --sync
@@ -63,7 +64,8 @@ Con Claude Code abierto en la carpeta del proyecto (con otro agente, el menú da
 1. **`/flowbrain-study`**: el modelo estudia cómo está hecho cada repo, escribe `profile.md`, extractores en `.flowbrain/<cerebro>/extractors/<repo-id>/` para lo que los parsers no ven, y controles (`checks.yaml`) que tienen que seguir cumpliéndose. `flowbrain coverage` mide el avance.
 2. **`/flowbrain-index`**: decide a qué servicio va cada llamada entre repos (por base de URL, configuración e infraestructura) y lo declara con evidencia.
 3. **`/flowbrain-features`**: deduce las funcionalidades de producto, las explica y las une con sus pantallas, endpoints y tablas.
-4. **`flowbrain brains viewer`**: regenera el visor. Con **`flowbrain viewer --serve`** se abre en `http://127.0.0.1:4780` y la pantalla Fidelidad deja corregir lo que le falta a cada archivo (solo escribe en `.flowbrain/`).
+4. **`/flowbrain-specs`**: deduce de los tests y del código las especificaciones de cada funcionalidad (requisitos de negocio y de producto), con el archivo que las cumple y el caso que las verifica; quedan propuestas hasta que una persona las confirma.
+5. **`flowbrain brains viewer`**: regenera el visor. Con **`flowbrain viewer --serve`** se abre en `http://127.0.0.1:4780` y la pantalla Fidelidad deja corregir lo que le falta a cada archivo (solo escribe en `.flowbrain/`).
 
 Todo lo que el modelo escribe queda en `.flowbrain/`, legible y versionable junto al proyecto; lo derivado (`_build/`, el visor) queda fuera de git.
 

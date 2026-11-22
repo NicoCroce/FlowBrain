@@ -1,6 +1,6 @@
 import { cmp, cmpTuple } from "./canonical.js";
 import { MARCA_FIN, MARCA_INICIO } from "./render.js";
-import { dentroDe, type Graph } from "./schema.js";
+import { dentroDe, TEST_REF, type Especificacion, type Graph } from "./schema.js";
 
 /**
  * Vista de producto de cada funcionalidad (`feat`), derivada de las rutas de su campo `codigo`:
@@ -61,6 +61,21 @@ export interface Ficha {
   pantallas: PantallaFicha[];
   /** Archivos de test que la prueban, con sus casos. */
   tests: TestDeFicha[];
+  /** Requisitos de negocio y de producto declarados en su página, con sus archivos y los casos que los verifican. */
+  especificaciones: EspecificacionDeFicha[];
+}
+
+export interface EspecificacionDeFicha {
+  id: string;
+  texto: string;
+  tipo: Especificacion["tipo"];
+  estado: NonNullable<Especificacion["estado"]>;
+  /** Archivos que la cumplen, como se declararon (`repo:ruta` o `repo:ruta#Ln`). */
+  archivos: string[];
+  /** Casos que la verifican: con `caso` y `linea`, uno; sin `caso`, el archivo entero y cuántos casos tiene. */
+  tests: Array<{ archivo: string; caso?: string; linea?: number; casos?: number }>;
+  /** Referencias que el índice ya no encuentra (archivo movido, caso renombrado): hay que corregirlas en la página. */
+  rotos: string[];
 }
 
 export interface PantallaFicha {
@@ -202,6 +217,45 @@ export interface PaginaFeat {
   id: string;
   codigo: string[];
   cuerpo: string;
+  especificaciones?: Especificacion[];
+}
+
+const llano = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * Une cada especificación con el índice: el caso de test por su nombre (o `grupo › nombre`), no por su línea, que se
+ * corre con cada cambio. Lo que no se encuentra queda en `rotos`; de un repo sin indexar no se puede saber, y no se marca.
+ */
+export function resolverEspecificaciones(especificaciones: Especificacion[], estructura: Map<string, EstructuraArchivo>): EspecificacionDeFicha[] {
+  const indexados = new Set([...estructura.keys()].map((k) => k.slice(0, k.indexOf(":"))));
+  return especificaciones.map((e) => {
+    const rotos: string[] = [];
+    for (const a of e.archivos ?? []) {
+      const k = a.replace(/#.*$/, "");
+      if (indexados.has(k.slice(0, k.indexOf(":"))) && !estructura.has(k)) rotos.push(a);
+    }
+    const tests: EspecificacionDeFicha["tests"] = [];
+    for (const t of e.tests ?? []) {
+      const m = TEST_REF.exec(t);
+      if (!m) continue;
+      const archivo = `${m[1]}:${m[2]}`;
+      const casos = estructura.get(archivo)?.casos;
+      if (!casos) {
+        if (indexados.has(m[1]!)) rotos.push(t);
+        else tests.push({ archivo, ...(m[3] ? { caso: m[3].trim() } : {}) });
+        continue;
+      }
+      if (!m[3]) {
+        tests.push({ archivo, casos: casos.length });
+        continue;
+      }
+      const q = llano(m[3]);
+      const c = casos.find((x) => llano(x.nombre) === q) ?? casos.find((x) => llano(`${x.grupo ?? ""} › ${x.nombre}`) === q);
+      if (c) tests.push({ archivo, caso: c.nombre, linea: c.linea });
+      else rotos.push(t);
+    }
+    return { id: e.id, texto: e.texto, tipo: e.tipo, estado: e.estado ?? "propuesta", archivos: [...(e.archivos ?? [])], tests, rotos };
+  });
 }
 
 const sinBacklinks = (cuerpo: string) => {
@@ -529,6 +583,7 @@ export function fichasDeFuncionalidades(
     const tests = (testsDe.get(f.id) ?? []).sort((a, b) => cmp(a.archivo, b.archivo));
     return {
       tests,
+      especificaciones: resolverEspecificaciones(f.especificaciones ?? [], estructura),
       recorridos,
       dominio: [],
       id: f.id,

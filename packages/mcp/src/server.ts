@@ -10,6 +10,7 @@ import {
   ConsultaError,
   contratoDe,
   deriva,
+  especificaciones,
   fidelidad,
   funcionalidad,
   impactoDe,
@@ -107,6 +108,7 @@ export const INSTRUCCIONES = [
   "- Por dónde viaja un dato entre servicios: trazar.",
   "- Cómo se construye, despliega y configura un servicio (imagen, pipeline, variables de entorno, proxy): infra.",
   "- Vecinos de un nodo por tipo de relación: recorrer_grafo.",
+  "- Qué tiene que cumplir una funcionalidad (requisitos de negocio y de producto), qué archivo lo cumple y qué test lo verifica: especificaciones.",
   "- Qué tan confiable es lo que el grafo dice de un archivo o una funcionalidad, y qué falta completar: fidelidad.",
   "Cada dato trae evidencia `repo:ruta#Ln`: abrí ese archivo antes de afirmar algo. `avisos` y `truncado` marcan huecos conocidos: ahí falta dato, no significa que no pase nada.",
 ].join("\n");
@@ -332,6 +334,23 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
       inputSchema: { viejo: z.string().min(1).describe("id del servicio de origen"), nuevo: z.string().min(1).describe("id del servicio que lo reemplaza"), ...presupuesto, ...deCerebro },
     },
     async (a) => correr("paridad", a, (ctx, args) => paridad(ctx, args)),
+  );
+
+  server.registerTool(
+    "especificaciones",
+    {
+      description:
+        "Requisitos de negocio y de producto de una funcionalidad, en llano: qué tiene que cumplirse, qué archivos lo cumplen y qué casos de test lo verifican, con su estado (propuesta por un modelo o confirmada por una persona). Sin argumentos: cuántas tiene cada funcionalidad y cuántos casos de test no verifican ninguna. Con `funcionalidad`: cada requisito, los que no tienen test y los casos de test sueltos. Usalo antes de cambiar una funcionalidad, para saber qué no puede romperse y qué no está probado.",
+      inputSchema: {
+        funcionalidad: z.string().min(1).optional().describe("id (feat-billing), sufijo (billing) o nombre"),
+        estado: z.enum(["propuesta", "confirmada"]).optional().describe("solo las de ese estado"),
+        tipo: z.enum(["negocio", "producto"]).optional().describe("solo las de ese tipo"),
+        sin_test: z.boolean().optional().describe("solo las que ningún caso de test verifica"),
+        ...presupuesto,
+        ...deCerebro,
+      },
+    },
+    async (a) => correr("especificaciones", a, (ctx, args) => especificaciones(ctx, args)),
   );
 
   server.registerTool(

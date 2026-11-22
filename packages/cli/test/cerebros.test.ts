@@ -275,6 +275,9 @@ describe("dentro de un proyecto", () => {
     const feats = (await ejecutar(["feature", "--guide"], {}, dir)).stdout;
     expect(feats).toContain("Agrupar pantallas sueltas");
     expect(await readFile(join(dir, "global/commands/flowbrain-features.md"), "utf8")).toBe(feats);
+    const specs = (await ejecutar(["specs", "--guide"], {}, dir)).stdout;
+    expect(specs).toContain("Una regla por especificación");
+    expect(await readFile(join(dir, "global/commands/flowbrain-specs.md"), "utf8")).toBe(specs);
   }, 120_000);
 
   it("install sin nadie a quién preguntar: --repos elige la carpeta (un monorepo) y --single junta todo en un cerebro", async () => {

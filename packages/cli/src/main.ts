@@ -11,6 +11,7 @@ import {
   ARCHIVO_REGISTRO,
   ARCHIVO_CONTROLES,
   cobertura,
+  especificaciones,
   fidelidad,
   leerControles,
   type InformeExtractorBreve,
@@ -52,7 +53,7 @@ import { draftDir } from "@flowbrain/indexer";
 import { aplicar, ARCHIVO_VISOR, asegurarGitignore, crearRegistro, encontrarRepos, escribirVisor, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { evidencia } from "./evidencia.js";
-import { GUIA_ANALISIS, GUIA_ESTUDIO, GUIA_FUNCIONALIDADES, NOMBRE_COMANDO, NOMBRE_ESTUDIO, NOMBRE_FUNCIONALIDADES } from "./guia.js";
+import { GUIA_ANALISIS, GUIA_ESPECIFICACIONES, GUIA_ESTUDIO, GUIA_FUNCIONALIDADES, NOMBRE_COMANDO, NOMBRE_ESPECIFICACIONES, NOMBRE_ESTUDIO, NOMBRE_FUNCIONALIDADES } from "./guia.js";
 import { comandoBrain, comillas, init, instalarComando, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
 import { escribirIndex, indexar } from "@flowbrain/parsers";
@@ -103,6 +104,10 @@ Comandos:
   trace --from <nodo|URL|ruta|archivo> [--to <nodo>]
   feature <id|nombre> [--guide]       ficha compacta: endpoints, consumo, datos, relaciones, dominio compartido;
                                             --guide imprime cómo deducir y completar las funcionalidades (para el modelo)
+  specs [id|nombre] [--state propuesta|confirmada]   especificaciones de negocio y de producto: sin argumento, cuántas tiene
+        [--type negocio|producto] [--untested]      cada funcionalidad y cuántos casos de test no verifican ninguna; con una
+        [--guide]                                   funcionalidad, cada requisito con sus archivos y sus tests;
+                                            --guide imprime cómo deducirlas del código y de los tests (para el modelo)
   flow <"MÉTODO /ruta"|Clase.metodo>   pasos controller → servicio → repositorio, con lo que toca cada uno
   screen </ruta|Componente>               pantalla del front de punta a punta: de dónde se llega, a dónde lleva, qué llama del back
   callers <Clase.metodo|Clase> [--depth n]
@@ -162,13 +167,16 @@ async function prepararMaquina(env: NodeJS.ProcessEnv, cwd: string, settingsOpt?
   const comandoEstudio = join(comandos, `${NOMBRE_ESTUDIO}.md`);
   await writeFile(comandoCC, GUIA_ANALISIS, "utf8");
   await writeFile(comandoFeat, GUIA_FUNCIONALIDADES, "utf8");
+  const comandoSpecs = join(comandos, `${NOMBRE_ESPECIFICACIONES}.md`);
   await writeFile(comandoEstudio, GUIA_ESTUDIO, "utf8");
+  await writeFile(comandoSpecs, GUIA_ESPECIFICACIONES, "utf8");
   return [
     ...(bin ? [`Comando flowbrain en ${bin.archivo}${bin.enPath ? "" : ` (esa carpeta no está en tu PATH: agregá export PATH="${dirname(bin.archivo)}:$PATH" a tu ~/.zshrc)`}.`] : []),
     `Hooks de Claude Code ${cambio ? "registrados" : "ya estaban registrados"} en ${settings} (UserPromptSubmit y SessionEnd).`,
     `Comando /${NOMBRE_COMANDO} para Claude Code en ${comandoCC}: indexa el proyecto y analiza la comunicación real entre servicios.`,
     `Comando /${NOMBRE_FUNCIONALIDADES} en ${comandoFeat}: deduce y completa las funcionalidades de producto de cada cerebro.`,
     `Comando /${NOMBRE_ESTUDIO} en ${comandoEstudio}: estudia cómo está hecho cada repo y escribe los extractores que completan el índice.`,
+    `Comando /${NOMBRE_ESPECIFICACIONES} en ${comandoSpecs}: deduce las especificaciones de negocio y de producto de cada funcionalidad.`,
   ];
 }
 
@@ -211,6 +219,8 @@ export async function ejecutar(
         feature: { type: "string" },
         type: { type: "string" },
         signal: { type: "string" },
+        state: { type: "string" },
+        untested: { type: "boolean" },
         plan: { type: "boolean" },
         text: { type: "string" },
         diff: { type: "string" },
@@ -370,6 +380,7 @@ export async function ejecutar(
     const raizRegistro = (await esRegistro(raiz)) ? raiz : null;
     if (comando === "coverage" && o.guide) return { codigo: 0, stdout: GUIA_ESTUDIO, stderr: "" };
     if (comando === "feature" && o.guide) return { codigo: 0, stdout: GUIA_FUNCIONALIDADES, stderr: "" };
+    if (comando === "specs" && o.guide) return { codigo: 0, stdout: GUIA_ESPECIFICACIONES, stderr: "" };
     if (comando === "evidence") {
       // Con --guide, las instrucciones para el modelo que va a analizar; sin él, el informe.
       if (o.guide) return { codigo: 0, stdout: GUIA_ANALISIS, stderr: "" };
@@ -602,6 +613,9 @@ export async function ejecutar(
       case "parity":
         if (!arg || !positionals[2]) throw new ConsultaError("parametro_invalido", "uso: flowbrain parity <svc-viejo> <svc-nuevo>");
         resultado = paridad(ctx, { viejo: arg, nuevo: positionals[2], ...opt("budget_tokens", comunes.budget_tokens) });
+        break;
+      case "specs":
+        resultado = especificaciones(ctx, { ...opt("funcionalidad", arg), ...opt("estado", o.state), ...opt("tipo", o.type), ...(o.untested ? { sin_test: true } : {}), ...opt("budget_tokens", comunes.budget_tokens) });
         break;
       case "fidelity":
         resultado = fidelidad(ctx, {
