@@ -65,14 +65,16 @@ export const FIDELIDAD_JS = String.raw`
   var paraAgente = function (x) { return x.t.some(function (t) { return t[1] === 0; }); };
   var enGrupo = function (x, g) { return g === "vos" ? paraVos(x) : g === "agente" ? paraAgente(x) : g === "completos" ? !x.t.length : g === "incierta" ? false : true; };
 
-  function coincide(x) {
-    if (!enGrupo(x, S.grupo)) return false;
-    if (x.p < S.min || x.p > S.max) return false;
-    if (S.cerebro !== "" && String(x.c) !== S.cerebro) return false;
+  // salvo: la dimensión que un panel de estadística no aplica sobre sí mismo ("puntaje", "cerebro" o "signal").
+  // El grupo de fidelidad incierta no tiene puntaje: los paneles lo ignoran y miden los archivos con los demás filtros.
+  function coincide(x, salvo) {
+    if (!(salvo && S.grupo === "incierta") && !enGrupo(x, S.grupo)) return false;
+    if (salvo !== "puntaje" && (x.p < S.min || x.p > S.max)) return false;
+    if (salvo !== "cerebro" && S.cerebro !== "" && String(x.c) !== S.cerebro) return false;
     if (S.lenguaje && x.l !== S.lenguaje) return false;
     if (S.capa && x.k !== S.capa) return false;
     if (S.feat === NINGUNA ? !x.u : S.feat && x.f.indexOf(S.feat) < 0) return false;
-    if (S.signal) { var v = x.s[S.signal]; if (!v || v[0] >= v[1]) return false; }
+    if (salvo !== "signal" && S.signal) { var v = x.s[S.signal]; if (!v || v[0] >= v[1]) return false; }
     if (S.q) {
       var q = S.q.trim().toLowerCase();
       if (q && x.a.toLowerCase().indexOf(q) < 0 && !x.t.some(function (t) { return t[2].toLowerCase().indexOf(q) >= 0; })) return false;
@@ -80,52 +82,70 @@ export const FIDELIDAD_JS = String.raw`
     return true;
   }
   function filtradas() {
-    var out = filas.filter(coincide);
+    var out = filas.filter(function (x) { return coincide(x); });
     out.sort(function (a, b) { return (S.orden === "asc" ? a.p - b.p : b.p - a.p) || b.t.length - a.t.length || (a.a < b.a ? -1 : 1); });
     return out;
   }
   // Lo que hay puesto, en palabras: para decir por qué una lista quedó vacía.
-  function filtrosActivos() {
+  function filtrosActivos(salvo) {
     var out = [];
-    if (S.grupo) out.push(S.grupo === "vos" ? "lo que resolvés vos" : S.grupo === "agente" ? "lo que resuelve el agente" : "completos");
-    if (S.min > 0 || S.max < 100) out.push("puntaje de " + S.min + " a " + S.max);
-    if (S.cerebro !== "") out.push("cerebro " + CEREBROS[Number(S.cerebro)].nombre);
+    if (S.grupo && !(salvo && S.grupo === "incierta")) out.push(S.grupo === "vos" ? "lo que resolvés vos" : S.grupo === "agente" ? "lo que resuelve el agente" : "completos");
+    if (salvo !== "puntaje" && (S.min > 0 || S.max < 100)) out.push("puntaje de " + S.min + " a " + S.max);
+    if (salvo !== "cerebro" && S.cerebro !== "") out.push("cerebro " + CEREBROS[Number(S.cerebro)].nombre);
     if (S.lenguaje) out.push("tipo " + S.lenguaje);
     if (S.capa) out.push("capa " + (CAPA[S.capa] || S.capa));
     if (S.feat) out.push(S.feat === NINGUNA ? "sin funcionalidad" : "funcionalidad " + nombreFeat(S.feat));
-    if (S.signal) out.push("le falta: " + SIGNAL[S.signal]);
+    if (salvo !== "signal" && S.signal) out.push("le falta: " + SIGNAL[S.signal]);
     if (S.q.trim()) out.push("texto «" + S.q.trim() + "»");
     return out;
   }
 
-  // ---------- Resumen: siempre de todos los archivos ----------
+  // ---------- Estadística: el mismo conjunto que la lista ----------
+  // Cada panel cuenta los archivos que pasan todos los filtros menos el suyo (el rango en el reparto, el cerebro en
+  // "Por cerebro", la signal en "por signal"): así refleja la lista y sigue sirviendo para elegir otra barra.
   function barra(etiqueta, valor, pct, detalle, attrs, activa) {
     return '<button type="button" class="fd-barra' + (activa ? " on" : "") + '" ' + attrs + ' title="' + esc(detalle) + '">' +
       '<span class="fd-et">' + etiqueta + '</span><span class="fd-pista"><span class="fd-relleno" style="width:' + Math.max(pct, pct > 0 ? 1.5 : 0) + "%;background:" + tono(valor) + '"></span></span>' +
       '<span class="fd-val">' + esc(detalle) + "</span></button>";
   }
+  // Sobre qué conjunto se calcula un panel, en palabras, y qué filtro propio no aplica.
+  function sobre(salvo, xs) {
+    var fs = filtrosActivos(salvo), propio = salvo === "puntaje" ? (S.min > 0 || S.max < 100 ? "el rango de puntaje" : "") : salvo === "cerebro" ? (S.cerebro !== "" ? "el cerebro elegido" : "") : S.signal ? "la signal elegida" : "";
+    return '<p class="fd-sobre">Sobre ' + (fs.length ? esc(fs.join(", ")) : "todos los archivos medidos") + " · " + plural(xs.length, "archivo", "archivos") +
+      (propio ? " · sin aplicar " + propio + ", que se marca en su barra" : "") + (salvo && S.grupo === "incierta" ? " · los de fidelidad incierta no tienen puntaje" : "") + "</p>";
+  }
+  var vacioPanel = function (xs) { return xs.length ? "" : '<p class="fd-sin">Ningún archivo medido coincide con los demás filtros. <button type="button" class="boton" data-acc="limpiar">Quitar filtros</button></p>'; };
   function graficos() {
-    var max = 1, cuentas = TRAMOS.map(function (t) { var n = filas.filter(function (x) { return x.p >= t[0] && x.p <= t[1]; }).length; if (n > max) max = n; return n; });
-    var reparto = TRAMOS.map(function (t, i) {
+    var base = function (salvo) { return filas.filter(function (x) { return coincide(x, salvo); }); };
+    var xsP = base("puntaje"), xsC = base("cerebro"), xsS = base("signal");
+    var max = 1, cuentas = TRAMOS.map(function (t) { var n = xsP.filter(function (x) { return x.p >= t[0] && x.p <= t[1]; }).length; if (n > max) max = n; return n; });
+    var reparto = xsP.length ? TRAMOS.map(function (t, i) {
       var et = t[0] === t[1] ? "100" : t[0] + "–" + t[1];
       return barra(et, t[0], (100 * cuentas[i]) / max, plural(cuentas[i], "archivo", "archivos"), 'data-min="' + t[0] + '" data-max="' + t[1] + '"', S.min === t[0] && S.max === t[1]);
-    }).join("");
+    }).join("") : vacioPanel(xsP);
+    // Por cerebro es también el selector: siempre están todos, con el elegido marcado.
     var porCerebro = CEREBROS.length > 1 ? CEREBROS.map(function (c, i) {
-      var xs = filas.filter(function (x) { return x.c === i; }), p = promedio(xs);
-      if (p === null) return '<p class="fd-sin"><strong>' + esc(c.nombre) + "</strong> · sin índice de código: no hay archivos para medir</p>";
+      var xs = xsC.filter(function (x) { return x.c === i; }), p = promedio(xs);
+      if (p === null) {
+        var sinIndice = !filas.some(function (x) { return x.c === i; });
+        return '<p class="fd-sin"><strong>' + esc(c.nombre) + "</strong> · " + (sinIndice ? "sin índice de código: no hay archivos para medir" : "ningún archivo coincide con los demás filtros") + "</p>";
+      }
       return barra(esc(c.nombre), p, p, p + " · " + plural(xs.length, "archivo", "archivos"), 'data-cerebro="' + i + '"', S.cerebro === String(i));
     }).join("") : "";
     var signals = ORDEN_SIGNAL.map(function (s) {
       var ok = 0, total = 0, conFalta = 0;
-      filas.forEach(function (x) { var v = x.s[s]; if (!v) return; ok += v[0]; total += v[1]; if (v[0] < v[1]) conFalta++; });
+      xsS.forEach(function (x) { var v = x.s[s]; if (!v) return; ok += v[0]; total += v[1]; if (v[0] < v[1]) conFalta++; });
       if (!total) return "";
       var pct = Math.round((1000 * ok) / total) / 10;
       return barra(SIGNAL[s], pct, pct, pct + "% · " + (conFalta ? plural(conFalta, "archivo con falta", "archivos con falta") : "sin faltas"), 'data-signal="' + s + '" aria-label="' + esc(SIGNAL[s] + ": " + MIDE[s]) + '"', S.signal === s);
     }).join("");
+    var noAplican = ORDEN_SIGNAL.filter(function (s) { return !xsS.some(function (x) { return x.s[s] && x.s[s][1]; }); });
+    if (!signals) signals = xsS.length ? '<p class="fd-sin">Estos archivos no tienen relaciones que medir por signal.</p>' : vacioPanel(xsS);
+    else if (noAplican.length) signals += '<p class="fd-sin">No aplican a estos archivos: ' + noAplican.map(function (s) { return SIGNAL[s]; }).join(", ") + ".</p>";
     return '<div class="fd-graficos">' +
-      '<section><h2>Reparto por puntaje</h2><div class="fd-barras">' + reparto + "</div></section>" +
-      (porCerebro ? '<section><h2>Por cerebro</h2><div class="fd-barras">' + porCerebro + "</div></section>" : "") +
-      '<section><h2>Qué se entendió, por signal</h2><div class="fd-barras">' + signals + "</div></section>" +
+      '<section><h2>Reparto por puntaje</h2>' + sobre("puntaje", xsP) + '<div class="fd-barras">' + reparto + "</div></section>" +
+      (porCerebro ? '<section><h2>Por cerebro</h2>' + sobre("cerebro", xsC) + '<div class="fd-barras">' + porCerebro + "</div></section>" : "") +
+      '<section><h2>Qué se entendió, por signal</h2>' + sobre("signal", xsS) + '<div class="fd-barras">' + signals + "</div></section>" +
       "</div>";
   }
   function cifras() {

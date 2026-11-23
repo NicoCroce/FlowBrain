@@ -146,6 +146,44 @@ describe("pantalla Fidelidad", () => {
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
   });
 
+  it("la estadística se calcula sobre el mismo conjunto que la lista; cada panel no aplica su propio filtro", () => {
+    const v = montar(datos);
+    v.tocar({ "data-acc": "mas-filtros" });
+    const seccion = (titulo: string) => { const p = v.pagina(), i = p.indexOf("<h2>" + titulo); return p.slice(i, p.indexOf("</section>", i)); };
+    const barra = (sec: string, attr: string) => { const i = sec.indexOf(attr); return sec.slice(i, sec.indexOf("</button>", i)); };
+    // Sin filtros: todos los archivos medidos.
+    expect(seccion("Reparto por puntaje")).toContain("Sobre todos los archivos medidos · 4 archivos");
+    expect(barra(seccion("Reparto por puntaje"), 'data-min="100"')).toContain("2 archivos");
+    expect(barra(seccion("Qué se entendió"), 'data-signal="http"')).toContain("50% · 1 archivo con falta");
+    // Cerebro back: el reparto y las signals cuentan solo sus archivos; Por cerebro sigue mostrando todos, con back marcado.
+    v.cambiar("fd-cerebro", "1");
+    expect(seccion("Reparto por puntaje")).toContain("Sobre cerebro back · 1 archivo");
+    expect(barra(seccion("Reparto por puntaje"), 'data-min="100"')).toContain("0 archivos");
+    expect(barra(seccion("Reparto por puntaje"), 'data-min="60"')).toContain("1 archivo");
+    expect(seccion("Qué se entendió")).toContain("Sobre cerebro back · 1 archivo");
+    expect(seccion("Qué se entendió")).not.toContain('data-signal="http"');
+    expect(seccion("Qué se entendió")).toContain("No aplican a estos archivos: Llamadas HTTP, Recorrido de endpoints, Tipo de respuesta, Pantallas con llamadas.");
+    expect(barra(seccion("Qué se entendió"), 'data-signal="llamadas"')).toContain("50% · 1 archivo con falta");
+    expect(seccion("Por cerebro")).toContain("Sobre todos los archivos medidos · 4 archivos · sin aplicar el cerebro elegido");
+    expect(seccion("Por cerebro")).toContain('data-cerebro="0"');
+    expect(seccion("Por cerebro")).toMatch(/fd-barra on" data-cerebro="1"/);
+    // Los demás filtros también: tipo tsx deja un solo archivo en todos los paneles, y un cerebro sin coincidencias lo dice.
+    v.cambiar("fd-cerebro", "");
+    v.cambiar("fd-lenguaje", "tsx");
+    expect(seccion("Reparto por puntaje")).toContain("Sobre tipo tsx · 1 archivo");
+    expect(seccion("Por cerebro")).toContain("<strong>back</strong> · ningún archivo coincide con los demás filtros");
+    // El rango de puntaje filtra la lista, pero el reparto no se lo aplica a sí mismo: lo marca en su barra.
+    v.cambiar("fd-lenguaje", "");
+    v.tocar({ "data-min": "40", "data-max": "59" });
+    expect(seccion("Reparto por puntaje")).toContain("Sobre todos los archivos medidos · 4 archivos · sin aplicar el rango de puntaje");
+    expect(seccion("Reparto por puntaje")).toMatch(/fd-barra on" data-min="40"/);
+    expect(seccion("Qué se entendió")).toContain("Sobre puntaje de 40 a 59 · 1 archivo");
+    // Un conjunto vacío lo dice y ofrece salir.
+    v.escribir("no-existe");
+    v.tocar({ "data-acc": "mas-filtros" }); v.tocar({ "data-acc": "mas-filtros" });
+    expect(seccion("Reparto por puntaje")).toContain("Ningún archivo medido coincide con los demás filtros");
+  });
+
   it("fidelidad incierta: un apartado sin puntaje, con el porqué de cada archivo, fuera del promedio", () => {
     const v = montar(datos);
     // El promedio es solo de los medidos: (50 + 60 + 100 + 100) / 4.

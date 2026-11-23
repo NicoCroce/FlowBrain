@@ -303,6 +303,7 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .fd-relleno { display: block; height: 100%; border-radius: 999px; }
 .fd-val { font-size: 12px; color: var(--suave); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fd-sin { margin: 4px 8px; font-size: 12px; color: var(--suave); }
+.fd-sobre { margin: -4px 0 10px; font-size: 12px; color: var(--suave); }
 .fd-filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 0 0 20px; padding: 16px; border: 1px solid var(--borde); border-radius: 12px; background: var(--tarjeta); }
 .fd-campo { flex-direction: column; align-items: stretch; gap: 6px; cursor: default; }
 .fd-campo input[type=number] { width: 100%; height: 38px; padding: 0 12px; border: 1px solid #262C3A; border-radius: 10px; background: #0E1118; color: var(--text); font: 400 13px var(--sans); outline: none; }
