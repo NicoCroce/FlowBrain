@@ -402,7 +402,12 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .es-hacer li small { color: var(--suave); } .es-hacer li.hecho b { color: var(--tabla); font-weight: 500; }
 .es-hacer li .boton { flex: 0 0 auto; }
 .es-manual { color: var(--suave); font-style: italic; }
-.es-regla .fd-acc { margin-top: 8px; } .boton.chico { height: 26px; padding: 0 10px; font-size: 12px; }
+.es-regla .fd-acc { margin-top: 8px; }
+.es-agente { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--primario); border-radius: 12px; background: var(--tarjeta); }
+.es-agente h2 { margin: 0 0 8px; font-size: 15px; } .es-trabajo { display: grid; gap: 6px; }
+.es-trabajo .es-cab { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.es-pasos { margin: 0; padding-left: 18px; font-size: 12px; color: var(--suave); } .es-pasos li { overflow-wrap: anywhere; }
+.es-resultado { white-space: pre-wrap; font-size: 13px; } .es-cambios ul { margin: 4px 0 0; padding-left: 18px; font-size: 12px; } .boton.chico { height: 26px; padding: 0 10px; font-size: 12px; }
 .es-falta { color: var(--dudoso); border-color: #5B2A2A; } .es-ok { color: var(--tabla); border-color: #1E4D33; } .es-aviso { color: var(--feat); border-color: #5A4316; } .es-cerebro { color: var(--medio); }
 .es-ir { cursor: pointer; } .es-ir:hover { border-color: var(--borde2); }
 @media (max-width: 640px) { .es-cuerpo, .es-feat > .chips { margin-left: 0; } .es-patas tbody th { width: auto; } .es-patas td:last-child { width: auto; } }

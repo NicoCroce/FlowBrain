@@ -37,6 +37,7 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
   return {
     pagina: () => raiz.innerHTML,
     lista: () => el("es-lista").innerHTML,
+    agente: () => el("es-agente").innerHTML,
     casos: () => [...el("es-lista").innerHTML.matchAll(/<p class="es-nombre">([^<]+)<\/p>/g)].map((m) => m[1]),
     reglas: () => [...el("es-lista").innerHTML.matchAll(/<p class="es-texto">([^<]+?) <span/g)].map((m) => m[1]),
     cambiar: (id: string, value: string) => raiz.oyentes["change"]!({ target: { id, value } }),
@@ -207,6 +208,42 @@ describe("pantalla Especificaciones", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(pedidos[1]).toEqual({ tipo: "manual", cerebro: "front", funcionalidad: "feat-pagos", id: "motivo", motivo: null });
     expect(v.lista()).toContain("Vuelve a contar como sin test");
+  });
+
+  it("con el agente a mano, el pedido se manda directo y la pantalla muestra cómo va y qué cambió", async () => {
+    const enviados: Array<{ url: string; cuerpo: Record<string, unknown> | null }> = [];
+    const trabajo = { id: "t1", tipo: "test", etiqueta: "1 test: Pagar el carrito", estado: "terminado", pasos: ["Lee src/pagos/Error.tsx", "Corre: npx vitest run"], resultado: "Escribí 1 test.", cambios: [{ repo: "repos/web", archivos: ["src/pagos/Error.test.tsx"] }] };
+    const fetch = (url: string, init: { method?: string; body?: string }) => {
+      enviados.push({ url, cuerpo: init.body ? (JSON.parse(init.body) as Record<string, unknown>) : null });
+      const j = init.method === "POST" ? { id: "t1" } : { trabajos: enviados.some((x) => x.cuerpo) ? [trabajo] : [] };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(j) });
+    };
+    const v = montar(datos(), { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: null } }, fetch });
+    v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
+    v.tocar({ "data-acc": "pedido", "data-k": "test|feat-pagos|pagar" });
+    // Con agente no copia solo: muestra el pedido y deja elegir.
+    expect(v.lista()).toContain('data-acc="mandar"');
+    expect(v.lista()).toContain("Mandar al agente");
+    expect(v.lista()).not.toContain("No se pudo copiar solo");
+    v.tocar({ "data-acc": "mandar", "data-k": "test|feat-pagos|pagar" });
+    for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
+    const post = enviados.find((x) => x.cuerpo)!;
+    expect(post.url).toBe("/api/agente");
+    expect(post.cuerpo).toMatchObject({ tipo: "test", etiqueta: "1 test: Pagar el carrito", cerebros: ["front"] });
+    expect(String(post.cuerpo!["pedido"])).toContain("regla motivo [negocio]");
+    const p = v.agente();
+    expect(p).toContain("<h2>El agente</h2>");
+    expect(p).toContain("1 test: Pagar el carrito");
+    expect(p).toContain("<code>src/pagos/Error.test.tsx</code>");
+    expect(p).toContain("Recargar para ver los cambios");
+  });
+
+  it("sin Claude Code en la máquina, el pedido se copia y dice por qué no se manda", () => {
+    const v = montar(datos(), { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: "no se encontró Claude Code (claude) en esta máquina" } }, fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }) });
+    v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
+    v.tocar({ "data-acc": "pedido", "data-k": "test|feat-pagos|pagar" });
+    expect(v.lista()).not.toContain('data-acc="mandar"');
+    expect(v.lista()).toContain("No se puede mandar directo: no se encontró Claude Code");
   });
 
   it("sin nada escrito o sin funcionalidades explica qué hacer", () => {

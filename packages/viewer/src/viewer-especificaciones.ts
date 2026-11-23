@@ -15,6 +15,9 @@ export const ESPECIFICACIONES_JS = String.raw`
   var CEREBROS = D.cerebros || [];
   var FICHAS = D.funcionalidades || [];
   var ED = window.FLOWBRAIN_EDICION || null;
+  // Con el visor servido y Claude Code instalado, los pedidos se mandan directo al agente; si no, se copian.
+  var AG = !!(ED && ED.agente && !ED.agente.noDisponible);
+  var TRABAJOS = [], ESPERA = null;
   var TIPO = { negocio: "Negocio", producto: "Producto" };
   var QUE_ES = { negocio: "Regla del negocio: vale aunque cambie la pantalla", producto: "Cómo se comporta el producto para quien lo usa" };
   // Estado de un caso: el peor de sus cerebros. Orden: lo que más falta, primero.
@@ -194,13 +197,41 @@ export const ESPECIFICACIONES_JS = String.raw`
   var PEDIDOS = {};
   function botonPedido(k, tipo, items, etiqueta) {
     PEDIDOS[k] = [tipo, items];
+    if (AG) etiqueta = etiqueta.replace(/^Copiar pedido/, "Pedírselo al agente");
     return '<button type="button" class="boton" data-acc="pedido" data-k="' + esc(k) + '">' + (PEDIDO && PEDIDO.k === k ? "Ocultar pedido" : etiqueta) + "</button>";
   }
   function cajaDelPedido(k) {
     if (!PEDIDO || PEDIDO.k !== k || !PEDIDOS[k]) return "";
+    var por = !ED ? "Para mandarlo directo al agente, abrí el visor desde el menú («Abrir el visor») o con <code>flowbrain viewer --serve</code>."
+      : ED.agente && ED.agente.noDisponible ? "No se puede mandar directo: " + esc(ED.agente.noDisponible) + "." : "";
+    var botones = AG
+      ? '<div class="fd-acc"><button type="button" class="boton fd-pri" data-acc="mandar" data-k="' + esc(k) + '"' + (PEDIDO.mandado ? " disabled" : "") + ">" + (PEDIDO.mandado ? "Mandado" : "Mandar al agente") + '</button><button type="button" class="boton" data-acc="copiar" data-k="' + esc(k) + '">Copiar</button></div>' +
+        "<small>Lo hace Claude Code en esta máquina, en la carpeta del proyecto: escribe y corre los tests, pero no commitea. Usa tu plan de Claude. Ves el avance arriba, en «El agente».</small>"
+      : "";
     return '<div class="fd-plan"><h2>Pedido para el agente</h2>' +
-      '<textarea class="fd-texto" readonly rows="8" aria-label="Pedido para el agente">' + esc(textoDelPedido(PEDIDOS[k][0], PEDIDOS[k][1])) + "</textarea>" +
-      (PEDIDO.copiado === true ? '<span class="fd-ok">Copiado. Pegalo en tu agente.</span>' : PEDIDO.copiado === "no" ? '<span class="fd-nota">No se pudo copiar solo: seleccioná el texto y copialo.</span>' : "") + "</div>";
+      '<textarea class="fd-texto" readonly rows="8" aria-label="Pedido para el agente">' + esc(textoDelPedido(PEDIDOS[k][0], PEDIDOS[k][1])) + "</textarea>" + botones +
+      (PEDIDO.copiado === true ? '<span class="fd-ok">Copiado. Pegalo en tu agente.</span>' : PEDIDO.copiado === "no" ? '<span class="fd-nota">No se pudo copiar solo: seleccioná el texto y copialo.</span>' : "") +
+      (PEDIDO.error ? '<p class="fd-msg error">' + esc(PEDIDO.error) + "</p>" : "") + (por ? '<p class="fd-nota">' + por + "</p>" : "") + "</div>";
+  }
+  // Qué cerebros toca un pedido y cómo se llama en la lista del agente.
+  function cerebrosDelPedido(tipo, items) {
+    var out = [], suma = function (c) { if (c && out.indexOf(c) < 0) out.push(c); };
+    items.forEach(function (it) {
+      if (tipo === "test") suma(cerebroDe(it[1].id));
+      else if (tipo === "corregir") it[1].todas.forEach(function (p) { suma(p.cerebro); });
+      else it.fichas.forEach(function (f) { if (elegido(cerebroDe(f.id))) suma(cerebroDe(f.id)); });
+    });
+    return out;
+  }
+  function etiquetaDelPedido(tipo, items) {
+    if (tipo === "test") {
+      var casos = [];
+      items.forEach(function (it) { var c = casoDeRegla(it[1], it[0]), n = c ? c.nombre : nombre(it[1].id); if (casos.indexOf(n) < 0) casos.push(n); });
+      return plural(items.length, "test", "tests") + (casos.length === 1 ? ": " + casos[0] : " de " + plural(casos.length, "caso", "casos"));
+    }
+    if (tipo === "corregir") return "Corregir " + plural(items.length, "caso marcado", "casos marcados");
+    var que = items.length === 1 ? items[0].nombre : plural(items.length, "funcionalidad", "funcionalidades");
+    return (tipo === "agrupar" ? "Agrupar en casos de uso: " : "Escribir casos de uso: ") + que;
   }
 
   // ---------- Una regla (dentro de un caso o suelta) ----------
@@ -435,7 +466,8 @@ export const ESPECIFICACIONES_JS = String.raw`
       ? '<p class="aviso">Todavía no hay casos de uso ni reglas escritas' + (SEL.length ? " en " + esc(SEL.join(", ")) : "") + ". Se guardan en la página de cada funcionalidad y las deduce el agente: copiá el pedido de abajo y pegáselo, o corré <code>/flowbrain-specs</code>.</p>"
       : "";
     PEDIDOS = {};
-    var cabeza = "<h1>Especificaciones</h1>" + COMO + aviso() + (CON_FICHAS.length > 1 ? selectorDeCerebros() : "") + queHacer() + cifras() + (hay ? grupos() : "") + (hay ? herramientas() : "") + nada;
+    var cabeza = "<h1>Especificaciones</h1>" + COMO + aviso() + (CON_FICHAS.length > 1 ? selectorDeCerebros() : "") + queHacer() +
+      '<section id="es-agente" class="' + (AG && TRABAJOS.length ? "es-agente" : "") + '" aria-live="polite">' + htmlAgente() + "</section>" + cifras() + (hay ? grupos() : "") + (hay ? herramientas() : "") + nada;
     raiz.innerHTML = cabeza + '<div id="es-lista">' + lista() + "</div>";
     if (FOCO) { var s = elem("es-" + FOCO); FOCO = null; if (s && s.scrollIntoView) s.scrollIntoView(); }
   }
@@ -472,6 +504,49 @@ export const ESPECIFICACIONES_JS = String.raw`
     });
   }
 
+  // ---------- El agente: mandar pedidos y ver cómo van ----------
+  function pedirAgente(ruta, cuerpo) {
+    return fetch(ruta, cuerpo ? { method: "POST", headers: { "content-type": "application/json", "x-flowbrain-token": ED.token }, body: JSON.stringify(cuerpo) } : { headers: { "x-flowbrain-token": ED.token } })
+      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || "el servidor respondió " + r.status); return j; }); });
+  }
+  function mandar(k) {
+    var p = PEDIDOS[k];
+    if (!p || !AG || !PEDIDO || PEDIDO.k !== k || PEDIDO.mandado) return;
+    PEDIDO.mandado = true; PEDIDO.error = null; pintarTodo();
+    pedirAgente("/api/agente", { tipo: p[0], pedido: textoDelPedido(p[0], p[1]), etiqueta: etiquetaDelPedido(p[0], p[1]), cerebros: cerebrosDelPedido(p[0], p[1]) }).then(function () {
+      PEDIDO = null; traerTrabajos(); pintarTodo();
+      var a = elem("es-agente"); if (a && a.scrollIntoView) a.scrollIntoView();
+    }).catch(function (e) { if (PEDIDO && PEDIDO.k === k) { PEDIDO.mandado = false; PEDIDO.error = e.message; pintarTodo(); } });
+  }
+  var vivo = function (t) { return t.estado === "en_cola" || t.estado === "corriendo"; };
+  function traerTrabajos() {
+    if (!AG) return;
+    pedirAgente("/api/agente").then(function (j) {
+      TRABAJOS = j.trabajos || []; pintarAgente();
+      if (ESPERA) { clearTimeout(ESPERA); ESPERA = null; }
+      if (TRABAJOS.some(vivo)) ESPERA = setTimeout(traerTrabajos, 2000);
+    }).catch(function () { ESPERA = setTimeout(traerTrabajos, 5000); });
+  }
+  var ESTADO_TRABAJO = { en_cola: ["En cola", "na"], corriendo: ["Trabajando…", "na"], terminado: ["Terminó", "ok"], fallo: ["Falló", "no"], cancelado: ["Cancelado", "na"] };
+  function unTrabajo(t) {
+    var e = ESTADO_TRABAJO[t.estado] || [t.estado, "na"];
+    var pasos = t.pasos || [], ultimos = pasos.slice(-4);
+    var cambios = (t.cambios || []).map(function (c) { return "<li><b>" + esc(c.repo) + "</b>: " + c.archivos.map(function (a) { return "<code>" + esc(a) + "</code>"; }).join(" ") + "</li>"; }).join("");
+    return '<li class="es-trabajo"><div class="es-cab"><b>' + esc(t.etiqueta) + '</b><span class="fd-es ' + e[1] + '">' + e[0] + "</span></div>" +
+      (vivo(t) && ultimos.length ? '<ul class="es-pasos">' + ultimos.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
+      (t.estado === "en_cola" ? "<small>Espera a que termine el anterior.</small>" : "") +
+      (t.error ? '<p class="fd-msg error">' + esc(t.error) + "</p>" : "") +
+      (!vivo(t) && t.resultado ? '<details class="tf"><summary>Lo que dijo el agente</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "") +
+      (!vivo(t) && pasos.length ? '<details class="tf"><summary>Lo que hizo (' + pasos.length + " pasos)</summary><ul class=\"es-pasos\">" + pasos.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></details>" : "") +
+      (cambios ? '<div class="es-cambios"><small>Cambió, sin commitear (revisalo antes de commitear):</small><ul>' + cambios + "</ul></div>" : !vivo(t) && t.estado === "terminado" ? "<small>No cambió archivos en los repos.</small>" : "") +
+      '<div class="fd-acc">' + (vivo(t) ? '<button type="button" class="boton" data-acc="cancelar-agente" data-k="' + esc(t.id) + '">Cancelar</button>' : "") +
+      (t.estado === "terminado" || t.estado === "fallo" ? '<button type="button" class="boton" data-acc="recargar">Recargar para ver los cambios</button>' : "") + "</div></li>";
+  }
+  function htmlAgente() {
+    if (!AG || !TRABAJOS.length) return "";
+    return '<h2>El agente</h2><ul class="lista">' + TRABAJOS.map(unTrabajo).join("") + "</ul>";
+  }
+  function pintarAgente() { var a = elem("es-agente"); if (a) { a.innerHTML = htmlAgente(); a.className = TRABAJOS.length && AG ? "es-agente" : ""; } }
   function buscarRegla(k) { var out = null; FICHAS.forEach(function (f) { specs(f).forEach(function (e) { if (clave(f, e) === k) out = [e, f]; }); }); return out; }
   function ponerManual(k, motivo) {
     var ef = buscarRegla(k);
@@ -528,8 +603,18 @@ export const ESPECIFICACIONES_JS = String.raw`
       var p = PEDIDOS[k];
       if (!p) return;
       PEDIDO = { k: k, copiado: false }; pintarTodo();
-      copiar(textoDelPedido(p[0], p[1]), function (ok) { if (PEDIDO && PEDIDO.k === k) { PEDIDO.copiado = ok ? true : "no"; pintarTodo(); } });
+      // Con el agente a mano, se muestra el pedido y se elige; sin él, se copia directo.
+      if (!AG) copiar(textoDelPedido(p[0], p[1]), function (ok) { if (PEDIDO && PEDIDO.k === k) { PEDIDO.copiado = ok ? true : "no"; pintarTodo(); } });
+      return;
     }
+    if (acc === "copiar") {
+      var pc = PEDIDOS[k];
+      if (pc) copiar(textoDelPedido(pc[0], pc[1]), function (ok) { if (PEDIDO && PEDIDO.k === k) { PEDIDO.copiado = ok ? true : "no"; pintarTodo(); } });
+      return;
+    }
+    if (acc === "mandar") { mandar(k); return; }
+    if (acc === "cancelar-agente") { pedirAgente("/api/agente/cancelar", { id: k }).then(traerTrabajos, function () { traerTrabajos(); }); return; }
+    if (acc === "recargar") { if (typeof location !== "undefined") location.reload(); return; }
   }
   raiz.addEventListener("click", function (ev) {
     var b = ev.target.closest ? ev.target.closest("[data-acc]") : null;
@@ -546,8 +631,10 @@ export const ESPECIFICACIONES_JS = String.raw`
     else if (ev.target.id === "es-motivo") MOTIVO = ev.target.value;
   });
 
+  var primeraVez = true;
   window.brainEspecificaciones = {
     mostrar: function (feat) {
+      if (primeraVez) { primeraVez = false; traerTrabajos(); }
       if (feat) { var k = local(feat, feat); S = inicial(); S.abiertas[k] = true; FOCO = k; guardar(); }
       pintarTodo();
     }

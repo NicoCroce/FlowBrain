@@ -3,7 +3,8 @@ import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { cargarContexto, fidelidad } from "@flowbrain/core";
+import { cargarContexto, fidelidad, leerRegistro } from "@flowbrain/core";
+import { crearAgente } from "../src/agente.js";
 import { rutaDentro } from "../src/edicion.js";
 import { ejecutar } from "../src/main.js";
 import { crearServidorVisor, type ServidorVisor } from "../src/servidor-visor.js";
@@ -72,7 +73,8 @@ beforeAll(async () => {
   expect((await ejecutar(["brains", "apply", "--root", reg], {}, dir)).codigo).toBe(0);
   await writeFile(join(reg, "tienda/product/feat-pedidos.md"), ["---", "id: feat-pedidos", "tipo: feat", 'nombre: "Pedidos"', 'resumen: "Alta de pedidos." # lo que ve el cliente', "codigo:", `  - ${R}:src/main.ts`, "---", "# Pedidos", ""].join("\n"));
   expect((await ejecutar(["brains", "apply", "--root", reg], {}, dir)).codigo).toBe(0);
-  s = crearServidorVisor(reg);
+  // Sin Claude Code de verdad: el agente se prueba en agente.test.ts.
+  s = crearServidorVisor(reg, { agente: crearAgente(() => leerRegistro(reg), { comando: join(dir, "sin-claude") }) });
   await new Promise<void>((ok) => s.server.listen(0, "127.0.0.1", ok));
 }, 60_000);
 afterAll(async () => {
@@ -84,7 +86,7 @@ describe("flowbrain viewer --serve", () => {
   it("sirve el visor con el token de edición adentro, y sin nada de afuera", async () => {
     const r = await pedir("GET", "/", { token: null });
     expect(r.estado).toBe(200);
-    expect(r.cuerpo).toContain(`window.FLOWBRAIN_EDICION={"token":"${s.token}","sinAplicar":[]}`);
+    expect(r.cuerpo).toContain(`window.FLOWBRAIN_EDICION={"token":"${s.token}","sinAplicar":[],"agente":{"noDisponible":`);
     expect(r.cuerpo).not.toMatch(/<script[^>]+src=|<link[^>]+href=/);
     // El archivo en disco sigue siendo de solo lectura: el token no se escribe nunca.
     expect(await readFile(join(reg, "flowbrain.html"), "utf8")).not.toContain("FLOWBRAIN_EDICION=");
