@@ -644,7 +644,8 @@ export async function ejecutar(
         resultado = sinAsociar(ctx, { ...opt("carpeta", arg), ...opt("funcionalidad", o.feature), ...opt("limite", entero(o.limit, "--limit")), ...opt("budget_tokens", comunes.budget_tokens) });
         break;
       case "fidelity":
-        resultado = fidelidad(ctx, {
+        // Con varios cerebros la fidelidad cruza (se rehace al anotar), con la misma regla que el visor.
+        resultado = fidelidad(ctx, q("fidelidad", {
           ...opt("archivo", arg),
           ...opt("min", entero(o.min, "--min")),
           ...opt("max", entero(o.max, "--max")),
@@ -655,9 +656,7 @@ export async function ejecutar(
           ...opt("budget_tokens", comunes.budget_tokens),
           ...(o.plan ? { plan: true } : {}),
           ...(o.uncertain ? { inciertos: true } : {}),
-        });
-        // El plan es texto para pegarle a un modelo: sale tal cual, no como JSON.
-        if (o.plan) return { codigo: 0, stdout: (resultado as unknown as { plan: string }).plan, stderr: "" };
+        }));
         break;
       case "calls": {
         // Dónde se cortan los recorridos por llamadas sin tipo, y qué hay declarado en calls.yaml.
@@ -715,6 +714,8 @@ export async function ejecutar(
     if (resuelto && pedida && typeof resultado === "object" && resultado !== null && !Array.isArray(resultado)) {
       resultado = { ...resultado, cerebro: resuelto.nombre, ...(resuelto.sinRevisar ? { sinRevisar: true } : {}), ...(await resuelto.anotar(pedida.herramienta, pedida.args, resultado)) };
     }
+    // El plan de fidelidad es texto para pegarle a un modelo: sale tal cual, no como JSON.
+    if (comando === "fidelity" && o.plan) return { codigo: 0, stdout: (resultado as { plan: string }).plan, stderr: "" };
     return { codigo: 0, stdout: stringifyCanonical(resultado), stderr: "" };
   } catch (e) {
     if (e instanceof CompileError) return { codigo: 1, stdout: "", stderr: e.errores.map(formatError).join("\n") + "\n" };
@@ -726,7 +727,7 @@ export async function ejecutar(
 }
 
 /** Comandos de consulta que, con varios cerebros, anotan lo que cruza a otros (los mismos que cruzan en el MCP). */
-const CRUZAN = new Set(["search", "traverse", "contract", "trace", "feature", "flow", "screen", "callers", "impact", "risk", "drift", "infra"]);
+const CRUZAN = new Set(["search", "traverse", "contract", "trace", "feature", "flow", "screen", "callers", "impact", "risk", "drift", "infra", "fidelity"]);
 
 /** Omite la clave si el valor es undefined (exactOptionalPropertyTypes). */
 function opt<K extends string, V>(k: K, v: V | undefined): { [P in K]?: V } {

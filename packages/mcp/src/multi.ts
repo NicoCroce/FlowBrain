@@ -8,6 +8,8 @@ import {
   crucesDelRegistro,
   deriva,
   derivaCruzadaDe,
+  fidelidad,
+  type FidelidadParams,
   contratoDeEndpoint,
   impactoCruzado,
   impactoDe,
@@ -257,6 +259,12 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
           const paquetes = r.cerebros.length > 1 ? await porPaquetes(r, c.nombre, enRespuesta) : {};
           // La deriva se rehace con lo que cruza: sin eso, todo lo que un front llama figura como "sin endpoint".
           if (herramienta === "deriva" && r.cerebros.length > 1) return { ...deriva(ctx, { ...(args as { nodo?: string; budget_tokens?: number | null }), cruzadas: await cruzadasDe(r, c.nombre) }), ...paquetes };
+          // La fidelidad también, con la regla del visor: una llamada que atiende otro cerebro o que es interna cuenta
+          // como unida, y una con ruta que no atiende nadie, como falta. Sin eso la consola y el visor dan puntajes distintos.
+          if (herramienta === "fidelidad" && r.cerebros.length > 1) {
+            const x = await cruzadasDe(r, c.nombre);
+            return { ...(fidelidad(ctx, { ...(args as FidelidadParams), cruzadas: new Set([...x.salientes.keys(), ...(x.internas ?? [])]) }) as object), ...paquetes };
+          }
           const { propio, vecinos } = await vecindario(r, c.nombre, c.raiz);
           if (!propio || !vecinos.length) return paquetes;
           const extra: Record<string, unknown> = { ...paquetes };

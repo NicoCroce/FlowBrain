@@ -174,6 +174,10 @@ describe("varios cerebros por MCP", () => {
     // Por consola, lo mismo.
     const cli = JSON.parse((await brain(["drift", "--brain", "front"])).stdout) as Deriva;
     expect([cli.llamadasSinEndpoint.length, cli.comunicadoCon]).toEqual([0, ["back"]]);
+    // La fidelidad cruza con la regla del visor: las llamadas que atiende el back cuentan como unidas.
+    type Fid = { puntaje: number; faltas: string[]; cerebro: string };
+    const fidApi = (await llamar("fidelidad", { archivo: "src/api.ts" })) as unknown as Fid;
+    expect([fidApi.puntaje, fidApi.faltas, fidApi.cerebro]).toEqual([100, [], "front"]);
 
     // La consola cruza igual que el MCP: misma respuesta, con el cerebro y lo que hay en los otros.
     const porConsola = async (args: string[]) => JSON.parse((await brain(args)).stdout) as Record<string, unknown>;
@@ -204,6 +208,13 @@ describe("varios cerebros por MCP", () => {
     const apagada = (await llamar("deriva")) as unknown as Deriva;
     expect([apagada.llamadasSinEndpoint.length, apagada.comunicadoCon]).toEqual([2, []]);
     expect(apagada.avisos.join(" ")).toContain("no tiene la comunicación activa con ningún otro");
+    // Y la fidelidad, por MCP y por consola, las cuenta como falta, igual que el visor (antes la consola daba 100).
+    const fidApagada = (await llamar("fidelidad", { archivo: "src/api.ts" })) as unknown as Fid;
+    expect(fidApagada.puntaje).toBeLessThan(100);
+    expect(fidApagada.faltas.join(" ")).toContain("2 llamadas HTTP que no se unieron a ningún endpoint, ni de este cerebro ni de los comunicados (L3, L7)");
+    const fidCli = JSON.parse((await brain(["fidelity", "src/api.ts", "--brain", "front"])).stdout) as Fid;
+    expect([fidCli.puntaje, fidCli.faltas]).toEqual([fidApagada.puntaje, fidApagada.faltas]);
+    expect((await brain(["fidelity", "--brain", "front", "--plan"])).stdout).toContain("src/api.ts");
     expect(await porConsola(["search", "/pedidos", "--brain", "front"])).not.toHaveProperty("otrosCerebros");
   });
 

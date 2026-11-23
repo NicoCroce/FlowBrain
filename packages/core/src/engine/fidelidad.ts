@@ -123,6 +123,12 @@ export interface FidelidadParams {
   inciertos?: boolean;
   /** En vez del informe, un plan en texto para que un modelo lleve a 100 los archivos que pasan los filtros. */
   plan?: boolean;
+  /**
+   * Con varios cerebros: evidencias de las llamadas HTTP de este cerebro que atiende otro cerebro comunicado o que el
+   * registro declara internas. Con esto el puntaje es el mismo que muestra el visor: una llamada con ruta que no se
+   * unió ni acá ni allá cuenta como falta.
+   */
+  cruzadas?: ReadonlySet<string>;
   budget_tokens?: number | null;
 }
 
@@ -454,7 +460,7 @@ function agrupar(xs: FidelidadArchivo[], claves: (x: FidelidadArchivo) => string
  * lista de archivos; el resumen de arriba es siempre el del brain entero.
  */
 export function fidelidad(ctx: Contexto, p: FidelidadParams = {}) {
-  const { archivos, inciertos, sinAsociar: sueltos } = fidelidadDeArchivos(ctx);
+  const { archivos, inciertos, sinAsociar: sueltos } = fidelidadDeArchivos(ctx, p.cruzadas ? { cruzadas: p.cruzadas } : {});
 
   if (p.archivo) {
     const q = p.archivo.replace(/#.*$/, "");
