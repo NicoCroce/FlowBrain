@@ -21,7 +21,6 @@ export const PANTALLAS_JS = String.raw`
     f.recorridos.forEach(function (r) { if (!backDe[r.endpoint] && r.pasos.length) backDe[r.endpoint] = { f: f, r: r }; });
   });
   D.edges.forEach(function (e) { if (e.v === "navega_a") (entran[e.h] = entran[e.h] || []).push({ desde: e.s, evidencia: e.ev }); });
-  var filtro = "";
   // Con varios cerebros, el front y el back de una pantalla viven en cerebros distintos: la traza unida viene aparte.
   var CZ = D.cruzado || { pantallas: {}, backs: {} };
   Object.keys(CZ.backs).forEach(function (ep) { if (!backDe[ep] && CZ.backs[ep].pasos.length) backDe[ep] = { f: null, r: CZ.backs[ep] }; });
@@ -191,35 +190,92 @@ export const PANTALLAS_JS = String.raw`
     if (guardas.length) meta.push("guarda: " + esc(guardas.join(", ")));
     return '<li><a href="' + href(p.id) + '"><code>' + esc(p.ruta) + "</code></a><br><small>" + meta.join(" · ") + "</small></li>";
   }
-  function listado() {
-    var q = filtro.trim().toLowerCase();
-    var visibles = pantallas.filter(function (p) {
-      return !q || [p.ruta].concat(p.componentes.map(simbolo), (featsDe[p.id] || []).map(nombre)).join(" ").toLowerCase().indexOf(q) >= 0;
+  // Lo que filtra y cuenta la estadística de cada pantalla, sin armar su HTML.
+  var NINGUNA = "__ninguna", CEREBROS = D.cerebros || [];
+  var TRAMOS = [["0", "No llama al back"], ["1", "1 endpoint"], ["2-3", "2 o 3 endpoints"], ["4+", "4 o más"]];
+  var INFO = {};
+  function info(p) {
+    if (INFO[p.id]) return INFO[p.id];
+    var fp = fichaDe[p.id], eps = CZ.pantallas[p.id] ? CZ.pantallas[p.id].endpoints : fp ? fp.p.endpoints : [];
+    var n = eps.length;
+    return (INFO[p.id] = {
+      p: p, feats: featsDe[p.id] || [], c: porId[p.id] && porId[p.id].c !== undefined ? porId[p.id].c : "",
+      eps: n, tramo: n === 0 ? "0" : n === 1 ? "1" : n <= 3 ? "2-3" : "4+",
+      guarda: p.envuelta.some(function (e) { return e.sale.some(function (s) { return s.tipo === "redirige"; }); }),
+      entra: (entran[p.id] || []).length + (p.desdeEnvolturas || []).length > 0,
+      texto: [p.ruta].concat(p.componentes.map(simbolo), (featsDe[p.id] || []).map(nombre)).join(" ")
     });
-    var grupos = {}, sin = [];
-    visibles.forEach(function (p) { var fs = featsDe[p.id] || []; if (!fs.length) sin.push(p); fs.forEach(function (f) { (grupos[f] = grupos[f] || []).push(p); }); });
+  }
+  var ITEMS_NV = null;
+  var itemsNv = function () { return ITEMS_NV || (ITEMS_NV = pantallas.map(info)); };
+  var nombreCerebro = function (v) { return CEREBROS[Number(v)] ? CEREBROS[Number(v)].nombre : String(v); };
+  var fl = window.brainFiltros.crear({
+    pre: "nv", clave: "flowbrain.navegacion", unidad: ["pantalla", "pantallas"], todos: "todas las pantallas",
+    items: itemsNv,
+    grupos: [
+      { id: "", etiqueta: "Todas" },
+      { id: "back", etiqueta: "Llaman al back", palabra: "que llaman al back", es: function (x) { return x.eps > 0; } },
+      { id: "sinback", etiqueta: "No llaman al back", palabra: "que no llaman al back", es: function (x) { return !x.eps; } },
+      { id: "sinfeat", etiqueta: "Sin funcionalidad", palabra: "sin funcionalidad", es: function (x) { return !x.feats.length; }, ocultarVacio: true }
+    ],
+    buscar: { ph: "Filtrar por ruta, componente o funcionalidad", texto: function (x) { return x.texto; } },
+    campos: [
+      { id: "cerebro", etiqueta: "Cerebro", propio: "el cerebro elegido", solo: function () { return CEREBROS.length > 1; }, de: function (x) { return x.c; },
+        etiquetaDe: nombreCerebro, palabra: function (v) { return "cerebro " + nombreCerebro(v); } },
+      { id: "feat", etiqueta: "Funcionalidad", todos: "Todas", propio: "la funcionalidad elegida", de: function (x) { return x.feats.length ? x.feats : NINGUNA; },
+        etiquetaDe: function (v) { return v === NINGUNA ? "Sin funcionalidad" : nombre(v); }, palabra: function (v) { return v === NINGUNA ? "sin funcionalidad" : "funcionalidad " + nombre(v); } },
+      { id: "llamadas", etiqueta: "Llamadas al back", todos: "Cualquier cantidad", propio: "la cantidad elegida", de: function (x) { return x.tramo; },
+        valores: function () { var xs = itemsNv(); return TRAMOS.map(function (t) { return [t[0], t[1], xs.filter(function (x) { return x.tramo === t[0]; }).length]; }); },
+        etiquetaDe: function (v) { for (var i = 0; i < TRAMOS.length; i++) if (TRAMOS[i][0] === v) return TRAMOS[i][1]; return v; },
+        palabra: function (v) { for (var i = 0; i < TRAMOS.length; i++) if (TRAMOS[i][0] === v) return TRAMOS[i][1].toLowerCase(); return v; } },
+      { id: "guarda", etiqueta: "Guarda", todos: "Con o sin guarda", propio: "la guarda", de: function (x) { return x.guarda ? "si" : "no"; },
+        etiquetaDe: function (v) { return v === "si" ? "Con guarda que redirige" : "Sin guarda"; }, palabra: function (v) { return v === "si" ? "con guarda" : "sin guarda"; } },
+      { id: "entrada", etiqueta: "Cómo se llega", todos: "De cualquier lado", propio: "cómo se llega", de: function (x) { return x.entra ? "pantalla" : "afuera"; },
+        etiquetaDe: function (v) { return v === "pantalla" ? "Desde otra pantalla" : "Solo desde afuera (mail, callback, URL)"; }, palabra: function (v) { return v === "pantalla" ? "se llega desde otra pantalla" : "se entra solo desde afuera"; } }
+    ],
+    paneles: [
+      { titulo: "Por funcionalidad", campo: "feat", max: 8 },
+      { titulo: "Llamadas al back", campo: "llamadas", orden: "fijo" },
+      { titulo: "Por cerebro", campo: "cerebro" }
+    ],
+    cifras: function () {
+      var xs = itemsNv(), back = xs.filter(function (x) { return x.eps; }).length, sin = xs.filter(function (x) { return !x.feats.length; }).length;
+      var aristas = D.edges.filter(function (e) { return e.v === "navega_a"; }).length;
+      return [[xs.length, "pantallas"], [aristas, "enlaces entre ellas"], [back, "llaman al back", "", "back"], [xs.length - back, "no llaman al back", "", "sinback"], [sin, "sin funcionalidad", sin ? "var(--feat)" : "", "sinfeat"]];
+    },
+    alCambiar: function (todo) { if (todo) pintarListado(); else { var l = document.getElementById("lista-pant"); if (l) l.innerHTML = listado(); } }
+  });
+  function listado() {
+    var visibles = fl.filtrar().map(function (x) { return x.p; });
+    if (!visibles.length) return fl.vacio(pantallas.length);
+    var grupos = {}, sin = [], S = fl.S();
+    visibles.forEach(function (p) {
+      var fs = featsDe[p.id] || [];
+      if (!fs.length) sin.push(p);
+      // Con una funcionalidad elegida, la pantalla va solo en ese grupo.
+      fs.forEach(function (f) { if (!S.feat || S.feat === f) (grupos[f] = grupos[f] || []).push(p); });
+    });
     var orden = Object.keys(grupos).sort(function (a, b) { return nombre(a).localeCompare(nombre(b), "es"); });
     var html = orden.map(function (f) {
       return '<section class="grupo-pant"><h3><a href="#/f/' + encodeURIComponent(f) + '">' + esc(nombre(f)) + "</a> <small>" + grupos[f].length + "</small></h3>" +
         '<ul class="lista">' + grupos[f].map(fila).join("") + "</ul></section>";
     }).join("");
     if (sin.length) html += '<section class="grupo-pant"><h3>Sin funcionalidad <small>' + sin.length + '</small></h3><ul class="lista">' + sin.map(fila).join("") + "</ul></section>";
-    return html || '<p class="vacio">Ninguna pantalla coincide.</p>';
+    return fl.resultado(visibles.length, " · agrupadas por funcionalidad") + html;
   }
   function pintarListado() {
     if (!pantallas.length) {
       raiz.innerHTML = "<h1>Navegación</h1>" + '<p class="aviso">No se detectaron pantallas. Se leen de los routers del front (react-router, vue-router, Angular): <code>flowbrain index</code> y <code>flowbrain compile</code>.</p>';
       return;
     }
-    var aristas = D.edges.filter(function (e) { return e.v === "navega_a"; }).length;
     raiz.innerHTML = "<h1>Navegación</h1>" +
-      '<p class="subtitulo">' + plural(pantallas.length, "pantalla", "pantallas") + " · " + plural(aristas, "enlace", "enlaces") + " entre ellas · agrupadas por funcionalidad</p>" +
-      '<input id="filtro-pant" type="search" placeholder="Filtrar por ruta, componente o funcionalidad" autocomplete="off">' +
-      '<div id="lista-pant">' + listado() + "</div>";
-    var input = document.getElementById("filtro-pant");
-    input.value = filtro;
-    input.addEventListener("input", function () { filtro = input.value; document.getElementById("lista-pant").innerHTML = listado(); });
+      '<p class="subtitulo">Las pantallas del front, de dónde se llega a cada una, qué la envuelve y qué llama en el back. Tocá una barra para filtrar.</p>' +
+      fl.html() + '<div id="lista-pant">' + listado() + "</div>";
   }
+  // El filtro escucha en la raíz (la comparte con la ficha de producto): solo atiende lo suyo.
+  if (raiz) raiz.addEventListener("click", function (ev) { fl.manejar(ev, "click"); });
+  if (raiz) raiz.addEventListener("change", function (ev) { fl.manejar(ev, "change"); });
+  if (raiz) raiz.addEventListener("input", function (ev) { fl.manejar(ev, "input"); });
   function detalle(id) {
     var x = datos(id);
     if (!x) return '<p>No existe la pantalla <code>' + esc(id) + '</code>. <a href="#/pantallas">Volver a Navegación</a></p>';

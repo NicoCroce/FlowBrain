@@ -857,3 +857,28 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
 204. **2026-11-23 · "Pedir el test" en celeste y a la derecha.** El botón se perdía entre los demás, del mismo gris. Todo pedido de test (regla, fila de un cerebro, caso entero) va en celeste (`.es-pedir`, #0EA5E9), como la acción que se espera en la pantalla. En la tabla por cerebro, el botón va pegado a la derecha de "Lo verifica"; si no entra, baja a la línea siguiente, también a la derecha. Verificado en el visor servido de Gloouds.
 
 205. **2026-11-23 · Fidelidad: filtros y estadística siempre a la vista.** Estaban plegados detrás de "Filtros y estadística"; quien usa la pantalla los quiere ver siempre. Se sacó el botón: los filtros (puntaje, cerebro, tipo de archivo, capa, funcionalidad, signal) y los paneles de estadística se muestran debajo del buscador. Como ahora se ven mientras se escribe, la estadística va en su propio contenedor (`#fd-graficos`) y buscar la repinta junto con la lista, sin rehacer los filtros ni perder el foco del buscador. Verificado con tests y en el visor servido de Gloouds: buscar «mvp» lleva el reparto de 3946 a 74 archivos.
+
+206. **2026-11-23 · Un solo componente de filtro y estadística para las pantallas de lista.** Navegación, Especificaciones, Sin asociar, Impacto y Contratos tienen la misma forma que Fidelidad, y todas usan un mismo componente (`viewer-filtros.ts`, `window.brainFiltros`). Cambiar el filtro en un lugar lo cambia en todas.
+   - **Qué arma:** cifras (las que llevan a un grupo se pueden tocar), grupos con su cantidad, buscador con las acciones de la pantalla, una tarjeta de filtros (selects o números) y paneles de estadística con barras. Al final, la línea del resultado («N coinciden (…)» y «Quitar filtros»). Cada pantalla le da sus ítems, sus grupos, sus campos y sus paneles: el componente no sabe de qué se trata.
+   - **Igual que en Fidelidad:** un panel cuenta los ítems que pasan todos los filtros menos el suyo y lo dice («Sobre … · sin aplicar el cerebro elegido, que se marca en su barra»). Tocar una barra prende su filtro y tocarla otra vez lo apaga. Una lista vacía dice con qué filtros y cuántos hay en total. Al buscar se repintan la estadística y la lista, sin perder el foco.
+   - **El componente no escucha eventos.** La pantalla le pasa los suyos (`manejar(ev, tipo)`) y él dice si eran de él, así conviven con los botones propios de cada pantalla.
+   - **Lo que muestra cada pantalla:**
+
+     | Pantalla | Grupos | Filtros | Paneles |
+     | --- | --- | --- | --- |
+     | Especificaciones | sin test, marcados, cumplidos | estado, cerebro, funcionalidad, tipo de regla, quién lo hace y caso o regla suelta | por estado, por cerebro, por funcionalidad |
+     | Sin asociar | con recomendación, compartido, sin pista | cerebro, recomendada, capa, repo | por cerebro, por capa, por recomendada |
+     | Navegación | llaman al back, no llaman, sin funcionalidad | cerebro, funcionalidad, llamadas al back, guarda, cómo se llega | por funcionalidad, por llamadas al back, por cerebro |
+     | Impacto, portada | — | tipo de pieza, cerebro, cuántas dependen | por tipo, por dependientes, por cerebro |
+     | Impacto, detalle | directo, indirecto | tipo, cerebro, nivel | por tipo, por nivel, por cerebro |
+     | Contratos, deriva | nadie las atiende, nadie los llama, varios candidatos, campos distintos | cerebro, servicio, método | por cerebro, por servicio, por método |
+     | Contratos, paridad | faltan, tablas distintas, solo en el nuevo, tablas sin migrar | tipo, método, comienzo de la ruta | por tipo, por método, por comienzo de la ruta |
+
+     - En Especificaciones, los cerebros elegidos siguen siendo una preferencia que dura.
+     - En Impacto, la portada lista todas las piezas por dependientes y no solo tres tops; Enter en el buscador abre la primera.
+     - En Contratos, la deriva junta todos los cerebros en una lista, en vez de mostrar uno por vez. Elegir un cerebro la acota, y las cifras y los cruces son los de ese cerebro.
+     - Fidelidad pasó al mismo componente sin cambiar lo que muestra.
+   - **Verificado:** con tests (419; los arneses de cada pantalla cargan el componente) y en el visor servido de Gloouds, pantalla por pantalla.
+     - En Especificaciones, tocar la barra «Sin test» deja 30 casos en 20 funcionalidades.
+     - En Navegación, buscar «club» deja 34 pantallas y el foco sigue en el buscador.
+     - En paridad, se compararon dos servicios.

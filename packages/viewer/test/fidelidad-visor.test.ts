@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FIDELIDAD_JS } from "../src/viewer-fidelidad.js";
+import { FILTROS_JS } from "../src/viewer-filtros.js";
 
 /**
  * La pantalla Fidelidad es JavaScript plano que corre en el navegador. Acá se la corre con un DOM mínimo (elementos con
@@ -20,8 +21,9 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; g
   const porId: Record<string, { n: string }> = {};
   for (const n of (datos["nodes"] as Array<{ id: string; n: string }> | undefined) ?? []) porId[n.id] = n;
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const window = { brainVisor: { D: datos, porId, esc }, brainFidelidad: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion };
+  const window = { brainVisor: { D: datos, porId, esc }, brainFiltros: null as unknown, brainFidelidad: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion };
   let recargas = 0;
+  new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
   new Function("window", "document", "sessionStorage", "fetch", "location", FIDELIDAD_JS)(window, { getElementById: el }, sessionStorage, opciones.fetch, { reload: () => void recargas++ });
   const raiz = el("fidelidad");
   // Al repintar la página entera, la lista va adentro: se la deja también en su elemento, como haría el navegador.
@@ -46,6 +48,9 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; g
     cambiar: (id: string, value: string) => raiz.oyentes["change"]!({ target: { id, value } }),
     escribir: (value: string) => raiz.oyentes["input"]!({ target: { id: "fd-q", value } }),
     tocar: (attrs: Record<string, string>) => raiz.oyentes["click"]!({ target: boton(attrs) }),
+    // Del filtro compartido: un grupo o una barra de la estadística.
+    grupo: (g: string) => raiz.oyentes["click"]!({ target: boton({ "data-fl": "fd", "data-grupo": g }) }),
+    barra: (set: Record<string, string | number>) => raiz.oyentes["click"]!({ target: boton({ "data-fl": "fd", "data-fl-set": JSON.stringify(set) }) }),
     poner: (id: string, value: string) => void ((el(id) as unknown as { value: string }).value = value),
     // Una casilla: se marca en el elemento y, salvo que se pida que no, se avisa el cambio.
     marcar: (id: string, checked: boolean, avisar = true) => {
@@ -88,7 +93,7 @@ describe("pantalla Fidelidad", () => {
     expect(v.lista()).toContain("Completo: todo lo que el índice vio acá quedó unido.");
     // Lo que no se pudo medir se explica, no se esconde.
     expect(v.pagina()).toContain("2 archivos tienen fidelidad incierta");
-    expect(v.pagina()).toContain('data-grupo="incierta">Fidelidad incierta <small>2</small>');
+    expect(v.pagina()).toContain('data-grupo="incierta" aria-pressed="false">Fidelidad incierta <small>2</small>');
     v.tocar({ "data-acc": "orden" });
     expect(v.rutas()[0]).toBe("src/Pedidos.tsx");
   });
@@ -105,14 +110,14 @@ describe("pantalla Fidelidad", () => {
 
   it("agrupa por quién resuelve lo que falta; un archivo con las dos cosas está en los dos grupos", () => {
     const v = montar(datos);
-    expect(v.pagina()).toContain('data-grupo="vos">Lo resolvés vos <small>2</small>');
-    expect(v.pagina()).toContain('data-grupo="agente">Lo resuelve el agente <small>1</small>');
-    expect(v.pagina()).toContain('data-grupo="completos">Completos <small>2</small>');
-    v.tocar({ "data-grupo": "agente" });
+    expect(v.pagina()).toContain('data-grupo="vos" aria-pressed="false">Lo resolvés vos <small>2</small>');
+    expect(v.pagina()).toContain('data-grupo="agente" aria-pressed="false">Lo resuelve el agente <small>1</small>');
+    expect(v.pagina()).toContain('data-grupo="completos" aria-pressed="false">Completos <small>2</small>');
+    v.grupo("agente");
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
-    v.tocar({ "data-grupo": "completos" });
+    v.grupo("completos");
     expect(v.rutas()).toEqual(["src/Pedidos.tsx", "src/suelto.ts"]);
-    v.tocar({ "data-grupo": "vos" });
+    v.grupo("vos");
     expect(v.rutas()).toEqual(["src/api.ts", "src/Servicio.php"]);
   });
 
@@ -126,7 +131,7 @@ describe("pantalla Fidelidad", () => {
     expect(v.rutas()).toEqual(["src/api.ts", "src/Servicio.php"]);
     v.cambiar("fd-cerebro", "1");
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
-    v.tocar({ "data-acc": "limpiar" });
+    v.tocar({ "data-fl": "fd", "data-fl-limpiar": "1" });
     v.cambiar("fd-feat", "front/feat-pedidos");
     expect(v.rutas()).toEqual(["src/api.ts", "src/Pedidos.tsx"]);
     v.cambiar("fd-feat", "__ninguna");
@@ -136,12 +141,12 @@ describe("pantalla Fidelidad", () => {
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
     v.cambiar("fd-lenguaje", "");
     // Las barras del resumen prenden y apagan su filtro.
-    v.tocar({ "data-signal": "http" });
+    v.barra({ signal: "http" });
     expect(v.rutas()).toEqual(["src/api.ts"]);
-    v.tocar({ "data-signal": "http" });
-    v.tocar({ "data-min": "100", "data-max": "100" });
+    v.barra({ signal: "http" });
+    v.barra({ min: 100, max: 100 });
     expect(v.rutas()).toEqual(["src/Pedidos.tsx", "src/suelto.ts"]);
-    v.tocar({ "data-min": "100", "data-max": "100" });
+    v.barra({ min: 100, max: 100 });
     v.escribir("a qué método");
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
   });
@@ -152,20 +157,20 @@ describe("pantalla Fidelidad", () => {
     const barra = (sec: string, attr: string) => { const i = sec.indexOf(attr); return sec.slice(i, sec.indexOf("</button>", i)); };
     // Sin filtros: todos los archivos medidos.
     expect(seccion("Reparto por puntaje")).toContain("Sobre todos los archivos medidos · 4 archivos");
-    expect(barra(seccion("Reparto por puntaje"), 'data-min="100"')).toContain("2 archivos");
-    expect(barra(seccion("Qué se entendió"), 'data-signal="http"')).toContain("50% · 1 archivo con falta");
+    expect(barra(seccion("Reparto por puntaje"), 'data-fl-set="{&#34;min&#34;:100,&#34;max&#34;:100}"')).toContain("2 archivos");
+    expect(barra(seccion("Qué se entendió"), 'data-fl-set="{&#34;signal&#34;:&#34;http&#34;}"')).toContain("50% · 1 archivo con falta");
     // Cerebro back: el reparto y las signals cuentan solo sus archivos; Por cerebro sigue mostrando todos, con back marcado.
     v.cambiar("fd-cerebro", "1");
     expect(seccion("Reparto por puntaje")).toContain("Sobre cerebro back · 1 archivo");
-    expect(barra(seccion("Reparto por puntaje"), 'data-min="100"')).toContain("0 archivos");
-    expect(barra(seccion("Reparto por puntaje"), 'data-min="60"')).toContain("1 archivo");
+    expect(barra(seccion("Reparto por puntaje"), 'data-fl-set="{&#34;min&#34;:100,&#34;max&#34;:100}"')).toContain("0 archivos");
+    expect(barra(seccion("Reparto por puntaje"), 'data-fl-set="{&#34;min&#34;:60,&#34;max&#34;:79}"')).toContain("1 archivo");
     expect(seccion("Qué se entendió")).toContain("Sobre cerebro back · 1 archivo");
-    expect(seccion("Qué se entendió")).not.toContain('data-signal="http"');
+    expect(seccion("Qué se entendió")).not.toContain('data-fl-set="{&#34;signal&#34;:&#34;http&#34;}"');
     expect(seccion("Qué se entendió")).toContain("No aplican a estos archivos: Llamadas HTTP, Recorrido de endpoints, Tipo de respuesta, Pantallas con llamadas.");
-    expect(barra(seccion("Qué se entendió"), 'data-signal="llamadas"')).toContain("50% · 1 archivo con falta");
+    expect(barra(seccion("Qué se entendió"), 'data-fl-set="{&#34;signal&#34;:&#34;llamadas&#34;}"')).toContain("50% · 1 archivo con falta");
     expect(seccion("Por cerebro")).toContain("Sobre todos los archivos medidos · 4 archivos · sin aplicar el cerebro elegido");
-    expect(seccion("Por cerebro")).toContain('data-cerebro="0"');
-    expect(seccion("Por cerebro")).toMatch(/fd-barra on" data-cerebro="1"/);
+    expect(seccion("Por cerebro")).toContain('data-fl-set="{&#34;cerebro&#34;:&#34;0&#34;}"');
+    expect(seccion("Por cerebro")).toMatch(/fd-barra on" data-fl="fd" data-fl-set="\{&#34;cerebro&#34;:&#34;1&#34;\}"/);
     // Los demás filtros también: tipo tsx deja un solo archivo en todos los paneles, y un cerebro sin coincidencias lo dice.
     v.cambiar("fd-cerebro", "");
     v.cambiar("fd-lenguaje", "tsx");
@@ -173,14 +178,14 @@ describe("pantalla Fidelidad", () => {
     expect(seccion("Por cerebro")).toContain("<strong>back</strong> · ningún archivo coincide con los demás filtros");
     // El rango de puntaje filtra la lista, pero el reparto no se lo aplica a sí mismo: lo marca en su barra.
     v.cambiar("fd-lenguaje", "");
-    v.tocar({ "data-min": "40", "data-max": "59" });
+    v.barra({ min: 40, max: 59 });
     expect(seccion("Reparto por puntaje")).toContain("Sobre todos los archivos medidos · 4 archivos · sin aplicar el rango de puntaje");
-    expect(seccion("Reparto por puntaje")).toMatch(/fd-barra on" data-min="40"/);
+    expect(seccion("Reparto por puntaje")).toMatch(/fd-barra on" data-fl="fd" data-fl-set="\{&#34;min&#34;:40,&#34;max&#34;:59\}"/);
     expect(seccion("Qué se entendió")).toContain("Sobre puntaje de 40 a 59 · 1 archivo");
     // Un conjunto vacío lo dice y ofrece salir.
     v.escribir("no-existe");
     // Buscar repinta la estadística junto con la lista.
-    expect(seccion("Reparto por puntaje")).toContain("Ningún archivo medido coincide con los demás filtros");
+    expect(seccion("Reparto por puntaje")).toContain("Ningún archivo coincide con los demás filtros");
   });
 
   it("fidelidad incierta: un apartado sin puntaje, con el porqué de cada archivo, fuera del promedio", () => {
@@ -188,7 +193,7 @@ describe("pantalla Fidelidad", () => {
     // El promedio es solo de los medidos: (50 + 60 + 100 + 100) / 4.
     expect(v.pagina()).toContain("<b style=\"color:var(--feat)\">77.5</b><span>puntaje promedio de lo medido</span>");
     expect(v.pagina()).toContain("<b>2</b><span>de fidelidad incierta</span>");
-    v.tocar({ "data-grupo": "incierta" });
+    v.grupo("incierta");
     // Primero los que tienen código; cada uno dice por qué no se lo puede medir.
     expect(v.rutas()).toEqual(["src/tipos.ts", "config.json"]);
     expect(v.lista()).toContain('<span class="fd-p fd-inc" title="Fidelidad incierta">?</span>');
@@ -211,7 +216,7 @@ describe("pantalla Fidelidad", () => {
     expect(v.rutas()).toEqual([]);
     expect(v.lista()).toContain("Ningún archivo coincide con cerebro back, tipo tsx");
     expect(v.lista()).toContain("Hay 4 archivos medidos en total");
-    expect(v.lista()).toContain('data-acc="limpiar"');
+    expect(v.lista()).toContain('data-fl-limpiar="1"');
     // Sin índice de código no hay lista: se dice cómo conseguirla.
     expect(montar({ cerebros: [], nodes: [], fidelidad: null }).pagina()).toContain("No hay índice de código");
   });
@@ -219,7 +224,7 @@ describe("pantalla Fidelidad", () => {
   it("recuerda el filtro al recargar", () => {
     const guardado = new Map<string, string>();
     const v = montar(datos, { guardado });
-    v.tocar({ "data-grupo": "agente" });
+    v.grupo("agente");
     expect(montar(datos, { guardado }).rutas()).toEqual(["src/Servicio.php"]);
   });
 
@@ -241,13 +246,13 @@ describe("pantalla Fidelidad", () => {
     expect(plan()).not.toContain("**http**");
     v.marcar("fd-pl-s-http", true);
     // El plan sigue a la lista: con un grupo puesto, solo sus archivos.
-    v.tocar({ "data-grupo": "agente" });
+    v.grupo("agente");
     expect(plan()).toContain("de 1 archivo ");
     v.cambiar("fd-pl-n", "1");
-    v.tocar({ "data-grupo": "completos" });
+    v.grupo("completos");
     expect(v.lista()).toContain("No hay plan que armar");
     // Por archivo: el pedido de ese solo.
-    v.tocar({ "data-grupo": "" });
+    v.grupo("");
     v.tocar({ "data-acc": "pedido", "data-a": "front/repo-web:src/api.ts" });
     expect(v.lista()).toContain('<textarea id="fd-pedido"');
     expect(v.lista()).toContain("### front/repo-web:src/api.ts (50/100)");

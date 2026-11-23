@@ -29,20 +29,10 @@ export const FIDELIDAD_JS = String.raw`
   // La cadena de trazabilidad: del producto a los datos. Cada eslabón junta una o dos signals.
   var CADENA = [["Pantalla", ["pantallas"]], ["HTTP", ["http"]], ["Endpoint", ["entradas", "contrato"]], ["Llamadas", ["llamadas"]], ["Datos", ["datos"]]];
   var CAPA = { entrada: "Entrada", logica: "Lógica", dominio: "Dominio", datos: "Datos", interfaz: "Interfaz", otros: "Otros" };
-  var GRUPOS = [["", "Todos"], ["vos", "Lo resolvés vos"], ["agente", "Lo resuelve el agente"], ["completos", "Completos"], ["incierta", "Fidelidad incierta"]];
   var TRAMOS = [[0, 19], [20, 39], [40, 59], [60, 79], [80, 99], [100, 100]];
   var NINGUNA = "__ninguna";
   var PASO = 100;
-  var inicial = function () { return { grupo: "", min: 0, max: 100, cerebro: "", lenguaje: "", capa: "", feat: "", signal: "", q: "", orden: "asc", ver: PASO }; };
-  var S = inicial();
-  // El filtro sobrevive a una recarga (después de corregir algo la página se vuelve a pedir).
-  var CLAVE = "flowbrain.fidelidad";
-  var guardar = function () { try { if (typeof sessionStorage !== "undefined") sessionStorage.setItem(CLAVE, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ } };
-  try {
-    var previo = typeof sessionStorage !== "undefined" ? JSON.parse(sessionStorage.getItem(CLAVE) || "null") : null;
-    if (previo) Object.keys(S).forEach(function (k) { if (typeof previo[k] === typeof S[k]) S[k] = previo[k]; });
-    if (S.cerebro !== "" && !CEREBROS[Number(S.cerebro)]) S.cerebro = "";
-  } catch (e) { /* sin almacenamiento */ }
+  var S = null, fl = null;
   // Edición: solo cuando la página la sirve flowbrain viewer --serve.
   var ED = window.FLOWBRAIN_EDICION || null;
   // abierto: { a: archivo, que: "llamadas" | "http" }. MSG: { a, texto, ... }. PEDIDO: archivo con su plan a la vista.
@@ -65,142 +55,108 @@ export const FIDELIDAD_JS = String.raw`
   var paraAgente = function (x) { return x.t.some(function (t) { return t[1] === 0; }); };
   var enGrupo = function (x, g) { return g === "vos" ? paraVos(x) : g === "agente" ? paraAgente(x) : g === "completos" ? !x.t.length : g === "incierta" ? false : true; };
 
-  // salvo: la dimensión que un panel de estadística no aplica sobre sí mismo ("puntaje", "cerebro" o "signal").
+  // ---------- Filtro y estadística: el componente compartido (viewer-filtros) ----------
   // El grupo de fidelidad incierta no tiene puntaje: los paneles lo ignoran y miden los archivos con los demás filtros.
-  function coincide(x, salvo) {
-    if (!(salvo && S.grupo === "incierta") && !enGrupo(x, S.grupo)) return false;
-    if (salvo !== "puntaje" && (x.p < S.min || x.p > S.max)) return false;
-    if (salvo !== "cerebro" && S.cerebro !== "" && String(x.c) !== S.cerebro) return false;
-    if (S.lenguaje && x.l !== S.lenguaje) return false;
-    if (S.capa && x.k !== S.capa) return false;
-    if (S.feat === NINGUNA ? !x.u : S.feat && x.f.indexOf(S.feat) < 0) return false;
-    if (salvo !== "signal" && S.signal) { var v = x.s[S.signal]; if (!v || v[0] >= v[1]) return false; }
-    if (S.q) {
-      var q = S.q.trim().toLowerCase();
-      if (q && x.a.toLowerCase().indexOf(q) < 0 && !x.t.some(function (t) { return t[2].toLowerCase().indexOf(q) >= 0; })) return false;
-    }
-    return true;
-  }
-  function filtradas() {
-    var out = filas.filter(function (x) { return coincide(x); });
-    out.sort(function (a, b) { return (S.orden === "asc" ? a.p - b.p : b.p - a.p) || b.t.length - a.t.length || (a.a < b.a ? -1 : 1); });
-    return out;
-  }
-  // Lo que hay puesto, en palabras: para decir por qué una lista quedó vacía.
-  function filtrosActivos(salvo) {
-    var out = [];
-    if (S.grupo && !(salvo && S.grupo === "incierta")) out.push(S.grupo === "vos" ? "lo que resolvés vos" : S.grupo === "agente" ? "lo que resuelve el agente" : "completos");
-    if (salvo !== "puntaje" && (S.min > 0 || S.max < 100)) out.push("puntaje de " + S.min + " a " + S.max);
-    if (salvo !== "cerebro" && S.cerebro !== "") out.push("cerebro " + CEREBROS[Number(S.cerebro)].nombre);
-    if (S.lenguaje) out.push("tipo " + S.lenguaje);
-    if (S.capa) out.push("capa " + (CAPA[S.capa] || S.capa));
-    if (S.feat) out.push(S.feat === NINGUNA ? "sin funcionalidad" : "funcionalidad " + nombreFeat(S.feat));
-    if (salvo !== "signal" && S.signal) out.push("le falta: " + SIGNAL[S.signal]);
-    if (S.q.trim()) out.push("texto «" + S.q.trim() + "»");
-    return out;
-  }
-
-  // ---------- Estadística: el mismo conjunto que la lista ----------
   // Cada panel cuenta los archivos que pasan todos los filtros menos el suyo (el rango en el reparto, el cerebro en
   // "Por cerebro", la signal en "por signal"): así refleja la lista y sigue sirviendo para elegir otra barra.
-  function barra(etiqueta, valor, pct, detalle, attrs, activa) {
-    return '<button type="button" class="fd-barra' + (activa ? " on" : "") + '" ' + attrs + ' title="' + esc(detalle) + '">' +
-      '<span class="fd-et">' + etiqueta + '</span><span class="fd-pista"><span class="fd-relleno" style="width:' + Math.max(pct, pct > 0 ? 1.5 : 0) + "%;background:" + tono(valor) + '"></span></span>' +
-      '<span class="fd-val">' + esc(detalle) + "</span></button>";
+  var campo = function (id, etiqueta, html) { return '<label class="fd-campo" for="' + id + '"><span class="lbl">' + etiqueta + "</span>" + html + "</label>"; };
+  var porCantidad = function (m) { return Object.keys(m).sort(function (a, b) { return m[b] - m[a] || (a < b ? -1 : 1); }); };
+  function contar(clave) {
+    var m = {};
+    filas.forEach(function (x) { clave(x).forEach(function (k) { m[k] = (m[k] || 0) + 1; }); });
+    return m;
   }
-  // Sobre qué conjunto se calcula un panel, en palabras, y qué filtro propio no aplica.
-  function sobre(salvo, xs) {
-    var fs = filtrosActivos(salvo), propio = salvo === "puntaje" ? (S.min > 0 || S.max < 100 ? "el rango de puntaje" : "") : salvo === "cerebro" ? (S.cerebro !== "" ? "el cerebro elegido" : "") : S.signal ? "la signal elegida" : "";
-    return '<p class="fd-sobre">Sobre ' + (fs.length ? esc(fs.join(", ")) : "todos los archivos medidos") + " · " + plural(xs.length, "archivo", "archivos") +
-      (propio ? " · sin aplicar " + propio + ", que se marca en su barra" : "") + (salvo && S.grupo === "incierta" ? " · los de fidelidad incierta no tienen puntaje" : "") + "</p>";
+  function panelReparto(xs, api) {
+    if (!xs.length) return api.vacio();
+    var max = 1, cuentas = TRAMOS.map(function (t) { var n = xs.filter(function (x) { return x.p >= t[0] && x.p <= t[1]; }).length; if (n > max) max = n; return n; });
+    return TRAMOS.map(function (t, i) {
+      return api.barra(t[0] === t[1] ? "100" : t[0] + "–" + t[1], (100 * cuentas[i]) / max, plural(cuentas[i], "archivo", "archivos"), { min: t[0], max: t[1] }, S.min === t[0] && S.max === t[1], tono(t[0]));
+    }).join("");
   }
-  var vacioPanel = function (xs) { return xs.length ? "" : '<p class="fd-sin">Ningún archivo medido coincide con los demás filtros. <button type="button" class="boton" data-acc="limpiar">Quitar filtros</button></p>'; };
-  function graficos() {
-    var base = function (salvo) { return filas.filter(function (x) { return coincide(x, salvo); }); };
-    var xsP = base("puntaje"), xsC = base("cerebro"), xsS = base("signal");
-    var max = 1, cuentas = TRAMOS.map(function (t) { var n = xsP.filter(function (x) { return x.p >= t[0] && x.p <= t[1]; }).length; if (n > max) max = n; return n; });
-    var reparto = xsP.length ? TRAMOS.map(function (t, i) {
-      var et = t[0] === t[1] ? "100" : t[0] + "–" + t[1];
-      return barra(et, t[0], (100 * cuentas[i]) / max, plural(cuentas[i], "archivo", "archivos"), 'data-min="' + t[0] + '" data-max="' + t[1] + '"', S.min === t[0] && S.max === t[1]);
-    }).join("") : vacioPanel(xsP);
-    // Por cerebro es también el selector: siempre están todos, con el elegido marcado.
-    var porCerebro = CEREBROS.length > 1 ? CEREBROS.map(function (c, i) {
-      var xs = xsC.filter(function (x) { return x.c === i; }), p = promedio(xs);
+  // Por cerebro es también el selector: siempre están todos, con el elegido marcado y su puntaje promedio.
+  function panelCerebros(xs, api) {
+    return CEREBROS.map(function (c, i) {
+      var suyos = xs.filter(function (x) { return x.c === i; }), p = promedio(suyos);
       if (p === null) {
         var sinIndice = !filas.some(function (x) { return x.c === i; });
         return '<p class="fd-sin"><strong>' + esc(c.nombre) + "</strong> · " + (sinIndice ? "sin índice de código: no hay archivos para medir" : "ningún archivo coincide con los demás filtros") + "</p>";
       }
-      return barra(esc(c.nombre), p, p, p + " · " + plural(xs.length, "archivo", "archivos"), 'data-cerebro="' + i + '"', S.cerebro === String(i));
-    }).join("") : "";
-    var signals = ORDEN_SIGNAL.map(function (s) {
+      return api.barra(esc(c.nombre), p, p + " · " + plural(suyos.length, "archivo", "archivos"), { cerebro: String(i) }, S.cerebro === String(i), tono(p));
+    }).join("");
+  }
+  function panelSignals(xs, api) {
+    if (!xs.length) return api.vacio();
+    var out = ORDEN_SIGNAL.map(function (s) {
       var ok = 0, total = 0, conFalta = 0;
-      xsS.forEach(function (x) { var v = x.s[s]; if (!v) return; ok += v[0]; total += v[1]; if (v[0] < v[1]) conFalta++; });
+      xs.forEach(function (x) { var v = x.s[s]; if (!v) return; ok += v[0]; total += v[1]; if (v[0] < v[1]) conFalta++; });
       if (!total) return "";
       var pct = Math.round((1000 * ok) / total) / 10;
-      return barra(SIGNAL[s], pct, pct, pct + "% · " + (conFalta ? plural(conFalta, "archivo con falta", "archivos con falta") : "sin faltas"), 'data-signal="' + s + '" aria-label="' + esc(SIGNAL[s] + ": " + MIDE[s]) + '"', S.signal === s);
+      return api.barra(SIGNAL[s], pct, pct + "% · " + (conFalta ? plural(conFalta, "archivo con falta", "archivos con falta") : "sin faltas"), { signal: s }, S.signal === s, tono(pct), SIGNAL[s] + ": " + MIDE[s]);
     }).join("");
-    var noAplican = ORDEN_SIGNAL.filter(function (s) { return !xsS.some(function (x) { return x.s[s] && x.s[s][1]; }); });
-    if (!signals) signals = xsS.length ? '<p class="fd-sin">Estos archivos no tienen relaciones que medir por signal.</p>' : vacioPanel(xsS);
-    else if (noAplican.length) signals += '<p class="fd-sin">No aplican a estos archivos: ' + noAplican.map(function (s) { return SIGNAL[s]; }).join(", ") + ".</p>";
-    return '<div class="fd-graficos">' +
-      '<section><h2>Reparto por puntaje</h2>' + sobre("puntaje", xsP) + '<div class="fd-barras">' + reparto + "</div></section>" +
-      (porCerebro ? '<section><h2>Por cerebro</h2>' + sobre("cerebro", xsC) + '<div class="fd-barras">' + porCerebro + "</div></section>" : "") +
-      '<section><h2>Qué se entendió, por signal</h2>' + sobre("signal", xsS) + '<div class="fd-barras">' + signals + "</div></section>" +
-      "</div>";
+    if (!out) return '<p class="fd-sin">Estos archivos no tienen relaciones que medir por signal.</p>';
+    var noAplican = ORDEN_SIGNAL.filter(function (s) { return !xs.some(function (x) { return x.s[s] && x.s[s][1]; }); });
+    return out + (noAplican.length ? '<p class="fd-sin">No aplican a estos archivos: ' + noAplican.map(function (s) { return SIGNAL[s]; }).join(", ") + ".</p>" : "");
   }
-  function cifras() {
-    var p = promedio(filas), completos = filas.filter(function (x) { return x.p === 100; }).length;
-    var cifra = function (valor, texto, color) { return '<div class="fd-cifra"><b' + (color ? ' style="color:' + color + '"' : "") + ">" + valor + "</b><span>" + texto + "</span></div>"; };
-    return '<div class="fd-cifras">' + cifra(p === null ? "—" : p, "puntaje promedio de lo medido", p === null ? "" : tono(p)) + cifra(filas.length.toLocaleString("es"), "archivos medidos") +
-      cifra(completos.toLocaleString("es"), "en 100") + cifra((filas.length - completos).toLocaleString("es"), "con algo por completar") + cifra(INC.length.toLocaleString("es"), "de fidelidad incierta") + "</div>";
-  }
-  // Los tres grupos: quién puede resolver lo que falta. Un archivo con cosas de los dos tipos está en los dos.
-  function grupos() {
-    return '<div class="fd-grupos" role="group" aria-label="Qué ver">' + GRUPOS.map(function (g) {
-      var n = g[0] === "incierta" ? INC.length : filas.filter(function (x) { return enGrupo(x, g[0]); }).length;
-      if (g[0] === "incierta" && !n) return "";
-      return '<button type="button" class="fd-grupo' + (S.grupo === g[0] ? " on" : "") + '" data-grupo="' + g[0] + '">' + g[1] + " <small>" + n.toLocaleString("es") + "</small></button>";
-    }).join("") + "</div>";
+  fl = window.brainFiltros.crear({
+    pre: "fd", clave: "flowbrain.fidelidad", unidad: ["archivo", "archivos"], todos: "todos los archivos medidos",
+    items: function () { return filas; },
+    estado: { orden: "asc", ver: PASO },
+    grupos: [
+      { id: "", etiqueta: "Todos" },
+      { id: "vos", etiqueta: "Lo resolvés vos", es: paraVos, palabra: "lo que resolvés vos" },
+      { id: "agente", etiqueta: "Lo resuelve el agente", es: paraAgente, palabra: "lo que resuelve el agente" },
+      { id: "completos", etiqueta: "Completos", es: function (x) { return !x.t.length; } },
+      { id: "incierta", etiqueta: "Fidelidad incierta", es: function () { return false; }, n: function () { return INC.length; }, ocultarVacio: true, sinPaneles: true, notaPaneles: "los de fidelidad incierta no tienen puntaje" }
+    ],
+    buscar: { ph: "Buscar por ruta o por lo que falta", texto: function (x) { return x.a + " " + x.t.map(function (t) { return t[2]; }).join(" "); } },
+    campos: [
+      { id: "min", etiqueta: "Puntaje desde", tipo: "numero", min: 0, max: 100, inicial: 0, dim: "puntaje", propio: "el rango de puntaje", prueba: function (x, v) { return x.p >= v; }, palabra: function () { return "puntaje de " + S.min + " a " + S.max; } },
+      { id: "max", etiqueta: "hasta", tipo: "numero", min: 0, max: 100, inicial: 100, dim: "puntaje", propio: "el rango de puntaje", prueba: function (x, v) { return x.p <= v; }, palabra: function () { return "puntaje de " + S.min + " a " + S.max; } },
+      { id: "cerebro", etiqueta: "Cerebro", propio: "el cerebro elegido", solo: function () { return CEREBROS.length > 1; }, de: function (x) { return x.c; },
+        valores: function () { return CEREBROS.map(function (c, i) { return [i, c.nombre, filas.filter(function (x) { return x.c === i; }).length]; }); },
+        palabra: function (v) { return "cerebro " + (CEREBROS[Number(v)] ? CEREBROS[Number(v)].nombre : v); } },
+      { id: "lenguaje", etiqueta: "Tipo de archivo", de: function (x) { return x.l; }, palabra: function (v) { return "tipo " + v; },
+        valores: function () { var m = contar(function (x) { return [x.l]; }); return porCantidad(m).map(function (k) { return [k, k, m[k]]; }); } },
+      { id: "capa", etiqueta: "Capa", todos: "Todas", de: function (x) { return x.k; }, palabra: function (v) { return "capa " + (CAPA[v] || v); },
+        valores: function () { var m = contar(function (x) { return [x.k]; }); return porCantidad(m).map(function (k) { return [k, CAPA[k] || k, m[k]]; }); } },
+      { id: "feat", etiqueta: "Funcionalidad", todos: "Todas", de: function (x) { return x.f; },
+        prueba: function (x, v) { return v === NINGUNA ? (x.p === undefined ? !x.f.length : !!x.u) : x.f.indexOf(v) >= 0; },
+        palabra: function (v) { return v === NINGUNA ? "sin funcionalidad" : "funcionalidad " + nombreFeat(v); },
+        valores: function () {
+          var feats = contar(function (x) { return x.f; }), sinFeat = filas.filter(function (x) { return x.u; }).length;
+          var ops = Object.keys(feats).sort(function (a, b) { return nombreFeat(a).toLowerCase() < nombreFeat(b).toLowerCase() ? -1 : 1; }).map(function (id) {
+            var c = CEREBROS.length > 1 && id.indexOf("/") > 0 ? " · " + id.slice(0, id.indexOf("/")) : "";
+            return [id, nombreFeat(id) + c, feats[id]];
+          });
+          if (sinFeat) ops.unshift([NINGUNA, "Sin funcionalidad", sinFeat]);
+          return ops;
+        } },
+      { id: "signal", etiqueta: "Signal que falta", todos: "Cualquiera", propio: "la signal elegida", de: function () { return ""; },
+        prueba: function (x, v) { var s = x.s[v]; return !!s && s[0] < s[1]; }, palabra: function (v) { return "le falta: " + SIGNAL[v]; },
+        valores: function () { return ORDEN_SIGNAL.map(function (s) { return [s, SIGNAL[s]]; }); } }
+    ],
+    paneles: [
+      { titulo: "Reparto por puntaje", salvo: "puntaje", html: panelReparto },
+      { titulo: "Por cerebro", salvo: "cerebro", html: panelCerebros, solo: function () { return CEREBROS.length > 1; } },
+      { titulo: "Qué se entendió, por signal", salvo: "signal", html: panelSignals }
+    ],
+    cifras: function () {
+      var p = promedio(filas), completos = filas.filter(function (x) { return x.p === 100; }).length;
+      return [[p === null ? "—" : String(p), "puntaje promedio de lo medido", p === null ? "" : tono(p)], [filas.length, "archivos medidos"], [completos, "en 100"], [filas.length - completos, "con algo por completar"], [INC.length, "de fidelidad incierta"]];
+    },
+    acciones: function () { return '<button type="button" class="boton' + (PL.abierto ? " on" : "") + '" data-acc="plan">Generar plan para el agente</button>'; },
+    alCambiar: function (todo) { refrescar(todo); }
+  });
+  S = fl.S();
+  if (S.cerebro !== "" && !CEREBROS[Number(S.cerebro)]) S.cerebro = "";
+  var coincide = fl.coincide, filtrosActivos = fl.activos, guardar = fl.guardar;
+  function filtradas() {
+    var out = fl.filtrar();
+    out.sort(function (a, b) { return (S.orden === "asc" ? a.p - b.p : b.p - a.p) || b.t.length - a.t.length || (a.a < b.a ? -1 : 1); });
+    return out;
   }
 
-  // ---------- Filtros ----------
-  function opciones(valores, actual) {
-    return valores.map(function (v) { return '<option value="' + esc(v[0]) + '"' + (String(v[0]) === actual ? " selected" : "") + ">" + esc(v[1]) + (v[2] !== undefined ? " (" + v[2] + ")" : "") + "</option>"; }).join("");
-  }
-  function contar(clave) {
-    var m = {};
-    filas.forEach(function (x) { var ks = clave(x); ks.forEach(function (k) { m[k] = (m[k] || 0) + 1; }); });
-    return m;
-  }
-  var campo = function (id, etiqueta, html) { return '<label class="fd-campo" for="' + id + '"><span class="lbl">' + etiqueta + "</span>" + html + "</label>"; };
-  function filtros() {
-    var lengs = contar(function (x) { return [x.l]; }), capas = contar(function (x) { return [x.k]; }), feats = contar(function (x) { return x.f; });
-    var sinFeat = filas.filter(function (x) { return x.u; }).length;
-    var porCantidad = function (m) { return Object.keys(m).sort(function (a, b) { return m[b] - m[a] || (a < b ? -1 : 1); }); };
-    var sel = function (id, todos, ops, actual) { return '<select id="' + id + '"><option value="">' + todos + "</option>" + opciones(ops, actual) + "</select>"; };
-    var featOps = Object.keys(feats).sort(function (a, b) { return nombreFeat(a).toLowerCase() < nombreFeat(b).toLowerCase() ? -1 : 1; }).map(function (id) {
-      var c = CEREBROS.length > 1 && id.indexOf("/") > 0 ? " · " + id.slice(0, id.indexOf("/")) : "";
-      return [id, nombreFeat(id) + c, feats[id]];
-    });
-    if (sinFeat) featOps.unshift([NINGUNA, "Sin funcionalidad", sinFeat]);
-    return '<div class="fd-filtros">' +
-      campo("fd-min", "Puntaje desde", '<input id="fd-min" type="number" min="0" max="100" step="1" value="' + S.min + '">') +
-      campo("fd-max", "hasta", '<input id="fd-max" type="number" min="0" max="100" step="1" value="' + S.max + '">') +
-      (CEREBROS.length > 1 ? campo("fd-cerebro", "Cerebro", sel("fd-cerebro", "Todos", CEREBROS.map(function (c, i) { return [i, c.nombre, filas.filter(function (x) { return x.c === i; }).length]; }), S.cerebro)) : "") +
-      campo("fd-lenguaje", "Tipo de archivo", sel("fd-lenguaje", "Todos", porCantidad(lengs).map(function (k) { return [k, k, lengs[k]]; }), S.lenguaje)) +
-      campo("fd-capa", "Capa", sel("fd-capa", "Todas", porCantidad(capas).map(function (k) { return [k, CAPA[k] || k, capas[k]]; }), S.capa)) +
-      campo("fd-feat", "Funcionalidad", sel("fd-feat", "Todas", featOps, S.feat)) +
-      campo("fd-signal", "Signal que falta", sel("fd-signal", "Cualquiera", ORDEN_SIGNAL.map(function (s) { return [s, SIGNAL[s]]; }), S.signal)) +
-      "</div>";
-  }
-  // Filtros y estadística siempre a la vista. La estadística va en su propio contenedor: al buscar se repinta con la
-  // lista, sin rehacer los filtros (así no se pierde el foco del buscador).
-  function herramientas() {
-    return '<div class="fd-herr">' +
-      '<input id="fd-q" type="search" placeholder="Buscar por ruta o por lo que falta" aria-label="Buscar" autocomplete="off" value="' + esc(S.q) + '">' +
-      '<button type="button" class="boton' + (PL.abierto ? " on" : "") + '" data-acc="plan">Generar plan para el agente</button></div>' +
-      filtros() + '<div id="fd-graficos">' + graficos() + "</div>";
-  }
+  function herramientas() { return fl.html(); }
 
   // ---------- Plan para el agente ----------
   // El mismo texto que arma flowbrain fidelity --plan: reglas, cómo se resuelve cada cosa, archivos con sus tareas y cierre.
@@ -382,7 +338,7 @@ export const FIDELIDAD_JS = String.raw`
     var que = '<p class="aviso">Estos archivos no tienen puntaje: el índice no encontró en ellos ninguna relación para medir, así que no se puede decir cuánto los entendió. No cuentan como 100 ni como 0 y no entran al promedio. ' +
       "Si en alguno hay código que debería haberse leído, se enseña con un extractor (<code>flowbrain coverage --guide</code>).</p>";
     if (!xs.length) {
-      return que + '<p class="aviso">Ningún archivo de fidelidad incierta coincide con los filtros. Hay ' + plural(INC.length, "archivo", "archivos") + ' en total. <button type="button" class="boton" data-acc="limpiar">Quitar filtros</button></p>';
+      return que + '<p class="aviso">Ningún archivo de fidelidad incierta coincide con los filtros. Hay ' + plural(INC.length, "archivo", "archivos") + ' en total. <button type="button" class="boton" data-fl="fd" data-fl-limpiar="1">Quitar filtros</button></p>';
     }
     var visibles = xs.slice(0, S.ver);
     return que + '<div class="fd-cab"><p class="subtitulo">' + plural(xs.length, "archivo", "archivos") + " de fidelidad incierta: " + conCodigo.toLocaleString("es") + " con código pero sin relaciones, " + (xs.length - conCodigo).toLocaleString("es") + " donde el índice no vio nada</p></div>" +
@@ -398,15 +354,10 @@ export const FIDELIDAD_JS = String.raw`
   }
   function lista() {
     if (S.grupo === "incierta") return listaIncierta();
-    var xs = filtradas(), activos = filtrosActivos();
-    if (!xs.length) {
-      return planDeLista() + '<p class="aviso">Ningún archivo coincide con ' + activos.map(esc).join(", ") + ". " +
-        "Hay " + plural(filas.length, "archivo medido", "archivos medidos") + ' en total. <button type="button" class="boton" data-acc="limpiar">Quitar filtros</button></p>';
-    }
+    var xs = filtradas();
+    if (!xs.length) return planDeLista() + fl.vacio(filas.length, ["archivo medido", "archivos medidos"]);
     var visibles = xs.slice(0, S.ver);
-    return planDeLista() + '<div class="fd-cab"><p class="subtitulo">' + (activos.length ? plural(xs.length, "archivo coincide", "archivos coinciden") + " (" + activos.map(esc).join(", ") + ") · promedio " + promedio(xs) : plural(xs.length, "archivo", "archivos") + " · promedio " + promedio(xs)) + "</p>" +
-      '<div class="fd-acc"><button type="button" class="boton" data-acc="orden">' + (S.orden === "asc" ? "De menor a mayor" : "De mayor a menor") + "</button>" +
-      (activos.length ? '<button type="button" class="boton" data-acc="limpiar">Quitar filtros</button>' : "") + "</div></div>" +
+    return planDeLista() + fl.resultado(xs.length, " · promedio " + promedio(xs), '<button type="button" class="boton" data-acc="orden">' + (S.orden === "asc" ? "De menor a mayor" : "De mayor a menor") + "</button>") +
       '<ul class="lista fd-lista">' + visibles.map(fila).join("") + "</ul>" +
       (xs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="btn" data-acc="mas">Mostrar ' + Math.min(PASO, xs.length - visibles.length) + " más</button> <small>" + plural(visibles.length, "visible", "visibles") + " de " + xs.length.toLocaleString("es") + "</small></p>" : "");
   }
@@ -415,7 +366,7 @@ export const FIDELIDAD_JS = String.raw`
   var COMO = '<p class="subtitulo">Cuánto de cada archivo quedó unido en el grafo, de 0 a 100. Solo se mide donde hay algo que medir: el resto queda en Fidelidad incierta. En cada fila, la cadena muestra qué eslabón se entendió, dónde se corta y qué no aplica; debajo, qué falta y qué hacer.</p>' +
     '<p class="fd-leyenda"><span class="fd-es ok">Entendido</span><span class="fd-es no">Ahí se corta</span><span class="fd-es na">No aplica</span></p>';
   function pintarLista() { elem("fd-lista").innerHTML = lista(); }
-  function pintarGraficos() { var g = elem("fd-graficos"); if (g) g.innerHTML = graficos(); }
+  var pintarGraficos = function () { fl.pintarGraficos(); };
   function pintarTodo() {
     if (!F) {
       raiz.innerHTML = "<h1>Fidelidad</h1>" + '<p class="aviso">No hay índice de código, así que no hay archivos para medir. La fidelidad sale de lo que deja <code>flowbrain index</code> en <code>_build/files</code> y <code>_build/extraction</code>: corré <code>flowbrain index</code> sobre cada repo y después <code>flowbrain compile</code>.</p>';
@@ -426,17 +377,18 @@ export const FIDELIDAD_JS = String.raw`
       return;
     }
     if (S.grupo === "incierta" && !INC.length) S.grupo = "";
-    var sin = INC.length && S.grupo !== "incierta" ? '<p class="aviso">' + plural(INC.length, "archivo tiene fidelidad incierta", "archivos tienen fidelidad incierta") + ': no hay en ellos ninguna relación para medir, así que no llevan puntaje ni entran al promedio. <button type="button" class="boton" data-grupo="incierta">Verlos</button></p>' : "";
-    raiz.innerHTML = "<h1>Fidelidad</h1>" + COMO + aviso(null) + cifras() + grupos() + herramientas() + '<div id="fd-lista">' + lista() + "</div>" + sin;
+    var sin = INC.length && S.grupo !== "incierta" ? '<p class="aviso">' + plural(INC.length, "archivo tiene fidelidad incierta", "archivos tienen fidelidad incierta") + ': no hay en ellos ninguna relación para medir, así que no llevan puntaje ni entran al promedio. <button type="button" class="boton" data-fl="fd" data-grupo="incierta">Verlos</button></p>' : "";
+    raiz.innerHTML = "<h1>Fidelidad</h1>" + COMO + aviso(null) + herramientas() + '<div id="fd-lista">' + lista() + "</div>" + sin;
   }
   function refrescar(todo) { S.ver = PASO; PL.copiado = false; guardar(); if (todo) pintarTodo(); else { pintarGraficos(); pintarLista(); } }
   var entero = function (v, def, min, max) { var n = parseInt(v, 10); return isNaN(n) ? def : Math.min(max, Math.max(min, n)); };
 
   raiz.addEventListener("click", function (ev) {
+    if (fl.manejar(ev, "click")) return;
     var b = ev.target.closest ? ev.target.closest("button") : null;
     if (!b) return;
     var acc = b.getAttribute("data-acc"), x = b.getAttribute("data-a") ? porArchivo(b.getAttribute("data-a")) : abierto ? porArchivo(abierto.a) : null;
-    if (acc === "limpiar") { S = inicial(); guardar(); pintarTodo(); return; }
+    if (acc === "limpiar") { fl.limpiar(); return; }
     if (acc === "plan") { PL.abierto = !PL.abierto; PL.copiado = false; pintarTodo(); return; }
     if (acc === "copiar-plan") { copiar(valor("fd-pl-texto") || textoDelPlan(filtradas(), (function () { var q = {}; ORDEN_SIGNAL.forEach(function (s) { q[s] = PL.signals[s] !== false; }); return q; })(), PL.limite), function (ok) { PL.copiado = ok ? true : "no"; pintarLista(); }); return; }
     if (acc === "pedido") {
@@ -452,27 +404,14 @@ export const FIDELIDAD_JS = String.raw`
     if (acc === "declarar-llamada") { var ll = Number(b.getAttribute("data-linea")); enviar(x, { tipo: "llamada", linea: ll, hacia: b.getAttribute("data-hacia") || valor("fd-l-" + ll) }); return; }
     if (acc === "orden") { S.orden = S.orden === "asc" ? "desc" : "asc"; refrescar(false); return; }
     if (acc === "mas") { S.ver += PASO; pintarLista(); return; }
-    if (b.hasAttribute("data-grupo")) { S.grupo = b.getAttribute("data-grupo"); refrescar(true); return; }
-    // Las barras prenden y apagan su filtro.
-    if (b.hasAttribute("data-min")) {
-      var a = Number(b.getAttribute("data-min")), z = Number(b.getAttribute("data-max")), ya = S.min === a && S.max === z;
-      S.min = ya ? 0 : a; S.max = ya ? 100 : z; refrescar(true);
-    } else if (b.hasAttribute("data-cerebro")) { S.cerebro = S.cerebro === b.getAttribute("data-cerebro") ? "" : b.getAttribute("data-cerebro"); refrescar(true); }
-    else if (b.hasAttribute("data-signal")) { S.signal = S.signal === b.getAttribute("data-signal") ? "" : b.getAttribute("data-signal"); refrescar(true); }
   });
   raiz.addEventListener("change", function (ev) {
     var id = ev.target.id || "";
-    if (id === "fd-min") { S.min = entero(ev.target.value, 0, 0, 100); if (S.min > S.max) S.max = S.min; refrescar(true); }
-    else if (id === "fd-max") { S.max = entero(ev.target.value, 100, 0, 100); if (S.max < S.min) S.min = S.max; refrescar(true); }
-    else if (id === "fd-cerebro") { S.cerebro = ev.target.value; refrescar(true); }
-    else if (id === "fd-lenguaje") { S.lenguaje = ev.target.value; refrescar(true); }
-    else if (id === "fd-capa") { S.capa = ev.target.value; refrescar(true); }
-    else if (id === "fd-feat") { S.feat = ev.target.value; refrescar(true); }
-    else if (id === "fd-signal") { S.signal = ev.target.value; refrescar(true); }
-    else if (id === "fd-pl-n") { PL.limite = entero(ev.target.value, 40, 1, 500); PL.copiado = false; pintarLista(); }
+    if (fl.manejar(ev, "change")) return;
+    if (id === "fd-pl-n") { PL.limite = entero(ev.target.value, 40, 1, 500); PL.copiado = false; pintarLista(); }
     else if (id.indexOf("fd-pl-s-") === 0) { PL.signals[id.slice(8)] = !!ev.target.checked; PL.copiado = false; pintarLista(); }
   });
-  raiz.addEventListener("input", function (ev) { if (ev.target.id === "fd-q") { S.q = ev.target.value; refrescar(false); } });
+  raiz.addEventListener("input", function (ev) { fl.manejar(ev, "input"); });
 
   window.brainFidelidad = { mostrar: pintarTodo };
 })();

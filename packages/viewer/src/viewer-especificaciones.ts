@@ -28,21 +28,15 @@ export const ESPECIFICACIONES_JS = String.raw`
     cumplido: { txt: "Cumplido", cls: "ok", que: "Cada regla tiene el código que la cumple y un test que la verifica." }
   };
   var PESO = { sin_codigo: 0, sin_test: 1, sin_reglas: 2, cumplido: 3 };
-  var GRUPOS = [["", "Todos"], ["sintest", "Sin test"], ["problema", "Marcados como mal"], ["cumplido", "Cumplidos"]];
-  var inicial = function () { return { grupo: "", q: "", abiertas: {} }; };
-  var S = inicial();
-  var CLAVE = "flowbrain.especificaciones.v2";
+  // El filtro y la estadística son el componente compartido (viewer-filtros); se arma más abajo, con los casos.
+  var S = null, fl = null;
   // Los cerebros elegidos son una preferencia que dura (localStorage); el resto de la vista, solo la pestaña.
   var CLAVE_CEREBROS = "flowbrain.especificaciones.cerebros";
   var SEL = [];
   var guardar = function () {
-    try { if (typeof sessionStorage !== "undefined") sessionStorage.setItem(CLAVE, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ }
+    if (fl) fl.guardar();
     try { if (typeof localStorage !== "undefined") localStorage.setItem(CLAVE_CEREBROS, JSON.stringify(SEL)); } catch (e) { /* sin almacenamiento */ }
   };
-  try {
-    var previo = typeof sessionStorage !== "undefined" ? JSON.parse(sessionStorage.getItem(CLAVE) || "null") : null;
-    if (previo) Object.keys(S).forEach(function (k) { if (previo[k] !== undefined && typeof previo[k] === typeof S[k]) S[k] = previo[k]; });
-  } catch (e) { /* sin almacenamiento */ }
   // MSG: { k: clave del caso, texto, error }. EDITA: clave del caso que se está marcando. PEDIDO: { k, copiado }.
   var MSG = null, EDITA = null, BORRADOR = "", PEDIDO = null, ocupado = false, FOCO = null;
   // MANUAL: clave de la regla ("<ficha>|<regla>") con el formulario "No necesita test" abierto; su motivo, en MOTIVO.
@@ -129,25 +123,81 @@ export const ESPECIFICACIONES_JS = String.raw`
   var enGrupo = function (C, g) { return g === "sintest" ? C.estado === "sin_test" || C.estado === "sin_codigo" : g === "problema" ? C.problemas.length > 0 : g === "cumplido" ? C.estado === "cumplido" : true; };
   var sueltaEnGrupo = function (x, g) { return g === "sintest" ? sinVerificar(x.e) || !x.e.archivos.length : g === "cumplido" ? !sinVerificar(x.e) && x.e.archivos.length > 0 : g === "problema" ? false : true; };
   var textoDeRegla = function (x) { return x.e.texto + " " + x.e.archivos.join(" ") + " " + x.e.tests.map(function (t) { return t.archivo + " " + (t.caso || ""); }).join(" "); };
-  function busca(P, extra) {
-    var q = S.q.trim().toLowerCase();
-    return !q || (P.nombre + " " + P.id + " " + extra).toLowerCase().indexOf(q) >= 0;
-  }
-  var casoCoincide = function (P, C) {
-    return enGrupo(C, S.grupo) && C.patas.length > 0 &&
-      busca(P, C.nombre + " " + C.quien + " " + C.patas.map(function (p) { return p.cerebro + " " + p.reglas.map(function (e) { return textoDeRegla({ e: e }); }).join(" "); }).join(" "));
-  };
-  var sueltaCoincide = function (P, x) { return sueltaEnGrupo(x, S.grupo) && enCerebro([cerebroDe(x.f.id)]) && busca(P, textoDeRegla(x)); };
   var conSpecs = function (P) { return P.fichas.some(function (f) { return specs(f).length; }); };
   var visibles = function () { return PRODUCTO.filter(function (P) { return enCerebro(P.cerebros); }); };
   var todosLosCasos = function () { var out = []; visibles().forEach(function (P) { P.casos.forEach(function (C) { if (C.patas.length) out.push([P, C]); }); }); return out; };
   var todasSueltas = function () { var out = []; visibles().forEach(function (P) { P.sueltas.forEach(function (x) { if (enCerebro([cerebroDe(x.f.id)])) out.push([P, x]); }); }); return out; };
-  function filtrosActivos() {
-    var out = [];
-    GRUPOS.forEach(function (g) { if (g[0] && S.grupo === g[0]) out.push(g[1].toLowerCase()); });
-    if (S.q.trim()) out.push("«" + S.q.trim() + "»");
-    return out;
+
+  // ---------- Filtro y estadística ----------
+  // Cada ítem es un caso de uso ({ P, C }) o una regla que todavía no está en ninguno ({ P, x }), de los cerebros elegidos.
+  var ITEMS = null;
+  function items() {
+    if (ITEMS) return ITEMS;
+    ITEMS = [];
+    visibles().forEach(function (P) {
+      P.casos.forEach(function (C) { if (C.patas.length) ITEMS.push({ P: P, C: C }); });
+      P.sueltas.forEach(function (x) { if (elegido(cerebroDe(x.f.id))) ITEMS.push({ P: P, x: x }); });
+    });
+    return ITEMS;
   }
+  var ESTADOS = [["cumplido", "Cumplido: código y test", "var(--tabla)"], ["sin_test", "Sin test", "var(--dudoso)"], ["sin_codigo", "Sin código", "var(--dudoso)"], ["sin_reglas", "Sin reglas", "var(--feat)"]];
+  var deEstado = function (v, i) { for (var j = 0; j < ESTADOS.length; j++) if (ESTADOS[j][0] === v) return ESTADOS[j][i]; return i === 1 ? v : ""; };
+  var estadoDe = function (it) { return it.C ? it.C.estado : !it.x.e.archivos.length ? "sin_codigo" : sinVerificar(it.x.e) ? "sin_test" : "cumplido"; };
+  var reglasDe = function (it) { var out = []; if (it.C) it.C.patas.forEach(function (p) { out = out.concat(p.reglas); }); else out.push(it.x.e); return out; };
+  var nombreP = function (id) { for (var i = 0; i < PRODUCTO.length; i++) if (PRODUCTO[i].id === id) return PRODUCTO[i].nombre; return id; };
+  var textoDe = function (it) {
+    return it.P.nombre + " " + it.P.id + " " + (it.C ? it.C.nombre + " " + it.C.quien + " " + it.C.patas.map(function (p) { return p.cerebro + " " + p.reglas.map(function (e) { return textoDeRegla({ e: e }); }).join(" "); }).join(" ") : textoDeRegla(it.x));
+  };
+  fl = window.brainFiltros.crear({
+    pre: "es", clave: "flowbrain.especificaciones.v2", unidad: ["caso de uso", "casos de uso"], todos: "todos los casos de uso",
+    items: items,
+    estado: { abiertas: {} },
+    contar: function (xs) {
+      var nc = 0; xs.forEach(function (it) { if (it.C) nc++; });
+      var ns = xs.length - nc;
+      return [nc || !ns ? plural(nc, "caso de uso", "casos de uso") : "", ns ? plural(ns, "regla sin caso", "reglas sin caso") : ""].filter(Boolean).join(" y ");
+    },
+    grupos: [
+      { id: "", etiqueta: "Todos" },
+      { id: "sintest", etiqueta: "Sin test", palabra: "sin test", es: function (it) { return it.C ? enGrupo(it.C, "sintest") : sueltaEnGrupo(it.x, "sintest"); } },
+      { id: "problema", etiqueta: "Marcados como mal", palabra: "marcados como mal", es: function (it) { return !!it.C && it.C.problemas.length > 0; } },
+      { id: "cumplido", etiqueta: "Cumplidos", palabra: "cumplidos", es: function (it) { return estadoDe(it) === "cumplido"; } }
+    ],
+    buscar: { ph: "Buscar un caso de uso, una regla, una funcionalidad, un archivo o un test…", texto: textoDe },
+    campos: [
+      { id: "estado", etiqueta: "Estado", propio: "el estado elegido", de: estadoDe,
+        etiquetaDe: function (v) { return deEstado(v, 1); }, color: function (v) { return deEstado(v, 2); },
+        palabra: function (v) { return "estado " + deEstado(v, 1).toLowerCase(); },
+        valores: function () { var xs = items(); return ESTADOS.map(function (e) { return [e[0], e[1], xs.filter(function (it) { return estadoDe(it) === e[0]; }).length]; }); } },
+      { id: "cerebro", etiqueta: "Cerebro", propio: "el cerebro elegido", solo: function () { return CON_FICHAS.filter(elegido).length > 1; },
+        de: function (it) { return it.C ? cerebrosDelCaso(it.C) : cerebroDe(it.x.f.id); }, palabra: function (v) { return "cerebro " + v; } },
+      { id: "feat", etiqueta: "Funcionalidad", todos: "Todas", propio: "la funcionalidad elegida", de: function (it) { return it.P.id; }, etiquetaDe: nombreP,
+        palabra: function (v) { return "funcionalidad " + nombreP(v); } },
+      { id: "tipo", etiqueta: "Tipo de regla", de: function (it) { var t = {}; reglasDe(it).forEach(function (e) { t[e.tipo] = true; }); return Object.keys(t); },
+        etiquetaDe: function (v) { return v === "negocio" ? "De negocio" : v === "producto" ? "De producto" : v; },
+        palabra: function (v) { return v === "negocio" ? "con reglas de negocio" : "con reglas de producto"; } },
+      { id: "quien", etiqueta: "Quién lo hace", de: function (it) { return it.C ? it.C.quien : ""; }, palabra: function (v) { return "lo hace " + v; } },
+      { id: "que", etiqueta: "Qué", solo: function () { return items().some(function (it) { return !it.C; }); }, de: function (it) { return it.C ? "caso" : "suelta"; },
+        etiquetaDe: function (v) { return v === "caso" ? "Casos de uso" : "Reglas sin caso de uso"; }, palabra: function (v) { return v === "caso" ? "solo casos de uso" : "solo reglas sin caso"; } }
+    ],
+    paneles: [
+      { titulo: "Por estado", campo: "estado", orden: "fijo" },
+      { titulo: "Por cerebro", campo: "cerebro" },
+      { titulo: "Por funcionalidad", campo: "feat", max: 8 }
+    ],
+    cifras: function () {
+      var cs = todosLosCasos().map(function (x) { return x[1]; }), sueltas = todasSueltas().length;
+      var cumplidos = cs.filter(function (C) { return C.estado === "cumplido"; }).length, sinTest = cs.filter(function (C) { return enGrupo(C, "sintest"); }).length, mal = cs.filter(function (C) { return C.problemas.length; }).length;
+      var vacias = visibles().filter(function (P) { return !conSpecs(P); }).length;
+      var out = [[cs.length, "casos de uso"], [cumplidos, "cumplidos: código y test", cumplidos ? "var(--tabla)" : "", "cumplido"], [sinTest, "sin test que los verifique", sinTest ? "var(--dudoso)" : "", "sintest"], [mal, "marcados como mal", mal ? "var(--dudoso)" : "", "problema"]];
+      if (sueltas) out.push([sueltas, "reglas sin caso de uso", "var(--feat)"]);
+      if (vacias) out.push([vacias, "funcionalidades sin nada escrito", "var(--feat)"]);
+      return out;
+    },
+    alCambiar: function (todo) { refrescar(todo); }
+  });
+  S = fl.S();
+  var filtrosActivos = fl.activos;
 
   // ---------- Pedidos para el agente ----------
   var GUIA = "siguiendo la guía de flowbrain specs --guide (en Claude Code: /flowbrain-specs)";
@@ -368,28 +418,6 @@ export const ESPECIFICACIONES_JS = String.raw`
   }
 
   // ---------- Página ----------
-  function cifras() {
-    var cifra = function (valor, texto, color, grupo) {
-      return '<div class="fd-cifra' + (grupo !== undefined ? " es-ir" : "") + '"' + (grupo !== undefined ? ' role="button" tabindex="0" data-acc="grupo" data-k="' + grupo + '"' : "") + "><b" + (color ? ' style="color:' + color + '"' : "") + ">" + valor.toLocaleString("es") + "</b><span>" + texto + "</span></div>";
-    };
-    var cs = todosLosCasos().map(function (x) { return x[1]; }), sueltas = todasSueltas().length;
-    var cumplidos = cs.filter(function (C) { return C.estado === "cumplido"; }).length, sinTest = cs.filter(function (C) { return enGrupo(C, "sintest"); }).length, mal = cs.filter(function (C) { return C.problemas.length; }).length;
-    var vacias = visibles().filter(function (P) { return !conSpecs(P); }).length;
-    return '<div class="fd-cifras">' + cifra(cs.length, "casos de uso") + cifra(cumplidos, "cumplidos: código y test", cumplidos ? "var(--tabla)" : "", "cumplido") +
-      cifra(sinTest, "sin test que los verifique", sinTest ? "var(--dudoso)" : "", "sintest") + cifra(mal, "marcados como mal", mal ? "var(--dudoso)" : "", "problema") +
-      (sueltas ? cifra(sueltas, "reglas sin caso de uso", "var(--feat)") : "") + (vacias ? cifra(vacias, "funcionalidades sin nada escrito", "var(--feat)") : "") + "</div>";
-  }
-  function grupos() {
-    var cs = todosLosCasos();
-    var porReglas = !cs.length;
-    return '<div class="fd-grupos" role="group" aria-label="Qué ver">' + GRUPOS.map(function (g) {
-      var n = porReglas ? todasSueltas().filter(function (x) { return sueltaEnGrupo(x[1], g[0]); }).length : cs.filter(function (x) { return enGrupo(x[1], g[0]); }).length;
-      return '<button type="button" class="fd-grupo' + (S.grupo === g[0] ? " on" : "") + '" data-acc="grupo" data-k="' + g[0] + '" aria-pressed="' + (S.grupo === g[0]) + '">' + g[1] + "<small>" + n.toLocaleString("es") + "</small></button>";
-    }).join("") + "</div>" + (porReglas ? '<p class="fd-nota">Todavía no hay casos de uso: los números cuentan reglas.</p>' : "");
-  }
-  function herramientas() {
-    return '<div class="fd-herr"><input id="es-q" type="search" placeholder="Buscar un caso de uso, una regla, una funcionalidad, un archivo o un test…" aria-label="Buscar" autocomplete="off" value="' + esc(S.q) + '"></div>';
-  }
   // Varios a la vez; lo elegido queda guardado en este navegador para la próxima vez.
   function selectorDeCerebros() {
     if (CON_FICHAS.length < 2) return "";
@@ -402,26 +430,27 @@ export const ESPECIFICACIONES_JS = String.raw`
       "<small>" + (SEL.length ? "Ves " + esc(SEL.join(", ")) + ": los casos cuentan solo lo de " + (SEL.length === 1 ? "ese cerebro" : "esos cerebros") + ". Queda guardado para la próxima vez." : "Elegí los cerebros que te importan: queda guardado para la próxima vez.") + "</small></div>";
   }
   function lista() {
-    var activos = filtrosActivos(), sinFiltro = !S.grupo && !S.q.trim();
-    var filas = visibles().map(function (P) {
-      return [P, P.casos.filter(function (C) { return casoCoincide(P, C); }).sort(function (a, b) { return (b.problemas.length ? 1 : 0) - (a.problemas.length ? 1 : 0) || PESO[a.estado] - PESO[b.estado] || faltanDeNegocio(b) - faltanDeNegocio(a); }),
-        P.sueltas.filter(function (x) { return sueltaCoincide(P, x); }).sort(function (a, b) { return (a.e.tests.length ? 1 : 0) - (b.e.tests.length ? 1 : 0); })];
-    }).filter(function (x) { return x[1].length || x[2].length; });
+    var xs = fl.filtrar(), sinFiltro = !fl.activos().length, porP = {}, filas = [];
+    xs.forEach(function (it) {
+      var k = it.P.id;
+      if (!porP[k]) { porP[k] = [it.P, [], []]; filas.push(porP[k]); }
+      if (it.C) porP[k][1].push(it.C); else porP[k][2].push(it.x);
+    });
+    filas.forEach(function (x) {
+      x[1].sort(function (a, b) { return (b.problemas.length ? 1 : 0) - (a.problemas.length ? 1 : 0) || PESO[a.estado] - PESO[b.estado] || faltanDeNegocio(b) - faltanDeNegocio(a); });
+      x[2].sort(function (a, b) { return (a.e.tests.length ? 1 : 0) - (b.e.tests.length ? 1 : 0); });
+    });
     filas.sort(function (a, b) {
       var pa = pendientes(a[0]), pb = pendientes(b[0]);
       return pb[0] - pa[0] || pb[1] - pa[1] || pb[2] - pa[2] || (a[0].nombre.toLowerCase() < b[0].nombre.toLowerCase() ? -1 : 1);
     });
     var vacias = sinFiltro ? visibles().filter(function (P) { return !conSpecs(P); }) : [];
-    if (!filas.length && !vacias.length) {
-      var cuantos = todosLosCasos().length;
-      return '<p class="aviso">Nada coincide con los filtros: ' + activos.map(esc).join(", ") + ". Hay " + (cuantos ? plural(cuantos, "caso de uso", "casos de uso") : plural(todasSueltas().length, "regla", "reglas")) + ' en total. <button type="button" class="boton" data-acc="limpiar">Quitar filtros</button></p>';
-    }
-    var nc = 0, ns = 0; filas.forEach(function (x) { nc += x[1].length; ns += x[2].length; });
-    var corregir = S.grupo === "problema" && nc
+    if (!filas.length && !vacias.length) return fl.vacio(items());
+    var corregir = S.grupo === "problema" && xs.some(function (it) { return it.C; })
       ? '<div class="es-sueltas"><div class="es-cab"><p>Pasale al agente lo que marcaste para que lo corrija.</p>' + botonPedido("corregir|", "corregir", todosLosCasos().filter(function (x) { return x[1].problemas.length; }), "Copiar pedido para el agente") + "</div>" + cajaDelPedido("corregir|") + "</div>"
       : "";
-    return '<div class="fd-cab"><p class="subtitulo">' + (nc ? plural(nc, "caso de uso", "casos de uso") : "") + (nc && ns ? " y " : "") + (ns ? plural(ns, "regla sin caso", "reglas sin caso") : "") + (nc || ns ? " en " + plural(filas.length, "funcionalidad", "funcionalidades") : "") + (activos.length ? " (" + activos.map(esc).join(", ") + ")" : "") + ". Lo que más falta, primero.</p>" +
-      '<div class="fd-acc"><button type="button" class="boton" data-acc="todas">' + (filas.every(function (x) { return S.abiertas[x[0].id]; }) ? "Plegar todas" : "Desplegar todas") + "</button>" + (activos.length ? '<button type="button" class="boton" data-acc="limpiar">Quitar filtros</button>' : "") + "</div></div>" +
+    var todasAbiertas = filas.length && filas.every(function (x) { return S.abiertas[x[0].id]; });
+    return (filas.length ? fl.resultado(xs, " en " + plural(filas.length, "funcionalidad", "funcionalidades") + ". Lo que más falta, primero.", '<button type="button" class="boton" data-acc="todas">' + (todasAbiertas ? "Plegar todas" : "Desplegar todas") + "</button>") : "") +
       corregir + filas.map(function (x) { return unaFuncionalidad(x[0], x[1], x[2]); }).join("") + sinNinguna(vacias);
   }
   var COMO = '<p class="subtitulo">Qué puede hacer alguien con cada funcionalidad del producto, y si está cumplido: el código que lo hace y el test que lo verifica, en cada cerebro. Cada caso de uso se arma con reglas en llano. Los deduce el agente leyendo el código y los tests; vos marcás lo que está mal y el agente lo corrige.</p>';
@@ -468,7 +497,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       : "";
     PEDIDOS = {};
     var cabeza = "<h1>Especificaciones</h1>" + COMO + aviso() + (CON_FICHAS.length > 1 ? selectorDeCerebros() : "") + queHacer() +
-      '<section id="es-agente" class="' + (AG && TRABAJOS.length ? "es-agente" : "") + '" aria-live="polite">' + htmlAgente() + "</section>" + cifras() + (hay ? grupos() : "") + (hay ? herramientas() : "") + nada;
+      '<section id="es-agente" class="' + (AG && TRABAJOS.length ? "es-agente" : "") + '" aria-live="polite">' + htmlAgente() + "</section>" + (hay ? fl.html() + (todosLosCasos().length ? "" : '<p class="fd-nota">Todavía no hay casos de uso: los números cuentan reglas.</p>') : "") + nada;
     raiz.innerHTML = cabeza + '<div id="es-lista">' + lista() + "</div>";
     if (FOCO) { var s = elem("es-" + FOCO); FOCO = null; if (s && s.scrollIntoView) s.scrollIntoView(); }
   }
@@ -495,11 +524,11 @@ export const ESPECIFICACIONES_JS = String.raw`
     });
     cadena.then(function () {
       ocupado = false; EDITA = null; BORRADOR = "";
-      PRODUCTO = elegir(armar());
+      ITEMS = null; PRODUCTO = elegir(armar());
       MSG = { k: k, texto: texto ? "Quedó marcado como mal en " + hechos.join(", ") + ". El agente lo corrige con /flowbrain-specs; copiá el pedido desde «Marcados como mal»." : "Se le sacó la marca en " + hechos.join(", ") + "." };
       pintarTodo();
     }).catch(function (e) {
-      ocupado = false; PRODUCTO = elegir(armar());
+      ocupado = false; ITEMS = null; PRODUCTO = elegir(armar());
       MSG = { k: k, texto: (hechos.length ? "Se guardó en " + hechos.join(", ") + " pero falló en el resto: " : "") + e.message, error: true };
       pintarTodo();
     });
@@ -557,27 +586,26 @@ export const ESPECIFICACIONES_JS = String.raw`
     pedir({ tipo: "manual", cerebro: cerebroDe(f.id), funcionalidad: local(f.id, f.id), id: e.id, motivo: motivo || null }).then(function () {
       if (motivo) e.manual = motivo; else delete e.manual;
       ocupado = false; MANUAL = null; MOTIVO = "";
-      PRODUCTO = elegir(armar());
+      ITEMS = null; PRODUCTO = elegir(armar());
       MSG = { k: k, texto: motivo ? "Queda como probada a mano: ya no cuenta como sin test." : "Vuelve a contar como sin test: pedí el test cuando quieras." };
       pintarTodo();
     }).catch(function (err) { ocupado = false; MSG = { k: k, texto: err.message, error: true }; pintarLista(); });
   }
   function accion(b) {
     var acc = b.getAttribute("data-acc"), k = b.getAttribute("data-k");
-    if (acc === "limpiar") { S = inicial(); refrescar(true); return; }
     if (acc === "cerebro") {
       if (!k) SEL = [];
       else if (SEL.indexOf(k) >= 0) SEL = SEL.filter(function (c) { return c !== k; });
       else SEL = SEL.concat([k]);
       if (SEL.length >= CON_FICHAS.length) SEL = [];
       SEL.sort(function (a, b) { return CON_FICHAS.indexOf(a) - CON_FICHAS.indexOf(b); });
-      PRODUCTO = elegir(PRODUCTO); refrescar(true); return;
+      ITEMS = null; PRODUCTO = elegir(PRODUCTO); refrescar(true); return;
     }
-    if (acc === "grupo") { S.grupo = S.grupo === k && k !== "" ? "" : k || ""; refrescar(true); return; }
+    if (acc === "grupo") { fl.poner({ grupo: S.grupo === k && k ? "" : k || "" }); return; }
     if (acc === "abrir") { if (S.abiertas[k]) delete S.abiertas[k]; else S.abiertas[k] = true; refrescar(false); return; }
     if (acc === "todas") {
       var ids = [];
-      visibles().forEach(function (P) { if (P.casos.some(function (C) { return casoCoincide(P, C); }) || P.sueltas.some(function (x) { return sueltaCoincide(P, x); })) ids.push(P.id); });
+      fl.filtrar().forEach(function (it) { if (ids.indexOf(it.P.id) < 0) ids.push(it.P.id); });
       var todasAbiertas = ids.every(function (id) { return S.abiertas[id]; });
       ids.forEach(function (id) { if (todasAbiertas) delete S.abiertas[id]; else S.abiertas[id] = true; });
       refrescar(false); return;
@@ -618,25 +646,27 @@ export const ESPECIFICACIONES_JS = String.raw`
     if (acc === "recargar") { if (typeof location !== "undefined") location.reload(); return; }
   }
   raiz.addEventListener("click", function (ev) {
+    if (fl.manejar(ev, "click")) return;
     var b = ev.target.closest ? ev.target.closest("[data-acc]") : null;
     if (b && !b.disabled) accion(b);
   });
   raiz.addEventListener("keydown", function (ev) {
     if (ev.key !== "Enter" && ev.key !== " ") return;
-    var b = ev.target.closest ? ev.target.closest(".es-ir[data-acc]") : null;
-    if (b) { if (ev.preventDefault) ev.preventDefault(); accion(b); }
+    var b = ev.target.closest ? ev.target.closest(".es-ir[data-fl]") : null;
+    if (b) { if (ev.preventDefault) ev.preventDefault(); fl.manejar(ev, "click"); }
   });
   raiz.addEventListener("input", function (ev) {
-    if (ev.target.id === "es-q") { S.q = ev.target.value; refrescar(false); }
-    else if (ev.target.id === "es-nota") BORRADOR = ev.target.value;
+    if (fl.manejar(ev, "input")) return;
+    if (ev.target.id === "es-nota") BORRADOR = ev.target.value;
     else if (ev.target.id === "es-motivo") MOTIVO = ev.target.value;
   });
+  raiz.addEventListener("change", function (ev) { fl.manejar(ev, "change"); });
 
   var primeraVez = true;
   window.brainEspecificaciones = {
     mostrar: function (feat) {
       if (primeraVez) { primeraVez = false; traerTrabajos(); }
-      if (feat) { var k = local(feat, feat); S = inicial(); S.abiertas[k] = true; FOCO = k; guardar(); }
+      if (feat) { var k = local(feat, feat); fl.limpiar(true); S.abiertas[k] = true; FOCO = k; guardar(); }
       pintarTodo();
     }
   };

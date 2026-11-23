@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ESPECIFICACIONES_JS } from "../src/viewer-especificaciones.js";
+import { FILTROS_JS } from "../src/viewer-filtros.js";
 
 /** La pantalla Especificaciones, corrida con un DOM mínimo: casos de uso unidos entre cerebros, filtros, lo que falta y "Esto está mal". */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
@@ -21,6 +22,7 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
   let borrador = "";
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   const window = { brainVisor: { D: datos, porId, esc }, brainEspecificaciones: null as null | { mostrar(f?: string | null): void }, FLOWBRAIN_EDICION: opciones.edicion, scrollTo() {} };
+  new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
   new Function("window", "document", "sessionStorage", "localStorage", "fetch", ESPECIFICACIONES_JS)(window, { getElementById: el }, sessionStorage, localStorage, opciones.fetch);
   const raiz = el("especificaciones");
   let html = "";
@@ -115,8 +117,8 @@ describe("pantalla Especificaciones", () => {
     expect(v.casos()).toEqual(["Pagar el carrito"]);
     expect(v.reglas()).toContain("El botón de pagar se ve abajo.");
     v.tocar({ "data-acc": "grupo", "data-k": "cumplido" });
-    expect(v.lista()).toContain("Nada coincide con los filtros: cumplidos. Hay 2 casos de uso en total.");
-    v.tocar({ "data-acc": "limpiar" });
+    expect(v.lista()).toContain("Ningún caso de uso coincide con cumplidos. Hay 2 casos de uso y 1 regla sin caso en total.");
+    v.tocar({ "data-fl": "es", "data-fl-limpiar": "1" });
     v.tocar({ "data-acc": "cerebro", "data-k": "back" });
     v.tocar({ "data-acc": "todas" });
     expect(v.casos()).toEqual(["Pagar el carrito"]);

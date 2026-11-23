@@ -14,19 +14,8 @@ export const SIN_ASOCIAR_JS = String.raw`
   var U = D.sinAsociar ? D.sinAsociar.slice() : null;
   var ED = window.FLOWBRAIN_EDICION || null;
   var CAPA = { entrada: "Entrada", logica: "Lógica", dominio: "Dominio", datos: "Datos", interfaz: "Interfaz", otros: "Otros" };
-  var GRUPOS = [["", "Todos"], ["recomendada", "Con recomendación"], ["compartido", "Código compartido"], ["sinpista", "Sin pista"]];
   var PASO = 30, VISIBLES = 8, TOPE_PEDIDO = 80;
-  var inicial = function () { return { ver: "", feat: "", cerebro: "", q: "", cuantas: PASO }; };
-  var S = inicial();
-  var CLAVE = "flowbrain.sinasociar";
-  var guardar = function () { try { if (typeof sessionStorage !== "undefined") sessionStorage.setItem(CLAVE, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ } };
-  try {
-    var previo = typeof sessionStorage !== "undefined" ? JSON.parse(sessionStorage.getItem(CLAVE) || "null") : null;
-    if (previo) Object.keys(S).forEach(function (k) { if (typeof previo[k] === typeof S[k]) S[k] = previo[k]; });
-    if (S.cerebro !== "" && !CEREBROS[Number(S.cerebro)]) S.cerebro = "";
-    S.cuantas = PASO;
-  } catch (e) { /* sin almacenamiento */ }
-  // OTRA: clave de la fila o carpeta con el selector abierto. MSG: { texto, error }. PEDIDO: { copiado }.
+  var S = null, fl = null;
   var OTRA = null, MSG = null, PEDIDO = null, ocupado = false, hechos = 0;
 
   var plural = function (n, uno, varios) { return n.toLocaleString("es") + " " + (n === 1 ? uno : varios); };
@@ -45,23 +34,7 @@ export const SIN_ASOCIAR_JS = String.raw`
     return D.nodes.filter(function (n) { return n.t === "feat" && n.p && (x.c === undefined || n.c === x.c); }).sort(function (a, b) { return a.n.toLowerCase() < b.n.toLowerCase() ? -1 : 1; });
   };
 
-  function coincide(x) {
-    if (S.ver && clase(x) !== S.ver) return false;
-    if (S.feat && (!x.g || x.g[0] !== S.feat)) return false;
-    if (S.cerebro !== "" && String(x.c) !== S.cerebro) return false;
-    var q = S.q.trim().toLowerCase();
-    return !q || x.a.toLowerCase().indexOf(q) >= 0 || (x.g ? nombre(x.g[0]).toLowerCase().indexOf(q) >= 0 : false);
-  }
-  var filtrados = function () { return U.filter(coincide); };
-  function filtrosActivos() {
-    var out = [];
-    GRUPOS.forEach(function (g) { if (g[0] && S.ver === g[0]) out.push(g[1].toLowerCase()); });
-    if (S.feat) out.push("recomendada " + nombre(S.feat));
-    if (S.cerebro !== "") out.push("cerebro " + CEREBROS[Number(S.cerebro)].nombre);
-    if (S.q.trim()) out.push("«" + S.q.trim() + "»");
-    return out;
-  }
-  // Carpetas, de la que más archivos tiene a la que menos; la recomendada de cada una es la más votada por sus archivos.
+  var filtrados = function () { return fl.filtrar(); };
   function carpetas(xs) {
     var m = {}, orden = [];
     xs.forEach(function (x) { var k = (x.c === undefined ? "" : x.c) + "|" + carpetaDe(x.a); if (!m[k]) { m[k] = { k: k, carpeta: carpetaDe(x.a), xs: [] }; orden.push(m[k]); } m[k].xs.push(x); });
@@ -154,37 +127,45 @@ export const SIN_ASOCIAR_JS = String.raw`
       (resto.length ? '<details class="tf"' + (resto.some(function (x) { return OTRA === x.a; }) ? " open" : "") + "><summary>" + plural(resto.length, "archivo más", "archivos más") + '</summary><ul class="lista">' + resto.map(fila).join("") + "</ul></details>" : "") + "</section>";
   }
 
-  // ---------- Página ----------
-  function cifras() {
-    var cifra = function (valor, texto, color) { return '<div class="fd-cifra"><b' + (color ? ' style="color:' + color + '"' : "") + ">" + valor.toLocaleString("es") + "</b><span>" + texto + "</span></div>"; };
-    var n = function (k) { return U.filter(function (x) { return clase(x) === k; }).length; };
-    return '<div class="fd-cifras">' + cifra(U.length, "archivos sin asociar", U.length ? "var(--feat)" : "") + cifra(n("recomendada"), "con una funcionalidad recomendada", n("recomendada") ? "var(--tabla)" : "") +
-      cifra(n("compartido"), "de código compartido") + cifra(n("sinpista"), "sin ninguna pista") + cifra(carpetas(U).length, "carpetas") + "</div>";
-  }
-  function grupos() {
-    return '<div class="fd-grupos" role="group" aria-label="Qué ver">' + GRUPOS.map(function (g) {
-      var n = U.filter(function (x) { return !g[0] || clase(x) === g[0]; }).length;
-      return '<button type="button" class="fd-grupo' + (S.ver === g[0] ? " on" : "") + '" data-ver="' + g[0] + '" aria-pressed="' + (S.ver === g[0]) + '">' + g[1] + "<small>" + n.toLocaleString("es") + "</small></button>";
-    }).join("") + "</div>";
-  }
-  function herramientas() {
-    var votos = {};
-    U.forEach(function (x) { if (x.g) votos[x.g[0]] = (votos[x.g[0]] || 0) + 1; });
-    var ids = Object.keys(votos).sort(function (a, b) { return votos[b] - votos[a] || (nombre(a) < nombre(b) ? -1 : 1); });
-    return '<div class="fd-herr"><input id="sa-q" type="search" placeholder="Buscar por ruta o por funcionalidad recomendada…" aria-label="Buscar" autocomplete="off" value="' + esc(S.q) + '">' +
-      (ids.length ? '<select id="sa-feat-filtro" aria-label="Recomendada"><option value="">Cualquier recomendada</option>' + ids.map(function (id) { return '<option value="' + esc(id) + '"' + (S.feat === id ? " selected" : "") + ">" + esc(nombre(id)) + " (" + votos[id] + ")</option>"; }).join("") + "</select>" : "") +
-      (CEREBROS.length > 1 ? '<select id="sa-cerebro" aria-label="Cerebro"><option value="">Todos los cerebros</option>' + CEREBROS.map(function (c, i) { return '<option value="' + i + '"' + (String(i) === S.cerebro ? " selected" : "") + ">" + esc(c.nombre) + "</option>"; }).join("") + "</select>" : "") +
-      '<button type="button" class="boton' + (PEDIDO ? " on" : "") + '" data-acc="pedido">' + (PEDIDO ? "Ocultar pedido" : "Pedido para el agente") + "</button></div>";
-  }
+  // ---------- Filtro y estadística: el componente compartido (viewer-filtros) ----------
+  var GRUPOS = [["", "Todos"], ["recomendada", "Con recomendación"], ["compartido", "Código compartido"], ["sinpista", "Sin pista"]];
+  if (U) fl = window.brainFiltros.crear({
+    pre: "sa", clave: "flowbrain.sinasociar", unidad: ["archivo", "archivos"], todos: "todos los archivos sin asociar",
+    items: function () { return U; },
+    estado: { cuantas: PASO },
+    grupos: GRUPOS.map(function (g) { return { id: g[0], etiqueta: g[1], es: g[0] ? function (x) { return clase(x) === g[0]; } : null }; }),
+    buscar: { ph: "Buscar por ruta o por funcionalidad recomendada…", texto: function (x) { return x.a + " " + (x.g ? nombre(x.g[0]) : ""); } },
+    campos: [
+      { id: "cerebro", etiqueta: "Cerebro", propio: "el cerebro elegido", solo: function () { return CEREBROS.length > 1; }, de: function (x) { return x.c; },
+        valores: function () { return CEREBROS.map(function (c, i) { return [i, c.nombre, U.filter(function (x) { return x.c === i; }).length]; }); },
+        etiquetaDe: function (v) { return CEREBROS[Number(v)] ? CEREBROS[Number(v)].nombre : v; }, palabra: function (v) { return "cerebro " + (CEREBROS[Number(v)] ? CEREBROS[Number(v)].nombre : v); } },
+      { id: "recomendada", etiqueta: "Recomendada", todos: "Cualquiera", propio: "la recomendada elegida", ordenPorCantidad: true, de: function (x) { return x.g ? x.g[0] : ""; },
+        etiquetaDe: nombre, palabra: function (v) { return "recomendada " + nombre(v); } },
+      { id: "capa", etiqueta: "Capa", todos: "Todas", propio: "la capa elegida", ordenPorCantidad: true, de: function (x) { return x.k; },
+        etiquetaDe: function (v) { return CAPA[v] || v; }, palabra: function (v) { return "capa " + (CAPA[v] || v); } },
+      { id: "repo", etiqueta: "Repo", propio: "el repo elegido", ordenPorCantidad: true, de: function (x) { return repoDe(x.a, x); }, palabra: function (v) { return "repo " + v; } }
+    ],
+    paneles: [
+      { titulo: "Por cerebro", campo: "cerebro" },
+      { titulo: "Por capa", campo: "capa" },
+      { titulo: "Funcionalidad recomendada", campo: "recomendada", max: 8, sinValor: "sin recomendación (código compartido o sin pista)", ninguno: "Ninguno tiene una funcionalidad recomendada: son código compartido o no tienen pista." }
+    ],
+    cifras: function () {
+      var n = function (k) { return U.filter(function (x) { return clase(x) === k; }).length; };
+      return [[U.length, "archivos sin asociar", U.length ? "var(--feat)" : ""], [n("recomendada"), "con una funcionalidad recomendada", n("recomendada") ? "var(--tabla)" : "", "recomendada"],
+        [n("compartido"), "de código compartido", "", "compartido"], [n("sinpista"), "sin ninguna pista", "", "sinpista"], [carpetas(U).length, "carpetas"]];
+    },
+    acciones: function () { return '<button type="button" class="boton' + (PEDIDO ? " on" : "") + '" data-acc="pedido">' + (PEDIDO ? "Ocultar pedido" : "Pedido para el agente") + "</button>"; },
+    alCambiar: function (todo) { refrescar(todo); }
+  });
+  if (fl) { S = fl.S(); S.cuantas = PASO; if (S.cerebro !== "" && !CEREBROS[Number(S.cerebro)]) S.cerebro = ""; }
+  var guardar = function () { if (fl) fl.guardar(); };
   function lista() {
-    var xs = filtrados(), activos = filtrosActivos();
+    var xs = filtrados();
     var msg = MSG ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + "</p>" : "";
-    if (!xs.length) {
-      return msg + '<p class="aviso">Ningún archivo coincide con ' + activos.map(esc).join(", ") + ". Hay " + plural(U.length, "archivo sin asociar", "archivos sin asociar") + ' en total. <button type="button" class="boton" data-acc="limpiar">Quitar filtros</button></p>';
-    }
+    if (!xs.length) return msg + fl.vacio(U.length, ["archivo sin asociar", "archivos sin asociar"]);
     var cs = carpetas(xs), visibles = cs.slice(0, S.cuantas);
-    return msg + pedido(xs) + '<div class="fd-cab"><p class="subtitulo">' + plural(xs.length, "archivo", "archivos") + " en " + plural(cs.length, "carpeta", "carpetas") + (activos.length ? " (" + activos.map(esc).join(", ") + ")" : "") + "</p>" +
-      (activos.length ? '<div class="fd-acc"><button type="button" class="boton" data-acc="limpiar">Quitar filtros</button></div>' : "") + "</div>" +
+    return msg + pedido(xs) + fl.resultado(xs, " en " + plural(cs.length, "carpeta", "carpetas")) +
       visibles.map(grupo).join("") +
       (cs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="btn" data-acc="mas">Mostrar ' + Math.min(PASO, cs.length - visibles.length) + " carpetas más</button> <small>" + visibles.length + " de " + cs.length.toLocaleString("es") + "</small></p>" : "");
   }
@@ -207,7 +188,7 @@ export const SIN_ASOCIAR_JS = String.raw`
       raiz.innerHTML = "<h1>Sin asociar</h1>" + COMO + '<p class="aviso">' + (hechos ? "Listo: ya no queda ningún archivo sin asociar." : "Todos los archivos del índice son de alguna funcionalidad o librería. No hay nada para asociar.") + "</p>";
       return;
     }
-    raiz.innerHTML = "<h1>Sin asociar</h1>" + COMO + aviso() + cifras() + grupos() + herramientas() + '<div id="sa-lista">' + lista() + "</div>";
+    raiz.innerHTML = "<h1>Sin asociar</h1>" + COMO + aviso() + fl.html() + '<div id="sa-lista">' + lista() + "</div>";
   }
   function refrescar(todo) { S.cuantas = PASO; if (PEDIDO) PEDIDO.copiado = false; guardar(); if (todo) pintarTodo(); else pintarLista(); }
   var porArchivo = function (a) { for (var i = 0; i < U.length; i++) if (U[i].a === a) return U[i]; return null; };
@@ -233,10 +214,10 @@ export const SIN_ASOCIAR_JS = String.raw`
   }
 
   raiz.addEventListener("click", function (ev) {
+    if (fl && fl.manejar(ev, "click")) return;
     var b = ev.target.closest ? ev.target.closest("button") : null;
     if (!b) return;
     var acc = b.getAttribute("data-acc"), k = b.getAttribute("data-k"), g;
-    if (acc === "limpiar") { S = inicial(); refrescar(true); return; }
     if (acc === "mas") { S.cuantas += PASO; pintarLista(); return; }
     if (acc === "pedido") {
       if (PEDIDO) { PEDIDO = null; pintarTodo(); return; }
@@ -253,14 +234,9 @@ export const SIN_ASOCIAR_JS = String.raw`
       if (g) asociar(g.xs[0], feat, g.carpeta); else asociar(porArchivo(k), feat);
       return;
     }
-    if (b.hasAttribute("data-ver")) { S.ver = b.getAttribute("data-ver"); refrescar(true); }
   });
-  raiz.addEventListener("change", function (ev) {
-    var id = ev.target.id || "";
-    if (id === "sa-feat-filtro") { S.feat = ev.target.value; refrescar(false); }
-    else if (id === "sa-cerebro") { S.cerebro = ev.target.value; refrescar(false); }
-  });
-  raiz.addEventListener("input", function (ev) { if (ev.target.id === "sa-q") { S.q = ev.target.value; refrescar(false); } });
+  raiz.addEventListener("change", function (ev) { if (fl) fl.manejar(ev, "change"); });
+  raiz.addEventListener("input", function (ev) { if (fl) fl.manejar(ev, "input"); });
 
   window.brainSinAsociar = { mostrar: pintarTodo };
 })();

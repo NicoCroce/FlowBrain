@@ -3,6 +3,7 @@ import { crearContexto, paridad, paridadEntre, type Graph, type GraphEdge, type 
 import { datosDeCerebros } from "../src/cerebros.js";
 import { datosDelVisor, derivaDelVisor } from "../src/viewer.js";
 import { CONTRATOS_JS } from "../src/viewer-contratos.js";
+import { FILTROS_JS } from "../src/viewer-filtros.js";
 
 /** La pantalla Contratos con un DOM mínimo. La paridad se calcula en la página: acá se comprueba que dé lo mismo que el motor. */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
@@ -15,8 +16,10 @@ function montar(datos: Record<string, unknown>) {
   const porId: Record<string, { n: string }> = {};
   for (const n of (datos["nodes"] as Array<{ id: string; n: string }> | undefined) ?? []) porId[n.id] = n;
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const window = { brainVisor: { D: datos, porId, esc }, brainContratos: null as null | { mostrar(): void; paridad(v: string, n: string): ParidadJs } };
-  new Function("window", "document", "sessionStorage", CONTRATOS_JS)(window, { getElementById: (id: string) => (id === "contratos" ? raiz : null) }, sessionStorage);
+  const window = { brainVisor: { D: datos, porId, esc }, brainFiltros: null as unknown, brainContratos: null as null | { mostrar(): void; paridad(v: string, n: string): ParidadJs } };
+  const document = { getElementById: (id: string) => (id === "contratos" ? raiz : null) };
+  new Function("window", "document", "sessionStorage", FILTROS_JS)(window, document, sessionStorage);
+  new Function("window", "document", "sessionStorage", CONTRATOS_JS)(window, document, sessionStorage);
   window.brainContratos!.mostrar();
   const disparar = (tipo: string, target: Record<string, unknown>) => (oyentes[tipo] ?? []).forEach((f) => f({ target }));
   const boton = (attrs: Record<string, string>) => ({ closest: () => ({ getAttribute: (k: string) => attrs[k] ?? null, hasAttribute: (k: string) => k in attrs }) });
@@ -26,7 +29,7 @@ function montar(datos: Record<string, unknown>) {
     tocar: (attrs: Record<string, string>) => disparar("click", boton(attrs)),
     cambiar: (id: string, value: string) => disparar("change", { id, value }),
     escribir: (value: string) => disparar("input", { id: "ct-q", value }),
-    cifras: () => [...raiz.innerHTML.matchAll(/<div class="fd-cifra"><b[^>]*>([^<]+)<\/b><span>([^<]+)</g)].map((m) => `${m[1]} ${m[2]}`),
+    cifras: () => [...raiz.innerHTML.matchAll(/<div class="fd-cifra[^"]*"[^>]*><b[^>]*>([^<]+)<\/b><span>([^<]+)</g)].map((m) => `${m[1]} ${m[2]}`),
   };
 }
 
@@ -102,7 +105,7 @@ describe("pantalla Contratos: paridad", () => {
     expect(v.cifras()[0]).toBe("3 de 4 endpoints ya están del otro lado (75 %)");
     expect(v.pagina()).toContain("<code>GET /api/salud</code>");
     v.escribir("nada-que-coincida");
-    expect(v.pagina()).toContain("Ninguno coincide con «nada-que-coincida».");
+    expect(v.pagina()).toContain("Ninguno coincide con texto «nada-que-coincida».");
   });
 
   it("con un solo servicio dice que no hay con qué comparar", () => {
@@ -132,6 +135,10 @@ describe("pantalla Contratos: deriva", () => {
     const d = datosDeCerebros([{ nombre: "legado", sinRevisar: false, graph: lado("svc-viejo"), funcionalidades: [], deriva: front }, { nombre: "back", sinRevisar: false, graph: lado("svc-nuevo"), funcionalidades: [], deriva: { ...deriva, comunicadoCon: [] } }], [], []);
     expect((d.deriva as Array<{ c: number }>).map((x) => x.c)).toEqual([0, 1]);
     const v = montar(d);
+    // Sin elegir cerebro, suma los dos; la estadística los compara.
+    expect(v.cifras()).toEqual(["1 llamadas que nadie atiende", "7 llamadas que atiende otro cerebro", "1 en disputa entre cerebros", "2 endpoints que nadie llama"]);
+    expect(v.pagina()).toContain("<h2>Por cerebro</h2>");
+    v.cambiar("ct-cerebro", "0");
     expect(v.cifras()).toEqual(["0 llamadas que nadie atiende", "7 llamadas que atiende otro cerebro", "1 en disputa entre cerebros", "1 endpoints que nadie llama"]);
     expect(v.pagina()).toContain("Cruzado con back");
     // Las internas declaradas no son deriva, y se dice cuántas quedaron afuera.
@@ -139,7 +146,7 @@ describe("pantalla Contratos: deriva", () => {
     expect(v.pagina()).toContain("Todas las llamadas con ruta tienen quién las atienda.");
     expect(v.pagina()).toContain("back <small>7 llamadas a 3 endpoints</small>");
     expect(v.pagina()).toContain("Candidatos: <code>back/svc-a:GET:/x</code>, <code>otro/svc-b:GET:/x</code>");
-    v.tocar({ "data-cerebro": "1" });
+    v.cambiar("ct-cerebro", "1");
     expect(v.pagina()).toContain("no tiene la comunicación activa con ningún otro");
     expect(v.cifras()[0]).toBe("1 llamadas que nadie atiende");
   });
@@ -162,7 +169,7 @@ describe("pantalla Contratos: deriva", () => {
     expect(montar(datosDelVisor(graph, [], undefined, deriva)).pagina()).toContain("no trae la comparación de campos");
     // Un índice anterior: el motivo se lee en la sección, no solo en los avisos.
     const viejo = { ...conCampos, camposQueNoCoinciden: [], avisos: ["el índice de repo-a no trae los campos de las llamadas (se indexó antes de registrarlos): corré `flowbrain index`"] };
-    expect(montar(datosDelVisor(graph, [], undefined, viejo)).pagina()).toMatch(/Campos que no coinciden <small>1<\/small><\/h3><\/summary><p class="aviso">el índice de repo-a no trae los campos/);
+    expect(montar(datosDelVisor(graph, [], undefined, viejo)).pagina()).toMatch(/Campos que no coinciden <small>0<\/small><\/h3><\/summary><p class="aviso">el índice de repo-a no trae los campos/);
   });
 
   it("sin índice de código explica qué hace falta", () => {

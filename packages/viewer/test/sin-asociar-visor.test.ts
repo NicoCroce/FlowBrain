@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SIN_ASOCIAR_JS } from "../src/viewer-sin-asociar.js";
+import { FILTROS_JS } from "../src/viewer-filtros.js";
 
 /** La pantalla Sin asociar, corrida con un DOM mínimo: qué agrupa, qué recomienda, qué dice cuando no hay nada y qué manda al asociar. */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
@@ -18,6 +19,7 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
   for (const n of (datos["nodes"] as Array<{ id: string; n: string }> | undefined) ?? []) porId[n.id] = n;
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   const window = { brainVisor: { D: datos, porId, esc }, brainSinAsociar: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion };
+  new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
   new Function("window", "document", "sessionStorage", "fetch", SIN_ASOCIAR_JS)(window, { getElementById: el }, sessionStorage, opciones.fetch);
   const raiz = el("sinasociar");
   let html = "";
@@ -69,7 +71,7 @@ describe("pantalla Sin asociar", () => {
     expect(v.archivos()).toEqual(["dinero.ts", "moneda.ts", "fecha.ts", "Texto.php", "nota.ts"]);
     const p = v.pagina();
     // Cifras: 5 sin asociar, 3 con recomendación, 1 compartido, 1 sin pista, 3 carpetas.
-    expect([...p.matchAll(/<div class="fd-cifra"><b[^>]*>(\d+)<\/b>/g)].map((m) => m[1])).toEqual(["5", "3", "1", "1", "3"]);
+    expect([...p.matchAll(/<div class="fd-cifra[^"]*"[^>]*><b[^>]*>(\d+)<\/b>/g)].map((m) => m[1])).toEqual(["5", "3", "1", "1", "3"]);
     expect(p).toContain('→ <a href="#/f/front%2Ffeat-pagos">Pagos</a></span> <small>lo importan 2 archivos de Pagos</small>');
     // La carpeta tiene recomendada porque la votan más de la mitad de sus archivos.
     expect(p).toContain("Recomendada: Pagos (2 de 3)");
@@ -82,16 +84,16 @@ describe("pantalla Sin asociar", () => {
 
   it("filtra por tipo de pista, recomendada, cerebro y texto; un vacío dice por qué", () => {
     const v = montar(datos());
-    v.tocar({ "data-ver": "compartido" });
+    v.tocar({ "data-fl": "sa", "data-grupo": "compartido" });
     expect(v.archivos()).toEqual(["fecha.ts"]);
-    v.tocar({ "data-ver": "sinpista" });
+    v.tocar({ "data-fl": "sa", "data-grupo": "sinpista" });
     expect(v.archivos()).toEqual(["Texto.php"]);
     v.cambiar("sa-cerebro", "0");
     expect(v.lista()).toContain("Ningún archivo coincide con sin pista, cerebro front. Hay 5 archivos sin asociar en total.");
-    v.tocar({ "data-acc": "limpiar" });
-    v.cambiar("sa-feat-filtro", "front/feat-pagos");
+    v.tocar({ "data-fl": "sa", "data-fl-limpiar": "1" });
+    v.cambiar("sa-recomendada", "front/feat-pagos");
     expect(v.archivos()).toEqual(["dinero.ts", "moneda.ts", "nota.ts"]);
-    v.cambiar("sa-feat-filtro", "");
+    v.cambiar("sa-recomendada", "");
     v.escribir("util");
     expect(v.archivos()).toEqual(["Texto.php"]);
   });
