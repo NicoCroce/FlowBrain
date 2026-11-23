@@ -168,7 +168,7 @@ $ARGUMENTS
      (\`codigo\`): si llama al back (un cliente propio, una función que arma la URL, un SDK, un store), es un hueco.
    - \`httpSinRuta\`: llamadas HTTP que el parser vio sin poder determinar la ruta. Abrí cada una y seguí cómo se arma.
    - \`pantallasSinLlamadas\`: tomá una muestra de las que no estén en lo anterior y verificá que de verdad no llamen.
-   - Además, por tu cuenta: buscá en el repo los nombres del cliente HTTP y de sus envolturas (\`axios\`, \`fetch\`, el
+   - Además, por tu cuenta: buscá en el repo los nombres del cliente HTTP y de sus envolturas (\`axios\`, \`fetch\`, \`HttpClient\`, \`ky\`, \`$fetch\`, el
      cliente propio) y compará los módulos donde aparecen contra los que tienen llamadas en el índice
      (\`flowbrain connections --brain <cerebro>\`, \`flowbrain feature <id>\`). Un módulo que usa el cliente y no tiene
      llamadas es un hueco.

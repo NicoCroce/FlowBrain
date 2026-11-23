@@ -31,7 +31,8 @@ import {
 /**
  * ts-parser: API del compilador de TypeScript, sin LLM. Extrae:
  * - endpoints de Express, Fastify, NestJS y rutas `app/**\/route.ts` de Next;
- * - llamadas salientes con `fetch` y `axios` (incluidas instancias `axios.create({ baseURL })`);
+ * - llamadas salientes con `fetch`, `axios`, Angular `HttpClient`, `ky` y `$fetch`/`ofetch`/`useFetch` de Nuxt
+ *   (incluidas instancias con base: `axios.create({ baseURL })`, `ky.create({ prefixUrl })`, `ofetch.create`);
  * - modelos de Prisma (schema.prisma) y TypeORM (`@Entity`), y accesos `x.<modelo>.<op>()` de Prisma;
  * - símbolos: funciones, clases y sus métodos, interfaces, tipos y enums, con su rango de líneas;
  * - qué archivos del repo importa cada archivo y a qué métodos o funciones de otros archivos llama cada método
@@ -293,17 +294,49 @@ function extraer(repo: RepoFuente): Extraccion {
     return null;
   };
 
-  /** ¿La expresión es axios o una instancia de axios? Devuelve el `baseURL` (o null) si lo es. */
-  const axiosDe = (e: ts.Expression): { baseURL: ts.Expression | null } | null => {
-    if (ts.isIdentifier(e) && moduloDe(e) === "axios") return { baseURL: null };
-    const ini = ts.isIdentifier(e) ? inicializador(e) : undefined;
-    if (ini && ts.isCallExpression(ini) && ts.isPropertyAccessExpression(ini.expression) && ini.expression.name.text === "create") {
-      const recv = ini.expression.expression;
-      if (ts.isIdentifier(recv) && moduloDe(recv) === "axios") {
-        const cfg = ini.arguments[0];
-        const base = cfg && ts.isObjectLiteralExpression(cfg) ? propiedad(cfg, "baseURL") : undefined;
-        return { baseURL: base ?? null };
+  /**
+   * ¿La expresión es un cliente HTTP conocido o una instancia suya? Devuelve cuál y su base, si la tiene:
+   * - axios y `axios.create({ baseURL })`;
+   * - Angular: una propiedad, parámetro o variable de tipo `HttpClient` (`@angular/common/http`), inyectado por
+   *   constructor o con `inject(HttpClient)`;
+   * - ky y `ky.create`/`.extend({ prefixUrl })` (la instancia hereda la base de la que extiende; `separar`: ky pone
+   *   una barra entre la base y la URL);
+   * - `$fetch` (global de Nuxt o importado de `ofetch`), `ofetch` y `$fetch.create`/`ofetch.create({ baseURL })`.
+   */
+  type Cliente = { tipo: "axios" | "angular" | "ky" | "ofetch"; baseURL: ts.Expression | null; separar?: boolean };
+  const MODULOS_NUXT = new Set(["ofetch", "#app", "#imports", "nuxt/app"]);
+  /** `$fetch`/`useFetch`/… global (auto-importado por Nuxt, sin declaración) o importado de `ofetch` o de Nuxt. */
+  const globalNuxt = (e: ts.Identifier) => !resolver(e)?.declarations?.length || MODULOS_NUXT.has(moduloDe(e) ?? "");
+  const esHttpClient = (t: ts.TypeNode | undefined) => !!t && ts.isTypeReferenceNode(t) && ts.isIdentifier(t.typeName) && t.typeName.text === "HttpClient" && moduloDe(t.typeName) === "@angular/common/http";
+  const clienteDe = (e: ts.Expression, prof = 0): Cliente | null => {
+    while (ts.isParenthesizedExpression(e) || ts.isNonNullExpression(e)) e = e.expression;
+    if (prof > 4) return null;
+    if (ts.isIdentifier(e)) {
+      const mod = moduloDe(e);
+      if (mod === "axios") return { tipo: "axios", baseURL: null };
+      if (mod === "ky") return { tipo: "ky", baseURL: null, separar: true };
+      if ((e.text === "$fetch" || e.text === "ofetch") && globalNuxt(e)) return { tipo: "ofetch", baseURL: null };
+    }
+    // Angular: `this.http`, `http` o `this.api.http` cuya declaración es de tipo `HttpClient` o vale `inject(HttpClient)`.
+    const nombre = ts.isIdentifier(e) ? e : ts.isPropertyAccessExpression(e) ? e.name : null;
+    const d = nombre ? resolver(nombre)?.declarations?.[0] : undefined;
+    if (d && (ts.isParameter(d) || ts.isPropertyDeclaration(d) || ts.isVariableDeclaration(d))) {
+      if (esHttpClient(d.type)) return { tipo: "angular", baseURL: null };
+      const ini = d.initializer;
+      if (ini && ts.isCallExpression(ini) && ts.isIdentifier(ini.expression) && ini.expression.text === "inject") {
+        const a = ini.arguments[0];
+        if (a && ts.isIdentifier(a) && a.text === "HttpClient" && moduloDe(a) === "@angular/common/http") return { tipo: "angular", baseURL: null };
       }
+    }
+    // Instancias: `axios.create(cfg)`, `ky.create(cfg)`, `api.extend(cfg)`, `$fetch.create(cfg)`.
+    const ini = ts.isIdentifier(e) ? inicializador(e) : undefined;
+    if (ini && ts.isCallExpression(ini) && ts.isPropertyAccessExpression(ini.expression) && /^(create|extend)$/.test(ini.expression.name.text)) {
+      const padre = clienteDe(ini.expression.expression, prof + 1);
+      if (!padre || padre.tipo === "angular" || (padre.tipo !== "ky" && ini.expression.name.text === "extend")) return null;
+      const cfg = ini.arguments[0];
+      const clave = padre.tipo === "ky" ? "prefixUrl" : "baseURL";
+      const base = cfg && ts.isObjectLiteralExpression(cfg) ? (propiedad(cfg, clave) ?? (padre.tipo === "ky" ? propiedad(cfg, "prefix") : undefined)) : undefined;
+      return { ...padre, baseURL: base ?? padre.baseURL };
     }
     return null;
   };
@@ -1316,6 +1349,9 @@ function extraer(repo: RepoFuente): Extraccion {
     let config: ts.Expression | undefined;
     // Se sabe qué lleva: la config está escrita en la llamada (o no hay), no viene armada de otro lado.
     let directa = true;
+    let separar = false;
+    let claves: string[] | undefined;
+    let respuesta: ts.TypeNode | undefined;
     // `fetch` global, o el que el framework le pasa a la función (`load({ fetch })` de SvelteKit, loaders de Remix).
     const fetchInyectado = (d: ts.Declaration | undefined) => !!d && (ts.isBindingElement(d) || ts.isParameter(d));
     if (ts.isIdentifier(c) && c.text === "fetch" && (!resolver(c)?.declarations?.length || fetchInyectado(resolver(c)?.declarations?.[0]))) {
@@ -1329,28 +1365,89 @@ function extraer(repo: RepoFuente): Extraccion {
         if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
         cuerpo = propiedad(init, "body");
       }
-    } else if (ts.isPropertyAccessExpression(c) && (METODOS_HTTP as readonly string[]).includes(c.name.text)) {
-      const ax = axiosDe(c.expression);
-      if (!ax) return null;
-      base = ax.baseURL;
-      metodo = c.name.text.toUpperCase();
-      url = call.arguments[0];
-      const conCuerpo = ["post", "put", "patch"].includes(c.name.text);
-      if (conCuerpo) cuerpo = call.arguments[1];
-      config = call.arguments[conCuerpo ? 2 : 1];
+    } else if (ts.isPropertyAccessExpression(c) && ((METODOS_HTTP as readonly string[]).includes(c.name.text) || c.name.text === "request")) {
+      const cl = clienteDe(c.expression);
+      if (!cl || cl.tipo === "ofetch") return null;
+      base = cl.baseURL;
+      separar = !!cl.separar;
       directa = !call.arguments.some((a) => ts.isSpreadElement(a));
-    } else if (ts.isIdentifier(c) && axiosDe(c)) {
-      const cfg = call.arguments[0];
-      if (!cfg || !ts.isObjectLiteralExpression(cfg)) return null;
-      url = propiedad(cfg, "url");
-      const m = propiedad(cfg, "method");
-      if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
-      cuerpo = propiedad(cfg, "data");
-      config = cfg;
+      if (c.name.text === "request") {
+        // Angular `http.request("POST", url, { body, params })`.
+        if (cl.tipo !== "angular") return null;
+        const m = call.arguments[0];
+        if (!m || !ts.isStringLiteralLike(m)) return null;
+        metodo = m.text.toUpperCase();
+        url = call.arguments[1];
+        config = call.arguments[2];
+        cuerpo = config && ts.isObjectLiteralExpression(config) ? propiedad(config, "body") : undefined;
+      } else if (cl.tipo === "ky") {
+        // ky: `ky.post(url, { json, searchParams })`; el cuerpo es `json` (o `body`).
+        metodo = c.name.text.toUpperCase();
+        url = call.arguments[0];
+        config = call.arguments[1];
+        if (config && ts.isObjectLiteralExpression(config)) cuerpo = propiedad(config, "json") ?? propiedad(config, "body");
+        else directa = directa && !config;
+        claves = ["searchParams"];
+      } else {
+        // axios y Angular: `m(url, body, config)` con cuerpo, `m(url, config)` sin.
+        metodo = c.name.text.toUpperCase();
+        url = call.arguments[0];
+        const conCuerpo = ["post", "put", "patch"].includes(c.name.text);
+        if (conCuerpo) cuerpo = call.arguments[1];
+        config = call.arguments[conCuerpo ? 2 : 1];
+        // Angular `delete(url, { body })`.
+        if (!conCuerpo && cl.tipo === "angular" && config && ts.isObjectLiteralExpression(config)) cuerpo = propiedad(config, "body");
+      }
+    } else if (ts.isIdentifier(c) && /^use(Lazy)?Fetch$/.test(c.text) && globalNuxt(c)) {
+      // Nuxt `useFetch(url, { method, body, query, baseURL })`; la URL puede venir como función (`() => \`/x/${id}\``).
+      let u = call.arguments[0];
+      if (u && (ts.isArrowFunction(u) || ts.isFunctionExpression(u))) u = ts.isArrowFunction(u) && !ts.isBlock(u.body) ? u.body : undefined;
+      if (!u) return null;
+      ({ url, metodo, cuerpo, config, base, directa } = opcionesFetch(u, call.arguments[1], null));
+      claves = ["query", "params"];
+    } else if (ts.isIdentifier(c) && clienteDe(c)) {
+      const cl = clienteDe(c)!;
+      if (cl.tipo === "angular") return null;
+      if (cl.tipo === "axios") {
+        const cfg = call.arguments[0];
+        if (!cfg || !ts.isObjectLiteralExpression(cfg)) return null;
+        url = propiedad(cfg, "url");
+        const m = propiedad(cfg, "method");
+        if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
+        cuerpo = propiedad(cfg, "data");
+        config = cfg;
+        base = cl.baseURL;
+      } else {
+        // `ky(url, { method, json })`, `$fetch(url, { method, body, query, baseURL })`.
+        if (!call.arguments[0]) return null;
+        ({ url, metodo, cuerpo, config, base, directa } = opcionesFetch(call.arguments[0], call.arguments[1], cl.baseURL));
+        if (cl.tipo === "ky") {
+          separar = true;
+          cuerpo = config && ts.isObjectLiteralExpression(config) ? (propiedad(config, "json") ?? propiedad(config, "body")) : undefined;
+          claves = ["searchParams"];
+        } else claves = ["query", "params"];
+      }
     } else return null;
+    // ky: `ky.get(url).json<T>()` — el genérico de `.json<T>()` es el tipo de la respuesta.
+    const pj = call.parent;
+    if (ts.isPropertyAccessExpression(pj) && pj.expression === call && pj.name.text === "json" && ts.isCallExpression(pj.parent) && pj.parent.typeArguments?.[0]) respuesta = pj.parent.typeArguments[0];
     // `_method` en el cuerpo de un POST (Symfony, Laravel, Rails): el back lo atiende como ese método.
     if (metodo === "POST" && cuerpo) metodo = metodoSobrescrito(cuerpo, call) ?? metodo;
-    return url ? { url, base, metodo, cuerpo, config, directa } : null;
+    return url ? { url, base, metodo, cuerpo, config, directa, ...(separar ? { separar } : {}), ...(claves ? { claves } : {}), ...(respuesta ? { respuesta } : {}) } : null;
+  };
+  /** Opciones al estilo `fetch` (`$fetch`, `useFetch`, `ky(url, init)`): método, cuerpo y `baseURL` de la llamada. */
+  const opcionesFetch = (url: ts.Expression, opts: ts.Expression | undefined, base: ts.Expression | null) => {
+    let init = opts;
+    while (init && (ts.isAsExpression(init) || ts.isParenthesizedExpression(init) || ts.isSatisfiesExpression(init))) init = init.expression;
+    let metodo = "GET";
+    let cuerpo: ts.Expression | undefined;
+    if (init && ts.isObjectLiteralExpression(init)) {
+      const m = propiedad(init, "method");
+      if (m && ts.isStringLiteralLike(m)) metodo = m.text.toUpperCase();
+      cuerpo = propiedad(init, "body");
+      base = propiedad(init, "baseURL") ?? base;
+    }
+    return { url, metodo, cuerpo, config: init, base, directa: !init || ts.isObjectLiteralExpression(init) };
   };
   /** `{ _method: "PUT" }`, o un `FormData` al que la misma función le hace `.append("_method", "PUT")`. */
   /**
@@ -1427,13 +1524,14 @@ function extraer(repo: RepoFuente): Extraccion {
     if (f.config) {
       const tc = checker.getTypeAtLocation(f.config);
       const partes = sinVacio(tc);
-      const conParams = partes.map((x) => x.getProperty("params")).filter((x): x is ts.Symbol => !!x);
+      const claves = f.claves ?? ["params"];
+      const conParams = partes.map((x) => claves.map((k) => x.getProperty(k)).find(Boolean)).filter((x): x is ts.Symbol => !!x);
       if (conParams.length) {
         const lados = conParams.map((x) => {
           const t = checker.getTypeOfSymbolAtLocation(x, f.config!);
           return ladoDeTipo(t, f.config!, limpiar(checker.typeToString(t)));
         });
-        const params = ts.isObjectLiteralExpression(f.config) ? propiedad(f.config, "params") : undefined;
+        const params = ts.isObjectLiteralExpression(f.config) ? claves.map((k) => propiedad(f.config as ts.ObjectLiteralExpression, k)).find(Boolean) : undefined;
         const tipo = (params ? nombreTipoDeExpr(params) : null) ?? lados[0]!.tipo;
         if (lados.some((l) => !l.forma)) query = { tipo };
         else {
@@ -1452,7 +1550,7 @@ function extraer(repo: RepoFuente): Extraccion {
     if (deUrl) query = { tipo: query?.forma && Object.keys(query.forma).length ? query.tipo : "query de la URL", forma: { ...(query?.forma ?? {}), ...deUrl } };
     if (query && (query.tipo !== "sin query" || f.metodo === "GET")) c.query = query;
     // El `<T>` de una envoltura que lo transforma (`Envelope<T>` → `data.data`) no es la respuesta HTTP: no se usa.
-    const gen = f.directa || f.generico ? call.typeArguments?.[0] : undefined;
+    const gen = f.directa || f.generico ? (call.typeArguments?.[0] ?? f.respuesta) : undefined;
     if (gen) c.espera = ladoDeTipo(checker.getTypeFromTypeNode(gen), gen, limpiar(gen.getText()));
     return c.envia || c.query || c.espera ? c : null;
   };
@@ -1496,7 +1594,7 @@ function extraer(repo: RepoFuente): Extraccion {
    * cliente HTTP (`get<T>(url) { return axios.get<T>(url) }`), así que es el tipo de la respuesta; si lo envuelve
    * (`axios.get<Envelope<T>>` y devuelve `data.data`), no lo es.
    */
-  type Envoltura = { idx: number; metodo: string; base: ts.Expression | null; generico: boolean };
+  type Envoltura = { idx: number; metodo: string; base: ts.Expression | null; generico: boolean; separar?: boolean | undefined };
   const envolturas = new Map<ts.Node, Envoltura>();
   const genericoPropio = (call: ts.CallExpression) => {
     const g = call.typeArguments?.[0];
@@ -1521,7 +1619,7 @@ function extraer(repo: RepoFuente): Extraccion {
           const url = f ? f.url : e ? n.arguments[e.idx] : undefined;
           const p = url ? parametroDe(url) : null;
           if (p && !envolturas.has(p.fn)) {
-            envolturas.set(p.fn, { idx: p.idx, metodo: f ? f.metodo : e!.metodo, base: f ? f.base : e!.base, generico: genericoPropio(n) && (f ? true : e!.generico) });
+            envolturas.set(p.fn, { idx: p.idx, metodo: f ? f.metodo : e!.metodo, base: f ? f.base : e!.base, generico: genericoPropio(n) && (f ? true : e!.generico), separar: f ? f.separar : e!.separar });
             nuevas++;
           }
         }
@@ -1840,7 +1938,8 @@ function extraer(repo: RepoFuente): Extraccion {
       let partes = evaluar(f.url);
       const primera = partes[0];
       const absoluta = primera && "lit" in primera && /^https?:\/\//.test(primera.lit);
-      if (f.base && !absoluta) partes = [...evaluar(f.base), ...partes];
+      // ky pone una barra entre `prefixUrl` y la URL; las barras dobles se normalizan.
+      if (f.base && !absoluta) partes = [...evaluar(f.base), ...(f.separar ? [{ lit: "/" }] : []), ...partes];
       // Una URL que no se puede analizar igual es una llamada HTTP: queda sin ruta, para que se vea que falta.
       const u = analizarUrl(partes) ?? { base: "dinamica" as const, host: null, ruta: null, texto: f.url.getText().replace(/\s+/g, " ").slice(0, 80) };
       const campos = camposDeLlamada(call, f);
@@ -1859,7 +1958,7 @@ function extraer(repo: RepoFuente): Extraccion {
       if (!e) return false;
       const url = call.arguments[e.idx];
       if (!url || parametroDe(url)) return !!url;
-      return emitir(call, { url, base: e.base, metodo: e.metodo, generico: e.generico });
+      return emitir(call, { url, base: e.base, metodo: e.metodo, generico: e.generico, separar: e.separar });
     };
 
     // Prisma: x.<modelo>.<op>(…)
@@ -2014,6 +2113,12 @@ interface FormaSaliente {
   directa?: boolean;
   /** Envoltura cuyo `<T>` llega tal cual al cliente: es el tipo de la respuesta. */
   generico?: boolean;
+  /** ky: la URL va después de la base con una barra en el medio. */
+  separar?: boolean | undefined;
+  /** Claves de la config que llevan la query (`params` en axios y Angular, `searchParams` en ky, `query` en ofetch). */
+  claves?: string[];
+  /** Tipo de la respuesta que no está en la llamada misma (`ky.get(url).json<T>()`). */
+  respuesta?: ts.TypeNode;
 }
 
 function propiedad(o: ts.ObjectLiteralExpression, nombre: string): ts.Expression | undefined {

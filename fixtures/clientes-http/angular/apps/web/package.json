@@ -1,0 +1,5 @@
+{
+  "name": "@angular-fx/web",
+  "private": true,
+  "dependencies": { "@angular/core": "17", "@angular/common": "17" }
+}

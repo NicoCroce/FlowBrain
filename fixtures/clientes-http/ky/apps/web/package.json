@@ -1,0 +1,5 @@
+{
+  "name": "@ky/web",
+  "private": true,
+  "dependencies": { "ky": "1" }
+}

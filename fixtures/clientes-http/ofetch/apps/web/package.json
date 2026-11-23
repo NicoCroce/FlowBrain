@@ -1,0 +1,5 @@
+{
+  "name": "@ofetch/web",
+  "private": true,
+  "dependencies": { "nuxt": "3", "ofetch": "1" }
+}

@@ -63,7 +63,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 38 | `deriva` compara campos | Hecho (decisión 191) |
 | 39 | Otros: Kubernetes, Helm, Terraform y serverless en `infra` | Hecho (decisión 192) |
 | 40 | Pantallas por archivo: Next, Nuxt, SvelteKit y Expo Router | Hecho (decisión 193) |
-| 41 a 43 | Parsers genéricos: clientes HTTP, layout y contexto, cron y gRPC | Pendiente |
+| 41 | Más clientes HTTP: Angular `HttpClient`, `ky` y `$fetch` | Hecho (decisión 194) |
+| 42 y 43 | Parsers genéricos: layout y contexto, cron y gRPC | Pendiente |
 
 ---
 
@@ -340,7 +341,7 @@ Next (`pages/` y `app/`), Nuxt, SvelteKit y Expo Router: una pantalla por archiv
 
 ### Paso 41 · Más clientes HTTP
 
-Angular `HttpClient`, `ky` y `$fetch`.
+Angular `HttpClient`, `ky` y `$fetch` (con `ofetch` y `useFetch` de Nuxt): llamadas como las demás, con base y campos (decisión 194).
 
 ### Paso 42 · Layout, contexto y objeto de un hook
 
