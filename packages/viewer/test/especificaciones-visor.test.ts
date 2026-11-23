@@ -90,7 +90,10 @@ describe("pantalla Especificaciones", () => {
     v.tocar({ "data-grupo": "sintest" });
     expect(v.textos()).toEqual(["Si el pago falla se muestra el motivo."]);
     v.cambiar("es-tipo", "negocio");
-    expect(v.lista()).toContain("Ninguna especificación coincide con sin test, tipo negocio. Hay 3 especificaciones en total.");
+    expect(v.lista()).toContain("Ninguna especificación coincide con los filtros: sin test, tipo negocio. Hay 3 especificaciones en total.");
+    // Un filtro cuyo nombre empieza con "con" no repite la palabra.
+    v.tocar({ "data-grupo": "rotas" });
+    expect(v.lista()).toContain("Ninguna especificación coincide con los filtros: con referencias rotas, tipo negocio.");
     v.tocar({ "data-acc": "limpiar" });
     v.cambiar("es-cerebro", "1");
     expect(v.textos()).toEqual(["No se vende lo que no hay."]);

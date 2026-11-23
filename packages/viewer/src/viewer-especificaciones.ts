@@ -192,7 +192,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     con.sort(function (a, b) { return nombre(a[0].id).toLowerCase() < nombre(b[0].id).toLowerCase() ? -1 : 1; });
     var vacias = soloCerebro ? fichas.filter(function (f) { return !specs(f).length; }) : [];
     if (!con.length && !vacias.length) {
-      return '<p class="aviso">Ninguna especificación coincide con ' + activos.map(esc).join(", ") + ". Hay " + plural(todas().length, "especificación", "especificaciones") + ' en total. <button type="button" class="boton" data-acc="limpiar">Quitar filtros</button></p>';
+      return '<p class="aviso">Ninguna especificación coincide con los filtros: ' + activos.map(esc).join(", ") + ". Hay " + plural(todas().length, "especificación", "especificaciones") + ' en total. <button type="button" class="boton" data-acc="limpiar">Quitar filtros</button></p>';
     }
     var n = 0; con.forEach(function (x) { n += x[1].length; });
     return (con.length ? '<div class="fd-cab"><p class="subtitulo">' + plural(n, "especificación", "especificaciones") + " en " + plural(con.length, "funcionalidad", "funcionalidades") + (activos.length ? " (" + activos.map(esc).join(", ") + ")" : "") + "</p>" +
