@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { compileDir, contextoDeFuentes, deriva, fidelidadDeArchivos, type Contrato, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
+import { compileDir, contextoDeFuentes, deriva, fidelidadDeArchivos, simbolosDelVisor, type CodigoVisor, type Contrato, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
 import { renderViewerCerebros, type CerebroVisor, type PorPaquetes } from "./cerebros.js";
 import { renderViewer, type DerivaVisor, type FidelidadVisor } from "./viewer.js";
 
@@ -15,8 +15,8 @@ export * from "./cerebros.js";
 export const RUTA_VIEWER = "_build/viewer.html";
 
 /** Salida extra de `compile`: el visor autocontenido. */
-export async function visor(s: Salidas, fidelidad?: FidelidadVisor, derivaDelBrain?: DerivaVisor): Promise<Record<string, string>> {
-  return { [RUTA_VIEWER]: renderViewer(s.graph, s.funcionalidades, fidelidad, derivaDelBrain) };
+export async function visor(s: Salidas, fidelidad?: FidelidadVisor, derivaDelBrain?: DerivaVisor, codigo?: CodigoVisor | null): Promise<Record<string, string>> {
+  return { [RUTA_VIEWER]: renderViewer(s.graph, s.funcionalidades, fidelidad, derivaDelBrain, codigo) };
 }
 
 const jsonDe = async (dir: string) => Promise.all((await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort().map((n) => readFile(join(dir, n), "utf8")));
@@ -27,7 +27,7 @@ export const compileDirConVisor = (raiz: string) =>
     const [archivos, extracciones, contratos] = await Promise.all([jsonDe(join(raiz, "_build/files")), jsonDe(join(raiz, "_build/extraction")), jsonDe(join(raiz, "_build/contracts"))]);
     if (!archivos.length) return visor(s);
     const ctx = contextoDeFuentes(s.graph, s.funcionalidades, archivos, extracciones, contratos.map((c) => JSON.parse(c) as Contrato));
-    return visor(s, fidelidadDeArchivos(ctx), deriva(ctx, { budget_tokens: null }) as unknown as DerivaVisor);
+    return visor(s, fidelidadDeArchivos(ctx), deriva(ctx, { budget_tokens: null }) as unknown as DerivaVisor, simbolosDelVisor(ctx));
   });
 
 /** Página del visor para varios cerebros. */

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { actualizarHeads, archivosDeDiff, simbolosTocados, buscarNodo, crearContexto, deriva, paridad, paridadEntre, riesgo, type Graph, type GraphEdge, type GraphNode, commitDe, compile, recorrerGrafo, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, cobertura, leerControles, type Contexto, type Contrato } from "../src/index.js";
+import { actualizarHeads, archivosDeDiff, simbolosTocados, buscarNodo, crearContexto, deriva, paridad, paridadEntre, riesgo, type Graph, type GraphEdge, type GraphNode, commitDe, compile, recorrerGrafo, simbolosDelVisor, ConsultaError, evaluar, leerPreguntas, contextoDeSalidas, funcionalidad, impactoDe, leerEntradas, pantalla, quienLlama, recorrido, tokens, cobertura, leerControles, type Contexto, type Contrato } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 
@@ -300,6 +300,24 @@ describe("consultas de código", () => {
     expect(r.funcionalidades).toEqual(["feat-checkout"]);
     expect(r.consumenEsosEndpoints).toEqual(["feat-carrito"]);
     expect(r.porHttp).toEqual([{ endpoint: "svc-bff:POST:/checkout", quien: "confirmarCheckout @ repo-tienda:apps/web/src/api/checkout.ts#L8" }]);
+  });
+
+  it("símbolos para el visor: cada uno con su tipo, quién lo llama y el endpoint que atiende; un useX de JS o TS es hook", () => {
+    const c = simbolosDelVisor(ctx)!;
+    const sims = c.archivos.flatMap(([a, xs]) => xs.map(([n, t]) => ({ id: `${a}#${n}`, t })));
+    const i = (id: string) => sims.findIndex((x) => x.id === id);
+    const pago = i("repo-tienda:apps/bff/src/clients/payments.ts#crearPago"), post = i("repo-tienda:apps/bff/src/routes/checkout.ts#postCheckout");
+    expect(c.llaman).toContainEqual([pago, post, 15]);
+    expect(c.atiende).toContainEqual([post, "svc-bff:POST:/checkout"]);
+    expect(simbolosDelVisor(sinIndice)).toBeNull();
+    const hooks = simbolosDelVisor(contextoDeSalidas(salidasCheckout, contratosCheckout, {
+      archivos: [JSON.stringify({ repo: "r", archivos: [
+        { ruta: "src/useCarrito.ts", simbolos: [{ nombre: "useCarrito", tipo: "funcion", linea: 1 }, { nombre: "user", tipo: "funcion", linea: 5 }] },
+        { ruta: "app/Use.php", simbolos: [{ nombre: "useCarrito", tipo: "funcion", linea: 1 }] },
+      ] })],
+      extracciones: [],
+    }))!;
+    expect(hooks.archivos.map(([a, xs]) => [a, xs.map((x) => x[1])])).toEqual([["r:app/Use.php", ["funcion"]], ["r:src/useCarrito.ts", ["hook", "funcion"]]]);
   });
 
   it("impacto de una tabla: funcionalidades por niveles con el porqué y qué métodos la tocan", () => {

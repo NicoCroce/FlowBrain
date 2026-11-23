@@ -1,4 +1,4 @@
-import { CIERRE_DEL_PLAN, COMO_RESOLVER, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type ArchivoSinAsociar, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { CIERRE_DEL_PLAN, COMO_RESOLVER, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type CodigoVisor, type ArchivoSinAsociar, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
 import { CONTRATOS_JS } from "./viewer-contratos.js";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
@@ -99,7 +99,7 @@ export function derivaDelVisor(d: DerivaVisor | undefined) {
 }
 
 /** Lo que el visor embebe de un brain. */
-export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor, deriva?: DerivaVisor) {
+export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor, deriva?: DerivaVisor, codigo?: CodigoVisor | null) {
   // Los archivos de test de alguna funcionalidad se dibujan como tipo propio (`test`), para prenderlos y apagarlos aparte.
   const tests = new Set(funcionalidades.flatMap((f) => (f.tests ?? []).map((t) => t.archivo)));
   return {
@@ -108,6 +108,9 @@ export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidel
     // Una entrada por cerebro; `null` si no hay índice de código (sin él no se sabe qué se llama).
     deriva: deriva ? [derivaDelVisor(deriva)!] : null,
     dependencias: dependenciasDelGrafo(graph, funcionalidades),
+    // Símbolos del índice de código (clases, métodos, funciones, hooks…) con quién los llama y los usa, para Impacto;
+    // `null` sin índice de código.
+    codigo: codigo ?? null,
     funcionalidades,
     // Pantallas del front con su envoltura y a dónde llevan; el recorrido de cada una viene en su funcionalidad.
     pantallas: graph.nodes.filter((n) => n.tipo === "pantalla").map((n) => ({ id: n.id, ...n.atributos })),
@@ -144,8 +147,8 @@ export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidel
 
 export type DatosVisor = ReturnType<typeof datosDelVisor>;
 
-export function renderViewer(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor, deriva?: DerivaVisor): string {
-  return paginaDelVisor(datosDelVisor(graph, funcionalidades, fidelidad, deriva));
+export function renderViewer(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor, deriva?: DerivaVisor, codigo?: CodigoVisor | null): string {
+  return paginaDelVisor(datosDelVisor(graph, funcionalidades, fidelidad, deriva, codigo));
 }
 
 /** La página autocontenida, a partir de los datos (de un brain, o de varios cerebros ya unidos). */
@@ -164,6 +167,7 @@ export function paginaDelVisor(datos: unknown): string {
   --borde: #1F2433; --borde2: #2A3142; --linea: #3A4256; --acento: #9DB4FF; --primario: #4F6BFF;
   --feat: #F5A524; --pantalla: #E879F9; --componente: #A3E635; --endpoint: #7DD3FC; --tabla: #4ADE80; --svc: #5B7CFF; --repo: #B794F6; --lib: #FDE68A; --ext: #F472B6; --queue: #FB7185;
   --db: #14B8A6; --team: #FCA5A5; --decision: #C4B5FD; --contrato: #64748B; --archivo: #94A3B8; --test: #2DD4BF; --dudoso: #F87171;
+  --clase: #F59E0B; --metodo: #38BDF8; --funcion: #818CF8; --hook: #22D3EE; --interfaz: #C084FC; --tipo: #A78BFA; --enum: #FB923C; --constante: #CBD5E1; --modelo: #34D399; --objeto: #FCD34D;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; background: var(--fondo); color: var(--text); font: 14px/1.5 var(--sans); }

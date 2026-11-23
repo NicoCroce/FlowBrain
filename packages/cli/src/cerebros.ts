@@ -1,6 +1,6 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, contextoDeFuentes, contratoDeEndpoint, deriva, derivaCruzadaDe, fidelidadDeArchivos, CompileError, crucesDelRegistro, usosEntreCerebros, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Contrato, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
+import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, contextoDeFuentes, contratoDeEndpoint, deriva, derivaCruzadaDe, fidelidadDeArchivos, simbolosDelVisor, CompileError, crucesDelRegistro, usosEntreCerebros, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Contrato, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
 import { draftDir } from "@flowbrain/indexer";
 import { escribirIndex, fusionar, IGNORAR, indexar, leerRepo, PARSERS, slug } from "@flowbrain/parsers";
 import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@flowbrain/viewer";
@@ -365,6 +365,7 @@ export async function htmlDelVisor(registro: Registro): Promise<string | null> {
     const cruzadas = new Set([...cruces.filter((k) => k.desde.cerebro === x.visible.nombre).map((k) => k.desde.evidencia), ...todos.internas.filter((k) => k.cerebro === x.visible.nombre).map((k) => k.evidencia)]);
     const ctx = contextos.get(x.visible.nombre)!;
     x.visible.fidelidad = fidelidadDeArchivos(ctx, { cruzadas });
+    x.visible.codigo = simbolosDelVisor(ctx);
     // Y su deriva, con la misma regla: lo que atiende o llama otro cerebro comunicado no es deriva.
     const vecinos = visibles.map((v) => v.nombre).filter((n) => n !== x.visible.nombre && registro.comunicados(x.visible.nombre, n));
     x.visible.deriva = deriva(ctx, { budget_tokens: null, ...(visibles.length > 1 ? { cruzadas: { ...derivaCruzadaDe(x.visible.nombre, todos, vecinos), contratoDe } } : {}) }) as unknown as NonNullable<CerebroVisor["deriva"]>;

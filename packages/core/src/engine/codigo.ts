@@ -1720,3 +1720,59 @@ export function llamadasPorResolver(ctx: Contexto, p: PorResolverParams = {}) {
     ...(declaradas.length ? { declaradas: { total: declaradas.length, enElIndice: declaradas.filter((d) => d.enElIndice).length, faltan: declaradas.filter((d) => !d.enElIndice).slice(0, 10).map((d) => `${d.desde} → ${d.hacia}`) } } : {}),
   };
 }
+
+// ------------------------------------------------------------------ símbolos para el visor
+
+/** Las funciones y constantes que empiezan con `use` y una mayúscula, en JavaScript o TypeScript: hooks (React, Vue). */
+const ES_HOOK = /^use[A-Z0-9]/;
+const JS_O_TS = /\.(?:[cm]?[jt]sx?|vue|svelte)$/;
+
+/**
+ * Los símbolos del índice de código en el formato corto que embebe el visor, para que Impacto muestre también clases,
+ * métodos, funciones, hooks, interfaces, tipos y constantes, con quién los llama y quién los usa: la misma información
+ * que `quien_llama`. `archivos`: `[archivo, [[nombre, tipo, línea], …]]`; el índice de un símbolo es su posición
+ * contando en ese orden. `llaman` y `usan`: `[destino, desde, línea]` (llamadas y referencias a tipos y constantes).
+ * `atiende`: `[símbolo, endpoint]`. Un hook es una función o constante `useX` de JavaScript o TypeScript.
+ * `null` sin índice de código.
+ */
+export function simbolosDelVisor(ctx: Contexto): CodigoVisor | null {
+  const ix = ctx.codigo;
+  if (!ix) return null;
+  const pos = new Map<string, number>();
+  const archivos: CodigoVisor["archivos"] = [];
+  let k = 0;
+  for (const [archivo, e] of [...ix.estructura.entries()].sort((a, b) => cmp(a[0], b[0]))) {
+    if (!e.simbolos.length) continue;
+    const hook = JS_O_TS.test(archivo);
+    archivos.push([archivo, e.simbolos.map((s) => {
+      pos.set(clave(archivo, s.nombre), k++);
+      return [s.nombre, hook && (s.tipo === "funcion" || s.tipo === "constante") && ES_HOOK.test(s.nombre) ? "hook" : s.tipo, s.linea] as [string, string, number];
+    })]);
+  }
+  const aristas = (m: Map<string, Array<{ clave: string; linea: number }>>) => {
+    const out: Array<[number, number, number]> = [];
+    for (const [destino, ls] of m) {
+      const d = pos.get(destino);
+      if (d === undefined) continue;
+      for (const l of ls) {
+        const o = pos.get(l.clave);
+        if (o !== undefined && o !== d) out.push([d, o, l.linea]);
+      }
+    }
+    return out.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+  };
+  const atiende: Array<[number, string]> = [];
+  for (const [s, eps] of ix.atiende) {
+    const i = pos.get(s);
+    if (i !== undefined) for (const ep of eps) atiende.push([i, ep]);
+  }
+  atiende.sort((a, b) => a[0] - b[0] || cmp(a[1], b[1]));
+  return { archivos, llaman: aristas(ix.llamadores), usan: aristas(ix.usan), atiende };
+}
+
+export interface CodigoVisor {
+  archivos: Array<[string, Array<[string, string, number]>]>;
+  llaman: Array<[number, number, number]>;
+  usan: Array<[number, number, number]>;
+  atiende: Array<[number, string]>;
+}

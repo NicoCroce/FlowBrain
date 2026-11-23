@@ -1,4 +1,4 @@
-import type { Cruce, DependenciaCruzada, Ficha, Graph, ResumenConexion, TrazasCruzadas, UsoCruzado } from "@flowbrain/core";
+import type { CodigoVisor, Cruce, DependenciaCruzada, Ficha, Graph, ResumenConexion, TrazasCruzadas, UsoCruzado } from "@flowbrain/core";
 import { datosDelVisor, paginaDelVisor, type DatosVisor, type DerivaVisor, type FidelidadVisor } from "./viewer.js";
 
 /**
@@ -16,6 +16,8 @@ export interface CerebroVisor {
   fidelidad?: FidelidadVisor;
   /** Su deriva, ya cruzada con los cerebros comunicados. */
   deriva?: DerivaVisor;
+  /** Sus símbolos de código (`simbolosDelVisor`); ausente sin índice de código. */
+  codigo?: CodigoVisor | null;
 }
 
 /** Reemplaza, a cualquier profundidad, los textos que son ids de nodos del cerebro por su versión con prefijo. */
@@ -39,7 +41,7 @@ export interface PorPaquetes {
 export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas: TrazasCruzadas = { pantallas: {}, backs: {} }, paquetes: PorPaquetes = { componentes: [], dependencias: [] }) {
   const partes = cerebros.map((c, i) => {
     const ids = new Set(c.graph.nodes.map((n) => n.id));
-    const d = conPrefijo(datosDelVisor(c.graph, c.funcionalidades, c.fidelidad, c.deriva), ids, (id) => `${c.nombre}/${id}`) as DatosVisor;
+    const d = conPrefijo(datosDelVisor(c.graph, c.funcionalidades, c.fidelidad, c.deriva, c.codigo), ids, (id) => `${c.nombre}/${id}`) as DatosVisor;
     return { ...d, nodes: d.nodes.map((n) => ({ ...n, c: i })) };
   });
   const svcDe = (ep: string) => ep.slice(0, ep.indexOf(":"));
@@ -109,6 +111,8 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
     deriva: partes.some((p) => p.deriva) ? partes.flatMap((p, i) => (p.deriva ?? []).map((d) => ({ ...d, c: i }))) : null,
     // Sin asociar de todos los cerebros, cada uno con el suyo (`c`); `null` si ninguno tiene índice de código.
     sinAsociar: partes.some((p) => p.sinAsociar) ? partes.flatMap((p, i) => (p.sinAsociar ?? []).map((a) => ({ ...a, c: i }))) : null,
+    // Los símbolos de todos los cerebros en una lista: los índices de cada uno se corren por los de los anteriores.
+    codigo: partes.some((p) => p.codigo) ? unirCodigo(partes.map((p) => p.codigo)) : null,
     conexiones,
     // Trazas de punta a punta que cruzan de un cerebro a otro; ya vienen con los ids prefijados.
     cruzado: trazas,
@@ -132,6 +136,21 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
     nodes: partes.flatMap((p) => p.nodes),
     tiposIniciales: partes[0]?.tiposIniciales ?? [],
   };
+}
+
+function unirCodigo(xs: Array<CodigoVisor | null>): CodigoVisor {
+  const out: CodigoVisor = { archivos: [], llaman: [], usan: [], atiende: [] };
+  let base = 0;
+  for (const x of xs) {
+    if (!x) continue;
+    const b = base;
+    out.archivos.push(...x.archivos);
+    out.llaman.push(...x.llaman.map(([d, o, l]) => [d + b, o + b, l] as [number, number, number]));
+    out.usan.push(...x.usan.map(([d, o, l]) => [d + b, o + b, l] as [number, number, number]));
+    out.atiende.push(...x.atiende.map(([s, e]) => [s + b, e] as [number, string]));
+    base += x.archivos.reduce((n, a) => n + a[1].length, 0);
+  }
+  return out;
 }
 
 export function renderViewerCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas?: TrazasCruzadas, paquetes?: PorPaquetes): string {

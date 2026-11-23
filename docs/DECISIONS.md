@@ -882,3 +882,17 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
      - En Especificaciones, tocar la barra «Sin test» deja 30 casos en 20 funcionalidades.
      - En Navegación, buscar «club» deja 34 pantallas y el foco sigue en el buscador.
      - En paridad, se compararon dos servicios.
+
+207. **2026-11-23 · Impacto muestra todas las piezas: todos los tipos del grafo y los símbolos de código.** Antes solo entraban los nodos con dependencias o una funcionalidad, así que no aparecían archivos, tests, contratos, repos, la mayoría de los componentes ni nada del código: hooks, métodos, clases, funciones.
+   - **Símbolos en el visor:** el motor arma `simbolosDelVisor(ctx)` con lo mismo que usa `quien_llama`: cada símbolo del índice con su tipo y su línea, quién lo llama, quién lo usa (tipos y constantes) y qué endpoint atiende. Van en formato corto (`codigo` en los datos del visor); con varios cerebros se juntan en una lista. Sin índice de código va `null`, y el panel «Por tipo de pieza» explica cómo verlos.
+   - **Hooks:** el parser no tiene tipo hook. El visor llama hook a una función o constante `useX` de un archivo JavaScript o TypeScript (React, Vue), en cualquier repo. En PHP, un `useX` sigue siendo función.
+   - **Impacto de un símbolo o de un archivo:**
+     - Sube por quién lo llama o lo usa, nivel por nivel; el de un archivo junta el de todos sus símbolos.
+     - Salta al grafo por dos puentes: el endpoint que atiende un símbolo alcanzado y la funcionalidad dueña de su archivo. Desde ahí sigue el impacto del grafo, así que un método de un service llega a las pantallas que llaman al endpoint, aunque estén en otro cerebro.
+     - «Depende de» baja por lo que llama y usa.
+     - Cada pieza dice dónde está (`repo:ruta#Ln`) y el porqué en cadena.
+   - **La ficha técnica de un archivo** lista sus símbolos, cada uno con su impacto.
+   - **Costo:** en Gloouds, 35.437 símbolos y 52.521 llamadas suman unos 3 MB a los 41 MB del visor de todos los cerebros. La portada pasa de 2.102 a 45.256 piezas, de 21 tipos.
+   - **Verificado:** con un test del motor (símbolos, llamadas, endpoint atendido, hook en TS y no en PHP) y en el visor de Gloouds.
+     - `useT`, el hook de i18n, alcanza 646 piezas: 475 directas, 28 hooks y 2 funcionalidades.
+     - `PremiosHiNomineesService.clubs`, un método del back, llega a `GET /api/premios-hi/clubs` y a 2 pantallas del front.
