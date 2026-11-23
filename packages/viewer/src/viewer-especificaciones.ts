@@ -42,6 +42,8 @@ export const ESPECIFICACIONES_JS = String.raw`
   } catch (e) { /* sin almacenamiento */ }
   // MSG: { k: clave del caso, texto, error }. EDITA: clave del caso que se está marcando. PEDIDO: { k, copiado }.
   var MSG = null, EDITA = null, BORRADOR = "", PEDIDO = null, ocupado = false, FOCO = null;
+  // MANUAL: clave de la regla ("<ficha>|<regla>") con el formulario "No necesita test" abierto; su motivo, en MOTIVO.
+  var MANUAL = null, MOTIVO = "";
 
   var plural = function (n, uno, varios) { return n.toLocaleString("es") + " " + (n === 1 ? uno : varios); };
   var elem = function (id) { return document.getElementById(id); };
@@ -54,10 +56,13 @@ export const ESPECIFICACIONES_JS = String.raw`
   var corto = function (ref, f) { var r = ruta(ref, f).replace(/#L\d+$/, ""); return r.slice(r.lastIndexOf("/") + 1); };
   var specs = function (f) { return f.especificaciones || []; };
   var totalCasos = function (f) { var n = 0; (f.tests || []).forEach(function (t) { n += t.casos.length; }); return n; };
+  // Sin test y sin que una persona haya decidido probarla a mano.
+  var sinVerificar = function (e) { return !e.tests.length && !e.manual; };
+  var clave = function (f, e) { return f.id + "|" + e.id; };
   var estadoDeReglas = function (es) {
     if (!es.length) return "sin_reglas";
     if (es.some(function (e) { return !e.archivos.length; })) return "sin_codigo";
-    if (es.some(function (e) { return !e.tests.length; })) return "sin_test";
+    if (es.some(sinVerificar)) return "sin_test";
     return "cumplido";
   };
 
@@ -119,7 +124,7 @@ export const ESPECIFICACIONES_JS = String.raw`
   var enCerebro = function (cerebros) { return cerebros.some(elegido); };
   var cerebrosDelCaso = function (C) { return C.patas.map(function (p) { return p.cerebro; }); };
   var enGrupo = function (C, g) { return g === "sintest" ? C.estado === "sin_test" || C.estado === "sin_codigo" : g === "problema" ? C.problemas.length > 0 : g === "cumplido" ? C.estado === "cumplido" : true; };
-  var sueltaEnGrupo = function (x, g) { return g === "sintest" ? !x.e.tests.length || !x.e.archivos.length : g === "cumplido" ? x.e.tests.length > 0 && x.e.archivos.length > 0 : g === "problema" ? false : true; };
+  var sueltaEnGrupo = function (x, g) { return g === "sintest" ? sinVerificar(x.e) || !x.e.archivos.length : g === "cumplido" ? !sinVerificar(x.e) && x.e.archivos.length > 0 : g === "problema" ? false : true; };
   var textoDeRegla = function (x) { return x.e.texto + " " + x.e.archivos.join(" ") + " " + x.e.tests.map(function (t) { return t.archivo + " " + (t.caso || ""); }).join(" "); };
   function busca(P, extra) {
     var q = S.q.trim().toLowerCase();
@@ -143,8 +148,24 @@ export const ESPECIFICACIONES_JS = String.raw`
 
   // ---------- Pedidos para el agente ----------
   var GUIA = "siguiendo la guía de flowbrain specs --guide (en Claude Code: /flowbrain-specs)";
+  var GUIA_TESTS = "siguiendo la guía de flowbrain specs --guide-tests (en Claude Code: /flowbrain-tests)";
+  // items: [[regla, ficha], …]. Las de negocio primero: son las que más cuesta que se rompan sin aviso.
+  function pedidoDeTests(items) {
+    var orden = items.slice().sort(function (a, b) { return (a[0].tipo === "negocio" ? 0 : 1) - (b[0].tipo === "negocio" ? 0 : 1); });
+    var out = ["Escribí " + (orden.length === 1 ? "el test que verifica esta regla" : "los tests que verifican estas " + orden.length + " reglas") + " de FlowBrain, " + GUIA_TESTS + ".",
+      "Usá la herramienta de tests que ya tiene cada repo. No cambies el código del producto: si un test muestra que el código no cumple la regla, no lo arregles; marcá el caso de uso como mal (problema) diciendo qué encontraste.", ""];
+    orden.forEach(function (it) {
+      var e = it[0], f = it[1], C = casoDeRegla(f, e);
+      out.push("- Cerebro " + cerebroDe(f.id) + ", " + local(f.id, f.id) + " (" + nombre(f.id) + ")" + (C ? ", caso " + C.id + " (" + C.nombre + ")" : "") + ", regla " + e.id + " [" + e.tipo + "]: " + e.texto +
+        (e.archivos.length ? " La cumple: " + e.archivos.map(function (a) { return local(a, f.id); }).join(", ") + "." : " No dice qué archivo la cumple: buscalo primero."));
+    });
+    out.push("", "Por cada test que pase, agregalo en tests: de su regla, en .flowbrain/<cerebro>/product/<funcionalidad>.md, y compilá ese cerebro. Al final decime qué tests escribiste, en qué archivos, y qué reglas no se cumplen.");
+    return out.join("\n");
+  }
+  function casoDeRegla(f, e) { var out = null; (f.casos || []).forEach(function (c) { if (c.especificaciones.indexOf(e.id) >= 0) out = c; }); return out; }
   function textoDelPedido(tipo, items) {
     var out;
+    if (tipo === "test") return pedidoDeTests(items);
     if (tipo === "corregir") {
       out = ["Corregí estos casos de uso de FlowBrain que marqué como mal, " + GUIA + ". Después de corregir cada uno, borrá su campo problema de la página.", ""];
       items.forEach(function (it) { porTexto(it[1].problemas).forEach(function (pr) { out.push("- " + it[0].id + " / " + it[1].id + " (" + it[1].nombre + "), " + (pr[1].length > 1 ? "cerebros " : "cerebro ") + pr[1].join(", ") + ": " + pr[0]); }); });
@@ -184,16 +205,27 @@ export const ESPECIFICACIONES_JS = String.raw`
 
   // ---------- Una regla (dentro de un caso o suelta) ----------
   function unaRegla(e, f, conCerebro) {
+    var k = clave(f, e);
     var cumple = e.archivos.length
       ? e.archivos.map(function (a) { return '<code title="' + esc(local(a, f.id)) + '">' + esc(corto(a, f.id)) + "</code>"; }).join(" ")
       : '<span class="es-mal">no dice qué archivo la cumple</span>';
     var verifica = e.tests.length
       ? e.tests.map(function (t) { return '<span title="' + esc(ruta(t.archivo, f.id) + (t.linea ? " L" + t.linea : "")) + '">' + esc(t.caso || "todo " + corto(t.archivo, f.id) + (t.casos !== undefined ? " (" + plural(t.casos, "caso", "casos") + ")" : "")) + "</span>"; }).join('<span class="es-sep"> · </span>')
-      : '<span class="es-mal">ningún test la verifica</span>';
+      : e.manual ? '<span class="es-manual">Se prueba a mano: ' + esc(e.manual) + "</span>" + (ED ? ' <button type="button" class="boton chico" data-acc="automatico" data-k="' + esc(k) + '"' + (ocupado ? " disabled" : "") + ">Pedirle un test</button>" : "")
+      : '<span class="es-mal">Ningún test la verifica: si alguien la rompe, nada avisa.</span>';
+    var acciones = !e.tests.length && !e.manual && MANUAL !== k
+      ? '<div class="fd-acc">' + botonPedido("test|" + k, "test", [[e, f]], "Pedir el test") + (ED ? '<button type="button" class="boton" data-acc="manual" data-k="' + esc(k) + '"' + (ocupado ? " disabled" : "") + ">No necesita test</button>" : "") + "</div>" + cajaDelPedido("test|" + k)
+      : "";
+    var form = MANUAL === k
+      ? '<div class="es-form"><label for="es-motivo">Por qué no necesita un test automático</label><input id="es-motivo" type="text" maxlength="300" placeholder="Se prueba a mano en el celular antes de cada versión" value="' + esc(MOTIVO) + '">' +
+        '<div class="fd-acc"><button type="button" class="boton fd-pri" data-acc="guardar-manual" data-k="' + esc(k) + '"' + (ocupado ? " disabled" : "") + '>Guardar</button><button type="button" class="boton" data-acc="cancelar-manual">Cancelar</button></div>' +
+        "<small>Deja de contar como sin test. Se guarda en la página de la funcionalidad de " + esc(cerebroDe(f.id)) + ".</small></div>"
+      : "";
+    var msg = MSG && MSG.k === k ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + "</p>" : "";
     var rotos = e.rotos.length ? '<p class="fd-msg error es-roto">El índice ya no encuentra ' + e.rotos.map(function (r) { return "<code>" + esc(local(r, f.id)) + "</code>"; }).join(", ") + ": se movió un archivo o cambió el nombre de un test. Pedile al agente que lo corrija.</p>" : "";
     return '<li class="es-regla"><p class="es-texto">' + esc(e.texto) + ' <span class="chip" title="' + esc(QUE_ES[e.tipo] || "") + '">' + esc(TIPO[e.tipo] || e.tipo) + "</span>" + (conCerebro ? ' <span class="chip">' + esc(cerebroDe(f.id)) + "</span>" : "") + "</p>" +
       '<div class="es-ref"><span class="lbl">Lo cumple</span><div>' + cumple + "</div></div>" +
-      '<div class="es-ref"><span class="lbl">Lo verifica</span><div>' + verifica + "</div></div>" + rotos + "</li>";
+      '<div class="es-ref"><span class="lbl">Lo verifica</span><div>' + verifica + "</div></div>" + rotos + acciones + form + msg + "</li>";
   }
 
   // ---------- Un caso de uso ----------
@@ -203,24 +235,28 @@ export const ESPECIFICACIONES_JS = String.raw`
     problemas.forEach(function (pr) { if (idx[pr.texto] === undefined) { idx[pr.texto] = out.length; out.push([pr.texto, []]); } out[idx[pr.texto]][1].push(pr.cerebro); });
     return out;
   }
-  function filaDeCerebro(p) {
+  function filaDeCerebro(p, C, faltanDelCaso) {
+    var pataK = "test|" + C.k + "|" + p.cerebro;
     var archivos = {}, tests = {}, sinTest = 0, sinCodigo = 0;
     p.reglas.forEach(function (e) {
       e.archivos.forEach(function (a) { archivos[a.replace(/#L\d+$/, "")] = true; });
       e.tests.forEach(function (t) { tests[t.archivo + "::" + (t.caso || "")] = true; });
-      if (!e.tests.length) sinTest++;
+      if (sinVerificar(e)) sinTest++;
       if (!e.archivos.length) sinCodigo++;
     });
     var a = Object.keys(archivos), nt = Object.keys(tests).length;
     var codigo = a.length ? a.slice(0, 4).map(function (x) { return '<code title="' + esc(local(x, p.f.id)) + '">' + esc(corto(x, p.f.id)) + "</code>"; }).join(" ") + (a.length > 4 ? " <small>y " + (a.length - 4) + " más</small>" : "") : '<span class="es-mal">sin código</span>';
     var test = !p.reglas.length ? '<span class="es-mal">sin reglas en este cerebro</span>'
       : sinTest ? '<span class="es-mal">✘ ' + (sinTest === p.reglas.length ? "sin test" : sinTest + " de " + p.reglas.length + " reglas sin test") + "</span>" + (nt ? " <small>(" + plural(nt, "test", "tests") + " en las otras)</small>" : "")
-      : '<span class="es-bien">✔ ' + plural(nt, "test", "tests") + "</span>";
-    return '<tr><th scope="row">' + esc(p.cerebro) + "</th><td>" + codigo + (sinCodigo && a.length ? ' <span class="es-mal">(' + sinCodigo + " sin archivo)</span>" : "") + "</td><td>" + test + "</td></tr>";
+      : '<span class="es-bien">✔ ' + (nt ? plural(nt, "test", "tests") : "se prueba a mano") + "</span>" + (nt && p.reglas.some(function (e) { return e.manual; }) ? " <small>(y a mano)</small>" : "");
+    var pedir = sinTest && sinTest < faltanDelCaso ? " " + botonPedido(pataK, "test", p.reglas.filter(sinVerificar).map(function (e) { return [e, p.f]; }), "Pedir " + (sinTest === 1 ? "el test" : "los " + sinTest)) : "";
+    return '<tr><th scope="row">' + esc(p.cerebro) + "</th><td>" + codigo + (sinCodigo && a.length ? ' <span class="es-mal">(' + sinCodigo + " sin archivo)</span>" : "") + "</td><td>" + test + pedir + "</td></tr>";
   }
   function unCaso(P, C) {
     var est = ESTADO[C.estado], reglas = [];
     C.patas.forEach(function (p) { p.reglas.forEach(function (e) { reglas.push([e, p.f]); }); });
+    var peso = function (e) { return (sinVerificar(e) ? 0 : 2) + (e.tipo === "negocio" ? 0 : 1); };
+    reglas.sort(function (a, b) { return peso(a[0]) - peso(b[0]); });
     var varios = C.patas.length > 1;
     var marca = C.problemas.length
       ? '<div class="es-problema"><b>Marcado como mal</b>' + porTexto(C.problemas).map(function (pr) { return "<p>«" + esc(pr[0]) + "»" + (C.todas.length > 1 && pr[1].length < C.todas.length ? " <small>(" + esc(pr[1].join(", ")) + ")</small>" : "") + "</p>"; }).join("") +
@@ -234,23 +270,28 @@ export const ESPECIFICACIONES_JS = String.raw`
       : "";
     var msg = MSG && MSG.k === C.k ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + "</p>" : "";
     var accion = ED && EDITA !== C.k ? '<button type="button" class="boton" data-acc="marcar" data-k="' + esc(C.k) + '"' + (ocupado ? " disabled" : "") + ">Esto está mal</button>" : "";
+    var faltan = [];
+    C.patas.forEach(function (p) { p.reglas.forEach(function (e) { if (sinVerificar(e)) faltan.push([e, p.f]); }); });
+    var pedirTodos = faltan.length ? botonPedido("test|" + C.k, "test", faltan, faltan.length === 1 ? "Pedir el test que falta" : "Pedir los " + faltan.length + " tests que faltan") : "";
+    var cajas = cajaDelPedido("test|" + C.k) + C.patas.map(function (p) { return cajaDelPedido("test|" + C.k + "|" + p.cerebro); }).join("");
     return '<li class="es-caso" id="es-caso-' + esc(C.k) + '"><div class="es-cabeza"><div><p class="es-nombre">' + esc(C.nombre) + "</p>" + (C.quien ? "<small>Quién: " + esc(C.quien) + "</small>" : "") + "</div>" +
-      '<div class="es-acciones"><span class="fd-es ' + est.cls + '" title="' + esc(est.que) + '">' + (C.estado === "cumplido" ? "✔ " : "✘ ") + est.txt + "</span>" + accion + "</div></div>" +
-      marca + form + msg +
+      '<div class="es-acciones"><span class="fd-es ' + est.cls + '" title="' + esc(est.que) + '">' + (C.estado === "cumplido" ? "✔ " : "✘ ") + est.txt + "</span>" + pedirTodos + accion + "</div></div>" +
+      marca + form + msg + cajas +
       (C.ocultas ? '<p class="es-ocultas"><small>' + plural(C.ocultas, "cerebro más", "cerebros más") + " fuera de los elegidos: " + esc(C.todas.filter(function (p) { return !elegido(p.cerebro); }).map(function (p) { return p.cerebro; }).join(", ")) + ".</small></p>" : "") +
-      '<table class="es-patas"><thead><tr><th scope="col">Cerebro</th><th scope="col">Lo cumple</th><th scope="col">Lo verifica</th></tr></thead><tbody>' + C.patas.map(filaDeCerebro).join("") + "</tbody></table>" +
+      '<table class="es-patas"><thead><tr><th scope="col">Cerebro</th><th scope="col">Lo cumple</th><th scope="col">Lo verifica</th></tr></thead><tbody>' + C.patas.map(function (p) { return filaDeCerebro(p, C, faltan.length); }).join("") + "</tbody></table>" +
       (reglas.length ? '<details class="tf es-reglas"><summary>' + plural(reglas.length, "regla", "reglas") + ": " + esc(reglas.slice(0, 3).map(function (r) { return r[0].texto.replace(/\.$/, ""); }).join(" · ")) + (reglas.length > 3 ? " …" : "") + "</summary>" +
         '<ul class="lista">' + reglas.map(function (r) { return unaRegla(r[0], r[1], varios); }).join("") + "</ul></details>" : "") + "</li>";
   }
 
   // ---------- Una funcionalidad del producto ----------
   // Lo de los cerebros elegidos: un caso que solo está en cerebros fuera de la elección no cuenta.
+  var faltanDeNegocio = function (C) { var n = 0; C.patas.forEach(function (p) { p.reglas.forEach(function (e) { if (sinVerificar(e) && e.tipo === "negocio") n++; }); }); return n; };
   var vivos = function (P) { return P.casos.filter(function (C) { return C.patas.length; }); };
   var sueltasVivas = function (P) { return P.sueltas.filter(function (x) { return elegido(cerebroDe(x.f.id)); }); };
   function pendientes(P) {
     var mal = 0, falta = 0, sueltasSinTest = 0;
     vivos(P).forEach(function (C) { if (C.problemas.length) mal++; if (C.estado !== "cumplido") falta++; });
-    sueltasVivas(P).forEach(function (x) { if (!x.e.tests.length) sueltasSinTest++; });
+    sueltasVivas(P).forEach(function (x) { if (sinVerificar(x.e)) sueltasSinTest++; });
     return [mal, falta, sueltasSinTest];
   }
   function unaFuncionalidad(P, casos, sueltas) {
@@ -331,7 +372,7 @@ export const ESPECIFICACIONES_JS = String.raw`
   function lista() {
     var activos = filtrosActivos(), sinFiltro = !S.grupo && !S.q.trim();
     var filas = visibles().map(function (P) {
-      return [P, P.casos.filter(function (C) { return casoCoincide(P, C); }).sort(function (a, b) { return (b.problemas.length ? 1 : 0) - (a.problemas.length ? 1 : 0) || PESO[a.estado] - PESO[b.estado]; }),
+      return [P, P.casos.filter(function (C) { return casoCoincide(P, C); }).sort(function (a, b) { return (b.problemas.length ? 1 : 0) - (a.problemas.length ? 1 : 0) || PESO[a.estado] - PESO[b.estado] || faltanDeNegocio(b) - faltanDeNegocio(a); }),
         P.sueltas.filter(function (x) { return sueltaCoincide(P, x); }).sort(function (a, b) { return (a.e.tests.length ? 1 : 0) - (b.e.tests.length ? 1 : 0); })];
     }).filter(function (x) { return x[1].length || x[2].length; });
     filas.sort(function (a, b) {
@@ -358,10 +399,30 @@ export const ESPECIFICACIONES_JS = String.raw`
     var n = todasSueltas().length, cs = todosLosCasos().length;
     if (n) {
       var conSueltas = visibles().filter(function (P) { return P.sueltas.length; });
-      out += '<div class="aviso es-agrupar"><p>' + (cs ? "Hay " : "Todavía no hay casos de uso: hay ") + plural(n, "regla escrita", "reglas escritas") + " que el agente no agrupó en casos de uso" + (cs ? "" : " (lo que alguien hace: «Votar al mejor jugador del partido»)") + ". Pedile que las agrupe; no cambia lo escrito, solo lo ordena.</p>" +
+      out += '<div class="aviso es-agrupar" id="es-agrupar"><p>' + (cs ? "Hay " : "Todavía no hay casos de uso: hay ") + plural(n, "regla escrita", "reglas escritas") + " que el agente no agrupó en casos de uso" + (cs ? "" : " (lo que alguien hace: «Votar al mejor jugador del partido»)") + ". Pedile que las agrupe; no cambia lo escrito, solo lo ordena.</p>" +
         botonPedido("agrupar|", "agrupar", conSueltas, "Copiar pedido para agrupar todas") + cajaDelPedido("agrupar|") + "</div>";
     }
     return out;
+  }
+  // ---------- Qué te toca hacer: cada pendiente con su cantidad y el botón que lo muestra ----------
+  function queHacer() {
+    var cs = todosLosCasos(), sueltas = todasSueltas().length, mal = 0, negocio = 0, producto = 0;
+    cs.forEach(function (x) {
+      if (x[1].problemas.length) mal++;
+      x[1].patas.forEach(function (p) { p.reglas.forEach(function (e) { if (sinVerificar(e)) { if (e.tipo === "negocio") negocio++; else producto++; } }); });
+    });
+    if (!cs.length && !sueltas) return "";
+    var paso = function (hecho, titulo, detalle, acc, k) {
+      return '<li class="' + (hecho ? "hecho" : "") + '"><div><b>' + (hecho ? "✔ " : (pasos.length + 1) + ". ") + titulo + "</b>" + (detalle ? "<small>" + detalle + "</small>" : "") + "</div>" +
+        (!hecho && acc ? '<button type="button" class="boton" data-acc="' + acc + '" data-k="' + esc(k || "") + '">Ver</button>' : "") + "</li>";
+    };
+    var pasos = [];
+    if (sueltas) pasos.push(paso(false, "Pedir que agrupe " + plural(sueltas, "regla suelta", "reglas sueltas") + " en casos de uso", "Están escritas pero no se sabe a qué acción pertenecen.", "ir-agrupar"));
+    pasos.push(paso(!mal, mal ? "Pasarle al agente " + plural(mal, "caso marcado", "casos marcados") + " como mal" : "Nada marcado como mal", mal ? "Lo corrige y saca la marca." : "", "grupo", "problema"));
+    pasos.push(paso(!negocio && !producto, negocio || producto ? "Pedir los tests que faltan" : "Cada regla tiene su test o se prueba a mano",
+      negocio || producto ? [negocio ? plural(negocio, "regla de negocio", "reglas de negocio") : "", producto ? plural(producto, "regla de pantalla", "reglas de pantalla") : ""].filter(Boolean).join(" y ") + " sin test." + (negocio && producto ? " Empezá por las de negocio: si se rompen, nadie se entera." : "") + " Las que se prueban a mano, marcalas con «No necesita test»." : "", "grupo", "sintest"));
+    pasos.push(paso(false, "Leer los casos de uso y marcar lo que está mal", "Si un nombre, una regla, un archivo o un test no es lo que hace el producto: «Esto está mal».", "grupo", ""));
+    return '<section class="es-hacer" aria-label="Qué te toca hacer"><h2>Qué te toca hacer</h2><ol>' + pasos.join("") + "</ol></section>";
   }
   function pintarLista() { var e = elem("es-lista"); if (e) e.innerHTML = lista(); }
   function pintarTodo() {
@@ -374,7 +435,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       ? '<p class="aviso">Todavía no hay casos de uso ni reglas escritas' + (SEL.length ? " en " + esc(SEL.join(", ")) : "") + ". Se guardan en la página de cada funcionalidad y las deduce el agente: copiá el pedido de abajo y pegáselo, o corré <code>/flowbrain-specs</code>.</p>"
       : "";
     PEDIDOS = {};
-    var cabeza = "<h1>Especificaciones</h1>" + COMO + aviso() + (CON_FICHAS.length > 1 ? selectorDeCerebros() : "") + cifras() + (hay ? grupos() : "") + (hay ? herramientas() : "") + nada;
+    var cabeza = "<h1>Especificaciones</h1>" + COMO + aviso() + (CON_FICHAS.length > 1 ? selectorDeCerebros() : "") + queHacer() + cifras() + (hay ? grupos() : "") + (hay ? herramientas() : "") + nada;
     raiz.innerHTML = cabeza + '<div id="es-lista">' + lista() + "</div>";
     if (FOCO) { var s = elem("es-" + FOCO); FOCO = null; if (s && s.scrollIntoView) s.scrollIntoView(); }
   }
@@ -411,6 +472,20 @@ export const ESPECIFICACIONES_JS = String.raw`
     });
   }
 
+  function buscarRegla(k) { var out = null; FICHAS.forEach(function (f) { specs(f).forEach(function (e) { if (clave(f, e) === k) out = [e, f]; }); }); return out; }
+  function ponerManual(k, motivo) {
+    var ef = buscarRegla(k);
+    if (!ef || ocupado || !ED) return;
+    var e = ef[0], f = ef[1];
+    ocupado = true; MSG = { k: k, texto: "Guardando…" }; pintarLista();
+    pedir({ tipo: "manual", cerebro: cerebroDe(f.id), funcionalidad: local(f.id, f.id), id: e.id, motivo: motivo || null }).then(function () {
+      if (motivo) e.manual = motivo; else delete e.manual;
+      ocupado = false; MANUAL = null; MOTIVO = "";
+      PRODUCTO = elegir(armar());
+      MSG = { k: k, texto: motivo ? "Queda como probada a mano: ya no cuenta como sin test." : "Vuelve a contar como sin test: pedí el test cuando quieras." };
+      pintarTodo();
+    }).catch(function (err) { ocupado = false; MSG = { k: k, texto: err.message, error: true }; pintarLista(); });
+  }
   function accion(b) {
     var acc = b.getAttribute("data-acc"), k = b.getAttribute("data-k");
     if (acc === "limpiar") { S = inicial(); refrescar(true); return; }
@@ -439,6 +514,15 @@ export const ESPECIFICACIONES_JS = String.raw`
       marcar(k, nota); return;
     }
     if (acc === "desmarcar") { marcar(k, ""); return; }
+    if (acc === "ir-agrupar") { var a = elem("es-agrupar"); if (a && a.scrollIntoView) a.scrollIntoView(); return; }
+    if (acc === "manual") { MANUAL = k; MOTIVO = ""; MSG = null; pintarLista(); var m = elem("es-motivo"); if (m && m.focus) m.focus(); return; }
+    if (acc === "cancelar-manual") { MANUAL = null; MOTIVO = ""; pintarLista(); return; }
+    if (acc === "guardar-manual") {
+      var motivo = (MOTIVO || "").trim();
+      if (!motivo) { MSG = { k: k, texto: "Escribí por qué se prueba a mano: es lo que va a leer quien venga después.", error: true }; pintarLista(); return; }
+      ponerManual(k, motivo); return;
+    }
+    if (acc === "automatico") { ponerManual(k, ""); return; }
     if (acc === "pedido") {
       if (PEDIDO && PEDIDO.k === k) { PEDIDO = null; pintarTodo(); return; }
       var p = PEDIDOS[k];
@@ -459,6 +543,7 @@ export const ESPECIFICACIONES_JS = String.raw`
   raiz.addEventListener("input", function (ev) {
     if (ev.target.id === "es-q") { S.q = ev.target.value; refrescar(false); }
     else if (ev.target.id === "es-nota") BORRADOR = ev.target.value;
+    else if (ev.target.id === "es-motivo") MOTIVO = ev.target.value;
   });
 
   window.brainEspecificaciones = {

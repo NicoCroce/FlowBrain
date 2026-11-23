@@ -88,6 +88,8 @@ export interface EspecificacionDeFicha {
   tests: Array<{ archivo: string; caso?: string; linea?: number; casos?: number }>;
   /** Referencias que el índice ya no encuentra (archivo movido, caso renombrado): hay que corregirlas en la página. */
   rotos: string[];
+  /** Por qué se prueba a mano y no necesita test (lo decidió una persona). */
+  manual?: string;
 }
 
 export interface PantallaFicha {
@@ -279,7 +281,7 @@ export function resolverEspecificaciones(especificaciones: Especificacion[], est
       if (c) tests.push({ archivo, caso: c.nombre, linea: c.linea });
       else rotos.push(t);
     }
-    return { id: e.id, texto: e.texto, tipo: e.tipo, estado: e.estado ?? "propuesta", archivos: [...(e.archivos ?? [])], tests, rotos };
+    return { id: e.id, texto: e.texto, tipo: e.tipo, estado: e.estado ?? "propuesta", archivos: [...(e.archivos ?? [])], tests, rotos, ...(e.manual ? { manual: e.manual } : {}) };
   });
 }
 

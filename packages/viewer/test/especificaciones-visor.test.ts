@@ -160,6 +160,55 @@ describe("pantalla Especificaciones", () => {
     expect(v.lista()).toContain("- feat-pagos / pagar (Pagar el carrito), cerebro back: falta el reintento");
   });
 
+  it("dice qué te toca hacer y arma el pedido de tests, de una regla, de un cerebro o del caso entero", () => {
+    const v = montar(datos());
+    const p = v.pagina();
+    expect(p).toContain("Qué te toca hacer");
+    expect(p).toContain("Pedir que agrupe 1 regla suelta en casos de uso");
+    expect(p).toContain("Pasarle al agente 1 caso marcado como mal");
+    // Cuenta las reglas de los casos (la suelta va en "agrupar"): "motivo", de negocio, no tiene test.
+    expect(p).toContain("Pedir los tests que faltan</b><small>1 regla de negocio sin test.");
+    v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
+    expect(v.lista()).toContain("Pedir el test que falta");
+    expect(v.lista()).toContain("Ningún test la verifica: si alguien la rompe, nada avisa.");
+    v.tocar({ "data-acc": "pedido", "data-k": "test|feat-pagos|pagar" });
+    const l = v.lista();
+    expect(l).toContain("Escribí el test que verifica esta regla de FlowBrain, siguiendo la guía de flowbrain specs --guide-tests (en Claude Code: /flowbrain-tests).");
+    expect(l).toContain("- Cerebro front, feat-pagos (Pagos), caso pagar (Pagar el carrito), regla motivo [negocio]: Si el pago falla se muestra el motivo. La cumple: repo-web:src/pagos/Error.tsx.");
+    expect(l).toContain("No cambies el código del producto");
+    // Sin servidor no se ofrece "No necesita test": no hay dónde guardarlo.
+    expect(l).not.toContain('data-acc="manual"');
+  });
+
+  it("con el servidor, No necesita test guarda el motivo, deja de contar y se puede deshacer", async () => {
+    const pedidos: Array<Record<string, unknown>> = [];
+    const fetch = (_url: string, init: { body: string }) => {
+      pedidos.push(JSON.parse(init.body) as Record<string, unknown>);
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ mensaje: "ok" }) });
+    };
+    const v = montar(datos(), { edicion: { token: "t", sinAplicar: [] }, fetch });
+    v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
+    v.tocar({ "data-acc": "manual", "data-k": "front/feat-pagos|motivo" });
+    expect(v.lista()).toContain('<input id="es-motivo"');
+    v.tocar({ "data-acc": "guardar-manual", "data-k": "front/feat-pagos|motivo" });
+    expect(v.lista()).toContain("Escribí por qué se prueba a mano");
+    expect(pedidos).toEqual([]);
+    v.escribir("se ve a mano en cada versión", "es-motivo");
+    v.tocar({ "data-acc": "guardar-manual", "data-k": "front/feat-pagos|motivo" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(pedidos).toEqual([{ tipo: "manual", cerebro: "front", funcionalidad: "feat-pagos", id: "motivo", motivo: "se ve a mano en cada versión" }]);
+    const l = v.lista();
+    expect(l).toContain("Se prueba a mano: se ve a mano en cada versión");
+    expect(l).toContain("Queda como probada a mano");
+    // "pagar" ya no tiene reglas sin verificar: queda cumplido.
+    expect(v.pagina()).toContain("✔ Cada regla tiene su test o se prueba a mano");
+    expect(l).toContain("✔ Cumplido");
+    v.tocar({ "data-acc": "automatico", "data-k": "front/feat-pagos|motivo" });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(pedidos[1]).toEqual({ tipo: "manual", cerebro: "front", funcionalidad: "feat-pagos", id: "motivo", motivo: null });
+    expect(v.lista()).toContain("Vuelve a contar como sin test");
+  });
+
   it("sin nada escrito o sin funcionalidades explica qué hacer", () => {
     const d = datos();
     const sin = montar({ ...d, funcionalidades: d.funcionalidades.map((f) => ({ ...f, especificaciones: [], casos: [] })) }).pagina();

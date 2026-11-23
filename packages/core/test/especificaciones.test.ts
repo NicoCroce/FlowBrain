@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { compile, estadoDeCaso, marcarProblemaDeCaso, CompileError, ConsultaError, crearContexto, crearIndiceCodigo, especificaciones, fichasDeFuncionalidades, formatError, funcionalidad, leerEntradas, type Entradas, type Graph, type GraphNode } from "../src/index.js";
+import { compile, estadoDeCaso, marcarProblemaDeCaso, marcarPruebaManual, CompileError, ConsultaError, crearContexto, crearIndiceCodigo, especificaciones, fichasDeFuncionalidades, formatError, funcionalidad, leerEntradas, type Entradas, type Graph, type GraphNode } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 let entradas: Entradas;
@@ -156,6 +156,8 @@ describe("casos de uso de una funcionalidad", () => {
     expect(estadoDeCaso([])).toBe("sin_reglas");
     expect(estadoDeCaso([r(["a"], [1]), r([], [1])])).toBe("sin_codigo");
     expect(estadoDeCaso([r(["a"], [1]), r(["b"], [])])).toBe("sin_test");
+    // Una regla que una persona decidió probar a mano cuenta como verificada.
+    expect(estadoDeCaso([r(["a"], [1]), { ...r(["b"], []), manual: "se prueba en el celular" }])).toBe("cumplido");
     expect(estadoDeCaso([r(["a"], [1])])).toBe("cumplido");
   });
 
@@ -203,5 +205,14 @@ describe("casos de uso de una funcionalidad", () => {
     const b = marcarProblemaDeCaso("feat-x.md", a.contenido, "pagar", null);
     expect(b.contenido).not.toContain("problema");
     expect(() => marcarProblemaDeCaso("feat-x.md", pagina, "otro", "x")).toThrow("no tiene un caso de uso con id otro");
+  });
+
+  it("No necesita test escribe manual en la especificación, y vacío lo saca", () => {
+    const pagina = ["---", "id: feat-x", "tipo: feat", "especificaciones:", "  - id: movil", "    texto: Abre la app.", "    tipo: producto", "    estado: propuesta", "---", "Cuerpo"].join("\n");
+    const a = marcarPruebaManual("feat-x.md", pagina, "movil", "se prueba en el celular");
+    expect(a.contenido).toContain('    manual: "se prueba en el celular"\n');
+    expect(marcarPruebaManual("feat-x.md", a.contenido, "movil", null).contenido).not.toContain("manual");
+    expect(() => marcarPruebaManual("feat-x.md", pagina, "movil", "x".repeat(301))).toThrow("no puede pasar de 300");
+    expect(() => marcarPruebaManual("feat-x.md", pagina, "otra", "x")).toThrow("no tiene una especificación con id otra");
   });
 });

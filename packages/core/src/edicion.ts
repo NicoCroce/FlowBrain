@@ -50,19 +50,32 @@ export function cambiarEstadoDeEspecificacion(archivo: string, contenido: string
  * o le saca la marca (`problema` nulo o vacío). El agente lee la marca, corrige el caso y la borra.
  */
 export function marcarProblemaDeCaso(archivo: string, contenido: string, id: string, problema: string | null): { contenido: string; cambio: boolean } {
-  const nota = (problema ?? "").replace(/\s+/g, " ").trim();
-  if (nota.length > 1000) throw new Error("el comentario no puede pasar de 1000 caracteres");
+  return ponerTexto(archivo, contenido, { lista: "casos", que: "un caso de uso", id, campo: "problema", valor: problema, max: 1000, nombre: "el comentario" });
+}
+
+/**
+ * Decide que una especificación se prueba a mano (`manual` con el motivo) o lo deshace (`null` o vacío). Una
+ * especificación con `manual` cuenta como verificada aunque no tenga test.
+ */
+export function marcarPruebaManual(archivo: string, contenido: string, id: string, motivo: string | null): { contenido: string; cambio: boolean } {
+  return ponerTexto(archivo, contenido, { lista: "especificaciones", que: "una especificación", id, campo: "manual", valor: motivo, max: 300, nombre: "el motivo" });
+}
+
+/** Pone (o borra, si viene vacío) un texto entre comillas en el elemento `id` de una lista del frontmatter, texto a texto. */
+function ponerTexto(archivo: string, contenido: string, o: { lista: string; que: string; id: string; campo: string; valor: string | null; max: number; nombre: string }): { contenido: string; cambio: boolean } {
+  const nota = (o.valor ?? "").replace(/\s+/g, " ").trim();
+  if (nota.length > o.max) throw new Error(`${o.nombre} no puede pasar de ${o.max} caracteres`);
   const p = parsePagina(archivo, contenido);
   const doc = parseDocument(p.frontmatter, { version: "1.2", schema: "core" });
-  const seq = doc.get("casos", true);
-  const item = isSeq(seq) ? seq.items.find((x) => isMap(x) && x.get("id") === id) : undefined;
-  if (!item || !isMap(item)) throw new Error(`la página ${archivo} no tiene un caso de uso con id ${id}`);
-  if ((item.get("problema") ?? "") === nota) return { contenido, cambio: false };
+  const seq = doc.get(o.lista, true);
+  const item = isSeq(seq) ? seq.items.find((x) => isMap(x) && x.get("id") === o.id) : undefined;
+  if (!item || !isMap(item)) throw new Error(`la página ${archivo} no tiene ${o.que} con id ${o.id}`);
+  if ((item.get(o.campo) ?? "") === nota) return { contenido, cambio: false };
   if (nota) {
     const v = doc.createNode(nota) as Scalar;
     v.type = Scalar.QUOTE_DOUBLE;
-    item.set("problema", v);
-  } else item.delete("problema");
+    item.set(o.campo, v);
+  } else item.delete(o.campo);
   const frontmatter = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
   return { contenido: `---\n${frontmatter.endsWith("\n") ? frontmatter : `${frontmatter}\n`}---\n${p.cuerpo}`, cambio: true };
 }

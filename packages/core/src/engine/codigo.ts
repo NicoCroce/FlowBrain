@@ -420,14 +420,16 @@ export interface EspecificacionesParams {
 
 /**
  * Estado de un caso de uso según sus especificaciones: `cumplido` si todas tienen un archivo que las cumple y algún
- * caso de test que las verifica; `sin_test` si alguna no tiene test; `sin_codigo` si alguna no declara archivo;
+ * caso de test que las verifica (o una persona decidió probarla a mano: `manual`); `sin_test` si alguna no tiene test; `sin_codigo` si alguna no declara archivo;
  * `sin_reglas` si el caso no tiene ninguna especificación.
  */
 export type EstadoDeCaso = "cumplido" | "sin_test" | "sin_codigo" | "sin_reglas";
-export function estadoDeCaso(es: Array<{ archivos: string[]; tests: unknown[] }>): EstadoDeCaso {
+/** Sin test que la verifique y sin que nadie haya decidido probarla a mano. */
+const sinVerificar = (e: { tests: unknown[]; manual?: string }) => !e.tests.length && !e.manual;
+export function estadoDeCaso(es: Array<{ archivos: string[]; tests: unknown[]; manual?: string }>): EstadoDeCaso {
   if (!es.length) return "sin_reglas";
   if (es.some((e) => !e.archivos.length)) return "sin_codigo";
-  if (es.some((e) => !e.tests.length)) return "sin_test";
+  if (es.some(sinVerificar)) return "sin_test";
   return "cumplido";
 }
 
@@ -462,7 +464,7 @@ function resumenDeEspecificaciones(f: Ficha) {
     ...(sinCaso.length ? { especificacionesSinCaso: sinCaso.length } : {}),
     total: es.length,
     confirmadas: es.filter((e) => e.estado === "confirmada").length,
-    sinTest: es.filter((e) => e.tests.length === 0).length,
+    sinTest: es.filter((e) => sinVerificar(e)).length,
     ...(es.some((e) => e.rotos.length) ? { conReferenciasRotas: es.filter((e) => e.rotos.length).length } : {}),
   };
 }
@@ -479,7 +481,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
   const ix = indice(ctx);
   if (p.estado && p.estado !== "propuesta" && p.estado !== "confirmada") throw new ConsultaError("parametro_invalido", `estado desconocido: ${p.estado}. Los que hay: propuesta, confirmada`);
   if (p.tipo && p.tipo !== "negocio" && p.tipo !== "producto") throw new ConsultaError("parametro_invalido", `tipo desconocido: ${p.tipo}. Los que hay: negocio, producto`);
-  const pasa = (e: NonNullable<Ficha["especificaciones"]>[number]) => (!p.estado || e.estado === p.estado) && (!p.tipo || e.tipo === p.tipo) && (!p.sin_test || e.tests.length === 0);
+  const pasa = (e: NonNullable<Ficha["especificaciones"]>[number]) => (!p.estado || e.estado === p.estado) && (!p.tipo || e.tipo === p.tipo) && (!p.sin_test || sinVerificar(e));
 
   if (!p.funcionalidad) {
     const fichas = [...ix.fichas.values()];
@@ -488,7 +490,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
         const es = (f.especificaciones ?? []).filter(pasa);
         const casos = (f.tests ?? []).reduce((n, t) => n + t.casos.length, 0);
         const cu = casosDeFicha(f);
-        return { id: f.id, nombre: nombre(ctx, f.id), casosDeUso: cu.casos.length, casosCumplidos: cu.casos.filter((c) => c.estado === "cumplido").length, ...(cu.casos.some((c) => c.problema) ? { casosConProblema: cu.casos.filter((c) => c.problema).length } : {}), especificacionesSinCaso: cu.sinCaso.length, especificaciones: es.length, confirmadas: es.filter((e) => e.estado === "confirmada").length, sinTest: es.filter((e) => e.tests.length === 0).length, casosDeTest: casos, casosSinEspecificacion: casosSinEspecificacion(f).length };
+        return { id: f.id, nombre: nombre(ctx, f.id), casosDeUso: cu.casos.length, casosCumplidos: cu.casos.filter((c) => c.estado === "cumplido").length, ...(cu.casos.some((c) => c.problema) ? { casosConProblema: cu.casos.filter((c) => c.problema).length } : {}), especificacionesSinCaso: cu.sinCaso.length, especificaciones: es.length, confirmadas: es.filter((e) => e.estado === "confirmada").length, sinTest: es.filter((e) => sinVerificar(e)).length, casosDeTest: casos, casosSinEspecificacion: casosSinEspecificacion(f).length };
       })
       .filter((x) => !p.con_problema || x.casosConProblema)
       .sort((a, b) => b.especificaciones - a.especificaciones || b.casosDeTest - a.casosDeTest || cmp(a.id, b.id));
@@ -505,7 +507,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
       total: todas.length,
       confirmadas: todas.filter((e) => e.estado === "confirmada").length,
       propuestas: todas.filter((e) => e.estado === "propuesta").length,
-      sinTest: todas.filter((e) => e.tests.length === 0).length,
+      sinTest: todas.filter((e) => sinVerificar(e)).length,
       conReferenciasRotas: todas.filter((e) => e.rotos.length).length,
       funcionalidadesSinEspecificaciones: fichas.filter((f) => !(f.especificaciones ?? []).length).length,
       funcionalidades: filas,
@@ -533,7 +535,8 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
     ...(casoDe.has(e.id) ? { caso: casoDe.get(e.id)! } : {}),
     archivos: e.archivos,
     tests: e.tests.map((t) => (t.caso ? `${t.archivo}::${t.caso}${t.linea ? ` (L${t.linea})` : ""}` : `${t.archivo} (${t.casos ?? "?"} casos)`)),
-    ...(e.tests.length === 0 ? { sinTest: true as const } : {}),
+    ...(sinVerificar(e) ? { sinTest: true as const } : {}),
+    ...(e.manual ? { manual: e.manual } : {}),
     ...(e.rotos.length ? { rotos: e.rotos } : {}),
   }));
   const res = {

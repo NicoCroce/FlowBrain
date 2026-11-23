@@ -201,6 +201,11 @@ export const EspecificacionSchema = z
     tests: z.array(z.string()).optional(),
     /** `propuesta` (la dedujo un modelo, por defecto) o `confirmada` (la revisó una persona). */
     estado: z.enum(ESTADOS_ESPECIFICACION).optional(),
+    /**
+     * Por qué no necesita un test automático: una persona decidió probarla a mano ("se ve en el celular"). Cuenta como
+     * verificada; la escribe la persona desde el visor y el agente no la toca.
+     */
+    manual: z.string().min(1).max(300, "manual: máximo 300 caracteres").optional(),
   })
   .strict();
 

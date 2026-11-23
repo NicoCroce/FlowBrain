@@ -1,6 +1,6 @@
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { agregarCodigoAPagina, agregarDeclaracion, cambiarEstadoDeEspecificacion, marcarProblemaDeCaso, ARCHIVO_LLAMADAS, cargarContexto, cmp, ConsultaError, dentroDe, type Cerebro, type Contexto, type Registro } from "@flowbrain/core";
+import { agregarCodigoAPagina, agregarDeclaracion, cambiarEstadoDeEspecificacion, marcarProblemaDeCaso, marcarPruebaManual, ARCHIVO_LLAMADAS, cargarContexto, cmp, ConsultaError, dentroDe, type Cerebro, type Contexto, type Registro } from "@flowbrain/core";
 import { compileDirConVisor } from "@flowbrain/viewer";
 
 /**
@@ -20,7 +20,9 @@ export type Edicion =
   /** Confirmar una especificación de una funcionalidad (o volverla a propuesta). */
   | { tipo: "especificacion"; cerebro: string; funcionalidad: string; id: string; estado: string }
   /** Marcar un caso de uso como mal, con lo que está mal (o sacarle la marca con `problema` vacío). */
-  | { tipo: "caso"; cerebro: string; funcionalidad: string; id: string; problema: string | null };
+  | { tipo: "caso"; cerebro: string; funcionalidad: string; id: string; problema: string | null }
+  /** Decidir que una especificación se prueba a mano, con el motivo (o volver a pedirle test con `motivo` vacío). */
+  | { tipo: "manual"; cerebro: string; funcionalidad: string; id: string; motivo: string | null };
 
 export interface ResultadoEdicion {
   /** Archivo escrito, relativo a la carpeta del registro. */
@@ -137,6 +139,30 @@ export async function editar(registro: Registro, ed: Edicion): Promise<Resultado
       cambio: r.cambio,
       faltaReindexar: false,
       mensaje: !r.cambio ? "No cambió nada: ya estaba así." : marca ? `Quedó marcado como mal en ${c.nombre}: el agente lo ve con /flowbrain-specs y lo corrige.` : `Se le sacó la marca en ${c.nombre}.`,
+    };
+  }
+
+  if (ed.tipo === "manual") {
+    const n = typeof ed.funcionalidad === "string" ? ctx.nodo.get(ed.funcionalidad) : undefined;
+    if (!n || n.tipo !== "feat" || !n.pagina || !/\.md$/.test(n.pagina)) throw new ConsultaError("nodo_inexistente", `no existe la funcionalidad (o no tiene página): ${String(ed.funcionalidad)}`);
+    if (typeof ed.id !== "string" || (ed.motivo !== null && typeof ed.motivo !== "string")) throw invalido("falta el id de la especificación, o el motivo no es texto");
+    const destino = await rutaDentro(c.raiz, n.pagina);
+    let r: { contenido: string; cambio: boolean };
+    try {
+      r = marcarPruebaManual(n.pagina, await readFile(destino, "utf8"), ed.id, ed.motivo);
+    } catch (err) {
+      throw new ConsultaError("nodo_inexistente", (err as Error).message);
+    }
+    if (r.cambio) {
+      await writeFile(destino, r.contenido, "utf8");
+      await compileDirConVisor(c.raiz);
+    }
+    const manual = !!(ed.motivo ?? "").trim();
+    return {
+      escrito: rel(destino),
+      cambio: r.cambio,
+      faltaReindexar: false,
+      mensaje: !r.cambio ? "No cambió nada: ya estaba así." : manual ? `Queda como probada a mano en ${c.nombre}: ya no cuenta como sin test.` : `Vuelve a contar como sin test en ${c.nombre}.`,
     };
   }
 

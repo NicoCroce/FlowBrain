@@ -194,6 +194,20 @@ describe("flowbrain viewer --serve", () => {
     expect(await readFile(ruta, "utf8")).not.toContain("problema");
   }, 60_000);
 
+  it("No necesita test guarda el motivo en la especificación y deja de contar como sin test", async () => {
+    const ruta = join(reg, "tienda/product/feat-pedidos.md");
+    const poner = (motivo: unknown) => pedir("POST", "/api/editar", { cuerpo: { cerebro: "tienda", tipo: "manual", funcionalidad: "feat-pedidos", id: "alta", motivo } });
+    const r = await poner("se prueba a mano");
+    expect(r.estado).toBe(200);
+    expect(r.json).toMatchObject({ cambio: true });
+    expect(await readFile(ruta, "utf8")).toContain('    manual: "se prueba a mano"\n');
+    const specs = (await ejecutar(["specs", "pedidos", "--root", join(reg, "tienda")], {}, dir)).stdout;
+    expect(specs).toContain('"manual": "se prueba a mano"');
+    expect((await poner(3)).estado).toBe(400);
+    expect((await poner(null)).json).toMatchObject({ cambio: true });
+    expect(await readFile(ruta, "utf8")).not.toContain("manual:");
+  }, 60_000);
+
   it("nunca escribe fuera de la carpeta del cerebro", async () => {
     const base = join(reg, "tienda");
     await expect(rutaDentro(base, "../flowbrain.yaml")).rejects.toThrow(/se sale/);
