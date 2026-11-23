@@ -32,12 +32,15 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; g
       html = v;
       const i = v.indexOf('<div id="fd-lista">');
       el("fd-lista").innerHTML = i < 0 ? "" : v.slice(i);
+      const g = v.indexOf('<div id="fd-graficos">');
+      el("fd-graficos").innerHTML = g < 0 ? "" : v.slice(g, i < 0 ? undefined : i);
     },
   });
   window.brainFidelidad!.mostrar();
   const boton = (attrs: Record<string, string>) => ({ closest: () => ({ getAttribute: (k: string) => attrs[k] ?? null, hasAttribute: (k: string) => k in attrs }) });
   return {
     pagina: () => raiz.innerHTML,
+    graficos: () => el("fd-graficos").innerHTML,
     lista: () => el("fd-lista").innerHTML,
     rutas: () => [...el("fd-lista").innerHTML.matchAll(/<div class="fd-ruta"><code>([^<]+)<\/code>/g)].map((m) => m[1]),
     cambiar: (id: string, value: string) => raiz.oyentes["change"]!({ target: { id, value } }),
@@ -113,17 +116,14 @@ describe("pantalla Fidelidad", () => {
     expect(v.rutas()).toEqual(["src/api.ts", "src/Servicio.php"]);
   });
 
-  it("los filtros finos y la estadística están plegados; abiertos, filtran por rango, cerebro, tipo, funcionalidad, signal y texto", () => {
+  it("los filtros y la estadística se ven siempre, y filtran por rango, cerebro, tipo, funcionalidad, signal y texto", () => {
     const v = montar(datos);
-    expect(v.pagina()).not.toContain('id="fd-lenguaje"');
-    expect(v.pagina()).not.toContain("Por cerebro");
-    v.tocar({ "data-acc": "mas-filtros" });
+    expect(v.pagina()).not.toContain('data-acc="mas-filtros"');
     expect(v.pagina()).toContain('id="fd-lenguaje"');
     expect(v.pagina()).toContain("Por cerebro");
     v.cambiar("fd-min", "40");
     v.cambiar("fd-max", "60");
     expect(v.rutas()).toEqual(["src/api.ts", "src/Servicio.php"]);
-    expect(v.pagina()).toContain("Filtros y estadística (1)");
     v.cambiar("fd-cerebro", "1");
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
     v.tocar({ "data-acc": "limpiar" });
@@ -148,8 +148,7 @@ describe("pantalla Fidelidad", () => {
 
   it("la estadística se calcula sobre el mismo conjunto que la lista; cada panel no aplica su propio filtro", () => {
     const v = montar(datos);
-    v.tocar({ "data-acc": "mas-filtros" });
-    const seccion = (titulo: string) => { const p = v.pagina(), i = p.indexOf("<h2>" + titulo); return p.slice(i, p.indexOf("</section>", i)); };
+    const seccion = (titulo: string) => { const p = v.graficos(), i = p.indexOf("<h2>" + titulo); return p.slice(i, p.indexOf("</section>", i)); };
     const barra = (sec: string, attr: string) => { const i = sec.indexOf(attr); return sec.slice(i, sec.indexOf("</button>", i)); };
     // Sin filtros: todos los archivos medidos.
     expect(seccion("Reparto por puntaje")).toContain("Sobre todos los archivos medidos · 4 archivos");
@@ -180,7 +179,7 @@ describe("pantalla Fidelidad", () => {
     expect(seccion("Qué se entendió")).toContain("Sobre puntaje de 40 a 59 · 1 archivo");
     // Un conjunto vacío lo dice y ofrece salir.
     v.escribir("no-existe");
-    v.tocar({ "data-acc": "mas-filtros" }); v.tocar({ "data-acc": "mas-filtros" });
+    // Buscar repinta la estadística junto con la lista.
     expect(seccion("Reparto por puntaje")).toContain("Ningún archivo medido coincide con los demás filtros");
   });
 
@@ -207,7 +206,6 @@ describe("pantalla Fidelidad", () => {
 
   it("un vacío dice por qué está vacío y ofrece salir", () => {
     const v = montar(datos);
-    v.tocar({ "data-acc": "mas-filtros" });
     v.cambiar("fd-cerebro", "1");
     v.cambiar("fd-lenguaje", "tsx");
     expect(v.rutas()).toEqual([]);

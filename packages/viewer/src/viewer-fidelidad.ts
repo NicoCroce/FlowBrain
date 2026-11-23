@@ -3,7 +3,7 @@
  * llevarlo a 100. Cada fila se explica sola: la cadena de trazabilidad (qué eslabón quedó unido, cuál se corta y cuál
  * no aplica), y por cada cosa que falta, qué pasa, qué hacer y quién lo resuelve. Lo que se resuelve con un dato que
  * una persona conoce se hace ahí mismo (si la página la sirve `flowbrain viewer --serve`); lo demás va a un plan en
- * texto para pegarle a un modelo. La estadística y los filtros finos quedan plegados. Un vacío siempre dice por qué.
+ * texto para pegarle a un modelo. La estadística y los filtros están siempre a la vista. Un vacío siempre dice por qué.
  * JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
 export const FIDELIDAD_JS = String.raw`
@@ -33,7 +33,7 @@ export const FIDELIDAD_JS = String.raw`
   var TRAMOS = [[0, 19], [20, 39], [40, 59], [60, 79], [80, 99], [100, 100]];
   var NINGUNA = "__ninguna";
   var PASO = 100;
-  var inicial = function () { return { grupo: "", min: 0, max: 100, cerebro: "", lenguaje: "", capa: "", feat: "", signal: "", q: "", orden: "asc", ver: PASO, mas: false }; };
+  var inicial = function () { return { grupo: "", min: 0, max: 100, cerebro: "", lenguaje: "", capa: "", feat: "", signal: "", q: "", orden: "asc", ver: PASO }; };
   var S = inicial();
   // El filtro sobrevive a una recarga (después de corregir algo la página se vuelve a pedir).
   var CLAVE = "flowbrain.fidelidad";
@@ -193,14 +193,13 @@ export const FIDELIDAD_JS = String.raw`
       campo("fd-signal", "Signal que falta", sel("fd-signal", "Cualquiera", ORDEN_SIGNAL.map(function (s) { return [s, SIGNAL[s]]; }), S.signal)) +
       "</div>";
   }
-  var cuantosFinos = function () { return (S.min > 0 || S.max < 100 ? 1 : 0) + (S.cerebro !== "" ? 1 : 0) + (S.lenguaje ? 1 : 0) + (S.capa ? 1 : 0) + (S.feat ? 1 : 0) + (S.signal ? 1 : 0); };
+  // Filtros y estadística siempre a la vista. La estadística va en su propio contenedor: al buscar se repinta con la
+  // lista, sin rehacer los filtros (así no se pierde el foco del buscador).
   function herramientas() {
-    var n = cuantosFinos();
     return '<div class="fd-herr">' +
       '<input id="fd-q" type="search" placeholder="Buscar por ruta o por lo que falta" aria-label="Buscar" autocomplete="off" value="' + esc(S.q) + '">' +
-      '<button type="button" class="boton' + (S.mas ? " on" : "") + '" data-acc="mas-filtros" aria-expanded="' + (S.mas ? "true" : "false") + '">Filtros y estadística' + (n ? " (" + n + ")" : "") + "</button>" +
       '<button type="button" class="boton' + (PL.abierto ? " on" : "") + '" data-acc="plan">Generar plan para el agente</button></div>' +
-      (S.mas ? filtros() + graficos() : "");
+      filtros() + '<div id="fd-graficos">' + graficos() + "</div>";
   }
 
   // ---------- Plan para el agente ----------
@@ -416,6 +415,7 @@ export const FIDELIDAD_JS = String.raw`
   var COMO = '<p class="subtitulo">Cuánto de cada archivo quedó unido en el grafo, de 0 a 100. Solo se mide donde hay algo que medir: el resto queda en Fidelidad incierta. En cada fila, la cadena muestra qué eslabón se entendió, dónde se corta y qué no aplica; debajo, qué falta y qué hacer.</p>' +
     '<p class="fd-leyenda"><span class="fd-es ok">Entendido</span><span class="fd-es no">Ahí se corta</span><span class="fd-es na">No aplica</span></p>';
   function pintarLista() { elem("fd-lista").innerHTML = lista(); }
+  function pintarGraficos() { var g = elem("fd-graficos"); if (g) g.innerHTML = graficos(); }
   function pintarTodo() {
     if (!F) {
       raiz.innerHTML = "<h1>Fidelidad</h1>" + '<p class="aviso">No hay índice de código, así que no hay archivos para medir. La fidelidad sale de lo que deja <code>flowbrain index</code> en <code>_build/files</code> y <code>_build/extraction</code>: corré <code>flowbrain index</code> sobre cada repo y después <code>flowbrain compile</code>.</p>';
@@ -429,15 +429,14 @@ export const FIDELIDAD_JS = String.raw`
     var sin = INC.length && S.grupo !== "incierta" ? '<p class="aviso">' + plural(INC.length, "archivo tiene fidelidad incierta", "archivos tienen fidelidad incierta") + ': no hay en ellos ninguna relación para medir, así que no llevan puntaje ni entran al promedio. <button type="button" class="boton" data-grupo="incierta">Verlos</button></p>' : "";
     raiz.innerHTML = "<h1>Fidelidad</h1>" + COMO + aviso(null) + cifras() + grupos() + herramientas() + '<div id="fd-lista">' + lista() + "</div>" + sin;
   }
-  function refrescar(todo) { S.ver = PASO; PL.copiado = false; guardar(); if (todo) pintarTodo(); else pintarLista(); }
+  function refrescar(todo) { S.ver = PASO; PL.copiado = false; guardar(); if (todo) pintarTodo(); else { pintarGraficos(); pintarLista(); } }
   var entero = function (v, def, min, max) { var n = parseInt(v, 10); return isNaN(n) ? def : Math.min(max, Math.max(min, n)); };
 
   raiz.addEventListener("click", function (ev) {
     var b = ev.target.closest ? ev.target.closest("button") : null;
     if (!b) return;
     var acc = b.getAttribute("data-acc"), x = b.getAttribute("data-a") ? porArchivo(b.getAttribute("data-a")) : abierto ? porArchivo(abierto.a) : null;
-    if (acc === "limpiar") { var mas = S.mas; S = inicial(); S.mas = mas; guardar(); pintarTodo(); return; }
-    if (acc === "mas-filtros") { S.mas = !S.mas; guardar(); pintarTodo(); return; }
+    if (acc === "limpiar") { S = inicial(); guardar(); pintarTodo(); return; }
     if (acc === "plan") { PL.abierto = !PL.abierto; PL.copiado = false; pintarTodo(); return; }
     if (acc === "copiar-plan") { copiar(valor("fd-pl-texto") || textoDelPlan(filtradas(), (function () { var q = {}; ORDEN_SIGNAL.forEach(function (s) { q[s] = PL.signals[s] !== false; }); return q; })(), PL.limite), function (ok) { PL.copiado = ok ? true : "no"; pintarLista(); }); return; }
     if (acc === "pedido") {
