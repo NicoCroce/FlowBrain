@@ -9,6 +9,7 @@ import { AGENTES, agentesConMcp, analizarCon, CONFIGS_MCP, conectarMcp, elegirAg
 import { ARCHIVO_VISOR } from "./cerebros.js";
 import { comandoBrain, VERSION } from "./init.js";
 import { asistente } from "./asistente.js";
+import { cerrarServidor, depsReales, prepararVisor, type ResultadoVisor } from "./visor-local.js";
 
 /**
  * `flowbrain` sin argumentos (o `flowbrain menu`): un menú en la terminal con lo que se puede hacer en el proyecto
@@ -56,6 +57,10 @@ export interface Entorno {
   limpiar(): void;
   /** Cómo leer el estado del proyecto (las pruebas lo fijan; por defecto, `contextoMenu`). */
   contexto?: (cwd: string) => Promise<ContextoMenu>;
+  /** Reusa, levanta o descarta el visor en localhost (por defecto, `prepararVisor` real). */
+  visorLocal?: (registro: string) => Promise<ResultadoVisor>;
+  /** Espera el Ctrl+C que corta el visor (por defecto, el SIGINT del proceso). */
+  esperarCorte?: () => Promise<void>;
 }
 
 export const PROMPT_ANALISIS = [
@@ -109,7 +114,7 @@ export function opciones(c: ContextoMenu): Opcion[] {
     },
   ];
   if (listo) out.push({ clave: "reindexar", titulo: "Reindexar", detalle: "vuelve a correr parsers y extractores y regenera el visor" });
-  if (c.visor) out.push({ clave: "visor", titulo: "Abrir el visor", detalle: "funcionalidades, pantallas, trazas, impacto y mapa 3D" });
+  if (c.visor) out.push({ clave: "visor", titulo: "Abrir el visor", detalle: "lo abre en localhost para ver y corregir: funcionalidades, pantallas, fidelidad, impacto y mapa 3D" });
   if (listo) out.push({ clave: "estado", titulo: "Ver estado", detalle: "repos al día, conteos y huecos conocidos de cada cerebro" });
   out.push(
     {
@@ -219,8 +224,7 @@ export async function accion(o: Opcion, c: ContextoMenu, e: Entorno): Promise<bo
       mostrar(await e.flowbrain(["brains", "apply"], c.proyecto));
       break;
     case "visor":
-      if (c.visor) await e.correr(process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open", [c.visor], c.proyecto);
-      e.escribir(`Visor: ${c.visor}\n`);
+      await abrirVisor(c, e);
       break;
     case "estado":
       mostrar(await e.flowbrain(["status"], c.proyecto));
@@ -233,6 +237,50 @@ export async function accion(o: Opcion, c: ContextoMenu, e: Entorno): Promise<bo
       break;
   }
   return true;
+}
+
+const abridor = () => (process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open");
+
+/** Ctrl+C mientras el visor corre: lo corta y vuelve al menú en vez de cerrar FlowBrain. */
+const esperarSigint = () => new Promise<void>((ok) => process.once("SIGINT", () => ok()));
+
+/**
+ * El visor servido en localhost (decisión 198): reusa el de este registro si ya corre, si no levanta uno y lo deja
+ * andando hasta Ctrl+C. Si no puede, abre el archivo estático y dice por qué.
+ */
+export async function abrirVisor(c: ContextoMenu, e: Entorno): Promise<void> {
+  const r: ResultadoVisor = c.registro
+    ? await (e.visorLocal ?? ((reg) => prepararVisor(reg, depsReales(reg))))(c.registro).catch((x: Error) => ({ modo: "estatico" as const, motivo: x.message }))
+    : { modo: "estatico", motivo: "el proyecto no tiene .flowbrain/" };
+  if (r.modo === "reusa") {
+    await e.correr(abridor(), [r.url], c.proyecto);
+    e.escribir(`Ya había un visor de FlowBrain corriendo para este proyecto: abrí ${r.url}\nNo levanté otro. Se corta con Ctrl+C en la terminal donde se abrió.\n`);
+    return;
+  }
+  if (r.modo === "nuevo") {
+    await e.correr(abridor(), [r.url], c.proyecto);
+    e.escribir(
+      [
+        `Visor con edición en ${r.url}`,
+        `Solo esta máquina puede abrirlo. Lo que se corrige ahí se escribe en ${c.registro}.`,
+        "Queda corriendo mientras lo uses: Ctrl+C lo corta y volvés al menú.",
+        "",
+      ].join("\n"),
+    );
+    await (e.esperarCorte ?? esperarSigint)();
+    await cerrarServidor(r.servidor);
+    e.escribir("\nVisor cerrado.\n");
+    return;
+  }
+  if (!c.visor) {
+    e.escribir(`No pude abrir el visor en localhost: ${r.motivo}.\nTampoco hay archivo estático (flowbrain.html): elegí Reindexar para generarlo.\n`);
+    return;
+  }
+  await e.correr(abridor(), [c.visor], c.proyecto);
+  e.escribir(
+    `No pude abrir el visor en localhost: ${r.motivo}.\nAbrí el archivo estático, que muestra lo mismo pero no guarda correcciones: ${c.visor}\n` +
+      "Para corregir desde la página: flowbrain viewer --serve --port <otro>\n",
+  );
 }
 
 /** Repo de FlowBrain cuando se corre desde el código (versión "dev"). */

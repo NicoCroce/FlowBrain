@@ -1,5 +1,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { resolve } from "node:path";
 import { ConsultaError, leerRegistro, type Registro } from "@flowbrain/core";
 import { aplicarCerebro, htmlDelVisor } from "./cerebros.js";
 import { detalleDeArchivo, editar, type Edicion } from "./edicion.js";
@@ -17,6 +19,15 @@ import { detalleDeArchivo, editar, type Edicion } from "./edicion.js";
  */
 
 export const PUERTO_VISOR = 4780;
+
+/** La ruta sin symlinks, para comparar el registro de dos servidores. */
+export function rutaReal(p: string): string {
+  try {
+    return realpathSync(resolve(p));
+  } catch {
+    return resolve(p);
+  }
+}
 const MAX_CUERPO = 64 * 1024;
 const MARCA_DATOS = '<script type="application/json" id="datos">';
 
@@ -54,6 +65,7 @@ async function cuerpoJson(req: IncomingMessage): Promise<Record<string, unknown>
 /** El servidor, sin escuchar todavía. `carpeta` es la del registro (`.flowbrain`). */
 export function crearServidorVisor(carpeta: string, opciones: { token?: string } = {}): ServidorVisor {
   const token = opciones.token ?? randomBytes(32).toString("hex");
+  const carpetaReal = rutaReal(carpeta);
   /** Cerebros con declaraciones en `calls.yaml` que todavía no entraron al índice. */
   const sinAplicar = new Set<string>();
   // Las escrituras van de a una: dos ediciones seguidas del mismo archivo no se pisan.
@@ -128,8 +140,11 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string }
         if (!propios().has(host)) throw new ErrorHttp(403, "este servidor solo atiende a 127.0.0.1");
         const origen = req.headers.origin;
         if (origen !== undefined && origen !== `http://${host}`) throw new ErrorHttp(403, "pedido de otro origen");
+        const url = new URL(req.url ?? "/", `http://${host}`);
+        // Sin token ni registro: el menú pregunta si en un puerto ya hay un visor de FlowBrain para su registro, y lo reusa.
+        if (req.method === "GET" && url.pathname === "/api/quien") return responder(200, "application/json", JSON.stringify({ flowbrain: true, registro: carpetaReal }));
         // El registro se lee en cada pedido: si alguien lo edita a mano, vale lo que hay en disco.
-        const r = await atender(req, new URL(req.url ?? "/", `http://${host}`), await leerRegistro(carpeta));
+        const r = await atender(req, url, await leerRegistro(carpeta));
         if (r.html !== undefined) responder(200, "text/html", r.html);
         else responder(200, "application/json", JSON.stringify(r.json));
       } catch (e) {
@@ -145,7 +160,7 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string }
 export function servirVisor(carpeta: string, puerto = PUERTO_VISOR): Promise<ServidorVisor> {
   const s = crearServidorVisor(carpeta);
   return new Promise((ok, mal) => {
-    s.server.once("error", (e: NodeJS.ErrnoException) => mal(e.code === "EADDRINUSE" ? new Error(`el puerto ${puerto} está en uso: probá con --port <otro>`) : e));
+    s.server.once("error", (e: NodeJS.ErrnoException) => mal(e.code === "EADDRINUSE" ? Object.assign(new Error(`el puerto ${puerto} está en uso: probá con --port <otro>`), { code: e.code }) : e));
     s.server.listen(puerto, "127.0.0.1", () => ok(s));
   });
 }
