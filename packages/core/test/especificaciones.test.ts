@@ -85,7 +85,7 @@ describe("especificaciones contra el índice", () => {
         { id: "tarjeta-vencida", texto: "No se puede pagar con una tarjeta vencida.", tipo: "negocio" as const, archivos: ["repo-a:src/pagos/cobrar.ts#L4"], tests: ["repo-a:src/pagos/cobrar.test.ts::rechaza una tarjeta vencida"], estado: "confirmada" as const },
         { id: "cobra-con-saldo", texto: "Con saldo, el pago se cobra.", tipo: "negocio" as const, tests: ["repo-a:src/pagos/cobrar.test.ts::con saldo › cobra"] },
         { id: "reembolsos", texto: "Se puede devolver un pago entero o una parte.", tipo: "producto" as const, tests: ["repo-a:src/pagos/reembolso.test.ts"] },
-        { id: "limite-diario", texto: "No se cobra más de un tope por día.", tipo: "negocio" as const, archivos: ["repo-a:src/pagos/limite.ts"], tests: ["repo-a:src/pagos/cobrar.test.ts::respeta el tope", "repo-sin-indice:tests/tope.test.ts::tope"] },
+        { id: "limite-diario", texto: "No se cobra más de un tope por día.", tipo: "negocio" as const, archivos: ["repo-a:src/pagos/limite.ts", "repo-a:config/limites.yaml#L3"], tests: ["repo-a:src/pagos/cobrar.test.ts::respeta el tope", "repo-sin-indice:tests/tope.test.ts::tope"] },
       ],
     },
     { id: "feat-envios", codigo: ["repo-a:src/envios"], cuerpo: "" },
@@ -100,7 +100,8 @@ describe("especificaciones contra el índice", () => {
       ["tarjeta-vencida", [{ archivo: "repo-a:src/pagos/cobrar.test.ts", caso: "Rechaza una tarjeta  vencida", linea: 3 }], []],
       ["cobra-con-saldo", [{ archivo: "repo-a:src/pagos/cobrar.test.ts", caso: "cobra", linea: 9 }], []],
       ["reembolsos", [{ archivo: "repo-a:src/pagos/reembolso.test.ts", casos: 2 }], []],
-      // El archivo y el caso que el índice no encuentra quedan rotos; el de un repo sin indexar no se puede saber.
+      // El archivo y el caso que el índice no encuentra quedan rotos; el de un repo sin indexar, o un .yaml que el
+      // índice de repo-a no lee, no se puede saber.
       ["limite-diario", [{ archivo: "repo-sin-indice:tests/tope.test.ts", caso: "tope" }], ["repo-a:src/pagos/limite.ts", "repo-a:src/pagos/cobrar.test.ts::respeta el tope"]],
     ]);
     expect(fichas.find((f) => f.id === "feat-envios")!.especificaciones).toEqual([]);

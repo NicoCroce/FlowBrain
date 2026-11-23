@@ -227,14 +227,24 @@ const llano = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 /**
  * Une cada especificación con el índice: el caso de test por su nombre (o `grupo › nombre`), no por su línea, que se
  * corre con cada cambio. Lo que no se encuentra queda en `rotos`; de un repo sin indexar no se puede saber, y no se marca.
+ * Tampoco de un archivo de un tipo que el índice de ese repo no lee (un `.yaml` de configuración en un repo PHP): que no
+ * esté no dice que se movió.
  */
 export function resolverEspecificaciones(especificaciones: Especificacion[], estructura: Map<string, EstructuraArchivo>): EspecificacionDeFicha[] {
-  const indexados = new Set([...estructura.keys()].map((k) => k.slice(0, k.indexOf(":"))));
+  const extension = (ruta: string) => /\.([^./]+)$/.exec(ruta)?.[1]?.toLowerCase() ?? "";
+  // Las extensiones que el índice lee en cada repo.
+  const leidas = new Map<string, Set<string>>();
+  for (const k of estructura.keys()) {
+    const repo = k.slice(0, k.indexOf(":"));
+    (leidas.get(repo) ?? leidas.set(repo, new Set()).get(repo)!).add(extension(k));
+  }
+  const indexados = new Set(leidas.keys());
   return especificaciones.map((e) => {
     const rotos: string[] = [];
     for (const a of e.archivos ?? []) {
       const k = a.replace(/#.*$/, "");
-      if (indexados.has(k.slice(0, k.indexOf(":"))) && !estructura.has(k)) rotos.push(a);
+      const repo = k.slice(0, k.indexOf(":"));
+      if (leidas.get(repo)?.has(extension(k)) && !estructura.has(k)) rotos.push(a);
     }
     const tests: EspecificacionDeFicha["tests"] = [];
     for (const t of e.tests ?? []) {
