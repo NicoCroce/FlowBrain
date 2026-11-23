@@ -1,0 +1,1 @@
+{ "name": "panel", "private": true, "devDependencies": { "nuxt": "3.12.0" } }

@@ -4,6 +4,7 @@ import ts from "typescript";
 import { cmp, normalizarRuta } from "@flowbrain/core";
 import { analizarUrl, type Parte } from "./url.js";
 import { libreriaPorAliasDe, libreriasPorAlias } from "./alias.js";
+import { carpetasDeRutas, endpointNuxt, layoutsDe, rutaDeArchivo, type CarpetaDeRutas, type RutaDeArchivo } from "./rutas-archivo.js";
 import {
   type RefSimbolo,
   extraccionVacia,
@@ -121,6 +122,12 @@ export function nombreSfc(archivo: string): string {
   const partes = archivo.split("/");
   let base = partes.pop()!.replace(EXT_SFC, "");
   if (/^(index|\+page|\+layout|\+error|page|layout)$/i.test(base)) base = (partes.pop() ?? "raiz").replace(/[[\]()+.]/g, "") + (base.replace("+", "").charAt(0).toUpperCase() + base.replace("+", "").slice(1));
+  // Un parámetro de ruta por archivo (`[id].vue`, `[...slug].vue`, `_id.vue` de Nuxt 2): la carpeta y el parámetro (`usuariosId`).
+  const param = /^(?:\[+(?:\.\.\.)?([^\]=]+)[^\]]*\]+|_([a-z]\w*))$/.exec(base);
+  if (param) {
+    const p = (param[1] ?? param[2])!;
+    base = (partes.pop() ?? "raiz").replace(/[[\]()+.]/g, "") + p.charAt(0).toUpperCase() + p.slice(1);
+  }
   return base.replace(/[^\w$]/g, "_");
 }
 /** `X.vue.ts` (como lo ve el compilador) → `X.vue` (el archivo del repo). */
@@ -1309,7 +1316,9 @@ function extraer(repo: RepoFuente): Extraccion {
     let config: ts.Expression | undefined;
     // Se sabe qué lleva: la config está escrita en la llamada (o no hay), no viene armada de otro lado.
     let directa = true;
-    if (ts.isIdentifier(c) && c.text === "fetch" && !resolver(c)?.declarations?.length) {
+    // `fetch` global, o el que el framework le pasa a la función (`load({ fetch })` de SvelteKit, loaders de Remix).
+    const fetchInyectado = (d: ts.Declaration | undefined) => !!d && (ts.isBindingElement(d) || ts.isParameter(d));
+    if (ts.isIdentifier(c) && c.text === "fetch" && (!resolver(c)?.declarations?.length || fetchInyectado(resolver(c)?.declarations?.[0]))) {
       url = call.arguments[0];
       let init = call.arguments[1];
       // `fetch(url, { method: "POST", body } as any)`: las opciones también vienen envueltas en un cast.
@@ -1523,6 +1532,35 @@ function extraer(repo: RepoFuente): Extraccion {
     if (!nuevas) break;
   }
 
+  // ---------- Rutas por archivo (Next, Nuxt, SvelteKit, Expo Router) ----------
+  // La ruta sale del camino del archivo: cada archivo de ruta es una pantalla, un layout o un endpoint (ver rutas-archivo.ts).
+  const carpetasRuta = carpetasDeRutas(repo);
+  const existe = new Set(repo.archivos);
+  const hay = (a: string) => existe.has(a);
+  const porArchivoRuta = new Map<string, { carpeta: CarpetaDeRutas | null; r: RutaDeArchivo }>();
+  for (const a of repo.archivos) {
+    for (const c of carpetasRuta) {
+      const r = rutaDeArchivo(c, a, hay);
+      if (r) porArchivoRuta.set(a, { carpeta: c, r });
+    }
+    if (carpetasRuta.some((c) => c.marco === "nuxt" && c.paquete === paqueteDe(repo, a))) {
+      const r = endpointNuxt(paqueteDe(repo, a), a);
+      if (r) porArchivoRuta.set(a, { carpeta: null, r });
+    }
+  }
+  const paquetesConRutas = new Set(carpetasRuta.map((c) => c.paquete));
+  /** El `export default` de un archivo de ruta sin nombre (`export default function () {}`, `defineEventHandler(…)`): su cuerpo. */
+  const defaultAnonimo = (st: ts.Statement): ts.Node | null => {
+    if (ts.isFunctionDeclaration(st) && !st.name && st.body && ts.getModifiers(st)?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)) return st.body;
+    if (!ts.isExportAssignment(st) || st.isExportEquals) return null;
+    let e: ts.Expression = st.expression;
+    while (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isSatisfiesExpression(e)) e = e.expression;
+    if (ts.isArrowFunction(e) || ts.isFunctionExpression(e)) return e.body;
+    // `defineEventHandler(async (event) => …)`, `memo(() => …)`: la función que se pasa.
+    if (ts.isCallExpression(e)) return e.arguments.map((a) => funcionLiteral(a)).find(Boolean)?.body ?? null;
+    return null;
+  };
+
   for (const sf of fuentes) {
     const archivo = rel(sf);
     const paquete = paqueteDe(repo, archivo);
@@ -1582,6 +1620,15 @@ function extraer(repo: RepoFuente): Extraccion {
       const forma = formaDe(st);
       if (forma && !(forma.nombre in formas)) formas[forma.nombre] = forma.forma;
     }
+    // Un archivo de ruta con un `export default` sin nombre: el símbolo `default`, con lo que hace su cuerpo.
+    if (porArchivoRuta.has(archivo) && !EXT_SFC.test(archivo)) {
+      for (const st of sf.statements) {
+        const cuerpo = defaultAnonimo(st);
+        if (!cuerpo) continue;
+        simbolos.push({ linea: linea(st), nombre: "default", tipo: "funcion", fin: finDe(st) });
+        invocacionesDe(cuerpo, "default", archivo, invoca, sinResolver);
+      }
+    }
     for (const st of sf.statements) for (const [n, desde] of partesDe(st)) referenciasDe(n, desde, archivo, referencias);
     // Un componente de un solo archivo es una función con el nombre del archivo, que abarca todo el archivo: tiene las
     // funciones de su `<script>` y hace lo que su código suelto hace (`onMounted(() => cargar())`). Así una pantalla
@@ -1626,11 +1673,25 @@ function extraer(repo: RepoFuente): Extraccion {
     out.archivos.push(arc);
     porRuta.set(archivo, arc);
 
-    // Next.js app router: app/**/route.ts con exports GET/POST/…
+    // Next.js app router: app/**/route.ts con exports GET/POST/…; igual SvelteKit `+server.ts` y Expo Router `x+api.ts`.
     const next = /(?:^|\/)app\/((?:[^/]+\/)*)route\.[cm]?[jt]sx?$/.exec(archivo.slice(paquete ? paquete.length + 1 : 0));
-    if (next) {
-      const segs = next[1]!.split("/").filter((s) => s && !/^\(.*\)$/.test(s) && !s.startsWith("@"));
-      const ruta = normalizarRuta("/" + segs.map((s) => s.replace(/^\[\[?(?:\.\.\.)?([^\]]+)\]?\]$/, "{$1}")).join("/"));
+    const api = porArchivoRuta.get(archivo)?.r;
+    if (api?.clase === "api" && (api.marco === "next-pages" || api.marco === "nuxt")) {
+      // Un handler por defecto (`export default function handler(req, res)`, `defineEventHandler`): el método lo fija el
+      // nombre del archivo (Nuxt `x.get.ts`) o lo comparan en el código (`req.method === "POST"`, `isMethod(event, "PUT")`).
+      // Sin ninguno atiende cualquier método: se registran GET y POST, los que usa un front.
+      const texto = sf.getFullText();
+      const vistos = new Set<string>();
+      for (const m of texto.matchAll(/\.method\s*[!=]==?\s*['"`](\w+)['"`]|\bisMethod\(\s*\w+\s*,\s*['"`](\w+)['"`]|\bcase\s+['"`](GET|POST|PUT|PATCH|DELETE)['"`]\s*:/gi)) vistos.add((m[1] ?? m[2] ?? m[3])!.toUpperCase());
+      const metodos = api.metodo ? [api.metodo] : vistos.size ? [...vistos].filter((x) => (METODOS_HTTP as readonly string[]).includes(x.toLowerCase())) : ["GET", "POST"];
+      const def = sf.statements.find((st) => ts.isExportAssignment(st) || (ts.isFunctionDeclaration(st) && !!ts.getModifiers(st)?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)));
+      const decl = def && ts.isExportAssignment(def) && ts.isIdentifier(def.expression) ? declDe(def.expression) : undefined;
+      const lin = decl && decl.getSourceFile() === sf ? linea(decl) : def ? linea(def) : 1;
+      for (const metodo of metodos) out.endpoints.push({ paquete, metodo, ruta: api.ruta, request: null, response: null, archivo, linea: lin });
+    }
+    if (next || (api?.clase === "api" && (api.marco === "sveltekit" || api.marco === "expo-router"))) {
+      const segs = next ? next[1]!.split("/").filter((s) => s && !/^\(.*\)$/.test(s) && !s.startsWith("@")) : [];
+      const ruta = next ? normalizarRuta("/" + segs.map((s) => s.replace(/^\[\[?(?:\.\.\.)?([^\]]+)\]?\]$/, "{$1}")).join("/")) : api!.ruta;
       for (const st of sf.statements) {
         const exportado = ts.canHaveModifiers(st) && ts.getModifiers(st)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
         if (!exportado) continue;
@@ -1652,7 +1713,7 @@ function extraer(repo: RepoFuente): Extraccion {
       if ((usaRouter || usaNavegacionNativa) && (/\.[cm]?[jt]sx?$/.test(archivo) || EXT_SFC.test(archivo))) {
         pantallas(n, archivo, paquete);
         navegaciones(n, archivo, paquete);
-      }
+      } else if (paquetesConRutas.has(paquete) && (/\.[cm]?[jt]sx?$/.test(archivo) || EXT_SFC.test(archivo))) navegaciones(n, archivo, paquete);
       if (ts.isCallExpression(n)) {
         ruta(n) || saliente(n) || prisma(n) || (usaKysely && kysely(n));
       }
@@ -1882,6 +1943,53 @@ function extraer(repo: RepoFuente): Extraccion {
     // Una clave que no es un texto (una variable, un símbolo) solo cuenta si se ve de los dos lados: sola, puede ser cualquier argumento.
     .filter((m) => (m.fuerte && m.clave.startsWith("s:")) || (publicadas.has(m.clave) && consumidas.has(m.clave)))
     .map((m) => ({ paquete: paqueteDe(repo, m.archivo), archivo: m.archivo, linea: m.linea, nombre: m.nombre, direccion: m.direccion }));
+  // Pantallas por archivo: su componente es el `export default` del archivo (o el archivo, si es `.vue`/`.svelte`), y la
+  // envuelven los layouts de su carpeta y de las de arriba.
+  const sfDe = new Map(fuentes.map((sf) => [rel(sf), sf]));
+  const componenteDeArchivo = (archivo: string): { ref: RefSimbolo; linea: number } | null => {
+    if (EXT_SFC.test(archivo)) return porRuta.has(archivo) ? { ref: { archivo, simbolo: nombreSfc(archivo) }, linea: 1 } : null;
+    const sf = sfDe.get(archivo);
+    const mod = sf && checker.getSymbolAtLocation(sf);
+    const exp = mod && checker.getExportsOfModule(mod).find((x) => x.name === "default");
+    const d = real(exp)?.declarations?.[0];
+    if (!sf || !d) return null;
+    if (porRuta.get(archivo)?.simbolos.some((x) => x.nombre === "default") && (ts.isExportAssignment(d) ? !ts.isIdentifier(d.expression) : ts.isFunctionDeclaration(d) && !d.name)) {
+      return { ref: { archivo, simbolo: "default" }, linea: linea(d) };
+    }
+    const dd = ts.isExportAssignment(d) && ts.isIdentifier(d.expression) ? declDe(d.expression) : d;
+    const ref = dd ? destinos(dd)[0] : undefined;
+    return ref ? { ref, linea: dd!.getSourceFile() === sf ? linea(dd!) : linea(d) } : null;
+  };
+  const yaDeclaradas = new Set(out.pantallas.map((p) => `${p.paquete}\u0000${p.ruta}`));
+  const layoutsPorCarpeta = new Map<CarpetaDeRutas, string[]>();
+  for (const [a, { carpeta, r }] of porArchivoRuta) if (carpeta && r.clase === "layout") layoutsPorCarpeta.set(carpeta, [...(layoutsPorCarpeta.get(carpeta) ?? []), a]);
+  const invocaSintetica = (archivo: string, desde: string, destino: string, simbolo: string) => {
+    const arc = porRuta.get(archivo), dest = porRuta.get(destino);
+    if (!arc || !dest?.simbolos.some((x) => x.nombre === simbolo)) return;
+    (arc.invoca ??= []).push({ desde, archivo: destino, simbolo, linea: dest.simbolos.find((x) => x.nombre === simbolo)!.linea });
+  };
+  for (const [archivo, { carpeta, r }] of porArchivoRuta) {
+    if (!carpeta || r.clase === "api") continue;
+    const comp = componenteDeArchivo(archivo);
+    // La carga de datos del lado del servidor es parte de la pantalla: SvelteKit `+page.ts`/`+page.server.ts` (`load`)
+    // y Next `pages/` (`getServerSideProps`, `getStaticProps`). Se ve como una llamada del componente.
+    if (comp && carpeta.marco === "sveltekit") {
+      const dir = archivo.slice(0, archivo.lastIndexOf("/") + 1) + (r.clase === "pantalla" ? "+page" : "+layout");
+      for (const ext of [".ts", ".js", ".server.ts", ".server.js"]) invocaSintetica(archivo, comp.ref.simbolo, dir + ext, "load");
+    }
+    if (comp && carpeta.marco === "next-pages") for (const f of ["getServerSideProps", "getStaticProps", "getInitialProps"]) invocaSintetica(archivo, comp.ref.simbolo, archivo, f);
+    if (r.clase !== "pantalla") continue;
+    const paquete = paqueteDe(repo, archivo);
+    if (yaDeclaradas.has(`${paquete}\u0000${r.ruta}`)) continue;
+    const envolturas = layoutsDe(carpeta, archivo, layoutsPorCarpeta.get(carpeta) ?? [], hay);
+    // Next `pages/_app` envuelve a todas las pantallas.
+    if (carpeta.marco === "next-pages") envolturas.unshift(...repo.archivos.filter((a) => a.startsWith(carpeta.dir + "/_app.")));
+    const envuelta = envolturas.map((l) => componenteDeArchivo(l)?.ref).filter((x): x is RefSimbolo => !!x);
+    for (const ruta of [r.ruta, ...(r.sinOpcionales && !yaDeclaradas.has(`${paquete}\u0000${r.sinOpcionales}`) ? [r.sinOpcionales] : [])]) {
+      out.pantallas.push({ paquete, ruta, archivo, linea: comp?.linea ?? 1, componente: comp?.ref ?? null, envuelta });
+    }
+  }
+
   for (const arc of porRuta.values()) arc.invoca?.sort((a, b) => cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo) || a.linea - b.linea || cmp(a.via ?? "", b.via ?? ""));
 
   out.tablas = out.tablas.filter((t) => !deSql.has(t) || !ctesRepo.has(t.modelo.toLowerCase()));

@@ -62,7 +62,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 37 | `riesgo` sigue tipos y constantes | Hecho (decisión 190) |
 | 38 | `deriva` compara campos | Hecho (decisión 191) |
 | 39 | Otros: Kubernetes, Helm, Terraform y serverless en `infra` | Hecho (decisión 192) |
-| 40 a 43 | Parsers genéricos: rutas por archivo, clientes HTTP, layout y contexto, cron y gRPC | Pendiente |
+| 40 | Pantallas por archivo: Next, Nuxt, SvelteKit y Expo Router | Hecho (decisión 193) |
+| 41 a 43 | Parsers genéricos: clientes HTTP, layout y contexto, cron y gRPC | Pendiente |
 
 ---
 
@@ -335,7 +336,7 @@ En el proyecto real estos huecos los cubren extractores; importan para un proyec
 
 ### Paso 40 · Pantallas por archivo
 
-Next (`pages/` y `app/`), Nuxt, SvelteKit y Expo Router.
+Next (`pages/` y `app/`), Nuxt, SvelteKit y Expo Router: una pantalla por archivo de ruta, con sus layouts, unida a su componente; las rutas de API por archivo son endpoints (decisión 193).
 
 ### Paso 41 · Más clientes HTTP
 
