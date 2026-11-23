@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tienda-api
+  namespace: tienda
+  labels:
+    app: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+        - name: api
+          image: registry.example.com/tienda/api:1.4.0
+          command: ["node", "dist/server.js"]
+          args: ["--clave", "argumento-secreto"]
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PUERTO
+              value: "3000"
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: tienda-secretos
+                  key: db-url
+          envFrom:
+            - configMapRef:
+                name: tienda-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: tienda
+spec:
+  type: ClusterIP
+  selector:
+    app: api
+  ports:
+    - port: 80
+      targetPort: 3000

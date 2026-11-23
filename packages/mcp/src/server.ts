@@ -107,7 +107,7 @@ export const INSTRUCCIONES = [
   "- Endpoints que nadie llama o llamadas que nadie atiende: deriva.",
   "- Qué falta migrar de un servicio a otro: paridad.",
   "- Por dónde viaja un dato entre servicios: trazar.",
-  "- Cómo se construye, despliega y configura un servicio (imagen, pipeline, variables de entorno, proxy): infra.",
+  "- Cómo se construye, despliega y configura un servicio (imagen, pipeline, variables de entorno, proxy, Kubernetes, Helm, Terraform, serverless): infra.",
   "- Vecinos de un nodo por tipo de relación: recorrer_grafo.",
   "- Qué tiene que cumplir una funcionalidad (requisitos de negocio y de producto), qué archivo lo cumple y qué test lo verifica: especificaciones.",
   "- Qué archivos no son de ninguna funcionalidad y a cuál conviene asociar cada uno: sin_asociar.",
@@ -292,9 +292,9 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "infra",
     {
       description:
-        "Infraestructura declarada en los repos: imagen de cada servicio (base, puertos, comando), servicios de compose y de qué dependen, pipelines de CI con sus pasos, variables de entorno que espera (solo nombres) y rutas del proxy. Cada dato con repo:ruta#Ln. Con `texto` responde dónde se usa una variable, un puerto o una imagen.",
+        "Infraestructura declarada en los repos: imagen de cada servicio (base, puertos, comando), servicios de compose y de qué dependen, pipelines de CI con sus pasos, variables de entorno que espera (solo nombres), rutas del proxy, manifiestos de Kubernetes (Deployment, Service, Ingress, ConfigMap y Secret con solo sus claves), charts de Helm (Chart.yaml, values y plantillas, sin renderizar), Terraform (recursos, módulos, variables y salidas) y funciones serverless (serverless.yml, SAM: handler, eventos http, programados y colas). Cada dato con repo:ruta#Ln. Una ruta de Ingress, un evento http o un route_key trae `endpoints` (los del servicio a los que llega); una función, `atiende` (la función del código del handler). Con `texto` responde dónde se usa una variable, un puerto o una imagen; con un endpoint como `nodo`, qué infraestructura llega a él.",
       inputSchema: {
-        nodo: z.string().min(1).optional().describe("id de un servicio, repo, base, cola o externo; sin nodo, todo el brain"),
+        nodo: z.string().min(1).optional().describe("id de un servicio, repo, base, cola, externo o endpoint; sin nodo, todo el brain"),
         texto: z.string().min(1).optional().describe("filtra: nombre de variable, puerto, imagen, paso (DATABASE_URL, 5432, deploy)"),
         ...presupuesto,
         ...deCerebro,

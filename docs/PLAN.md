@@ -61,7 +61,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 36 | Llamada interna del front y ruta comodín | Hecho (decisión 189) |
 | 37 | `riesgo` sigue tipos y constantes | Hecho (decisión 190) |
 | 38 | `deriva` compara campos | Hecho (decisión 191) |
-| 39 | Otros: Kubernetes, Helm, Terraform y serverless en `infra` | Pendiente |
+| 39 | Otros: Kubernetes, Helm, Terraform y serverless en `infra` | Hecho (decisión 192) |
 | 40 a 43 | Parsers genéricos: rutas por archivo, clientes HTTP, layout y contexto, cron y gRPC | Pendiente |
 
 ---
@@ -324,6 +324,8 @@ Hoy un cambio en un tipo o una constante sale como "fuera de funciones" (decisi�
 Lo que el front manda o espera contra el tipo que declara el back (decisión 132).
 
 ### Paso 39 · Kubernetes, Helm, Terraform y serverless en `infra`
+
+Manifiestos, charts (sin renderizar), `*.tf`, `serverless.yml` y SAM, unidos al servicio y a sus endpoints; un evento http de una función es un endpoint atendido por su handler (decisión 192).
 
 ---
 

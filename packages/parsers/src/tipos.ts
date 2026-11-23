@@ -108,6 +108,8 @@ export interface EndpointCrudo {
   query?: string | null;
   archivo: string;
   linea: number;
+  /** Quién lo leyó, si no es código (un evento http de serverless): decide la `fuente` del contrato. */
+  origen?: "infra-parser";
 }
 
 /** URL analizada estáticamente. `ruta` usa `{param}` para segmentos dinámicos. */
@@ -232,13 +234,24 @@ export interface InfraCruda {
   paquete: string;
   archivo: string;
   linea: number;
-  clase: "imagen" | "servicio" | "pipeline" | "variables" | "proxy";
-  /** Imagen base, servicio de compose, pipeline o job, archivo de variables, o ruta del proxy. */
+  clase: "imagen" | "servicio" | "pipeline" | "variables" | "proxy" | "kubernetes" | "helm" | "terraform" | "funcion";
+  /**
+   * Imagen base, servicio de compose, pipeline o job, archivo de variables, ruta del proxy, objeto de Kubernetes
+   * (`Deployment api`), chart de Helm, bloque de Terraform (`aws_lambda_function.api`) o función serverless.
+   */
   nombre: string;
   /** Datos en texto: puertos, comandos, pasos, nombres de variables (nunca valores). */
   detalle: string[];
   /** Servicios de compose de los que depende (`depends_on`), por su nombre en el archivo. */
   dependeDe?: string[];
+  /** Nombre con el que se busca el nodo dueño (servicio de compose o de Kubernetes, chart, recurso con `name`). */
+  servicio?: string;
+  /** Servicio al que deriva (backend de un Ingress): dueño de la pieza, y sus rutas se unen solo a sus endpoints. */
+  destino?: string;
+  /** Rutas HTTP que la pieza expone o deriva (Ingress, evento http, `route_key`): se unen a los endpoints del dueño. */
+  rutas?: Array<{ metodo?: string; ruta: string; prefijo: boolean }>;
+  /** Función del código que la atiende (handler serverless), si se encontró en el repo. */
+  handler?: { archivo: string; linea: number; nombre: string };
 }
 
 export type Forma = Record<string, string>;

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { type PaqueteDelRepo, ES_TEST, aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, type Contrato } from "@flowbrain/core";
+import { type PaqueteDelRepo, ES_TEST, aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, endpointId, type Contrato } from "@flowbrain/core";
 import { correrExtractores, RUTA_INFORME_EXTRACTORES, type InformeExtractor } from "./extractores.js";
 import { leerRepo, podarPaquetes } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
@@ -9,7 +9,7 @@ import { tsParser } from "./ts-parser.js";
 import { phpParser } from "./php-parser.js";
 import { esquemaParser } from "./esquema-parser.js";
 import { infraParser } from "./infra-parser.js";
-import type { CamposLlamada, Extraccion, Forma, LlamadaCruda, Parser, RepoFuente } from "./tipos.js";
+import type { CamposLlamada, Extraccion, Forma, InfraCruda, LlamadaCruda, Parser, RepoFuente } from "./tipos.js";
 import { paqueteDe } from "./tipos.js";
 import { libreriasPorAlias } from "./alias.js";
 import { casosDeTest, ES_CODIGO_DE_TEST } from "./casos-de-test.js";
@@ -53,7 +53,15 @@ export interface InfraDeNodo {
   evidencia: string;
   /** Nodos de los que depende, cuando los nombres de compose coinciden con páginas del brain. */
   dependeDe?: string[];
+  /** Endpoints del dueño a los que llega (ruta de Ingress, evento http, `route_key`), por id; hasta `MAX_ENDPOINTS_INFRA`. */
+  endpoints?: string[];
+  /** Cuántos endpoints alcanza en total, si son más de los listados. */
+  endpointsTotal?: number;
+  /** Función del código que la atiende (handler serverless): símbolo y evidencia. */
+  atiende?: { simbolo: string; evidencia: string };
 }
+
+const MAX_ENDPOINTS_INFRA = 40;
 
 export interface Pendiente {
   candidatos: Array<{ endpoint: string | null; hasta: string }>;
@@ -365,7 +373,7 @@ export async function indexar(
     }
     if (eps.length === 0 && eventos.size === 0) continue;
     eventosPorSvc.set(svc, [...eventos.values()].sort((a, b) => cmpTuple([a.nombre, a.direccion], [b.nombre, b.direccion])));
-    const fuente = x.autoritativo.includes(paquete) ? "openapi-parser" : eps.some((e) => e.archivo.endsWith(".php")) ? "php-parser" : "ts-parser";
+    const fuente = x.autoritativo.includes(paquete) ? "openapi-parser" : eps.length && eps.every((e) => e.origen === "infra-parser") ? "infra-parser" : eps.some((e) => e.archivo.endsWith(".php")) ? "php-parser" : "ts-parser";
     contratos.push({
       endpoints: eps
         .map((e) => ({ evidencia: ev(e.archivo, e.linea), metodo: e.metodo as Contrato["endpoints"][number]["metodo"], request: e.request, response: e.response, ruta: e.ruta, ...(e.query ? { query: e.query } : {}) }))
@@ -520,16 +528,49 @@ export async function indexar(
     const hits = destinosPorClave(normalizar(nombre), ["svc", "db", "queue", "ext"]);
     return hits.length === 1 ? hits[0]!.id : null;
   };
+  // Una ruta (de Ingress, de un evento http, un `route_key`) llega a los endpoints del dueño: exacta con método, o
+  // todos los que cuelgan del prefijo. Solo si el dueño es un servicio con contrato conocido.
+  const endpointsDeRutas = (de: string, rutas: NonNullable<InfraCruda["rutas"]>) => {
+    const eps = conocidos.get(de)?.endpoints ?? [];
+    const ids = new Set<string>();
+    for (const r of rutas) {
+      const pre = r.ruta.replace(/\/+$/, "");
+      for (const e of eps) {
+        if (r.metodo && e.metodo !== r.metodo) continue;
+        const ok = r.prefijo ? pre === "" || e.ruta === pre || e.ruta.startsWith(pre + "/") || rutasCoinciden(e.ruta.split("/").slice(0, pre.split("/").length).join("/"), pre) : rutasCoinciden(e.ruta, r.ruta);
+        if (ok) ids.add(endpointId(de, e.metodo, e.ruta));
+      }
+    }
+    return [...ids].sort(cmp);
+  };
+  const simboloEn = (archivo: string, linea: number) => x.archivos.find((a) => a.ruta === archivo)?.simbolos.find((s) => s.linea === linea || (s.linea <= linea && (s.fin ?? s.linea) >= linea && s.tipo !== "clase"))?.nombre;
   const infra: InfraDeNodo[] = [];
   for (const i of x.infra ?? []) {
-    const propio = i.clase === "servicio" ? nodoDeCompose(i.nombre) : null;
+    // Compose, Kubernetes, un chart o un recurso de Terraform con nombre: va al nodo que se llama así, si hay uno solo.
+    const nombre = i.destino ?? i.servicio ?? (i.clase === "servicio" ? i.nombre : undefined);
+    const propio = nombre !== undefined ? nodoDeCompose(nombre) : null;
+    // Una ruta que deriva a un servicio sin página no se une a los endpoints de otro.
+    const sinDestino = i.destino !== undefined && !propio;
     const dueños = propio ? [propio] : (svcsDe.get(i.paquete) ?? []).filter((s) => !esNuevo.has(s));
     const deps = [...new Set((i.dependeDe ?? []).flatMap((d) => nodoDeCompose(d) ?? []))].sort(cmp);
+    const atiende = i.handler ? { simbolo: simboloEn(i.handler.archivo, i.handler.linea) ?? i.handler.nombre, evidencia: ev(i.handler.archivo, i.handler.linea) } : null;
     for (const de of dueños.length && (propio || i.paquete !== "" || servicios.length === 1) ? dueños : [repoId]) {
-      infra.push({ de, clase: i.clase, nombre: i.nombre, detalle: i.detalle, evidencia: ev(i.archivo, i.linea), ...(propio && deps.length ? { dependeDe: deps.filter((d) => d !== de) } : {}) });
+      const eps = i.rutas?.length && !sinDestino ? endpointsDeRutas(de, i.rutas) : [];
+      infra.push({
+        de,
+        clase: i.clase,
+        nombre: i.nombre,
+        detalle: sinDestino ? [...i.detalle, `${i.destino} no tiene página en el brain: sus rutas no se unen a endpoints`] : i.detalle,
+        evidencia: ev(i.archivo, i.linea),
+        ...(propio && deps.length ? { dependeDe: deps.filter((d) => d !== de) } : {}),
+        ...(eps.length ? { endpoints: eps.slice(0, MAX_ENDPOINTS_INFRA), ...(eps.length > MAX_ENDPOINTS_INFRA ? { endpointsTotal: eps.length } : {}) } : {}),
+        ...(atiende ? { atiende } : {}),
+      });
     }
   }
-  infra.sort((a, b) => cmpTuple([a.de, a.evidencia, a.nombre], [b.de, b.evidencia, b.nombre]));
+  // Por dueño, archivo y línea (numérica: L9 antes que L15).
+  const lugar = (e: string) => [e.replace(/#L\d+$/, ""), (/#L(\d+)$/.exec(e)?.[1] ?? "0").padStart(9, "0")] as const;
+  infra.sort((a, b) => cmpTuple([a.de, ...lugar(a.evidencia), a.nombre], [b.de, ...lugar(b.evidencia), b.nombre]));
 
   // Lo que el código no dice con tipos y quedó resuelto en `calls.yaml`: se suma acá para que sobreviva a reindexar.
   if (declaradas) aplicarLlamadasDeclaradas(x.archivos, repoId, declaradas.llamadas);

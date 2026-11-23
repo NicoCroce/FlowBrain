@@ -1,0 +1,44 @@
+service: usuarios
+provider:
+  name: aws
+  runtime: nodejs20.x
+  environment:
+    TABLA_USUARIOS: usuarios-${sls:stage}
+    TOKEN_SECRETO: valor-de-serverless
+functions:
+  listar:
+    handler: src/handlers/usuarios.listar
+    events:
+      - http:
+          path: usuarios
+          method: get
+  obtener:
+    handler: src/handlers/usuarios.obtener
+    events:
+      - http: GET usuarios/{id}
+  crear:
+    handler: src/handlers/usuarios.crear
+    events:
+      - httpApi:
+          path: /usuarios
+          method: post
+  todo:
+    handler: src/handlers/usuarios.todo
+    events:
+      - httpApi: "*"
+  limpiar:
+    handler: src/tareas.limpiar
+    events:
+      - schedule: rate(1 day)
+  procesar:
+    handler: src/handlers/pedidos.procesar
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt: [ColaPedidos, Arn]
+resources:
+  Resources:
+    ColaPedidos:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: cola-pedidos

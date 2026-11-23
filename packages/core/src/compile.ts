@@ -285,7 +285,13 @@ export function compile(entradas: Entradas): Salidas {
       }
       checkEvidencia(it.evidencia, f.ruta, null, `infra[${i}]`);
       const previa = (n.atributos["infra"] as unknown[] | undefined) ?? [];
-      n.atributos = { ...n.atributos, infra: [...previa, { clase: it.clase, nombre: it.nombre, detalle: it.detalle, evidencia: it.evidencia }] };
+      if (it.atiende) checkEvidencia(it.atiende.evidencia, f.ruta, null, `infra[${i}].atiende`);
+      // Un endpoint que ya no existe (reindexado sin la ruta) no se arrastra.
+      const eps = (it.endpoints ?? []).filter((e) => nodos.get(e)?.tipo === "endpoint");
+      n.atributos = {
+        ...n.atributos,
+        infra: [...previa, { clase: it.clase, nombre: it.nombre, detalle: it.detalle, evidencia: it.evidencia, ...(eps.length ? { endpoints: eps } : {}), ...(it.endpointsTotal ? { endpointsTotal: it.endpointsTotal } : {}), ...(it.atiende ? { atiende: it.atiende } : {}) }],
+      };
       for (const d of it.dependeDe ?? []) {
         const h = nodos.get(d);
         if (h && verboAdmite("depende_de", n.tipo, h.tipo)) aristas.push(arista(it.de, "depende_de", d, "parser", { evidencia: it.evidencia }));

@@ -263,7 +263,7 @@ export const MAPA_JS =
     } else if (t === "svc") {
       var pe = at.puntos_de_entrada || [], infra = at.infra || [];
       if (pe.length) partes.push(seccion("Puntos de entrada", '<ul class="lista">' + pe.map(function (x) { return "<li>" + (typeof x === "string" ? ev(x) : esc(JSON.stringify(x))) + "</li>"; }).join("") + "</ul>"));
-      if (infra.length) partes.push(seccion("Infraestructura", '<ul class="lista">' + infra.map(function (x) { return "<li><b>" + esc(x.clase || "") + "</b> " + esc(x.nombre || "") + (x.detalle && x.detalle.length ? "<br><small>" + x.detalle.map(esc).join("<br>") + "</small>" : "") + "<br><small>" + ev(x.evidencia) + "</small></li>"; }).join("") + "</ul>"));
+      if (infra.length) partes.push(seccion("Infraestructura", '<ul class="lista">' + infra.map(function (x) { return "<li><b>" + esc(x.clase || "") + "</b> " + esc(x.nombre || "") + (x.detalle && x.detalle.length ? "<br><small>" + x.detalle.map(esc).join("<br>") + "</small>" : "") + (x.atiende ? "<br><small>atiende " + esc(x.atiende.simbolo) + " · " + ev(x.atiende.evidencia) + "</small>" : "") + (x.endpoints && x.endpoints.length ? "<br><small>llega a " + (x.endpointsTotal || x.endpoints.length) + " endpoints: " + x.endpoints.map(esc).join(", ") + (x.endpointsTotal ? "…" : "") + "</small>" : "") + "<br><small>" + ev(x.evidencia) + "</small></li>"; }).join("") + "</ul>"));
     } else {
       var claves = Object.keys(at);
       if (claves.length) partes.push(seccion("Datos", tablaKV(claves.map(function (k) { var v = at[k]; return fila(k, typeof v === "string" ? esc(v) : "<pre>" + esc(JSON.stringify(v, null, 2)) + "</pre>"); }))));

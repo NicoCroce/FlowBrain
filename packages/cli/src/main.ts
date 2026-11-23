@@ -133,7 +133,7 @@ Comandos:
                                             declarándolas en calls.yaml (raíz del brain) y reindexando
   drift [svc]                              llamadas que ningún endpoint atiende y endpoints que nadie llama; con varios
                                             cerebros cruza: lo que atiende o llama otro cerebro comunicado no es deriva
-  infra [nodo] [--text <t>]                imágenes, compose, pipelines, variables de entorno y proxy, con su archivo
+  infra [nodo] [--text <t>]                imágenes, compose, pipelines, variables, proxy, Kubernetes, Helm, Terraform y serverless
   eval [archivo] [--min pct]          corre preguntas con respuesta conocida (por defecto evals/questions.json)
                                             y da el porcentaje de aciertos; sale con 1 si queda debajo de --min
   context --prompt <texto> [--repo <dir>]   contexto para inyectar en un prompt (budget por defecto 1500)

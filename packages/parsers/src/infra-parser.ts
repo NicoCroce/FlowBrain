@@ -3,14 +3,16 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { cmp } from "@flowbrain/core";
 import { extraccionVacia, paqueteDe, type Extraccion, type InfraCruda, type Parser, type RepoFuente } from "./tipos.js";
+import { base, corto, esMapa, lineaClave, lineaDe, lista } from "./infra-comun.js";
+import { ES_NUBE, nube } from "./infra-nube.js";
 
 /**
  * Infraestructura declarada en el repo, sin depender del lenguaje del código: imágenes (Dockerfile), servicios de
  * compose, pipelines de CI (Bitbucket, GitHub Actions, GitLab), variables de entorno de ejemplo y rutas de proxy
  * (nginx). De los archivos de variables solo se leen los de ejemplo y solo los nombres: nunca un `.env` real ni un valor.
+ * Kubernetes, Helm, Terraform y serverless los lee `infra-nube`.
  */
 
-const base = (a: string) => a.slice(a.lastIndexOf("/") + 1);
 const ES_DOCKERFILE = (a: string) => /^Dockerfile(\..+)?$|\.dockerfile$/i.test(base(a));
 const ES_COMPOSE = (a: string) => /^(docker-)?compose(\.[\w-]+)?\.ya?ml$/i.test(base(a));
 const ES_ENV_EJEMPLO = (a: string) => /^\.?env[.-](example|sample|dist|template|defaults)$|^\.env\.[\w-]+\.(example|sample|dist|template)$|^(example|sample)\.env$/i.test(base(a));
@@ -21,18 +23,6 @@ const ES_PROXY = (a: string) => /\.conf(\.template)?$/i.test(base(a));
 const candidato = (a: string) => ES_DOCKERFILE(a) || ES_COMPOSE(a) || ES_ENV_EJEMPLO(a) || ES_BITBUCKET(a) || ES_GITHUB(a) || ES_GITLAB(a) || ES_PROXY(a);
 
 const MAX_DETALLE = 40;
-type Mapa = Record<string, unknown>;
-const esMapa = (v: unknown): v is Mapa => typeof v === "object" && v !== null && !Array.isArray(v);
-const lista = (v: unknown): unknown[] => (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v]);
-const corto = (s: string) => (s.length > 120 ? `${s.slice(0, 117)}…` : s).replace(/\s+/g, " ").trim();
-
-/** Línea (desde 1) de la primera aparición de un texto; 1 si no está. */
-const lineaDe = (texto: string, aguja: string | RegExp) => {
-  const i = typeof aguja === "string" ? texto.indexOf(aguja) : texto.search(aguja);
-  return i < 0 ? 1 : texto.slice(0, i).split("\n").length;
-};
-const escapar = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const lineaClave = (texto: string, clave: string) => lineaDe(texto, new RegExp(`^\\s*['"]?${escapar(clave)}['"]?\\s*:`, "m"));
 
 function dockerfile(texto: string): Array<Omit<InfraCruda, "paquete" | "archivo">> {
   const lineas = texto.replace(/\\\n/g, " ").split("\n");
@@ -168,7 +158,7 @@ function proxy(texto: string): Array<Omit<InfraCruda, "paquete" | "archivo">> {
 
 export const infraParser: Parser = {
   nombre: "infra-parser",
-  detect: (repo) => repo.archivos.some(candidato),
+  detect: (repo) => repo.archivos.some((a) => candidato(a) || ES_NUBE(a)),
   extract(repo: RepoFuente): Extraccion {
     const out = extraccionVacia("infra-parser");
     const infra: InfraCruda[] = [];
@@ -195,6 +185,11 @@ export const infraParser: Parser = {
       // Solo los pipelines se recortan (pueden tener cientos de comandos); las variables van todas, para poder buscarlas.
       for (const it of items) infra.push({ ...it, detalle: it.clase === "pipeline" ? it.detalle.slice(0, MAX_DETALLE) : it.detalle, paquete: paqueteDe(repo, archivo), archivo });
     }
+    // Kubernetes, Helm, Terraform y serverless: los eventos http de una función son endpoints; sus colas, eventos.
+    const n = nube(repo, candidato);
+    infra.push(...n.infra);
+    out.endpoints = n.endpoints;
+    if (n.eventos.length) out.eventos = n.eventos;
     out.infra = infra.sort((a, b) => cmp(a.archivo, b.archivo) || a.linea - b.linea || cmp(a.nombre, b.nombre));
     return out;
   },

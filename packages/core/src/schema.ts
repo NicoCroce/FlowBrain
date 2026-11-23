@@ -340,11 +340,16 @@ export const ArchivosSchema = z
         z
           .object({
             de: z.string().min(1),
-            clase: z.enum(["imagen", "servicio", "pipeline", "variables", "proxy"]),
+            clase: z.enum(["imagen", "servicio", "pipeline", "variables", "proxy", "kubernetes", "helm", "terraform", "funcion"]),
             nombre: z.string().min(1),
             detalle: z.array(z.string()),
             evidencia: z.string(),
             dependeDe: z.array(z.string()).optional(),
+            /** Endpoints del dueño a los que llega una ruta de Ingress, un evento http o un `route_key`. */
+            endpoints: z.array(z.string()).optional(),
+            endpointsTotal: z.number().int().positive().optional(),
+            /** Función del código que atiende una función serverless. */
+            atiende: z.object({ simbolo: z.string().min(1), evidencia: z.string() }).strict().optional(),
           })
           .strict(),
       )

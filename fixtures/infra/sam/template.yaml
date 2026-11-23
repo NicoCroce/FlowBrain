@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    CodeUri: src/
+    Environment:
+      Variables:
+        TABLA: !Ref Tabla
+Resources:
+  ListarFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.listar
+      Events:
+        Listar:
+          Type: Api
+          Properties:
+            Path: /pedidos
+            Method: get
+  CrearFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.crear
+      Environment:
+        Variables:
+          CLAVE_PAGOS: clave-de-sam
+      Events:
+        Crear:
+          Type: HttpApi
+          Properties:
+            Path: /pedidos
+            Method: POST
+  ConsumirFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.consumir
+      Events:
+        Cola:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ColaSam.Arn
+        Noche:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 3 * * ? *)
+  ColaSam:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: cola-sam
+  Tabla:
+    Type: AWS::DynamoDB::Table
