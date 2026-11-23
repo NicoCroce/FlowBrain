@@ -256,9 +256,9 @@ export const PRODUCTO_JS = String.raw`
       seccion("Qué consume (" + consume.length + ")", lista(consume)) +
       seccion("Qué expone (" + expone.length + ")", lista(expone)) +
       construida(f) +
-      "<section><h2>Especificaciones (" + (f.especificaciones || []).length + ")</h2>" + ((f.especificaciones || []).length
-        ? "<p>" + (f.especificaciones || []).filter(function (e) { return e.estado === "confirmada"; }).length + " confirmadas, " + (f.especificaciones || []).filter(function (e) { return !e.tests.length; }).length + ' sin test. <a href="#/especificaciones/' + esc(f.id) + '">Ver qué tiene que cumplir</a></p>'
-        : '<p class="aviso">Nadie escribió todavía qué tiene que cumplir esta funcionalidad. <a href="#/especificaciones">En Especificaciones</a> está el pedido para que el agente las deduzca del código y de los tests.</p>') + "</section>" +
+      "<section><h2>Casos de uso (" + (f.casos || []).length + ")</h2>" + ((f.especificaciones || []).length
+        ? "<p>" + ((f.casos || []).length ? (f.casos || []).map(function (c) { return esc(c.nombre); }).join(" · ") + ". " : "Todavía no están agrupadas en casos de uso: hay " + (f.especificaciones || []).length + " reglas escritas, " + (f.especificaciones || []).filter(function (e) { return !e.tests.length; }).length + " sin test. ") + '<a href="#/especificaciones/' + esc(f.id) + '">Ver si están cumplidos</a></p>'
+        : '<p class="aviso">Nadie escribió todavía qué se puede hacer con esta funcionalidad. <a href="#/especificaciones">En Especificaciones</a> está el pedido para que el agente lo deduzca del código y de los tests.</p>') + "</section>" +
       "<section><h2>Tests (" + (tests.length ? plural(totalCasos, "caso", "casos") + " en " + plural(tests.length, "archivo", "archivos") : "ninguno") + ")</h2>" + pruebas + "</section>" +
       "</div><div>" +
       seccion("Se relaciona con", relacion) +

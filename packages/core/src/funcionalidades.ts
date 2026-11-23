@@ -1,6 +1,6 @@
 import { cmp, cmpTuple } from "./canonical.js";
 import { MARCA_FIN, MARCA_INICIO } from "./render.js";
-import { dentroDe, TEST_REF, type Especificacion, type Graph } from "./schema.js";
+import { dentroDe, TEST_REF, type CasoDeUso, type Especificacion, type Graph } from "./schema.js";
 
 /**
  * Vista de producto de cada funcionalidad (`feat`), derivada de las rutas de su campo `codigo`:
@@ -63,6 +63,18 @@ export interface Ficha {
   tests: TestDeFicha[];
   /** Requisitos de negocio y de producto declarados en su página, con sus archivos y los casos que los verifican. */
   especificaciones: EspecificacionDeFicha[];
+  /** Casos de uso declarados en su página: qué puede hacer alguien con ella, con las especificaciones que lo componen. */
+  casos?: CasoDeFicha[];
+}
+
+export interface CasoDeFicha {
+  id: string;
+  nombre: string;
+  quien?: string;
+  /** ids de sus especificaciones (las que existen en la página). */
+  especificaciones: string[];
+  /** Lo que una persona marcó como mal: el agente lo corrige y lo borra. */
+  problema?: string;
 }
 
 export interface EspecificacionDeFicha {
@@ -220,6 +232,7 @@ export interface PaginaFeat {
   codigo: string[];
   cuerpo: string;
   especificaciones?: Especificacion[];
+  casos?: CasoDeUso[];
 }
 
 const llano = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
@@ -599,6 +612,7 @@ export function fichasDeFuncionalidades(
     return {
       tests,
       especificaciones: resolverEspecificaciones(f.especificaciones ?? [], estructura),
+      casos: (f.casos ?? []).map((c) => ({ id: c.id, nombre: c.nombre, ...(c.quien ? { quien: c.quien } : {}), especificaciones: [...(c.especificaciones ?? [])], ...(c.problema ? { problema: c.problema } : {}) })),
       recorridos,
       dominio: [],
       id: f.id,

@@ -147,6 +147,9 @@ export function compile(entradas: Entradas): Salidas {
     if (fm.especificaciones && fm.tipo !== "feat") {
       errores.push({ archivo: f.ruta, linea: L(["especificaciones"]), mensaje: "especificaciones solo aplica a feat" });
     }
+    if (fm.casos && fm.tipo !== "feat") {
+      errores.push({ archivo: f.ruta, linea: L(["casos"]), mensaje: "casos solo aplica a feat" });
+    }
     if (fm.puntos_de_entrada && (fm.vive_en?.length ?? 0) !== 1) {
       errores.push({
         archivo: f.ruta,
@@ -362,6 +365,18 @@ export function compile(entradas: Entradas): Salidas {
       ref("archivos", EVIDENCIA, '"repo-x:ruta/al/archivo" o con "#L12"');
       ref("tests", TEST_REF, '"repo-x:ruta/al/test" o "repo-x:ruta/al/test::nombre del caso"');
     });
+    // casos de uso: ids únicos, y cada especificación que nombran existe en la página y está en un solo caso.
+    const idsCaso = new Set<string>();
+    const enCaso = new Map<string, string>();
+    (fm.tipo === "feat" ? (fm.casos ?? []) : []).forEach((c, i) => {
+      if (idsCaso.has(c.id)) errores.push({ archivo: ruta, linea: L(["casos", i, "id"]), mensaje: `casos: id repetido: ${c.id}` });
+      idsCaso.add(c.id);
+      (c.especificaciones ?? []).forEach((e, j) => {
+        if (!idsEspec.has(e)) errores.push({ archivo: ruta, linea: L(["casos", i, "especificaciones", j]), mensaje: `casos.${c.id}: no hay una especificación con id ${e} en esta página` });
+        else if (enCaso.has(e) && enCaso.get(e) !== c.id) errores.push({ archivo: ruta, linea: L(["casos", i, "especificaciones", j]), mensaje: `casos.${c.id}: la especificación ${e} ya está en el caso ${enCaso.get(e)}` });
+        else enCaso.set(e, c.id);
+      });
+    });
 
     // codigo de una feat: cada servicio que vive en ese repo la implementa (o el repo, si no tiene servicios).
     (fm.tipo === "feat" || fm.tipo === "lib" ? (fm.codigo ?? []) : []).forEach((c, i) => {
@@ -441,7 +456,7 @@ export function compile(entradas: Entradas): Salidas {
   if (errores.length > 0) throw new CompileError(ordenarErrores(errores));
 
   // ---------- 5. Relaciones finas, dedupe y orden ----------
-  const featsPagina = paginas.filter((p) => p.fm.tipo === "feat").map((p) => ({ id: p.fm.id, codigo: p.fm.codigo ?? [], cuerpo: p.cuerpo, especificaciones: p.fm.especificaciones ?? [] }));
+  const featsPagina = paginas.filter((p) => p.fm.tipo === "feat").map((p) => ({ id: p.fm.id, codigo: p.fm.codigo ?? [], cuerpo: p.cuerpo, especificaciones: p.fm.especificaciones ?? [], casos: p.fm.casos ?? [] }));
   const extracciones = [...(entradas.extracciones ?? [])].sort(porRuta).map((f) => f.contenido);
   const accesos = aristasDeExtracciones(extracciones);
   const sinPagina = tablasSinPagina(extracciones);

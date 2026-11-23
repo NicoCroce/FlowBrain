@@ -413,7 +413,35 @@ export interface EspecificacionesParams {
   tipo?: string;
   /** Solo las que no tienen ningún caso de test que las verifique. */
   sin_test?: boolean;
+  /** Solo los casos de uso que una persona marcó como mal (`problema`). */
+  con_problema?: boolean;
   budget_tokens?: number | null;
+}
+
+/**
+ * Estado de un caso de uso según sus especificaciones: `cumplido` si todas tienen un archivo que las cumple y algún
+ * caso de test que las verifica; `sin_test` si alguna no tiene test; `sin_codigo` si alguna no declara archivo;
+ * `sin_reglas` si el caso no tiene ninguna especificación.
+ */
+export type EstadoDeCaso = "cumplido" | "sin_test" | "sin_codigo" | "sin_reglas";
+export function estadoDeCaso(es: Array<{ archivos: string[]; tests: unknown[] }>): EstadoDeCaso {
+  if (!es.length) return "sin_reglas";
+  if (es.some((e) => !e.archivos.length)) return "sin_codigo";
+  if (es.some((e) => !e.tests.length)) return "sin_test";
+  return "cumplido";
+}
+
+/** Casos de uso de una ficha con su estado, y las especificaciones que no están en ningún caso. */
+function casosDeFicha(f: Ficha) {
+  const es = f.especificaciones ?? [];
+  const porId = new Map(es.map((e) => [e.id, e]));
+  const usadas = new Set<string>();
+  const casos = (f.casos ?? []).map((c) => {
+    const suyas = c.especificaciones.map((id) => porId.get(id)).filter((e): e is NonNullable<typeof e> => !!e);
+    suyas.forEach((e) => usadas.add(e.id));
+    return { ...c, estado: estadoDeCaso(suyas), suyas };
+  });
+  return { casos, sinCaso: es.filter((e) => !usadas.has(e.id)) };
 }
 
 /** Casos de test de la funcionalidad que ninguna especificación nombra (ni por caso ni por archivo entero). */
@@ -426,7 +454,12 @@ function casosSinEspecificacion(f: Ficha) {
 
 function resumenDeEspecificaciones(f: Ficha) {
   const es = f.especificaciones ?? [];
+  const { casos, sinCaso } = casosDeFicha(f);
   return {
+    casosDeUso: casos.length,
+    casosCumplidos: casos.filter((c) => c.estado === "cumplido").length,
+    ...(casos.some((c) => c.problema) ? { casosConProblema: casos.filter((c) => c.problema).length } : {}),
+    ...(sinCaso.length ? { especificacionesSinCaso: sinCaso.length } : {}),
     total: es.length,
     confirmadas: es.filter((e) => e.estado === "confirmada").length,
     sinTest: es.filter((e) => e.tests.length === 0).length,
@@ -435,6 +468,8 @@ function resumenDeEspecificaciones(f: Ficha) {
 }
 
 const COMO_COMPLETAR = "Las especificaciones se escriben en `especificaciones` de la página de la funcionalidad (product/feat-*.md). La guía para deducirlas del código y de los tests: `flowbrain specs --guide`.";
+const COMO_AGRUPAR = "Hay especificaciones que no están en ningún caso de uso: agrupalas en `casos` de la página (nombre de lo que alguien hace, quién, y los ids de sus especificaciones). La guía: `flowbrain specs --guide`.";
+const COMO_CORREGIR = "Una persona marcó casos de uso como mal (`problema`): corregí el caso o sus especificaciones según lo que dice y borrá `problema` de la página.";
 
 /**
  * Requisitos de negocio y de producto de cada funcionalidad: qué tiene que cumplirse, qué archivos lo cumplen y qué
@@ -452,12 +487,21 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
       .map((f) => {
         const es = (f.especificaciones ?? []).filter(pasa);
         const casos = (f.tests ?? []).reduce((n, t) => n + t.casos.length, 0);
-        return { id: f.id, nombre: nombre(ctx, f.id), especificaciones: es.length, confirmadas: es.filter((e) => e.estado === "confirmada").length, sinTest: es.filter((e) => e.tests.length === 0).length, casosDeTest: casos, casosSinEspecificacion: casosSinEspecificacion(f).length };
+        const cu = casosDeFicha(f);
+        return { id: f.id, nombre: nombre(ctx, f.id), casosDeUso: cu.casos.length, casosCumplidos: cu.casos.filter((c) => c.estado === "cumplido").length, ...(cu.casos.some((c) => c.problema) ? { casosConProblema: cu.casos.filter((c) => c.problema).length } : {}), especificacionesSinCaso: cu.sinCaso.length, especificaciones: es.length, confirmadas: es.filter((e) => e.estado === "confirmada").length, sinTest: es.filter((e) => e.tests.length === 0).length, casosDeTest: casos, casosSinEspecificacion: casosSinEspecificacion(f).length };
       })
+      .filter((x) => !p.con_problema || x.casosConProblema)
       .sort((a, b) => b.especificaciones - a.especificaciones || b.casosDeTest - a.casosDeTest || cmp(a.id, b.id));
     const todas = fichas.flatMap((f) => (f.especificaciones ?? []).filter(pasa));
+    const todosCasos = fichas.flatMap((f) => casosDeFicha(f).casos);
+    const sinCaso = fichas.reduce((n, f) => n + casosDeFicha(f).sinCaso.length, 0);
     const res = {
       herramienta: "especificaciones",
+      casosDeUso: todosCasos.length,
+      casosCumplidos: todosCasos.filter((c) => c.estado === "cumplido").length,
+      casosSinTest: todosCasos.filter((c) => c.estado === "sin_test").length,
+      casosConProblema: todosCasos.filter((c) => c.problema).length,
+      especificacionesSinCaso: sinCaso,
       total: todas.length,
       confirmadas: todas.filter((e) => e.estado === "confirmada").length,
       propuestas: todas.filter((e) => e.estado === "propuesta").length,
@@ -465,18 +509,28 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
       conReferenciasRotas: todas.filter((e) => e.rotos.length).length,
       funcionalidadesSinEspecificaciones: fichas.filter((f) => !(f.especificaciones ?? []).length).length,
       funcionalidades: filas,
-      avisos: [...(fichas.length === 0 ? ["no hay funcionalidades: primero `flowbrain feature --guide`"] : []), ...(todas.length === 0 && fichas.length ? [COMO_COMPLETAR] : []), ...avisosIndice(ix)],
+      avisos: [
+        ...(fichas.length === 0 ? ["no hay funcionalidades: primero `flowbrain feature --guide`"] : []),
+        ...(todas.length === 0 && fichas.length ? [COMO_COMPLETAR] : []),
+        ...(sinCaso ? [COMO_AGRUPAR] : []),
+        ...(todosCasos.some((c) => c.problema) ? [COMO_CORREGIR] : []),
+        ...avisosIndice(ix),
+      ],
     };
     return ajustarLista(res, "funcionalidades", p.budget_tokens);
   }
 
   const f = resolverFeat(ctx, ix, p.funcionalidad);
   const sueltos = casosSinEspecificacion(f);
+  const cu = casosDeFicha(f);
+  const casoDe = new Map<string, string>();
+  cu.casos.forEach((c) => c.suyas.forEach((e) => casoDe.set(e.id, c.id)));
   const lista = (f.especificaciones ?? []).filter(pasa).map((e) => ({
     id: e.id,
     texto: e.texto,
     tipo: e.tipo,
     estado: e.estado,
+    ...(casoDe.has(e.id) ? { caso: casoDe.get(e.id)! } : {}),
     archivos: e.archivos,
     tests: e.tests.map((t) => (t.caso ? `${t.archivo}::${t.caso}${t.linea ? ` (L${t.linea})` : ""}` : `${t.archivo} (${t.casos ?? "?"} casos)`)),
     ...(e.tests.length === 0 ? { sinTest: true as const } : {}),
@@ -487,11 +541,18 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
     funcionalidad: f.id,
     nombre: nombre(ctx, f.id),
     ...resumenDeEspecificaciones(f),
+    // Qué puede hacer alguien con la funcionalidad. El mismo `id` en otro cerebro es el mismo caso, del otro lado.
+    casos: cu.casos
+      .filter((c) => !p.con_problema || c.problema)
+      .map((c) => ({ id: c.id, nombre: c.nombre, ...(c.quien ? { quien: c.quien } : {}), estado: c.estado, especificaciones: c.suyas.map((e) => e.id), ...(c.problema ? { problema: c.problema } : {}) })),
+    ...(cu.sinCaso.length ? { especificacionesSinCaso: cu.sinCaso.map((e) => e.id) } : {}),
     especificaciones: lista,
     // Casos de test que no verifican ninguna especificación declarada: o falta escribirla, o falta unirlos.
     casosSinEspecificacion: { total: sueltos.length, lista: sueltos.slice(0, 40).map((c) => `${c.archivo}::${c.caso} (L${c.linea})`) },
     avisos: [
       ...((f.especificaciones ?? []).length === 0 ? [COMO_COMPLETAR] : []),
+      ...(cu.sinCaso.length ? [COMO_AGRUPAR] : []),
+      ...(cu.casos.some((c) => c.problema) ? [COMO_CORREGIR] : []),
       ...((f.especificaciones ?? []).some((e) => e.rotos.length) ? ["hay referencias que el índice ya no encuentra (`rotos`): un archivo movido o un caso renombrado; corregilas en la página"] : []),
       ...avisosIndice(ix),
     ],

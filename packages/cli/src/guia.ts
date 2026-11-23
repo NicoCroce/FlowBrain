@@ -492,9 +492,10 @@ export const GUIA_ESPECIFICACIONES = `---
 description: Deduce las especificaciones de negocio y de producto de cada funcionalidad de FlowBrain
 ---
 
-Vas a escribir las especificaciones de las funcionalidades de este proyecto en FlowBrain: cada requisito que tiene que
-cumplirse para que el caso de uso pase, dicho como lo diría alguien de negocio o de producto, con el archivo que lo
-cumple y el caso de test que lo verifica. Quedan como propuestas: las confirma una persona.
+Vas a escribir los casos de uso y las especificaciones de las funcionalidades de este proyecto en FlowBrain. Un caso de
+uso es algo que alguien puede hacer con el producto ("Votar al mejor jugador del partido"); cada especificación es un
+requisito que tiene que cumplirse para que ese caso pase, dicho como lo diría alguien de negocio o de producto, con el
+archivo que lo cumple y el caso de test que lo verifica. Una persona los lee en el visor y marca lo que está mal.
 
 $ARGUMENTS
 
@@ -509,6 +510,13 @@ $ARGUMENTS
   en el texto: eso va en \`archivos\`.
 - **Una regla por especificación.** Si un caso de test comprueba dos cosas, son dos especificaciones con el mismo test.
 - **No cambies una especificación \`confirmada\`**: la revisó una persona. Si el código la contradice, decilo.
+- **Toda especificación va en un caso de uso**, y en uno solo. Un caso agrupa las reglas de una misma acción.
+- **El mismo caso en otro cerebro lleva el mismo \`id\`**: si la pantalla de votar está en \`web\` y la API que guarda el
+  voto en \`newapi\`, las dos páginas tienen \`casos: - id: votar-mvp\` con sus propias especificaciones. Antes de crear
+  un caso, mirá si la misma funcionalidad de otro cerebro ya lo tiene (\`flowbrain specs <feat> --brain <otro>\`) y
+  usá su \`id\` y su \`nombre\`.
+- **Un caso con \`problema\`** lo marcó una persona como mal: corregí lo que dice (el caso, sus especificaciones, sus
+  archivos o tests) y borrá \`problema\`. Si no estás de acuerdo, dejalo y explicale por qué en el informe.
 - No inventes tests: \`tests\` solo nombra casos que existen. Una especificación sin test es un dato útil, no un error.
 - Respondé en el idioma del usuario. El texto de cada especificación, en el idioma del producto.
 
@@ -521,7 +529,8 @@ $ARGUMENTS
 
 ## Pasos
 
-1. **Ver el estado.** Parado en el proyecto, por cada cerebro (\`flowbrain brains\` los lista):
+1. **Ver el estado.** Primero lo marcado como mal: \`flowbrain specs --problems --brain <cerebro>\` en cada cerebro.
+   Eso va antes que todo lo demás. Después, parado en el proyecto, por cada cerebro (\`flowbrain brains\` los lista):
    \`flowbrain specs --brain <cerebro>\` lista cada funcionalidad con cuántas especificaciones tiene, cuántos casos de
    test y cuántos de esos casos todavía no verifican ninguna. Si no hay funcionalidades, primero \`/flowbrain-features\`.
    Empezá por las que tienen más casos de test sin especificación. Si el usuario nombró funcionalidades, solo esas.
@@ -553,12 +562,26 @@ $ARGUMENTS
    El nombre del caso va tal como lo lista \`flowbrain specs <feat>\` (sin el \`(L12)\`). Entre 3 y 15 por funcionalidad
    suele alcanzar: las reglas que alguien de producto reconocería, no una por cada \`if\`.
 
+   Y los casos de uso, en la misma página:
+
+   \`\`\`yaml
+   casos:
+     - id: pagar-pedido               # el mismo id en el front y en la API que lo atiende
+       nombre: Pagar un pedido con tarjeta
+       quien: Cliente con un pedido abierto
+       especificaciones: [tarjeta-vencida, carrito-intacto-si-falla]
+   \`\`\`
+
+   El nombre empieza con un verbo y dice lo que la persona logra. Si ya hay especificaciones sin caso
+   (\`especificacionesSinCaso\` en \`flowbrain specs <feat>\`), agrupalas en casos sin cambiarles el texto.
+
 4. **Compilar y revisar.** \`flowbrain compile\` dentro de \`.flowbrain/<cerebro>/\` (si no compila, el error dice qué
-   línea corregir). Después \`flowbrain specs <feat> --brain <cerebro>\`: \`rotos\` son referencias que el índice no
+   línea corregir). Después \`flowbrain specs <feat> --brain <cerebro>\`: cada caso trae su \`estado\` (\`cumplido\`,
+   \`sin_test\`, \`sin_codigo\`) y no tiene que quedar \`especificacionesSinCaso\`. \`rotos\` son referencias que el índice no
    encontró (ruta mal escrita, caso con otro nombre): corregilas. Los \`casosSinEspecificacion\` que queden, revisalos:
    ¿falta una especificación o el caso prueba un detalle técnico que no es un requisito?
 
-5. **Informar al usuario**, corto: por funcionalidad, cuántas especificaciones propusiste, cuántas no tienen test (y
-   cuáles son las más riesgosas de dejar así), las preguntas abiertas, y que para confirmarlas alcanza con cambiar
-   \`estado: propuesta\` por \`estado: confirmada\` en la página después de leerlas.
+5. **Informar al usuario**, corto: por funcionalidad, cuántos casos de uso quedaron cumplidos y cuáles sin test (y
+   cuáles son los más riesgosos de dejar así), qué corregiste de lo marcado como mal, y las preguntas abiertas. Lo
+   revisa en el visor, pantalla Especificaciones, y marca con "Esto está mal" lo que no le cierre.
 `;

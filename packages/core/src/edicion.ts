@@ -45,6 +45,28 @@ export function cambiarEstadoDeEspecificacion(archivo: string, contenido: string
   return { contenido: `---\n${frontmatter.endsWith("\n") ? frontmatter : `${frontmatter}\n`}---\n${p.cuerpo}`, cambio: true };
 }
 
+/**
+ * Marca un caso de uso de la página de una funcionalidad como mal (`problema` con lo que una persona dice que está mal)
+ * o le saca la marca (`problema` nulo o vacío). El agente lee la marca, corrige el caso y la borra.
+ */
+export function marcarProblemaDeCaso(archivo: string, contenido: string, id: string, problema: string | null): { contenido: string; cambio: boolean } {
+  const nota = (problema ?? "").replace(/\s+/g, " ").trim();
+  if (nota.length > 1000) throw new Error("el comentario no puede pasar de 1000 caracteres");
+  const p = parsePagina(archivo, contenido);
+  const doc = parseDocument(p.frontmatter, { version: "1.2", schema: "core" });
+  const seq = doc.get("casos", true);
+  const item = isSeq(seq) ? seq.items.find((x) => isMap(x) && x.get("id") === id) : undefined;
+  if (!item || !isMap(item)) throw new Error(`la página ${archivo} no tiene un caso de uso con id ${id}`);
+  if ((item.get("problema") ?? "") === nota) return { contenido, cambio: false };
+  if (nota) {
+    const v = doc.createNode(nota) as Scalar;
+    v.type = Scalar.QUOTE_DOUBLE;
+    item.set("problema", v);
+  } else item.delete("problema");
+  const frontmatter = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
+  return { contenido: `---\n${frontmatter.endsWith("\n") ? frontmatter : `${frontmatter}\n`}---\n${p.cuerpo}`, cambio: true };
+}
+
 const CABECERA = "# Llamadas que el código no declara con tipos, resueltas leyendo el código. Se aplican al indexar.\n";
 
 /** Suma una declaración a `calls.yaml` (`texto` es `null` si el archivo todavía no existe). No repite una que ya esté. */

@@ -176,6 +176,24 @@ describe("flowbrain viewer --serve", () => {
     expect((await confirmar({ estado: "propuesta" })).json).toMatchObject({ cambio: true });
   }, 60_000);
 
+  it("marca un caso de uso como mal: escribe problema en la página, el agente lo ve y vacío lo saca", async () => {
+    const ruta = join(reg, "tienda/product/feat-pedidos.md");
+    const previa = await readFile(ruta, "utf8");
+    if (!previa.includes("casos:")) await writeFile(ruta, previa.replace("\n---\n# Pedidos", "\ncasos:\n  - id: dar-de-alta\n    nombre: Dar de alta un pedido\n    especificaciones: [alta]\n---\n# Pedidos"));
+    expect((await ejecutar(["brains", "apply", "--root", reg], {}, dir)).codigo).toBe(0);
+    const marcar = (cuerpo: Record<string, unknown>) => pedir("POST", "/api/editar", { cuerpo: { cerebro: "tienda", tipo: "caso", funcionalidad: "feat-pedidos", id: "dar-de-alta", problema: "falta pedir el domicilio", ...cuerpo } });
+    const r = await marcar({});
+    expect(r.estado).toBe(200);
+    expect(r.json).toMatchObject({ escrito: "tienda/product/feat-pedidos.md", cambio: true });
+    expect(await readFile(ruta, "utf8")).toContain('    problema: "falta pedir el domicilio"\n');
+    const specs = (await ejecutar(["specs", "pedidos", "--problems", "--root", join(reg, "tienda")], {}, dir)).stdout;
+    expect(specs).toContain('"problema": "falta pedir el domicilio"');
+    expect((await marcar({ id: "no-existe" })).estado).toBe(404);
+    expect((await marcar({ problema: 3 })).estado).toBe(400);
+    expect((await marcar({ problema: null })).json).toMatchObject({ cambio: true });
+    expect(await readFile(ruta, "utf8")).not.toContain("problema");
+  }, 60_000);
+
   it("nunca escribe fuera de la carpeta del cerebro", async () => {
     const base = join(reg, "tienda");
     await expect(rutaDentro(base, "../flowbrain.yaml")).rejects.toThrow(/se sale/);

@@ -204,6 +204,24 @@ export const EspecificacionSchema = z
   })
   .strict();
 
+/**
+ * Un caso de uso de una funcionalidad: algo que alguien puede hacer con el producto ("Votar al mejor jugador del
+ * partido"), con las especificaciones que lo componen. El mismo caso en otro cerebro (el front y la API que lo atiende)
+ * lleva el mismo `id`: así se ve de punta a punta. `problema` lo escribe una persona cuando lo que dedujo el modelo está
+ * mal; el agente lo corrige y lo borra.
+ */
+export const CasoDeUsoSchema = z
+  .object({
+    id: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "id de caso de uso: minúsculas, números y guiones"),
+    nombre: z.string().min(1).max(160, "nombre: máximo 160 caracteres"),
+    /** Quién lo hace: "Jugador que participó del partido", "Administrador del club". */
+    quien: z.string().min(1).max(160).optional(),
+    /** ids de las especificaciones de esta página que lo componen. */
+    especificaciones: z.array(z.string()).optional(),
+    problema: z.string().min(1).max(1000).optional(),
+  })
+  .strict();
+
 export const FrontmatterSchema = z
   .object({
     id: z.string(),
@@ -226,9 +244,11 @@ export const FrontmatterSchema = z
     codigo: z.array(z.string()).optional(),
     relaciones: z.array(RelacionSchema).optional(),
     especificaciones: z.array(EspecificacionSchema).optional(),
+    casos: z.array(CasoDeUsoSchema).optional(),
   })
   .strict();
 
+export type CasoDeUso = z.infer<typeof CasoDeUsoSchema>;
 export type Especificacion = z.infer<typeof EspecificacionSchema>;
 export type Frontmatter = z.infer<typeof FrontmatterSchema>;
 export type Relacion = z.infer<typeof RelacionSchema>;

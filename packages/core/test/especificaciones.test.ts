@@ -1,7 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
-import { compile, CompileError, ConsultaError, crearContexto, crearIndiceCodigo, especificaciones, fichasDeFuncionalidades, formatError, funcionalidad, leerEntradas, type Entradas, type Graph, type GraphNode } from "../src/index.js";
+import { compile, estadoDeCaso, marcarProblemaDeCaso, CompileError, ConsultaError, crearContexto, crearIndiceCodigo, especificaciones, fichasDeFuncionalidades, formatError, funcionalidad, leerEntradas, type Entradas, type Graph, type GraphNode } from "../src/index.js";
 
 const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/checkout");
 let entradas: Entradas;
@@ -123,9 +123,85 @@ describe("especificaciones contra el índice", () => {
     const r = especificaciones(ctx, { budget_tokens: null }) as unknown as { total: number; confirmadas: number; propuestas: number; funcionalidadesSinEspecificaciones: number; funcionalidades: Array<Record<string, unknown>> };
     expect([r.total, r.confirmadas, r.propuestas, r.funcionalidadesSinEspecificaciones]).toEqual([4, 1, 3, 1]);
     expect(r.funcionalidades).toEqual([
-      { id: "feat-pagos", nombre: "Pagos", especificaciones: 4, confirmadas: 1, sinTest: 0, casosDeTest: 5, casosSinEspecificacion: 1 },
-      { id: "feat-envios", nombre: "feat-envios", especificaciones: 0, confirmadas: 0, sinTest: 0, casosDeTest: 0, casosSinEspecificacion: 0 },
+      { id: "feat-pagos", nombre: "Pagos", casosDeUso: 0, casosCumplidos: 0, especificacionesSinCaso: 4, especificaciones: 4, confirmadas: 1, sinTest: 0, casosDeTest: 5, casosSinEspecificacion: 1 },
+      { id: "feat-envios", nombre: "feat-envios", casosDeUso: 0, casosCumplidos: 0, especificacionesSinCaso: 0, especificaciones: 0, confirmadas: 0, sinTest: 0, casosDeTest: 0, casosSinEspecificacion: 0 },
     ]);
-    expect((funcionalidad(ctx, { id: "pagos", budget_tokens: null }) as unknown as { especificaciones: unknown }).especificaciones).toEqual({ total: 4, confirmadas: 1, sinTest: 0, conReferenciasRotas: 1 });
+    expect((funcionalidad(ctx, { id: "pagos", budget_tokens: null }) as unknown as { especificaciones: unknown }).especificaciones).toEqual({ casosDeUso: 0, casosCumplidos: 0, especificacionesSinCaso: 4, total: 4, confirmadas: 1, sinTest: 0, conReferenciasRotas: 1 });
+  });
+});
+
+describe("casos de uso de una funcionalidad", () => {
+  const ESPECS = [
+    "especificaciones:",
+    "  - { id: paga, texto: El cliente paga con tarjeta., tipo: producto, archivos: [repo-tienda:apps/bff/src/routes/checkout.ts#L18] }",
+    "  - { id: unico, texto: Un carrito no se cobra dos veces., tipo: negocio }",
+    "  - { id: suelta, texto: Sin caso., tipo: negocio }",
+  ].join("\n");
+
+  it("compilan en la ficha con sus especificaciones, y lo marcado como mal viaja con el caso", () => {
+    const s = compile(conEspecificaciones("product/feat-checkout.md", ESPECS + '\ncasos:\n  - { id: pagar, nombre: Pagar el carrito, quien: Cliente, especificaciones: [paga, unico], problema: "falta el reintento" }'));
+    expect(s.funcionalidades[0]!.casos).toEqual([{ id: "pagar", nombre: "Pagar el carrito", quien: "Cliente", especificaciones: ["paga", "unico"], problema: "falta el reintento" }]);
+  });
+
+  it("un caso que nombra una especificación que no existe, o una que ya está en otro caso, no compila", () => {
+    const e = errores(conEspecificaciones("product/feat-checkout.md", ESPECS + "\ncasos:\n  - { id: a, nombre: A, especificaciones: [paga, nada] }\n  - { id: b, nombre: B, especificaciones: [paga] }\n  - { id: a, nombre: C }"));
+    expect(e.some((x) => x.includes("casos.a: no hay una especificación con id nada"))).toBe(true);
+    expect(e.some((x) => x.includes("casos: id repetido: a"))).toBe(true);
+    expect(e.some((x) => x.includes("la especificación paga ya está en el caso a"))).toBe(true);
+    expect(errores(conEspecificaciones("technology/svc-bff.md", "casos: []")).join("\n")).toContain("casos solo aplica a feat");
+  });
+
+  it("el estado de un caso es el de su regla más floja: sin código, sin test, cumplido", () => {
+    const r = (archivos: string[], tests: unknown[]) => ({ archivos, tests });
+    expect(estadoDeCaso([])).toBe("sin_reglas");
+    expect(estadoDeCaso([r(["a"], [1]), r([], [1])])).toBe("sin_codigo");
+    expect(estadoDeCaso([r(["a"], [1]), r(["b"], [])])).toBe("sin_test");
+    expect(estadoDeCaso([r(["a"], [1])])).toBe("cumplido");
+  });
+
+  it("la consulta da cada caso con su estado, las especificaciones sin caso y filtra lo marcado como mal", () => {
+    const graph: Graph = { version: 1, nodes: [{ actualizado: null, aliases: [], atributos: {}, estado: "vigente", id: "feat-pagos", nombre: "Pagos", origen: "parser", pagina: null, resumen: null, tecnologia: [], tipo: "feat", verificado: null }], edges: [] };
+    const estructura = new Map([["repo-a:src/cobrar.test.ts", { simbolos: [], importa: [], invoca: [], casos: [{ nombre: "cobra", linea: 2 }] }]]);
+    const feats = [
+      {
+        id: "feat-pagos",
+        codigo: ["repo-a:src"],
+        cuerpo: "",
+        especificaciones: [
+          { id: "cobra", texto: "Cobra.", tipo: "negocio" as const, archivos: ["repo-a:src/cobrar.ts"], tests: ["repo-a:src/cobrar.test.ts::cobra"] },
+          { id: "tope", texto: "Tope diario.", tipo: "negocio" as const, archivos: ["repo-a:src/cobrar.ts"] },
+          { id: "suelta", texto: "Suelta.", tipo: "producto" as const },
+        ],
+        casos: [
+          { id: "pagar", nombre: "Pagar", especificaciones: ["cobra"] },
+          { id: "limitar", nombre: "Limitar lo que se cobra", especificaciones: ["tope"], problema: "el tope es por semana" },
+        ],
+      },
+    ];
+    const fichas = fichasDeFuncionalidades(graph, feats, [], estructura);
+    const ctx = crearContexto(graph, [], new Map(), crearIndiceCodigo(graph, fichas, [], []));
+    const d = especificaciones(ctx, { funcionalidad: "pagos", budget_tokens: null }) as unknown as { casos: Array<{ id: string; estado: string; problema?: string }>; especificacionesSinCaso: string[]; especificaciones: Array<{ id: string; caso?: string }>; avisos: string[] };
+    expect(d.casos.map((c) => [c.id, c.estado, c.problema ?? null])).toEqual([["pagar", "cumplido", null], ["limitar", "sin_test", "el tope es por semana"]]);
+    expect(d.especificacionesSinCaso).toEqual(["suelta"]);
+    expect(d.especificaciones.map((e) => e.caso ?? null)).toEqual(["pagar", "limitar", null]);
+    expect(d.avisos.some((a) => a.includes("agrupalas en `casos`"))).toBe(true);
+    expect(d.avisos.some((a) => a.includes("borrá `problema`"))).toBe(true);
+    const solo = especificaciones(ctx, { funcionalidad: "pagos", con_problema: true, budget_tokens: null }) as unknown as { casos: Array<{ id: string }> };
+    expect(solo.casos.map((c) => c.id)).toEqual(["limitar"]);
+    const r = especificaciones(ctx, { budget_tokens: null }) as unknown as Record<string, unknown>;
+    expect([r["casosDeUso"], r["casosCumplidos"], r["casosSinTest"], r["casosConProblema"], r["especificacionesSinCaso"]]).toEqual([2, 1, 1, 1, 1]);
+  });
+
+  it("marcar un caso como mal escribe problema en la página sin tocar el resto, y vacío lo saca", () => {
+    const pagina = ["---", "id: feat-x", "tipo: feat", "# un comentario", "casos:", "  - id: pagar", "    nombre: Pagar", "---", "Cuerpo"].join("\n");
+    const a = marcarProblemaDeCaso("feat-x.md", pagina, "pagar", "  falta  el reintento ");
+    expect(a.cambio).toBe(true);
+    expect(a.contenido).toContain('problema: "falta el reintento"');
+    expect(a.contenido).toContain("# un comentario");
+    expect(a.contenido.endsWith("---\nCuerpo")).toBe(true);
+    expect(marcarProblemaDeCaso("feat-x.md", a.contenido, "pagar", "falta el reintento").cambio).toBe(false);
+    const b = marcarProblemaDeCaso("feat-x.md", a.contenido, "pagar", null);
+    expect(b.contenido).not.toContain("problema");
+    expect(() => marcarProblemaDeCaso("feat-x.md", pagina, "otro", "x")).toThrow("no tiene un caso de uso con id otro");
   });
 });

@@ -356,12 +356,13 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "especificaciones",
     {
       description:
-        "Requisitos de negocio y de producto de una funcionalidad, en llano: qué tiene que cumplirse, qué archivos lo cumplen y qué casos de test lo verifican, con su estado (propuesta por un modelo o confirmada por una persona). Sin argumentos: cuántas tiene cada funcionalidad y cuántos casos de test no verifican ninguna. Con `funcionalidad`: cada requisito, los que no tienen test y los casos de test sueltos. Usalo antes de cambiar una funcionalidad, para saber qué no puede romperse y qué no está probado.",
+        "Casos de uso y requisitos de negocio y de producto de una funcionalidad, en llano: qué puede hacer alguien con ella (cada caso con su estado: cumplido, sin_test, sin_codigo; y `problema` si una persona lo marcó como mal), qué tiene que cumplirse, qué archivos lo cumplen y qué casos de test lo verifican, con su estado (propuesta por un modelo o confirmada por una persona). Sin argumentos: cuántas tiene cada funcionalidad y cuántos casos de test no verifican ninguna. Con `funcionalidad`: cada requisito, los que no tienen test y los casos de test sueltos. Usalo antes de cambiar una funcionalidad, para saber qué no puede romperse y qué no está probado.",
       inputSchema: {
         funcionalidad: z.string().min(1).optional().describe("id (feat-billing), sufijo (billing) o nombre"),
         estado: z.enum(["propuesta", "confirmada"]).optional().describe("solo las de ese estado"),
         tipo: z.enum(["negocio", "producto"]).optional().describe("solo las de ese tipo"),
         sin_test: z.boolean().optional().describe("solo las que ningún caso de test verifica"),
+        con_problema: z.boolean().optional().describe("solo los casos de uso que una persona marcó como mal"),
         ...presupuesto,
         ...deCerebro,
       },

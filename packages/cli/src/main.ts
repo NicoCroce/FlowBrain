@@ -106,8 +106,10 @@ Comandos:
   feature <id|nombre> [--guide]       ficha compacta: endpoints, consumo, datos, relaciones, dominio compartido;
                                             --guide imprime cómo deducir y completar las funcionalidades (para el modelo)
   specs [id|nombre] [--state propuesta|confirmada]   especificaciones de negocio y de producto: sin argumento, cuántas tiene
-        [--type negocio|producto] [--untested]      cada funcionalidad y cuántos casos de test no verifican ninguna; con una
-        [--guide]                                   funcionalidad, cada requisito con sus archivos y sus tests;
+        [--type negocio|producto] [--untested]      cada funcionalidad, sus casos de uso (cumplidos o no) y cuántos casos de
+        [--problems] [--guide]                      test no verifican ninguna; con una funcionalidad, cada caso de uso y
+                                                    cada requisito con sus archivos y sus tests; --problems, solo los
+                                                    casos de uso que una persona marcó como mal;
                                             --guide imprime cómo deducirlas del código y de los tests (para el modelo)
   flow <"MÉTODO /ruta"|Clase.metodo>   pasos controller → servicio → repositorio, con lo que toca cada uno
   screen </ruta|Componente>               pantalla del front de punta a punta: de dónde se llega, a dónde lleva, qué llama del back
@@ -227,6 +229,7 @@ export async function ejecutar(
         signal: { type: "string" },
         state: { type: "string" },
         untested: { type: "boolean" },
+        problems: { type: "boolean" },
         uncertain: { type: "boolean" },
         plan: { type: "boolean" },
         text: { type: "string" },
@@ -638,7 +641,7 @@ export async function ejecutar(
         resultado = paridad(ctx, { viejo: arg, nuevo: positionals[2], ...opt("budget_tokens", comunes.budget_tokens) });
         break;
       case "specs":
-        resultado = especificaciones(ctx, { ...opt("funcionalidad", arg), ...opt("estado", o.state), ...opt("tipo", o.type), ...(o.untested ? { sin_test: true } : {}), ...opt("budget_tokens", comunes.budget_tokens) });
+        resultado = especificaciones(ctx, { ...opt("funcionalidad", arg), ...opt("estado", o.state), ...opt("tipo", o.type), ...(o.untested ? { sin_test: true } : {}), ...(o.problems ? { con_problema: true } : {}), ...opt("budget_tokens", comunes.budget_tokens) });
         break;
       case "unassigned":
         resultado = sinAsociar(ctx, { ...opt("carpeta", arg), ...opt("funcionalidad", o.feature), ...opt("limite", entero(o.limit, "--limit")), ...opt("budget_tokens", comunes.budget_tokens) });
