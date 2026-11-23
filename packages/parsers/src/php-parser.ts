@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { Language, Parser as TSParser, type Node } from "web-tree-sitter";
 import { normalizarRuta } from "@flowbrain/core";
 import { analizarUrl, type Parte } from "./url.js";
+import { leerCrontabs, rutaCron } from "./entradas.js";
 import { extraccionVacia, paqueteDe, type Extraccion, type Forma, type Parser, type RepoFuente, type Simbolo } from "./tipos.js";
 
 /**
@@ -563,6 +564,97 @@ function extraer(repo: RepoFuente, parser: TSParser): Extraccion {
         if (cls && entidades.has(cls)) out.tablas.push({ paquete, archivo, linea: linea(n), modelo: cls, verbo: "lee_de" });
       }
     }
+  }
+  // ---------- 6. Tareas programadas (decisión 197) ----------
+  // Un comando de consola (Symfony `#[AsCommand]`/`$defaultName`/`setName`, Laravel `$signature`/`$name`) que corre un
+  // horario: `$schedule->command(…)` en `Kernel.php`, `Schedule::command(…)` en `routes/console.php`, una línea de
+  // crontab del repo, o una tarea de Symfony Scheduler. Cada una es una entrada `CRON` en el método que la ejecuta.
+  const comandos = new Map<string, { clase: Clase; m: Metodo }>();
+  const ejecutor = (c: Clase) => c.metodos.get("execute") ?? c.metodos.get("handle") ?? c.metodos.get("__invoke") ?? null;
+  for (const c of clases.values()) {
+    const m = ejecutor(c);
+    if (!m) continue;
+    const a = atributo(c.nodo, "AsCommand");
+    const props = hijos(campo(c.nodo, "body")).filter((x) => x.type === "property_declaration");
+    const prop = (nombre: string) => textoString(props.find((p) => p.descendantsOfType("variable_name").some((v) => v?.text === `$${nombre}`))?.descendantsOfType("string")[0]);
+    const setName = c.metodos.get("configure")?.nodo.descendantsOfType("member_call_expression").find((x) => campo(x, "name")?.text === "setName");
+    const nombre = (a && (textoString(argNombrado(a, "name")) ?? textoString(args(a)[0]))) ?? prop("defaultName") ?? prop("signature")?.split(/\s/)[0] ?? (setName ? textoString(args(setName)[0]) : null) ?? (c.metodos.has("handle") ? prop("name") : null);
+    if (nombre) comandos.set(nombre, { clase: c, m });
+  }
+  const usadas = new Set<string>();
+  const entrada = (nombre: string, horario: string, destino: { clase: Clase; m: Metodo } | null, archivo: string, lin: number) => {
+    const donde = destino ? { archivo: destino.clase.archivo, linea: destino.m.linea } : { archivo, linea: lin };
+    const paquete = paqueteDe(repo, donde.archivo);
+    const base = rutaCron(nombre);
+    let ruta = base;
+    for (let i = 2; usadas.has(`${paquete}\u0000${ruta}`); i++) ruta = `${base}-${i}`;
+    usadas.add(`${paquete}\u0000${ruta}`);
+    out.endpoints.push({ paquete, metodo: "CRON", ruta, request: null, response: null, ...donde, horario });
+  };
+  const claseDe = (n: Node | undefined): Clase | null => {
+    if (!n || (n.type !== "class_constant_access_expression" && n.type !== "object_creation_expression")) return null;
+    return clases.get(ultimo(hijos(n)[0]?.text ?? "")) ?? null;
+  };
+  const FRECUENCIA = /^(cron|every\w*|daily\w*|hourly\w*|weekly\w*|monthly\w*|quarterly\w*|yearly\w*|twice\w*|lastDayOfMonth|weekdays|weekends|sundays|mondays|tuesdays|wednesdays|thursdays|fridays|saturdays|days|at|between|unlessBetween)$/;
+  for (const { archivo, raiz } of arboles) {
+    if (!/(^|\/)(Kernel\.php|routes\/console\.php)$/.test(archivo)) continue;
+    for (const n of raiz.descendantsOfType(["member_call_expression", "scoped_call_expression"]).filter(Boolean) as Node[]) {
+      const que = campo(n, "name")?.text ?? "";
+      const receptor = n.type === "member_call_expression" ? campo(n, "object")?.text : ultimo(campo(n, "scope")?.text ?? "");
+      const artisan = n.type === "scoped_call_expression" && receptor === "Artisan" && que === "command";
+      if (!artisan && !(["command", "job", "call", "exec"].includes(que) && (receptor === "$schedule" || receptor === "Schedule"))) continue;
+      // La frecuencia es la cadena que sigue: `->daily()`, `->cron('0 3 * * *')`, `->dailyAt('13:00')`.
+      const partes: string[] = [];
+      for (let x: Node = n; x.parent?.type === "member_call_expression" && campo(x.parent, "object")?.id === x.id; x = x.parent) {
+        const nm = campo(x.parent, "name")?.text ?? "";
+        if (FRECUENCIA.test(nm)) partes.push(nm === "cron" ? (textoString(args(x.parent)[0]) ?? "cron") : `${nm}(${args(x.parent).map((a) => textoString(a) ?? a.text).join(", ")})`.replace(/\(\)$/, ""));
+      }
+      if (!partes.length) continue;
+      const a0 = args(n)[0];
+      let nombre = que;
+      let destino: { clase: Clase; m: Metodo } | null = null;
+      if (que === "command" || artisan) {
+        const t = textoString(a0)?.split(/\s/)[0];
+        const c = claseDe(a0);
+        if (t) [nombre, destino] = [t, artisan ? null : (comandos.get(t) ?? null)];
+        else if (c && ejecutor(c)) [nombre, destino] = [c.nombre, { clase: c, m: ejecutor(c)! }];
+      } else if (que === "job") {
+        const c = claseDe(a0);
+        if (c) [nombre, destino] = [c.nombre, ejecutor(c) ? { clase: c, m: ejecutor(c)! } : null];
+      }
+      entrada(nombre, partes.join(" "), destino, archivo, linea(n));
+    }
+  }
+  // Symfony Scheduler: `#[AsCronTask('0 3 * * *')]`, `#[AsPeriodicTask(frequency: '1 hour')]`, y
+  // `RecurringMessage::cron|every(…, new Mensaje())` atendido por el `#[AsMessageHandler]` de ese mensaje.
+  const manejadores = new Map<string, { clase: Clase; m: Metodo }>();
+  for (const c of clases.values()) {
+    const a = atributo(c.nodo, "AsMessageHandler");
+    const m = c.metodos.get("__invoke");
+    if (a && m?.params[0]) manejadores.set(m.params[0], { clase: c, m });
+    for (const [attr, clave] of [["AsCronTask", "expression"], ["AsPeriodicTask", "frequency"]] as const) {
+      const t = atributo(c.nodo, attr);
+      if (!t) continue;
+      const h = textoString(argNombrado(t, clave)) ?? textoString(args(t)[0]);
+      const metodo = c.metodos.get(textoString(argNombrado(t, "method")) ?? "__invoke") ?? ejecutor(c);
+      if (h) entrada(c.nombre, attr === "AsPeriodicTask" ? `cada ${h}` : h, metodo ? { clase: c, m: metodo } : null, c.archivo, c.linea);
+    }
+  }
+  for (const { archivo, raiz } of arboles) {
+    for (const n of raiz.descendantsOfType("scoped_call_expression").filter(Boolean) as Node[]) {
+      if (ultimo(campo(n, "scope")?.text ?? "") !== "RecurringMessage") continue;
+      const que = campo(n, "name")?.text ?? "";
+      const [h, msg] = args(n);
+      const t = textoString(h);
+      const c = claseDe(msg);
+      if (!t || !c || !["cron", "every"].includes(que)) continue;
+      entrada(c.nombre, que === "every" ? `cada ${t}` : t, manejadores.get(c.nombre) ?? null, archivo, linea(n));
+    }
+  }
+  // Líneas de crontab del repo que corren un comando suyo (`0 3 * * * php bin/console app:x`).
+  for (const l of leerCrontabs(repo)) {
+    const d = comandos.get(l.comando);
+    if (d) entrada(l.comando, l.horario, d, l.archivo, l.linea);
   }
   return out;
 }

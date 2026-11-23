@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package pedidos.v1;
+
+// Pedidos los atiende la API (NestJS); Stock, un servidor de grpc-js.
+service Pedidos {
+  rpc Crear (NuevoPedido) returns (Pedido);
+  rpc Listar (Filtro) returns (stream Pedido);
+  rpc Cancelar (Pedido) returns (Pedido);
+}
+
+service Stock {
+  rpc Reservar (Reserva) returns (Pedido);
+}
+
+message NuevoPedido {
+  string producto_id = 1;
+  int32 cantidad = 2;
+}
+
+message Pedido {
+  string id = 1;
+  repeated string items = 2;
+  optional string nota = 3;
+  map<string, int32> cantidades = 4;
+}
+
+message Filtro {
+  int32 pagina = 1;
+}
+
+message Reserva {
+  string id = 1;
+}

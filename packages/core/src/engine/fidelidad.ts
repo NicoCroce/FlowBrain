@@ -177,15 +177,17 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
   }
 
   // Endpoints atendidos en cada archivo.
-  const entradas = new Map<string, { total: number; sinDestino: string[]; sinRespuesta: string[] }>();
+  const entradas = new Map<string, { total: number; sinDestino: string[]; sinRespuesta: string[]; programadas: number }>();
   for (const [k, eps] of ix.atiende) {
-    const e = entradas.get(archivoDe(k)) ?? entradas.set(archivoDe(k), { total: 0, sinDestino: [], sinRespuesta: [] }).get(archivoDe(k))!;
+    const e = entradas.get(archivoDe(k)) ?? entradas.set(archivoDe(k), { total: 0, sinDestino: [], sinRespuesta: [], programadas: 0 }).get(archivoDe(k))!;
     for (const ep of eps) {
       const n = ctx.nodo.get(ep);
       const ref = n ? `${String(n.atributos["metodo"])} ${String(n.atributos["ruta"])}` : ep;
       e.total++;
       if (!ix.recorredor.desdeEndpoint(ep).pasos.some((x) => x.toca.length)) e.sinDestino.push(ref);
-      if (n?.atributos["response"] == null) e.sinRespuesta.push(ref);
+      // Una tarea programada no devuelve nada a nadie: no cuenta para el contrato.
+      if (n?.atributos["metodo"] === "CRON") e.programadas++;
+      else if (n?.atributos["response"] == null) e.sinRespuesta.push(ref);
     }
   }
 
@@ -246,7 +248,7 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
     const en = entradas.get(archivo);
     if (en) {
       signals.entradas = { ok: en.total - en.sinDestino.length, total: en.total };
-      signals.contrato = { ok: en.total - en.sinRespuesta.length, total: en.total };
+      if (en.total > en.programadas) signals.contrato = { ok: en.total - en.programadas - en.sinRespuesta.length, total: en.total - en.programadas };
       if (en.sinDestino.length) faltas.push(`${cuantos(en.sinDestino.length, "endpoint", "endpoints")} cuyo recorrido no llega a nada (${en.sinDestino.sort(cmp).slice(0, 4).join(", ")}${en.sinDestino.length > 4 ? "…" : ""})`);
       if (en.sinRespuesta.length) faltas.push(`${cuantos(en.sinRespuesta.length, "endpoint", "endpoints")} sin tipo de respuesta`);
       const refs = (xs: string[]) => `${xs.slice(0, 4).join(", ")}${xs.length > 4 ? "…" : ""}`;

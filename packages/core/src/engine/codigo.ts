@@ -14,7 +14,7 @@ import {
   type Recorredor,
 } from "../funcionalidades.js";
 import { dependenciasDelGrafo, dependeDe as recorrerDependencias, impacto as recorrerImpacto, type Dependencia } from "../impacto.js";
-import { dentroDe, ENDPOINT_REF, normalizarRuta, type Graph, type GraphNode } from "../schema.js";
+import { dentroDe, ENDPOINT_REF, normalizarRuta, SIN_LLAMADOR, type Graph, type GraphNode } from "../schema.js";
 import { notasDe, type Contexto } from "./contexto.js";
 import { ConsultaError, normalizar, rutaCoincide } from "./herramientas.js";
 import { pantallaDeRuta, raicesDePantalla } from "../pantallas.js";
@@ -1231,8 +1231,10 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
   }
   for (const [ep, quienes] of x?.entrantes ?? []) for (const q of quienes) consumidores.set(svcDe(ep), (consumidores.get(svcDe(ep)) ?? new Set()).add(q));
   const svcs = (p.nodo ? [p.nodo] : [...new Set(endpoints.map((n) => svcDe(n.id)))]).sort(cmp);
+  // Una tarea programada no la llama nadie: la dispara su horario.
+  const programadas = endpoints.filter((n) => svcs.includes(svcDe(n.id)) && SIN_LLAMADOR.has(String(n.atributos["metodo"]))).length;
   const sinLlamadas = endpoints
-    .filter((n) => svcs.includes(svcDe(n.id)) && !llamados.has(n.id) && (consumidores.get(svcDe(n.id))?.size ?? 0) > 0)
+    .filter((n) => svcs.includes(svcDe(n.id)) && !SIN_LLAMADOR.has(String(n.atributos["metodo"])) && !llamados.has(n.id) && (consumidores.get(svcDe(n.id))?.size ?? 0) > 0)
     .map((n) => ({ endpoint: n.id, ev: String(n.atributos["evidencia"] ?? "") }));
   const rutaDe = (ref: string) => /^(\w+) (?:\$\{[^}]*\})?(\/\S*)$/.exec(ref);
   const pend = ix.llamadasPendientes.filter((l) => !p.nodo || l.desde === p.nodo || endpoints.some((n) => svcDe(n.id) === p.nodo && l.motivo.includes(String(n.atributos["ruta"]))));
@@ -1278,6 +1280,7 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
       ...(x && !x.vecinos.length ? ["este cerebro no tiene la comunicación activa con ningún otro: lo que llame afuera figura como sin endpoint (flowbrain brains lo muestra)"] : []),
       ...(x && sinEndpoint.length ? [`las llamadas sin endpoint no las atiende ni este cerebro ni ${x.vecinos.join(", ") || "ningún otro"}: o la ruta ya no existe, o el servicio que la atiende no está indexado o no está comunicado`] : []),
       ...(disputadas.length ? [`${disputadas.length} llamadas coinciden con endpoints de más de un cerebro: falta declarar a qué servicio va cada base de URL (flowbrain evidence las lista)`] : []),
+      ...(programadas ? [`${programadas} ${programadas === 1 ? "tarea programada (CRON) no se cuenta" : "tareas programadas (CRON) no se cuentan"} entre los endpoints sin llamadas: las dispara un horario, no una llamada`] : []),
       ...(sinAnalizar ? [`${sinAnalizar} llamadas con URL armada en tiempo de ejecución no se pudieron analizar: alguna puede ser la que usa un endpoint listado como sin llamadas`] : []),
       ...campos.avisos,
       ...avisosIndice(ix),
@@ -1308,6 +1311,7 @@ function compararCampos(ctx: Contexto, ix: IndiceCodigo, nodo: string | undefine
   const motivos = new Map<string, { lado: LadoComparado; motivo: string; llamadas: number; tipos: Set<string>; ejemplos: Array<{ llamada: string; ev: string }> }>();
   let comparadas = 0;
   let iguales = 0;
+  let grpc = 0;
   const anotar = (lado: LadoComparado, motivo: string, tipo: string | undefined, u: (typeof unidas)[number]) => {
     const k = `${lado}\u0000${motivo}`;
     const v = motivos.get(k) ?? motivos.set(k, { lado, motivo, llamadas: 0, tipos: new Set(), ejemplos: [] }).get(k)!;
@@ -1321,6 +1325,11 @@ function compararCampos(ctx: Contexto, ix: IndiceCodigo, nodo: string | undefine
       continue;
     }
     const metodo = /^(\w+)/.exec(u.endpoint.slice(u.endpoint.indexOf(":") + 1))?.[1] ?? "";
+    // Un rpc manda y recibe mensajes del `.proto`: el índice no lee los campos de la llamada del cliente.
+    if (metodo === "GRPC") {
+      grpc++;
+      continue;
+    }
     const r = compararLlamada(ix.camposDeLlamada.get(u.ev), u.contrato, metodo);
     for (const n of r.noComparables) anotar(n.lado, n.motivo, n.tipo, u);
     if (!r.comparados) continue;
@@ -1348,6 +1357,7 @@ function compararCampos(ctx: Contexto, ix: IndiceCodigo, nodo: string | undefine
   const avisos = [
     ...(sinCampos.length ? [`el índice de ${sinCampos.join(", ")} no trae los campos de las llamadas (se indexó antes de registrarlos): corré \`flowbrain index\` para que \`deriva\` los compare`] : []),
     ...(unidas.length ? ["los campos se comparan en el primer nivel del objeto (no adentro de `data`), por nombre; un lado sin tipo o sin forma figura en `campos.noComparables`, no como coincidencia"] : []),
+    ...(grpc ? [`${grpc} ${grpc === 1 ? "llamada gRPC unida no se compara" : "llamadas gRPC unidas no se comparan"} por campos: los mensajes están en el \`.proto\` y el índice no lee lo que arma el cliente`] : []),
     ...(entrantes ? ["los campos de las llamadas que llegan desde otros cerebros se comparan en la deriva del cerebro que llama"] : []),
   ];
   return { resumen, difieren, avisos };

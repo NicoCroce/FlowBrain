@@ -4,6 +4,7 @@ import { parse, parseAllDocuments } from "yaml";
 import { cmp, METODOS } from "@flowbrain/core";
 import { paqueteDe, type EndpointCrudo, type EventoCrudo, type InfraCruda, type RepoFuente } from "./tipos.js";
 import { base, corto, dir, escapar, esMapa, lineaClave, lineaDe, lista, texto, type Mapa } from "./infra-comun.js";
+import { rutaCron } from "./entradas.js";
 
 /**
  * Infraestructura de despliegue en la nube, leída sin ejecutar nada: manifiestos de Kubernetes, charts de Helm (sin
@@ -90,6 +91,8 @@ interface Funcion {
   http: Array<{ metodo: string; ruta: string }>;
   otros: string[];
   colas: Array<{ clase: "cola" | "tema"; nombre: string }>;
+  /** Eventos programados (`schedule`, `Schedule`): cada uno es una entrada `CRON` atendida por el handler. */
+  horarios: string[];
   variables: string[];
 }
 
@@ -115,6 +118,12 @@ function emitirFuncion(f: Funcion, archivo: string, ctx: Ctx) {
     const donde = loc ? { archivo: loc.archivo, linea: loc.linea } : { archivo, linea: f.linea };
     ctx.eventos.push({ paquete: paqueteDe(ctx.repo, archivo), ...donde, nombre: c.nombre, direccion: "consume" });
   }
+  // Un evento programado es una entrada `CRON` atendida por el handler, como un evento http es un endpoint.
+  f.horarios.forEach((h, i) => {
+    detalle.push(`programada ${h}`);
+    const donde = loc ? { archivo: loc.archivo, linea: loc.linea } : { archivo, linea: f.linea };
+    ctx.endpoints.push({ paquete: paqueteDe(ctx.repo, archivo), metodo: "CRON", ruta: rutaCron(f.horarios.length > 1 ? `${f.nombre}-${i + 1}` : f.nombre), request: null, response: null, ...donde, origen: "infra-parser", horario: h });
+  });
   detalle.push(...f.otros, ...[...new Set(f.variables)].sort(cmp).map((v) => `variable ${v}`));
   ctx.items.push({ archivo, linea: f.linea, clase: "funcion", nombre: f.nombre, detalle, ...(rutas.length ? { rutas } : {}), ...(loc ? { handler: loc } : {}) });
 }
@@ -172,7 +181,7 @@ function serverless(t: string, archivo: string, ctx: Ctx) {
   });
   for (const [nombre, f] of Object.entries(funciones)) {
     if (!esMapa(f)) continue;
-    const fn: Funcion = { nombre, linea: lineaClave(t, nombre, desde), handler: texto(f["handler"]), raiz: dir(archivo), runtime: texto(f["runtime"]), http: [], otros: [], colas: [], variables: esMapa(f["environment"]) ? Object.keys(f["environment"]) : [] };
+    const fn: Funcion = { nombre, linea: lineaClave(t, nombre, desde), handler: texto(f["handler"]), raiz: dir(archivo), runtime: texto(f["runtime"]), http: [], otros: [], colas: [], horarios: [], variables: esMapa(f["environment"]) ? Object.keys(f["environment"]) : [] };
     if (texto(f["image"])) fn.otros.push(`imagen ${texto(f["image"])}`);
     for (const e of lista(f["events"])) {
       if (!esMapa(e)) continue;
@@ -187,7 +196,9 @@ function serverless(t: string, archivo: string, ctx: Ctx) {
           fn.http.push({ metodo: m === "*" ? "ANY" : m, ruta: texto(v["path"]) === "*" ? "*" : conBarra(texto(v["path"])!) });
         }
       } else if (tipo === "schedule") {
-        fn.otros.push(`programada ${texto(v) ?? (esMapa(v) ? lista(v["rate"]).map(String).join(", ") : "")}`.trim());
+        const hs = texto(v) ? [texto(v)!] : esMapa(v) ? lista(v["rate"] ?? v["schedule"]).map(String) : [];
+        if (hs.length) fn.horarios.push(...hs);
+        else fn.otros.push("programada");
       } else if (tipo === "sqs" || tipo === "sns") {
         const n = nombreDeRecurso(v, recursos, tipo === "sqs" ? "QueueName" : "TopicName");
         if (n) fn.colas.push({ clase: tipo === "sqs" ? "cola" : "tema", nombre: n });
@@ -220,6 +231,7 @@ function sam(t: string, archivo: string, ctx: Ctx) {
       http: [],
       otros: [],
       colas: [],
+      horarios: [],
       variables: [...variablesDe(glob), ...variablesDe(p)],
     };
     if (texto(p["FunctionName"])) fn.otros.push(`nombre ${texto(p["FunctionName"])}`);
@@ -233,7 +245,9 @@ function sam(t: string, archivo: string, ctx: Ctx) {
         if (ruta) fn.http.push({ metodo: m === "*" ? "ANY" : m, ruta: conBarra(ruta) });
         else fn.otros.push(`evento ${tipo} (todas las rutas)`);
       } else if (tipo === "Schedule" || tipo === "ScheduleV2") {
-        fn.otros.push(`programada ${texto(ep["Schedule"]) ?? texto(ep["ScheduleExpression"]) ?? ""}`.trim());
+        const h = texto(ep["Schedule"]) ?? texto(ep["ScheduleExpression"]);
+        if (h) fn.horarios.push(h);
+        else fn.otros.push("programada");
       } else if (tipo === "SQS" || tipo === "SNS") {
         const n = nombreDeRecurso(tipo === "SQS" ? ep["Queue"] : ep["Topic"], recursos, tipo === "SQS" ? "QueueName" : "TopicName");
         if (n) fn.colas.push({ clase: tipo === "SQS" ? "cola" : "tema", nombre: n });

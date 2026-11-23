@@ -217,6 +217,8 @@ export function compile(entradas: Entradas): Salidas {
           response: ep.response,
           ruta,
           ...(ep.query ? { query: ep.query } : {}),
+          ...(ep.horario ? { horario: ep.horario } : {}),
+          ...(ep.proto ? { proto: ep.proto } : {}),
         }),
         f.ruta,
         null,

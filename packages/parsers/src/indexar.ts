@@ -376,7 +376,7 @@ export async function indexar(
     const fuente = x.autoritativo.includes(paquete) ? "openapi-parser" : eps.length && eps.every((e) => e.origen === "infra-parser") ? "infra-parser" : eps.some((e) => e.archivo.endsWith(".php")) ? "php-parser" : "ts-parser";
     contratos.push({
       endpoints: eps
-        .map((e) => ({ evidencia: ev(e.archivo, e.linea), metodo: e.metodo as Contrato["endpoints"][number]["metodo"], request: e.request, response: e.response, ruta: e.ruta, ...(e.query ? { query: e.query } : {}) }))
+        .map((e) => ({ evidencia: ev(e.archivo, e.linea), metodo: e.metodo as Contrato["endpoints"][number]["metodo"], request: e.request, response: e.response, ruta: e.ruta, ...(e.query ? { query: e.query } : {}), ...(e.horario ? { horario: e.horario } : {}), ...(e.proto ? { proto: ev(e.proto.archivo, e.proto.linea) } : {}) }))
         .sort((a, b) => cmpTuple([a.ruta, a.metodo], [b.ruta, b.metodo])),
       eventos: eventosPorSvc.get(svc)!,
       fuente,
@@ -536,7 +536,8 @@ export async function indexar(
     for (const r of rutas) {
       const pre = r.ruta.replace(/\/+$/, "");
       for (const e of eps) {
-        if (r.metodo && e.metodo !== r.metodo) continue;
+        // Una ruta HTTP no llega a una tarea programada ni a un rpc.
+        if ((r.metodo && e.metodo !== r.metodo) || e.metodo === "CRON" || e.metodo === "GRPC") continue;
         const ok = r.prefijo ? pre === "" || e.ruta === pre || e.ruta.startsWith(pre + "/") || rutasCoinciden(e.ruta.split("/").slice(0, pre.split("/").length).join("/"), pre) : rutasCoinciden(e.ruta, r.ruta);
         if (ok) ids.add(endpointId(de, e.metodo, e.ruta));
       }

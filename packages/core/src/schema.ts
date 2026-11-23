@@ -134,9 +134,16 @@ export function dentroDe(evidencia: string, codigo: string): boolean {
 }
 
 export const EVIDENCIA = /^(repo-[a-z0-9-]+):([^\s#:]+)(#L\d+(-L\d+)?)?$/;
-export const ENDPOINT_REF = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) (\/\S*)$/;
+export const ENDPOINT_REF = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CRON|GRPC) (\/\S*)$/;
 export const FECHA = /^\d{4}-\d{2}-\d{2}$/;
 export const METODOS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
+/**
+ * Entradas que no son HTTP, con la forma de un endpoint para que se recorran igual: `CRON /nombre` (una tarea
+ * programada; nadie la llama) y `GRPC /paquete.Servicio/Metodo` (un rpc de un `.proto`, con la ruta que usa HTTP/2).
+ */
+export const METODOS_ENTRADA = [...METODOS, "CRON", "GRPC"] as const;
+/** Entradas que nadie llama: las dispara un horario. `deriva` no las cuenta como sin llamadas. */
+export const SIN_LLAMADOR = new Set(["CRON"]);
 
 export function evidenciaValida(e: string): boolean {
   const m = EVIDENCIA.exec(e);
@@ -235,12 +242,16 @@ export const ContratoSchema = z
     endpoints: z.array(
       z
         .object({
-          metodo: z.enum(METODOS),
+          metodo: z.enum(METODOS_ENTRADA),
           ruta: z.string().min(1),
           request: z.string().nullable(),
           response: z.string().nullable(),
           /** Tipo de los parámetros de query; ausente si no se determinó. */
           query: z.string().optional(),
+          /** CRON: cuándo corre, como lo dice el código (`0 3 * * *`, `cada 5000 ms`, `daily`). */
+          horario: z.string().optional(),
+          /** GRPC: dónde se declara el rpc en el `.proto` (`repo:ruta#Ln`). */
+          proto: z.string().optional(),
           evidencia: z.string(),
         })
         .strict(),

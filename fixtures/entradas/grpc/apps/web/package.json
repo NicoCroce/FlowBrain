@@ -1,0 +1,5 @@
+{
+  "name": "@grpc-fx/web",
+  "private": true,
+  "dependencies": { "@nestjs/microservices": "10", "@grpc/grpc-js": "1" }
+}

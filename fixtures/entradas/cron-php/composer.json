@@ -1,0 +1,4 @@
+{
+  "name": "fixture/cron-php",
+  "require": { "laravel/framework": "^10", "symfony/scheduler": "^7" }
+}

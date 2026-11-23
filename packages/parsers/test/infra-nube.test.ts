@@ -123,6 +123,7 @@ describe("infra: Serverless Framework", () => {
     const c = r.contratos.find((x) => x.svc === "svc-usuarios")!;
     expect(c.fuente).toBe("infra-parser");
     expect(c.endpoints.map((e) => `${e.metodo} ${e.ruta} ${e.evidencia}`)).toEqual([
+      "CRON /limpiar repo-serverless:src/tareas.py#L1",
       "GET /usuarios repo-serverless:src/handlers/usuarios.ts#L3",
       "POST /usuarios repo-serverless:src/handlers/usuarios.ts#L9",
       "GET /usuarios/{id} repo-serverless:src/handlers/usuarios.ts#L5",
@@ -155,7 +156,9 @@ describe("infra: AWS SAM", () => {
 
   it("funciones con CodeUri de Globals, eventos Api/HttpApi como endpoints y la cola de !GetAtt por su QueueName", () => {
     const c = r.contratos.find((x) => x.svc === "svc-pedidos")!;
-    expect(c.endpoints.map((e) => `${e.metodo} ${e.ruta} ${e.evidencia}`)).toEqual(["GET /pedidos repo-sam:src/app.js#L1", "POST /pedidos repo-sam:src/app.js#L3"]);
+    expect(c.endpoints.map((e) => `${e.metodo} ${e.ruta} ${e.evidencia}`)).toEqual(["CRON /ConsumirFn repo-sam:src/app.js#L5", "GET /pedidos repo-sam:src/app.js#L1", "POST /pedidos repo-sam:src/app.js#L3"]);
+    // El evento programado es una entrada atendida por el handler, con su horario.
+    expect(c.endpoints.find((e) => e.metodo === "CRON")?.horario).toBe("cron(0 3 * * ? *)");
     expect(c.eventos.map((e) => `${e.nombre} ${e.cola}`)).toEqual(["cola-sam queue-sam"]);
     expect(items(ctx, { nodo: "svc-pedidos" }).map(linea)).toEqual([
       "svc-pedidos funcion ListarFn: handler app.listar → src/app.js#L1 | runtime nodejs20.x | http GET /pedidos | variable TABLA",

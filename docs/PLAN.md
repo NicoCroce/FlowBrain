@@ -65,7 +65,7 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 40 | Pantallas por archivo: Next, Nuxt, SvelteKit y Expo Router | Hecho (decisión 193) |
 | 41 | Más clientes HTTP: Angular `HttpClient`, `ky` y `$fetch` | Hecho (decisión 194) |
 | 42 | Layout, contexto y objeto de un hook | Hecho (decisión 196) |
-| 43 | Entradas que no son HTTP: cron y gRPC | Pendiente |
+| 43 | Entradas que no son HTTP: cron y gRPC | Hecho (decisión 197) |
 
 ---
 
@@ -350,7 +350,7 @@ Lo que resolvían tres extractores del proyecto real (decisión 159): las funcio
 
 ### Paso 43 · Entradas que no son HTTP
 
-Cron y gRPC como entradas de un recorrido.
+Cron y gRPC como entradas de un recorrido: endpoints `CRON` (NestJS, node-cron, node-schedule, cron, agenda, bull, un programador propio por la clave del trabajo, Laravel, Symfony Scheduler, crontab del repo y eventos programados de serverless/SAM) y `GRPC` (rpcs de un `.proto` implementados con NestJS o grpc-js, y sus clientes), atendidos por el método que los ejecuta (decisión 197).
 
 ---
 

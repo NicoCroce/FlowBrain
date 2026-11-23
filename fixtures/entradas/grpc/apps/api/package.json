@@ -1,0 +1,5 @@
+{
+  "name": "@grpc-fx/api",
+  "private": true,
+  "dependencies": { "@nestjs/microservices": "10", "@prisma/client": "5" }
+}

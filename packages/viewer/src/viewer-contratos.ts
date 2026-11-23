@@ -37,7 +37,7 @@ export const CONTRATOS_JS = String.raw`
   var pieza = function (id) {
     var n = porId[id], a = n && n.at;
     if (a && a.ruta !== undefined) return (a.metodo ? a.metodo + " " : "") + a.ruta;
-    var m = /:(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS):(\/.*)$/.exec(id);
+    var m = /:(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CRON|GRPC):(\/.*)$/.exec(id);
     if (m) return m[1] + " " + m[2];
     m = /:pantalla:(.*)$/.exec(id);
     return m ? m[1] : local(id);

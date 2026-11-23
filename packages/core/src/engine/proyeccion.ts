@@ -33,6 +33,10 @@ export interface EndpointProyectado {
   /** Parámetros de query, si el contrato los trae. */
   query?: TipoExpandido;
   ruta: string;
+  /** `CRON`: cuándo corre. */
+  horario?: string;
+  /** `GRPC`: dónde se declara el rpc en el `.proto`. */
+  proto?: string;
 }
 
 export interface Item {
@@ -95,7 +99,7 @@ export function endpointsDe(ctx: Contexto, svc: string): EndpointProyectado[] {
     if (e.verbo !== "contiene") continue;
     const n = ctx.nodo.get(e.hasta);
     if (n?.tipo !== "endpoint") continue;
-    const a = n.atributos as { evidencia: string; metodo: string; request: string | null; response: string | null; ruta: string; query?: string };
+    const a = n.atributos as { evidencia: string; metodo: string; request: string | null; response: string | null; ruta: string; query?: string; horario?: string; proto?: string };
     const query = a.query ? expandir(ctx, svc, a.query) : null;
     const llamado_por = [...new Set((ctx.entrantes.get(svc) ?? []).filter((x) => x.endpoint === n.id).map((x) => x.desde))].sort();
     out.push({
@@ -107,6 +111,8 @@ export function endpointsDe(ctx: Contexto, svc: string): EndpointProyectado[] {
       response: expandir(ctx, svc, a.response),
       ...(query ? { query } : {}),
       ruta: a.ruta,
+      ...(a.horario ? { horario: a.horario } : {}),
+      ...(a.proto ? { proto: a.proto } : {}),
     });
   }
   return out;

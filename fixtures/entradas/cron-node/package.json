@@ -1,0 +1,5 @@
+{
+  "name": "cron-node",
+  "private": true,
+  "dependencies": { "@nestjs/schedule": "4", "node-cron": "3", "node-schedule": "2", "cron": "3", "agenda": "5", "bull": "4", "@prisma/client": "5" }
+}

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import ts from "typescript";
 import { cmp, normalizarRuta } from "@flowbrain/core";
 import { analizarUrl, type Parte } from "./url.js";
+import { cadaMs, esCron, leerProtos, rpcDe, rutaCron, rutaGrpc, servicioProto, type ServicioProto } from "./entradas.js";
 import { libreriaPorAliasDe, libreriasPorAlias } from "./alias.js";
 import { carpetasDeRutas, endpointNuxt, layoutsDe, rutaDeArchivo, type CarpetaDeRutas, type RutaDeArchivo } from "./rutas-archivo.js";
 import {
@@ -1394,6 +1395,209 @@ function extraer(repo: RepoFuente): Extraccion {
     }
   };
 
+  // ---------- Entradas que no son HTTP: tareas programadas y gRPC (decisión 197) ----------
+  // Cada una es un endpoint `CRON` o `GRPC` cuya evidencia es el método que la ejecuta (se resuelve al final, cuando
+  // ya están los símbolos de todos los archivos). Sin un único método claro, queda en la línea que la declara.
+  const protos = leerProtos(repo);
+  interface EntradaPendiente {
+    metodo: "CRON" | "GRPC";
+    archivo: string;
+    linea: number;
+    destinos: Array<{ archivo: string; simbolo: string }>;
+    /** Nombre de la entrada (CRON); sin él, el del método que la ejecuta. */
+    nombre?: string;
+    ruta?: string;
+    horario?: string;
+    request?: string | null;
+    response?: string | null;
+    proto?: { archivo: string; linea: number };
+  }
+  const entradasPend: EntradaPendiente[] = [];
+  /** Una tarea agendada por la clave de un mensaje (`scheduler.schedule(JOB, …, { everyMs })`, `agenda.every("5 minutes", "x")`, `queue.add("x", d, { repeat })`): la ejecuta quien se suscribe a esa clave. */
+  const programados: Array<{ claves: Array<{ clave: string; texto: string }>; horario: string; archivo: string; linea: number }> = [];
+  /** Trabajos definidos por nombre (`agenda.define("x", fn)`): no son eventos, solo los ejecuta su horario. */
+  const definidos = new Map<string, Array<{ archivo: string; simbolo: string }>>();
+  const textoDe = (e: ts.Expression): string => {
+    const x = sinEnvoltura(e);
+    if (ts.isStringLiteralLike(x) || ts.isNumericLiteral(x)) return x.text;
+    // `{ everyMs }` desestructurado de la configuración: el nombre de la clave dice de dónde sale.
+    if (ts.isIdentifier(x)) {
+      const d = ts.isShorthandPropertyAssignment(x.parent) ? real(checker.getShorthandAssignmentValueSymbol(x.parent))?.declarations?.[0] : declDe(x);
+      if (d && ts.isBindingElement(d) && d.propertyName) return d.propertyName.getText();
+    }
+    return x.getText().replace(/\s+/g, " ").slice(0, 60);
+  };
+  const literal = (e: ts.Expression | undefined) => (e && (ts.isStringLiteralLike(sinEnvoltura(e)) || ts.isNumericLiteral(sinEnvoltura(e))) ? (sinEnvoltura(e) as ts.LiteralExpression).text : null);
+  const CLAVES_HORARIO: Record<string, (v: string, lit: boolean) => string> = {
+    cron: (v) => v,
+    pattern: (v) => v,
+    cronTime: (v) => v,
+    every: (v, lit) => (lit && !/^\d+$/.test(v) ? `cada ${v}` : `${cadaMs(v)}${lit ? "" : " (valor en tiempo de ejecución)"}`),
+    everyMs: (v, lit) => `${cadaMs(v)}${lit ? "" : " (valor en tiempo de ejecución)"}`,
+    interval: (v, lit) => `${cadaMs(v)}${lit ? "" : " (valor en tiempo de ejecución)"}`,
+  };
+  /** Horario de un objeto de opciones: `{ cron }`, `{ every }`, `{ repeat: { pattern } }`, `{ everyMs }`. */
+  const horarioDeObjeto = (o: ts.ObjectLiteralExpression, prof = 0): string | null => {
+    for (const [k, f] of Object.entries(CLAVES_HORARIO)) {
+      const v = propiedad(o, k);
+      if (v) return f(textoDe(v), literal(v) !== null);
+    }
+    const r = propiedad(o, "repeat");
+    return r && prof < 2 && ts.isObjectLiteralExpression(sinEnvoltura(r)) ? horarioDeObjeto(sinEnvoltura(r) as ts.ObjectLiteralExpression, prof + 1) : null;
+  };
+  /** El método que ejecuta un handler: el declarado, o el único que llama una función en línea. */
+  const destinosDeHandler = (e: ts.Expression | undefined, archivo: string) => {
+    if (!e) return [];
+    const ds = destinosHandler(sinEnvoltura(e), archivo);
+    return [...new Map(ds.map((d) => [`${d.archivo}#${d.simbolo}`, d])).values()];
+  };
+  /** Servicios de gRPC que usa cada variable o propiedad, por archivo: `this.pedidos = client.getService("Pedidos")`, `new proto.Greeter(addr, cred)`. */
+  const clientesGrpc = (sf: ts.SourceFile): Map<string, ServicioProto[] | string> => {
+    const out = new Map<string, ServicioProto[] | string>();
+    const nombreDestino = (n: ts.Node): string | null => {
+      const p = n.parent;
+      if (ts.isVariableDeclaration(p) && p.initializer === n && ts.isIdentifier(p.name)) return p.name.text;
+      if (ts.isPropertyDeclaration(p) && p.initializer === n) return nombreMiembro(p);
+      if (ts.isBinaryExpression(p) && p.right === n && p.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+        const l = p.left;
+        return ts.isPropertyAccessExpression(l) ? l.name.text : ts.isIdentifier(l) ? l.text : null;
+      }
+      return null;
+    };
+    const ver = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) && n.expression.name.text === "getService") {
+        const svc = literal(n.arguments[0]);
+        const dest = svc ? nombreDestino(n) : null;
+        if (svc && dest) {
+          const s = servicioProto(protos, svc);
+          out.set(dest, s.length ? s : svc);
+        }
+      }
+      if (ts.isNewExpression(n) && (n.arguments?.length ?? 0) >= 1 && (ts.isIdentifier(n.expression) || ts.isPropertyAccessExpression(n.expression))) {
+        const s = servicioProto(protos, n.expression.getText());
+        const dest = s.length ? nombreDestino(n) : null;
+        if (dest) out.set(dest, s);
+      }
+      ts.forEachChild(n, ver);
+    };
+    if (protos.servicios.length || /getService\s*[<(]/.test(sf.text)) ver(sf);
+    return out;
+  };
+  const entradas = (n: ts.Node, archivo: string, paquete: string, clientes: Map<string, ServicioProto[] | string>) => {
+    // NestJS: @Cron, @Interval, @Timeout y @GrpcMethod en un método de clase.
+    if (ts.isMethodDeclaration(n) && ts.isClassDeclaration(n.parent) && n.parent.name) {
+      const clase = n.parent.name.text, m = nombreMiembro(n);
+      if (!m) return;
+      const propio = [{ archivo, simbolo: `${clase}.${m}` }];
+      const cron = decorador(n, "Cron");
+      if (cron && ts.isCallExpression(cron) && cron.arguments[0]) {
+        const op = cron.arguments[1] && ts.isObjectLiteralExpression(cron.arguments[1]) ? literal(propiedad(cron.arguments[1], "name")) : null;
+        entradasPend.push({ metodo: "CRON", archivo, linea: linea(n), destinos: propio, horario: textoDe(cron.arguments[0]), ...(op ? { nombre: op } : {}) });
+      }
+      for (const [d, una] of [["Interval", false], ["Timeout", true]] as const) {
+        const x = decorador(n, d);
+        if (!x || !ts.isCallExpression(x) || !x.arguments.length) continue;
+        const [a, b] = x.arguments;
+        const nombre = b ? literal(a) : null;
+        const ms = textoDe((b ?? a)!);
+        entradasPend.push({ metodo: "CRON", archivo, linea: linea(n), destinos: propio, horario: una ? `una vez, a los ${ms} ms de arrancar` : cadaMs(ms), ...(nombre ? { nombre } : {}) });
+      }
+      for (const d of ["GrpcMethod", "GrpcStreamMethod", "GrpcStreamCall"]) {
+        const x = decorador(n, d);
+        if (!x) continue;
+        const call = ts.isCallExpression(x) ? x : null;
+        const svc = (call && literal(call.arguments[0])) ?? clase;
+        const rpc = (call && literal(call.arguments[1])) ?? m.charAt(0).toUpperCase() + m.slice(1);
+        grpcServidor(svc, rpc, propio, archivo, linea(n));
+      }
+      return;
+    }
+    if (ts.isNewExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === "CronJob" && n.arguments?.length) {
+      // `cron`: new CronJob("0 * * * *", onTick).
+      const h = literal(n.arguments[0]);
+      if (h && esCron(h)) entradasPend.push({ metodo: "CRON", archivo, linea: linea(n), destinos: destinosDeHandler(n.arguments[1], archivo), horario: h });
+      return;
+    }
+    if (!ts.isCallExpression(n) || !ts.isPropertyAccessExpression(n.expression)) return;
+    const metodo = n.expression.name.text;
+    const as = n.arguments;
+    // `cron.schedule("0 * * * *", fn)` (node-cron), `schedule.scheduleJob(["nombre",] "0 * * * *", fn)` (node-schedule),
+    // `CronJob.from({ cronTime, onTick })` (cron).
+    const conCron = as.findIndex((a) => esCron(literal(a) ?? ""));
+    if ((metodo === "schedule" || metodo === "scheduleJob") && conCron >= 0 && as.length > conCron + 1) {
+      const nombre = conCron > 0 ? literal(as[0]) : null;
+      entradasPend.push({ metodo: "CRON", archivo, linea: linea(n), destinos: destinosDeHandler(as[as.length - 1], archivo), horario: literal(as[conCron])!, ...(nombre ? { nombre } : {}) });
+      return;
+    }
+    if (metodo === "from" && ts.isIdentifier(n.expression.expression) && n.expression.expression.text === "CronJob" && as[0] && ts.isObjectLiteralExpression(as[0])) {
+      const h = propiedad(as[0], "cronTime");
+      if (h) entradasPend.push({ metodo: "CRON", archivo, linea: linea(n), destinos: destinosDeHandler(propiedad(as[0], "onTick"), archivo), horario: textoDe(h) });
+      return;
+    }
+    if (metodo === "define" && as.length >= 2 && literal(as[0])) definidos.set(`s:${literal(as[0])}`, destinosDeHandler(as[as.length - 1], archivo));
+    // Un trabajo repetible, por la clave del mensaje que lo ejecuta.
+    if (["schedule", "every", "add", "upsertJobScheduler", "repeatEvery"].includes(metodo) && as.length >= 2) {
+      let horario = as.map((a) => sinEnvoltura(a)).filter(ts.isObjectLiteralExpression).map((o) => horarioDeObjeto(o)).find(Boolean) ?? null;
+      // agenda: every("5 minutes", "nombre").
+      if (!horario && metodo === "every" && literal(as[0])) horario = CLAVES_HORARIO["every"]!(literal(as[0])!, true);
+      if (horario) {
+        const claves = as.filter((a) => !ts.isObjectLiteralExpression(sinEnvoltura(a)) && a !== (metodo === "every" ? as[0] : undefined)).flatMap((a) => claveMensaje(a) ?? []);
+        if (claves.length) programados.push({ claves, horario, archivo, linea: linea(n) });
+      }
+    }
+    // gRPC con @grpc/grpc-js: server.addService(proto.pkg.Servicio.service, { metodo: impl }).
+    if (metodo === "addService" && as.length >= 2) {
+      const svc = as[0]!.getText().replace(/\.service$/, "");
+      for (const [clave, d] of implementacion(as[1]!, archivo)) grpcServidor(svc, clave, d.destinos, archivo, d.linea);
+      return;
+    }
+    // Cliente de gRPC: una variable o propiedad con un servicio conocido, y un rpc suyo.
+    const recv = n.expression.expression;
+    const nombreRecv = ts.isPropertyAccessExpression(recv) ? recv.name.text : ts.isIdentifier(recv) ? recv.text : null;
+    const svcs = nombreRecv ? clientes.get(nombreRecv) : undefined;
+    if (svcs) {
+      const hits = typeof svcs === "string" ? [] : svcs.flatMap((s) => (rpcDe(s, metodo) ? [{ s, r: rpcDe(s, metodo)! }] : []));
+      // Sin `.proto` en el repo, la ruta lleva el nombre que el código le da al servicio (sin paquete).
+      const ruta = hits.length === 1 ? rutaGrpc(hits[0]!.s, hits[0]!.r.nombre) : typeof svcs === "string" ? `/${svcs}/${metodo.charAt(0).toUpperCase()}${metodo.slice(1)}` : null;
+      if (ruta) out.llamadas.push({ paquete, archivo, linea: linea(n), metodo: "GRPC", url: { base: "relativa", host: null, ruta, texto: ruta }, dato: hits.length === 1 ? hits[0]!.r.request.replace(/^stream /, "") : null });
+    }
+  };
+  /** Un rpc implementado por `destinos`: con su `.proto` si el repo lo tiene, o solo por nombre. */
+  const grpcServidor = (svc: string, rpc: string, destinos: Array<{ archivo: string; simbolo: string }>, archivo: string, lin: number) => {
+    const hits = servicioProto(protos, svc).flatMap((s) => (rpcDe(s, rpc) ? [{ s, r: rpcDe(s, rpc)! }] : []));
+    if (hits.length === 1) {
+      const { s, r } = hits[0]!;
+      entradasPend.push({ metodo: "GRPC", archivo, linea: lin, destinos, ruta: rutaGrpc(s, r.nombre), request: r.request, response: r.response, proto: { archivo: s.archivo, linea: r.linea } });
+    } else entradasPend.push({ metodo: "GRPC", archivo, linea: lin, destinos, ruta: `/${svc.split(".").pop()!.replace(/Service$/, "")}/${rpc.charAt(0).toUpperCase()}${rpc.slice(1)}`, request: null, response: null });
+  };
+  /** Las funciones de un objeto de implementación de grpc-js: literal, una variable con uno, o `new Clase()`. */
+  const implementacion = (e: ts.Expression, archivo: string, prof = 0): Array<[string, { destinos: Array<{ archivo: string; simbolo: string }>; linea: number }]> => {
+    const x = sinEnvoltura(e);
+    if (ts.isObjectLiteralExpression(x)) {
+      return x.properties.flatMap((p): Array<[string, { destinos: Array<{ archivo: string; simbolo: string }>; linea: number }]> => {
+        const k = p.name && (ts.isIdentifier(p.name) || ts.isStringLiteral(p.name)) ? p.name.text : null;
+        if (!k) return [];
+        const decl = ts.isShorthandPropertyAssignment(p) ? real(checker.getShorthandAssignmentValueSymbol(p))?.declarations?.[0] : p;
+        const d = decl ? destinos(decl as ts.Declaration) : [];
+        if (d.length) return [[k, { destinos: d, linea: linea(p) }]];
+        const valor = ts.isPropertyAssignment(p) ? p.initializer : ts.isShorthandPropertyAssignment(p) ? p.name : null;
+        return [[k, { destinos: valor ? destinosDeHandler(valor, archivo) : [], linea: linea(p) }]];
+      });
+    }
+    if (prof > 2) return [];
+    if (ts.isNewExpression(x)) {
+      const c = declDe(x.expression);
+      if (c && ts.isClassDeclaration(c) && c.name && delRepo(c.getSourceFile())) {
+        return c.members.filter((m) => esFuncionMiembro(m) && nombreMiembro(m)).map((m) => [nombreMiembro(m)!, { destinos: [{ archivo: rel(c.getSourceFile()), simbolo: `${c.name!.text}.${nombreMiembro(m)}` }], linea: linea(m) }]);
+      }
+    }
+    if (ts.isIdentifier(x)) {
+      const d = declDe(x);
+      if (d && ts.isVariableDeclaration(d) && d.initializer) return implementacion(d.initializer, archivo, prof + 1);
+    }
+    return [];
+  };
+
   // ---------- Pantallas y navegación del front ----------
   /** Ruta de navegación evaluada estáticamente (`ROUTES.x`, `buildPath(ROUTES.y, {id})`, "/a/" + id). */
   /** Rutas posibles de una expresión: las dos ramas de `a ?? b`, `a || b` y `c ? a : b`. */
@@ -2165,9 +2369,11 @@ function extraer(repo: RepoFuente): Extraccion {
       }
     }
 
+    const clientes = clientesGrpc(sf);
     const visitar = (n: ts.Node): void => {
       if (ts.isClassDeclaration(n)) nest(n);
       mensajes(n, archivo);
+      entradas(n, archivo, paquete, clientes);
       if (usaKysely && ts.isTaggedTemplateExpression(n)) sqlCrudo(n);
       if ((usaRouter || usaNavegacionNativa) && (/\.[cm]?[jt]sx?$/.test(archivo) || EXT_SFC.test(archivo))) {
         pantallas(n, archivo, paquete);
@@ -2394,6 +2600,35 @@ function extraer(repo: RepoFuente): Extraccion {
       if (!arc || (t.archivo === p.archivo && t.simbolo === p.desde)) continue;
       const inv = (arc.invoca ??= []);
       if (!inv.some((i) => i.via && i.desde === p.desde && i.archivo === t.archivo && i.simbolo === t.simbolo)) inv.push({ desde: p.desde, archivo: t.archivo, simbolo: t.simbolo, linea: p.linea, via: p.texto });
+    }
+  }
+  // Entradas: un trabajo repetible es de quien se suscribe a su clave; cada entrada queda en la línea del método que la
+  // ejecuta (con uno solo) o en la que la declara.
+  for (const p of programados) {
+    const k = p.claves.find((c) => suscripciones.has(c.clave) || definidos.has(c.clave));
+    if (!k) continue;
+    const ds = [...new Map((suscripciones.get(k.clave) ?? definidos.get(k.clave)!).map((d) => [`${d.archivo}#${d.simbolo}`, d])).values()];
+    entradasPend.push({ metodo: "CRON", archivo: p.archivo, linea: p.linea, destinos: ds, horario: p.horario, nombre: nombreMensaje(k) });
+  }
+  const rutasCron = new Set<string>();
+  for (const e of entradasPend.sort((a, b) => cmp(a.archivo, b.archivo) || a.linea - b.linea)) {
+    const uno = e.destinos.length === 1 ? e.destinos[0]! : undefined;
+    const sim = uno ? porRuta.get(uno.archivo)?.simbolos.find((x) => x.nombre === uno.simbolo) : undefined;
+    const [archivo, lin] = uno && sim ? [uno.archivo, sim.linea] : [e.archivo, e.linea];
+    const paquete = paqueteDe(repo, archivo);
+    let ruta = e.ruta;
+    if (!ruta) {
+      const contiene = porRuta.get(e.archivo)?.simbolos.filter((x) => x.tipo !== "clase" && x.linea <= e.linea && (x.fin ?? x.linea) >= e.linea).pop()?.nombre;
+      const base = rutaCron(e.nombre ?? sim?.nombre ?? contiene ?? e.archivo.split("/").pop()!.replace(/\.[^.]+$/, ""));
+      ruta = base;
+      for (let i = 2; rutasCron.has(`${paquete}\u0000${ruta}`); i++) ruta = `${base}-${i}`;
+      rutasCron.add(`${paquete}\u0000${ruta}`);
+    }
+    out.endpoints.push({ paquete, metodo: e.metodo, ruta, request: e.request ?? null, response: e.response ?? null, archivo, linea: lin, ...(e.horario ? { horario: e.horario } : {}), ...(e.proto ? { proto: e.proto } : {}) });
+    // Los mensajes del rpc, como formas: `contrato_de` los muestra.
+    for (const t of [e.request, e.response]) {
+      const n = t?.replace(/^stream /, "");
+      if (n && protos.mensajes[n]) (out.formas[paquete] ??= {})[n] ??= protos.mensajes[n]!;
     }
   }
   // Eventos del contrato: los de forma inequívoca, y los dudosos solo si la misma clave se publica y se consume en el repo.

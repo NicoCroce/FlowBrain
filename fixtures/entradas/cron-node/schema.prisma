@@ -1,0 +1,9 @@
+model Pedido {
+  id    String @id
+  total Int
+}
+
+model Resumen {
+  id   String @id
+  dia  String
+}

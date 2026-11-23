@@ -112,6 +112,10 @@ export interface EndpointCrudo {
   linea: number;
   /** Quién lo leyó, si no es código (un evento http de serverless): decide la `fuente` del contrato. */
   origen?: "infra-parser";
+  /** `CRON`: cuándo corre, como lo escribe el código (`0 3 * * *`, `cada 60000 ms`, `daily`). */
+  horario?: string;
+  /** `GRPC`: el rpc en el `.proto` que este método implementa. */
+  proto?: { archivo: string; linea: number };
 }
 
 /** URL analizada estáticamente. `ruta` usa `{param}` para segmentos dinámicos. */
