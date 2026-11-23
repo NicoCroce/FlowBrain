@@ -127,7 +127,7 @@ export interface EstructuraArchivo {
   /** Tipos, interfaces, enums, clases y constantes del repo que nombra cada símbolo (de `_build/files`). */
   referencias?: Array<{ desde: string; archivo: string; simbolo: string; linea: number }> | undefined;
   /** Llamadas que el parser no pudo atribuir (tipo `any`, interfaz sin implementación conocida). */
-  sinResolver?: Array<{ desde: string; linea: number; llamada: string; candidatos?: string[] | undefined }> | undefined;
+  sinResolver?: Array<{ desde: string; linea: number; llamada: string; candidatos?: string[] | undefined; motivo?: string | undefined }> | undefined;
   /** Casos de prueba que define, si es un archivo de test. Vacío: es un test, pero no se le pudieron leer los casos. */
   casos?: CasoDeTest[] | undefined;
 }
@@ -502,9 +502,12 @@ export function fichasDeFuncionalidades(
         const a = n.atributos as { ruta: string; componentes: string[]; envuelta: PantallaFicha["envuelta"]; sale: PantallaFicha["vaA"]; desdeEnvolturas?: Array<{ componente: string; tipo: string; evidencia: string }> };
         const propio = a.componentes.find((c) => enCodigo(c.slice(0, c.lastIndexOf("#")), codigo));
         if (!propio) return [];
-        const i = propio.lastIndexOf("#");
-        const crudo = recPantalla.desdeSimbolo(propio.slice(0, i), propio.slice(i + 1));
-        const r = { pasos: soloCamino(crudo.pasos), truncado: crudo.truncado };
+        // Lo que la envuelve (layouts y guardas) primero: sus llamadas también son de la pantalla.
+        const crudos = [...a.envuelta.map((e) => e.componente).filter((c) => c !== propio), propio]
+          .map((c) => ({ c, r: recPantalla.desdeSimbolo(c.slice(0, c.lastIndexOf("#")), c.slice(c.lastIndexOf("#") + 1)) }))
+          .filter((x) => x.c === propio || x.r.pasos.some((p) => p.toca.length))
+          .map((x) => x.r);
+        const r = { pasos: soloCamino(crudos.flatMap((c) => c.pasos)), truncado: crudos.some((c) => c.truncado) };
         const endpoints = [...new Set(r.pasos.flatMap((p) => p.toca.flatMap((t) => (t.verbo === "llama_a" && t.endpoint ? [t.endpoint] : []))))];
         return [
           {

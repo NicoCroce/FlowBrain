@@ -1,0 +1,5 @@
+{
+  "name": "@contexto/web",
+  "private": true,
+  "dependencies": { "react": "18", "react-router-dom": "6" }
+}

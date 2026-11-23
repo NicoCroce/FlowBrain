@@ -26,6 +26,7 @@ import {
   type UsoDePaquete,
   type CamposLlamada,
   type LadoLlamada,
+  type PantallaCruda,
 } from "./tipos.js";
 
 /**
@@ -796,6 +797,8 @@ function extraer(repo: RepoFuente): Extraccion {
   const destinos = (d: ts.Declaration): Array<{ archivo: string; simbolo: string }> => {
     const sf = d.getSourceFile();
     if (!delRepo(sf)) return [];
+    const interna = internaDe(d);
+    if (interna) return [{ archivo: interna.archivo, simbolo: interna.nombre }];
     if (ts.isFunctionDeclaration(d) && d.name) return [{ archivo: rel(sf), simbolo: d.name.text }];
     if ((ts.isPropertyAssignment(d) || ts.isMethodDeclaration(d)) && ts.isObjectLiteralExpression(d.parent)) {
       const o = nombreObjeto(d.parent);
@@ -870,7 +873,28 @@ function extraer(repo: RepoFuente): Extraccion {
       }
       return d;
     };
+    const agregarDestino = (t: { archivo: string; simbolo: string }, n: ts.Node) => {
+      if (t.archivo === archivo && t.simbolo === desde) return;
+      const l = linea(n), k = `${desde}\u0000${t.archivo}\u0000${t.simbolo}\u0000${l}`;
+      if (!out.has(k)) out.set(k, { desde, archivo: t.archivo, simbolo: t.simbolo, linea: l });
+    };
     const ver = (n: ts.Node): void => {
+      // Una función tomada del objeto que devuelve un hook o que publica un contexto (`const { guardar } = useX()`,
+      // `ctx.cerrar`): va a la función de adentro del hook o del Provider, no a donde diga el tipo.
+      const usado = ts.isCallExpression(n) ? n.expression : (ts.isPropertyAccessExpression(n) || ts.isIdentifier(n)) && comoValor(n) ? n : null;
+      const x = usado && (ts.isIdentifier(usado) || ts.isPropertyAccessExpression(usado) || (ts.isNonNullExpression(usado) && ts.isPropertyAccessExpression(usado.expression))) ? expuesto(ts.isNonNullExpression(usado) ? usado.expression : usado) : null;
+      if (x) {
+        for (const t of x.destinos) agregarDestino(t, n);
+        // Solo una llamada es seguro una función: un valor sin destino puede ser un dato (`sesion.usuario`).
+        if (!x.destinos.length && x.motivo && sinResolver && ts.isCallExpression(n)) sinResolver.push({ desde, linea: linea(n), llamada: n.expression.getText().replace(/\s+/g, " ").slice(0, 80), motivo: x.motivo });
+        ts.forEachChild(n, ver);
+        return;
+      }
+      // Leer un contexto es depender de lo que su Provider carga y publica como dato (`data: filas` ← `useReporte()`).
+      if (ts.isCallExpression(n) && (nombreLlamado(n) === "useContext" || nombreLlamado(n) === "use")) {
+        const ctx = contextoDe(n.arguments[0]);
+        for (const t of ctx ? (exposicionDeContexto(ctx).datos ?? []) : []) agregarDestino(t, n);
+      }
       if (ts.isCallExpression(n) || ts.isNewExpression(n)) {
         const e = n.expression;
         const nombre = ts.isPropertyAccessExpression(e) ? e.name : ts.isIdentifier(e) ? e : null;
@@ -890,11 +914,319 @@ function extraer(repo: RepoFuente): Extraccion {
       } else if ((ts.isPropertyAccessExpression(n) || ts.isIdentifier(n)) && comoValor(n)) {
         // Una función pasada como valor (`mutationFn: api.remove`, `onClick={guardar}`, `.then(procesar)`) se va a llamar.
         const d = real(checker.getSymbolAtLocation(ts.isPropertyAccessExpression(n) ? n.name : n))?.declarations?.[0];
-        if (d && esFuncion(d)) agregar(d, n);
+        if (d && (esFuncion(d) || internaDe(d))) agregar(d, n);
       }
       ts.forEachChild(n, ver);
     };
     ver(cuerpo);
+  };
+
+  // ---------- Objetos que exponen un hook o un contexto ----------
+  // Una pantalla no siempre llama a la función: la toma del objeto que le da un hook (`const { guardar } = usePedidos()`,
+  // `otp.abrir()`) o un contexto (`useContext(SesionContext).cerrar`), y la función vive adentro del hook o del componente
+  // que provee el contexto (`<SesionContext.Provider value={{ entrar, cerrar: salir }}>`). Esas funciones de adentro se
+  // vuelven símbolos `Dueño.funcion`, con su rango, y el uso va a ellas.
+  type Destino = { archivo: string; simbolo: string };
+  interface Dueño {
+    nombre: string;
+    fn: ts.Node;
+  }
+  interface Interna {
+    archivo: string;
+    nombre: string;
+    dueño: string;
+    decl: ts.Node;
+    cuerpo: ts.Node;
+  }
+  interface Exposicion {
+    /** Cómo se nombra en un motivo: `usePedidos` o `SesionContext`. */
+    nombre: string;
+    claves: Map<string, Destino[]>;
+    sinProveedor?: boolean;
+    /** Algo de lo que expone no se pudo leer (`...useQuery()`, un `return query`): una clave que falta puede venir de ahí. */
+    abierta?: boolean;
+    /** De un contexto: lo que su Provider llama para armar los valores que no son funciones (los datos que publica). */
+    datos?: Destino[];
+  }
+  /** Funciones de adentro de un hook o un Provider que se exponen: por nodo de la función. */
+  const internas = new Map<ts.Node, Interna>();
+  const internasDe = new Map<string, Interna[]>();
+  const sinEnvoltura = (e: ts.Expression): ts.Expression => {
+    while (ts.isParenthesizedExpression(e) || ts.isAsExpression(e) || ts.isNonNullExpression(e) || ts.isSatisfiesExpression(e)) e = e.expression;
+    return e;
+  };
+  const nombreLlamado = (c: ts.CallExpression) => (ts.isIdentifier(c.expression) ? c.expression.text : ts.isPropertyAccessExpression(c.expression) ? c.expression.name.text : "");
+  /** `() => …`, `function …` o `useCallback(() => …, [])`: la función. */
+  const funcionInterna = (e: ts.Expression | undefined): ts.ArrowFunction | ts.FunctionExpression | null => {
+    if (!e) return null;
+    const x = sinEnvoltura(e);
+    if (ts.isCallExpression(x) && nombreLlamado(x) === "useCallback") return funcionLiteral(x.arguments[0]);
+    return funcionLiteral(x);
+  };
+  /** Función más cercana que contiene a `n`. */
+  const funcionDe = (n: ts.Node): ts.Node | null => {
+    for (let p = n.parent; p; p = p.parent) if (ts.isFunctionLike(p)) return p;
+    return null;
+  };
+  /** Símbolo de nivel superior (función) que contiene a `n`, con el nodo de su función. */
+  const dueñoDe = (n: ts.Node): Dueño | null => {
+    for (let p: ts.Node | undefined = n; p; p = p.parent) {
+      if (ts.isFunctionDeclaration(p) && p.name && ts.isSourceFile(p.parent)) return { nombre: p.name.text, fn: p };
+      if (ts.isVariableDeclaration(p) && ts.isIdentifier(p.name) && ts.isVariableStatement(p.parent.parent) && ts.isSourceFile(p.parent.parent.parent)) {
+        const f = funcionLiteral(p.initializer);
+        return f ? { nombre: p.name.text, fn: f } : null;
+      }
+    }
+    return null;
+  };
+  /** La función de adentro registrada que declara `d` (`const f = () => …`, `useCallback`, `function f`), si hay una. */
+  const internaDe = (d: ts.Node): Interna | undefined => {
+    const f = ts.isVariableDeclaration(d) ? funcionInterna(d.initializer) : ts.isFunctionDeclaration(d) ? d : null;
+    return f ? internas.get(f) : undefined;
+  };
+  /** Todas las funciones declaradas en el cuerpo del dueño: las que no se exponen también, para seguir las cadenas de adentro. */
+  const registrarTodas = (dueño: Dueño) => {
+    const cuerpo = (dueño.fn as ts.FunctionLikeDeclaration).body;
+    if (!cuerpo || !ts.isBlock(cuerpo)) return;
+    for (const st of cuerpo.statements) {
+      if (ts.isFunctionDeclaration(st) && st.name && st.body) registrar(dueño, st.name.text, st, st);
+      if (!ts.isVariableStatement(st)) continue;
+      for (const d of st.declarationList.declarations) {
+        const f = ts.isIdentifier(d.name) ? funcionInterna(d.initializer) : null;
+        if (f) registrar(dueño, d.name.getText(), d, f);
+      }
+    }
+  };
+  /** Lo que el dueño llama para armar unos valores: siguiendo sus variables (`data: filtradas` ← `filas` ← `useReporte()`). */
+  const datosDe = (valores: ts.Expression[], dueño: Dueño): Destino[] => {
+    const out = new Map<string, Destino>();
+    const vistas = new Set<ts.Node>();
+    const ver = (n: ts.Node): void => {
+      if (ts.isCallExpression(n) && (ts.isIdentifier(n.expression) || ts.isPropertyAccessExpression(n.expression))) {
+        const d = declDe(n.expression);
+        if (d && delRepo(d.getSourceFile()) && (esFuncion(d) || internaDe(d))) for (const t of destinos(d)) out.set(`${t.archivo}#${t.simbolo}`, t);
+      }
+      if (ts.isIdentifier(n)) {
+        const sym = ts.isShorthandPropertyAssignment(n.parent) && n.parent.name === n ? checker.getShorthandAssignmentValueSymbol(n.parent) : checker.getSymbolAtLocation(n);
+        const d = real(sym)?.declarations?.[0];
+        let v: ts.Node | undefined = d;
+        while (v && ts.isBindingElement(v)) v = v.parent.parent;
+        if (v && ts.isVariableDeclaration(v) && v.initializer && funcionDe(v) === dueño.fn && !vistas.has(v) && !funcionInterna(v.initializer)) {
+          vistas.add(v);
+          ver(v.initializer);
+        }
+      }
+      ts.forEachChild(n, ver);
+    };
+    valores.forEach(ver);
+    return [...out.values()].sort((a, b) => cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo));
+  };
+  const registrar = (dueño: Dueño, nombre: string, decl: ts.Node, fn: ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration): Destino => {
+    const ya = internas.get(fn);
+    if (ya) return { archivo: ya.archivo, simbolo: ya.nombre };
+    const archivo = rel(fn.getSourceFile());
+    const i: Interna = { archivo, nombre: `${dueño.nombre}.${nombre}`, dueño: dueño.nombre, decl, cuerpo: fn.body ?? fn };
+    internas.set(fn, i);
+    internasDe.set(archivo, [...(internasDe.get(archivo) ?? []), i]);
+    return { archivo, simbolo: i.nombre };
+  };
+  /** Lo que vale `e` dentro de `dueño`, si es una función: de adentro (se registra), del repo, o tomada de otro objeto. */
+  const valorDe = (e: ts.Expression, dueño: Dueño, clave: string, prop: ts.Node, sym?: ts.Symbol): Destino[] => {
+    const x = sinEnvoltura(e);
+    const f = funcionInterna(x);
+    if (f) return [registrar(dueño, clave, prop, f)];
+    if (ts.isPropertyAccessExpression(x) || (ts.isIdentifier(x) && !sym)) {
+      const r = expuesto(x);
+      if (r) return r.destinos;
+    }
+    if (!ts.isIdentifier(x)) return [];
+    const d = real(sym ?? checker.getSymbolAtLocation(x))?.declarations?.[0];
+    if (!d || !delRepo(d.getSourceFile())) return [];
+    if (ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && funcionDe(d) === dueño.fn) {
+      const fi = funcionInterna(d.initializer);
+      return fi ? [registrar(dueño, d.name.text, d, fi)] : [];
+    }
+    if (ts.isFunctionDeclaration(d) && d.name && funcionDe(d) === dueño.fn) return [registrar(dueño, d.name.text, d, d)];
+    if (ts.isBindingElement(d)) return expuesto(x)?.destinos ?? [];
+    return esFuncion(d) ? destinos(d) : [];
+  };
+  /** Claves de un objeto literal (o del que arma un `useMemo`, o una variable con uno de esos) dentro de `dueño`. */
+  type Objeto = Map<string, Destino[]> & { abierta?: boolean; datos?: ts.Expression[] };
+  const objetoDe = (e: ts.Expression | undefined, dueño: Dueño, prof = 0): Objeto | null => {
+    if (!e || prof > 4) return null;
+    const x = sinEnvoltura(e);
+    if (ts.isObjectLiteralExpression(x)) {
+      const claves: Objeto = new Map<string, Destino[]>();
+      claves.datos = [];
+      for (const p of x.properties) {
+        if (ts.isSpreadAssignment(p)) {
+          const o = objetoDe(p.expression, dueño, prof + 1);
+          const ex = o ? null : exposicionDeValor(p.expression);
+          for (const [k, v] of o ?? ex?.claves ?? []) claves.set(k, v);
+          if ((!o && !ex) || o?.abierta || ex?.abierta) claves.abierta = true;
+          claves.datos.push(...(o?.datos ?? []));
+          continue;
+        }
+        if (!p.name || !(ts.isIdentifier(p.name) || ts.isStringLiteral(p.name))) continue;
+        const k = p.name.text;
+        if (ts.isShorthandPropertyAssignment(p)) claves.set(k, valorDe(p.name, dueño, k, p, checker.getShorthandAssignmentValueSymbol(p)));
+        else if (ts.isPropertyAssignment(p)) claves.set(k, valorDe(p.initializer, dueño, k, p));
+        if (!claves.get(k)?.length && (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p))) claves.datos.push(ts.isPropertyAssignment(p) ? p.initializer : p.name);
+        else if (ts.isMethodDeclaration(p) && p.body) claves.set(k, [registrar(dueño, k, p, p as unknown as ts.FunctionExpression)]);
+      }
+      return claves;
+    }
+    // `useMemo(() => ({ … }), [])` o `useMemo(() => { return { … } }, [])`.
+    if (ts.isCallExpression(x) && nombreLlamado(x) === "useMemo") {
+      const f = funcionLiteral(x.arguments[0]);
+      if (!f) return null;
+      if (!ts.isBlock(f.body)) return objetoDe(f.body, dueño, prof + 1);
+      for (const r of retornos(f)) {
+        const o = objetoDe(r, dueño, prof + 1);
+        if (o) return o;
+      }
+      return null;
+    }
+    if (ts.isIdentifier(x)) {
+      const d = real(checker.getSymbolAtLocation(x))?.declarations?.[0];
+      if (d && ts.isVariableDeclaration(d) && funcionDe(d) === dueño.fn) return objetoDe(d.initializer, dueño, prof + 1);
+    }
+    return null;
+  };
+  /** Lo que devuelve una función: sus `return` (no los de funciones de adentro) o el cuerpo de una flecha. */
+  const retornos = (f: ts.Node): ts.Expression[] => {
+    const cuerpo = (f as ts.FunctionLikeDeclaration).body;
+    if (!cuerpo) return [];
+    if (!ts.isBlock(cuerpo)) return [cuerpo];
+    const out: ts.Expression[] = [];
+    const ver = (n: ts.Node): void => {
+      if (ts.isFunctionLike(n)) return;
+      if (ts.isReturnStatement(n) && n.expression) out.push(n.expression);
+      ts.forEachChild(n, ver);
+    };
+    ts.forEachChild(cuerpo, ver);
+    return out;
+  };
+  /** La variable `C` de `const C = createContext(…)`, si `e` la nombra. */
+  const contextoDe = (e: ts.Expression | undefined): ts.VariableDeclaration | null => {
+    const d = e && (ts.isIdentifier(e) || ts.isPropertyAccessExpression(e)) ? declDe(e) : undefined;
+    if (!d || !ts.isVariableDeclaration(d) || !d.initializer || !delRepo(d.getSourceFile())) return null;
+    const i = sinEnvoltura(d.initializer);
+    return ts.isCallExpression(i) && nombreLlamado(i) === "createContext" ? d : null;
+  };
+  /** Quién provee cada contexto: `<C.Provider value={…}>` o `<C value={…}>` (React 19), con el componente que lo dibuja. */
+  const proveedores = new Map<ts.VariableDeclaration, Array<{ dueño: Dueño; valor: ts.Expression }>>();
+  for (const sf of fuentes) {
+    if (!/\.[jt]sx$/.test(sf.fileName) && !sf.text.includes("Provider")) continue;
+    const ver = (n: ts.Node): void => {
+      if (ts.isJsxOpeningElement(n) || ts.isJsxSelfClosingElement(n)) {
+        const t = n.tagName;
+        const ctx = ts.isPropertyAccessExpression(t) && t.name.text === "Provider" ? contextoDe(t.expression) : ts.isIdentifier(t) ? contextoDe(t) : null;
+        const attr = ctx && n.attributes.properties.find((a): a is ts.JsxAttribute => ts.isJsxAttribute(a) && a.name.getText() === "value");
+        const valor = attr?.initializer && ts.isJsxExpression(attr.initializer) ? attr.initializer.expression : undefined;
+        const dueño = valor ? dueñoDe(n) : null;
+        if (ctx && valor && dueño) proveedores.set(ctx, [...(proveedores.get(ctx) ?? []), { dueño, valor }]);
+      }
+      ts.forEachChild(n, ver);
+    };
+    ver(sf);
+  }
+  const exposiciones = new Map<ts.Node, Exposicion | null>();
+  const exposicionDeContexto = (ctx: ts.VariableDeclaration): Exposicion => {
+    if (exposiciones.has(ctx)) return exposiciones.get(ctx) ?? { nombre: ctx.name.getText(), claves: new Map() };
+    exposiciones.set(ctx, null);
+    const ps = proveedores.get(ctx) ?? [];
+    const claves = new Map<string, Destino[]>();
+    let abierta = false;
+    const datos: Destino[] = [];
+    for (const p of ps) {
+      const o = objetoDe(p.valor, p.dueño);
+      if (!o || o.abierta) abierta = true;
+      registrarTodas(p.dueño);
+      for (const t of datosDe(o?.datos ?? [], p.dueño)) if (!datos.some((y) => y.archivo === t.archivo && y.simbolo === t.simbolo)) datos.push(t);
+      for (const [k, v] of o ?? []) claves.set(k, [...(claves.get(k) ?? []), ...v.filter((d) => !(claves.get(k) ?? []).some((y) => y.archivo === d.archivo && y.simbolo === d.simbolo))]);
+    }
+    const r: Exposicion = { nombre: ctx.name.getText(), claves, ...(ps.length ? {} : { sinProveedor: true }), ...(abierta ? { abierta: true } : {}), ...(datos.length ? { datos } : {}) };
+    exposiciones.set(ctx, r);
+    return r;
+  };
+  /** Hook del repo (`useAlgo`) y lo que expone su objeto devuelto (o el contexto que devuelve). */
+  const exposicionDeHook = (fn: ts.Node, nombre: string): Exposicion | null => {
+    if (exposiciones.has(fn)) return exposiciones.get(fn)!;
+    exposiciones.set(fn, null);
+    const dueño: Dueño = { nombre, fn };
+    let r: Exposicion | null = null;
+    let abierta = false;
+    for (const e of retornos(fn)) {
+      const o = objetoDe(e, dueño);
+      const c = o ? null : exposicionDeValor(e);
+      if (!o && !c) {
+        // `return null` corta antes; cualquier otra cosa (un arreglo, `useQuery()`) no se sabe qué expone.
+        const x = sinEnvoltura(e);
+        if (x.kind !== ts.SyntaxKind.NullKeyword && !(ts.isIdentifier(x) && x.text === "undefined")) abierta = true;
+        continue;
+      }
+      r ??= { nombre, claves: new Map() };
+      for (const [k, v] of o ?? c!.claves) r.claves.set(k, v);
+      if (o?.abierta || c?.abierta) abierta = true;
+      if (c?.sinProveedor) r.sinProveedor = true;
+      if (c) r.nombre = `${nombre} (${c.nombre})`;
+    }
+    if (r && abierta) r.abierta = true;
+    if (r) registrarTodas(dueño);
+    exposiciones.set(fn, r);
+    return r;
+  };
+  /** Lo que expone un valor: `useContext(C)`, la llamada a un hook del repo, o una variable con alguno de los dos. */
+  const exposicionDeValor = (e: ts.Expression | undefined, prof = 0): Exposicion | null => {
+    if (!e || prof > 4) return null;
+    const x = sinEnvoltura(e);
+    if (ts.isCallExpression(x)) {
+      const n = nombreLlamado(x);
+      if (n === "useContext" || n === "use") {
+        const ctx = contextoDe(x.arguments[0]);
+        return ctx ? exposicionDeContexto(ctx) : null;
+      }
+      if (!/^use[A-Z]/.test(n)) return null;
+      const d = declDe(x.expression);
+      if (!d || !delRepo(d.getSourceFile())) return null;
+      if (ts.isFunctionDeclaration(d) && d.name && ts.isSourceFile(d.parent)) return exposicionDeHook(d, d.name.text);
+      const f = ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) ? funcionLiteral(d.initializer) : null;
+      return f ? exposicionDeHook(f, (d as ts.VariableDeclaration).name.getText()) : null;
+    }
+    if (ts.isIdentifier(x)) {
+      const d = real(checker.getSymbolAtLocation(x))?.declarations?.[0];
+      if (d && ts.isVariableDeclaration(d) && ts.isIdentifier(d.name) && d.initializer) return exposicionDeValor(d.initializer, prof + 1);
+    }
+    return null;
+  };
+  /**
+   * Un uso de una función tomada de un objeto expuesto: `v.m` con `const v = useX()` o `useContext(C)`, o `m` con
+   * `const { m } = …`. `null` si no viene de ninguno; si viene pero no se resuelve, sin destinos y con el motivo.
+   */
+  const expuesto = (n: ts.Expression): { destinos: Destino[]; motivo?: string } | null => {
+    let fuente: Exposicion | null = null;
+    let clave: string | null = null;
+    if (ts.isPropertyAccessExpression(n) && ts.isIdentifier(sinEnvoltura(n.expression))) {
+      const d = real(checker.getSymbolAtLocation(sinEnvoltura(n.expression)))?.declarations?.[0];
+      if (d && ts.isVariableDeclaration(d) && ts.isIdentifier(d.name)) fuente = exposicionDeValor(d.initializer);
+      clave = n.name.text;
+    } else if (ts.isIdentifier(n)) {
+      // `f({ guardar })`: el nombre abreviado es la propiedad; el valor es la variable.
+      const sym = ts.isShorthandPropertyAssignment(n.parent) && n.parent.name === n ? checker.getShorthandAssignmentValueSymbol(n.parent) : checker.getSymbolAtLocation(n);
+      const d = real(sym)?.declarations?.[0];
+      if (d && ts.isBindingElement(d) && ts.isObjectBindingPattern(d.parent) && ts.isVariableDeclaration(d.parent.parent) && !d.dotDotDotToken) {
+        fuente = exposicionDeValor(d.parent.parent.initializer);
+        const pn = d.propertyName;
+        clave = pn && (ts.isIdentifier(pn) || ts.isStringLiteral(pn)) ? pn.text : ts.isIdentifier(d.name) ? d.name.text : null;
+      }
+    }
+    if (!fuente || clave === null) return null;
+    // Una clave que existe pero no es una función del repo (un `setX` de `useState`, el `refetch` de una query): no hay
+    // a dónde ir y no falta nada. Una que no existe en un objeto que no se leyó entero: puede venir de lo que no se leyó.
+    if (fuente.claves.has(clave)) return { destinos: fuente.claves.get(clave)! };
+    if (fuente.sinProveedor) return { destinos: [], motivo: `${fuente.nombre}: ningún componente del repo lo provee (\`<…Provider value={…}>\`)` };
+    return fuente.abierta ? null : { destinos: [], motivo: `${fuente.nombre} no expone \`${clave}\`` };
   };
 
   /**
@@ -992,6 +1324,8 @@ function extraer(repo: RepoFuente): Extraccion {
   };
   const simboloContenedor = (n: ts.Node): string | null => {
     for (let p = n.parent; p; p = p.parent) {
+      const i = internas.get(p);
+      if (i) return i.nombre;
       if (ts.isClassElement(p) && p.parent && ts.isClassDeclaration(p.parent) && p.parent.name && ts.isSourceFile(p.parent.parent)) {
         const m = nombreMiembro(p);
         return m && esFuncionMiembro(p) ? `${p.parent.name.text}.${m}` : null;
@@ -1290,10 +1624,16 @@ function extraer(repo: RepoFuente): Extraccion {
     if (envolturaPropia) envuelta.push(envolturaPropia);
     envuelta.push(...marcos);
     out.pantallas.push({ paquete, ruta: normalizarRuta(completa || "/"), archivo, linea: linea(n), componente: comp, envuelta });
+    // Ruta relativa dentro de un componente (rutas descendientes de React Router 6, `${path}/x` de `useRouteMatch` en
+    // el 5): cuelga de la ruta que monta a ese componente. Se arma al final, con todas las rutas vistas.
+    const deMatch = /^\{(path|url)\}(?:\/(.*))?$/.exec(completa);
+    const contenedor = ts.isJsxSelfClosingElement(n) || ts.isJsxOpeningElement(n) ? dueñoDe(n) : null;
+    if (contenedor && (deMatch || !completa.startsWith("/"))) relativas.push({ pantalla: out.pantallas[out.pantallas.length - 1]!, contenedor: { archivo, simbolo: contenedor.nombre }, resto: deMatch ? (deMatch[2] ?? "") : completa, deMatch: !!deMatch });
     // Ruta con nombre (`{ path, name: "reservar", component }`): se navega a ella por el nombre.
     const nm = ts.isObjectLiteralExpression(n) ? propiedad(n, "name") : undefined;
     if (nm && ts.isStringLiteralLike(nm)) rutasConNombre.set(`${paquete}\u0000${nm.text}`, normalizarRuta(completa || "/"));
   };
+  const relativas: Array<{ pantalla: PantallaCruda; contenedor: RefSimbolo; resto: string; deMatch: boolean }> = [];
   /** Nombre de ruta → ruta, por paquete; las navegaciones por nombre se resuelven al final, con todas las rutas vistas. */
   const rutasConNombre = new Map<string, string>();
   const POR_NOMBRE = "\u0000nombre:";
@@ -1659,6 +1999,21 @@ function extraer(repo: RepoFuente): Extraccion {
     return null;
   };
 
+  // Todas las funciones de adentro que exponen los hooks y los Providers, antes de recorrer: un archivo puede usar la
+  // de otro que ya se recorrió.
+  for (const sf of fuentes) {
+    for (const st of sf.statements) {
+      if (ts.isFunctionDeclaration(st) && st.name && /^use[A-Z]/.test(st.name.text)) exposicionDeHook(st, st.name.text);
+      if (ts.isVariableStatement(st)) {
+        for (const d of st.declarationList.declarations) {
+          const f = ts.isIdentifier(d.name) && /^use[A-Z]/.test(d.name.text) ? funcionLiteral(d.initializer) : null;
+          if (f) exposicionDeHook(f, d.name.getText());
+        }
+      }
+    }
+  }
+  for (const ctx of proveedores.keys()) exposicionDeContexto(ctx);
+
   for (const sf of fuentes) {
     const archivo = rel(sf);
     const paquete = paqueteDe(repo, archivo);
@@ -1726,6 +2081,12 @@ function extraer(repo: RepoFuente): Extraccion {
         simbolos.push({ linea: linea(st), nombre: "default", tipo: "funcion", fin: finDe(st) });
         invocacionesDe(cuerpo, "default", archivo, invoca, sinResolver);
       }
+    }
+    // Funciones de adentro de un hook o un Provider que se exponen: símbolo propio, con lo que llaman, y el dueño las tiene.
+    for (const i of internasDe.get(archivo) ?? []) {
+      simbolos.push({ linea: linea(i.decl), nombre: i.nombre, tipo: "funcion", fin: finDe(i.decl) });
+      invocacionesDe(i.cuerpo, i.nombre, archivo, invoca);
+      invoca.set(`${i.dueño}\u0000${archivo}\u0000${i.nombre}`, { desde: i.dueño, archivo, simbolo: i.nombre, linea: linea(i.decl) });
     }
     for (const st of sf.statements) for (const [n, desde] of partesDe(st)) referenciasDe(n, desde, archivo, referencias);
     // Un componente de un solo archivo es una función con el nombre del archivo, que abarca todo el archivo: tiene las
@@ -2087,6 +2448,31 @@ function extraer(repo: RepoFuente): Extraccion {
     for (const ruta of [r.ruta, ...(r.sinOpcionales && !yaDeclaradas.has(`${paquete}\u0000${r.sinOpcionales}`) ? [r.sinOpcionales] : [])]) {
       out.pantallas.push({ paquete, ruta, archivo, linea: comp?.linea ?? 1, componente: comp?.ref ?? null, envuelta });
     }
+  }
+
+  // Rutas relativas: una por cada ruta que monta al componente que las declara (sin el `/*` de la montada), envueltas
+  // por los layouts de esa y por el componente. Varias vueltas para las descendientes de descendientes.
+  for (let vuelta = 0; vuelta < 4 && relativas.length; vuelta++) {
+    const quedan: typeof relativas = [];
+    for (const r of relativas) {
+      const igual = (c: RefSimbolo | null) => !!c && c.archivo === r.contenedor.archivo && c.simbolo === r.contenedor.simbolo;
+      const montan = out.pantallas.filter((p) => igual(p.componente) && !relativas.some((x) => x.pantalla === p));
+      if (!montan.length) {
+        // Nadie la monta todavía: puede montarla una relativa que se resuelve en esta vuelta.
+        if (out.pantallas.some((p) => igual(p.componente))) quedan.push(r);
+        else if (r.deMatch) r.pantalla.pendiente = `ruta armada con el \`path\` de la ruta que monta a ${r.contenedor.simbolo}, y ninguna ruta del repo lo monta`;
+        continue;
+      }
+      const i = out.pantallas.indexOf(r.pantalla);
+      const nuevas = montan.map((m) => ({
+        ...r.pantalla,
+        ruta: normalizarRuta(`${m.ruta.replace(/\/(\*|\{\*\}|\{[^}]*\.\.\.[^}]*\})$/, "").replace(/\/$/, "")}/${r.resto}`.replace(/\/$/, "") || "/"),
+        envuelta: [...m.envuelta, m.componente!, ...r.pantalla.envuelta],
+      }));
+      out.pantallas.splice(i, 1, ...nuevas);
+    }
+    if (quedan.length === relativas.length) break;
+    relativas.splice(0, relativas.length, ...quedan);
   }
 
   for (const arc of porRuta.values()) arc.invoca?.sort((a, b) => cmp(a.desde, b.desde) || cmp(a.archivo, b.archivo) || cmp(a.simbolo, b.simbolo) || a.linea - b.linea || cmp(a.via ?? "", b.via ?? ""));

@@ -64,7 +64,8 @@ Que el agente responda con evidencia preguntas de producto, código, infraestruc
 | 39 | Otros: Kubernetes, Helm, Terraform y serverless en `infra` | Hecho (decisión 192) |
 | 40 | Pantallas por archivo: Next, Nuxt, SvelteKit y Expo Router | Hecho (decisión 193) |
 | 41 | Más clientes HTTP: Angular `HttpClient`, `ky` y `$fetch` | Hecho (decisión 194) |
-| 42 y 43 | Parsers genéricos: layout y contexto, cron y gRPC | Pendiente |
+| 42 | Layout, contexto y objeto de un hook | Hecho (decisión 196) |
+| 43 | Entradas que no son HTTP: cron y gRPC | Pendiente |
 
 ---
 
@@ -345,7 +346,7 @@ Angular `HttpClient`, `ky` y `$fetch` (con `ofetch` y `useFetch` de Nuxt): llama
 
 ### Paso 42 · Layout, contexto y objeto de un hook
 
-Lo que hoy resuelven tres extractores del proyecto real (decisión 159).
+Lo que resolvían tres extractores del proyecto real (decisión 159): las funciones que publica un contexto o devuelve un hook son símbolos propios y el uso va a ellas, leer un contexto depende de los datos que carga su Provider, las rutas relativas cuelgan de quien monta al componente y lo que llama un layout es de sus pantallas (decisión 196).
 
 ### Paso 43 · Entradas que no son HTTP
 

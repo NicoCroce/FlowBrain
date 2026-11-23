@@ -17,6 +17,7 @@ export interface PantallaCruda {
   linea: number;
   componente: RefSimbolo | null;
   envuelta: RefSimbolo[];
+  pendiente?: string | undefined;
 }
 export interface NavegacionCruda {
   paquete: string;
@@ -46,6 +47,17 @@ export interface AtributosPantalla {
   sale: Salida[];
   /** Layouts o guardas (de cualquier pantalla) que llevan a esta: menús globales, redirecciones. */
   desdeEnvolturas: Array<{ componente: string; tipo: Salida["tipo"]; evidencia: string }>;
+  /** Lo que el parser no pudo resolver de la ruta, con el motivo. */
+  pendiente?: string;
+}
+
+/**
+ * Desde dónde se recorre lo que hace una pantalla: sus componentes y lo que la envuelve (layouts y guardas). Un layout
+ * que pide la sesión la pide cada vez que se abre una pantalla de adentro: sus llamadas son de la pantalla. La
+ * navegación no: el menú de un layout no es una salida de cada pantalla (va en `envuelta[].sale`).
+ */
+export function raicesDePantalla(a: { componentes?: string[]; envuelta?: Array<{ componente: string }> }): string[] {
+  return [...new Set([...(a.componentes ?? []), ...(a.envuelta ?? []).map((e) => e.componente)])];
 }
 export interface NodoPantalla {
   id: string;
@@ -103,11 +115,11 @@ function alcance(repo: string, inicio: RefSimbolo, estructura: Map<string, Estru
  * Lo que alcanza cada pantalla desde sus componentes (`repo:archivo#Simbolo`), siguiendo lo que llaman y dibujan:
  * con esto se sabe qué pantallas llegan a una línea del repo (un componente importado de otro paquete, por ejemplo).
  */
-export function alcancePorPantalla(repo: string, pantallas: Array<{ id: string; atributos: { componentes: string[] } }>, estructura: Map<string, EstructuraArchivo>) {
+export function alcancePorPantalla(repo: string, pantallas: Array<{ id: string; atributos: { componentes: string[]; envuelta?: Array<{ componente: string }> } }>, estructura: Map<string, EstructuraArchivo>) {
   const out = new Map<string, { simbolos: Set<string>; archivos: Set<string> }>();
   for (const p of pantallas) {
     const simbolos = new Set<string>(), archivos = new Set<string>();
-    for (const c of p.atributos.componentes) {
+    for (const c of raicesDePantalla(p.atributos)) {
       const i = c.lastIndexOf("#"), j = c.indexOf(":");
       if (i < 0 || j < 0 || c.slice(0, j) !== repo) continue;
       const x = alcance(repo, { archivo: c.slice(j + 1, i), simbolo: c.slice(i + 1) }, estructura);
@@ -172,7 +184,7 @@ export function grafoDePantallas(
       id,
       nombre: ps[0]!.ruta,
       aliases: [...new Set(comps.map((c) => c.simbolo))].sort(cmp),
-      atributos: { ruta: ps[0]!.ruta, componentes, evidencia: ev(ps[0]!.archivo, ps[0]!.linea), envuelta, sale, desdeEnvolturas: [] },
+      atributos: { ruta: ps[0]!.ruta, componentes, evidencia: ev(ps[0]!.archivo, ps[0]!.linea), envuelta, sale, desdeEnvolturas: [], ...(ps.find((p) => p.pendiente) ? { pendiente: ps.find((p) => p.pendiente)!.pendiente! } : {}) },
     });
   }
   for (const [componente, salidas] of [...envolturas.entries()].sort((a, b) => cmp(a[0], b[0]))) {

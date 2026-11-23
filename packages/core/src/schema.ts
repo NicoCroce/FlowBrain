@@ -283,7 +283,7 @@ export const ArchivosSchema = z
             .optional(),
           /** Tipos, interfaces, enums, clases y constantes del repo que nombra cada símbolo. */
           referencias: z.array(z.object({ desde: z.string(), archivo: z.string(), simbolo: z.string(), linea: z.number().int().positive() }).strict()).optional(),
-          sinResolver: z.array(z.object({ desde: z.string(), linea: z.number().int().positive(), llamada: z.string(), candidatos: z.array(z.string()).optional() }).strict()).optional(),
+          sinResolver: z.array(z.object({ desde: z.string(), linea: z.number().int().positive(), llamada: z.string(), candidatos: z.array(z.string()).optional(), motivo: z.string().optional() }).strict()).optional(),
           /** Casos de prueba, si es un archivo de test. */
           casos: z.array(z.object({ nombre: z.string().min(1), linea: z.number().int().positive(), grupo: z.string().optional() }).strict()).optional(),
           componentes: z.array(z.object({ nombre: z.string().min(1), linea: z.number().int().positive() }).strict()).optional(),
@@ -303,6 +303,7 @@ export const ArchivosSchema = z
             linea: z.number().int().positive(),
             componente: RefSimboloSchema.nullable(),
             envuelta: z.array(RefSimboloSchema),
+            pendiente: z.string().optional(),
           })
           .strict(),
       )

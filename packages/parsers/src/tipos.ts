@@ -48,6 +48,8 @@ export interface LlamadaSinResolver {
   llamada: string;
   /** Símbolos del repo (`Clase.metodo`) que se llaman así: a alguno de ellos puede ir la llamada. */
   candidatos?: string[];
+  /** Por qué no se pudo resolver, cuando el parser lo sabe (el contexto no expone esa clave, nadie lo provee). */
+  motivo?: string;
 }
 
 export interface ArchivoCrudo {
@@ -187,6 +189,8 @@ export interface PantallaCruda {
   componente: RefSimbolo | null;
   /** Componentes de rutas contenedoras sin `path` (`<RequireAuth />`): guardas o layouts. */
   envuelta: RefSimbolo[];
+  /** Lo que no se pudo resolver de la ruta (relativa al `path` de un componente que ninguna ruta monta). */
+  pendiente?: string;
 }
 
 /** Navegación hacia una ruta del front: `navigate("/x")`, `<Link to="/x">`, `<Navigate to="/x">` o un ítem de menú. */

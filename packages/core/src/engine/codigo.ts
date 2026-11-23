@@ -17,7 +17,7 @@ import { dependenciasDelGrafo, dependeDe as recorrerDependencias, impacto as rec
 import { dentroDe, ENDPOINT_REF, normalizarRuta, type Graph, type GraphNode } from "../schema.js";
 import { notasDe, type Contexto } from "./contexto.js";
 import { ConsultaError, normalizar, rutaCoincide } from "./herramientas.js";
-import { pantallaDeRuta } from "../pantallas.js";
+import { pantallaDeRuta, raicesDePantalla } from "../pantallas.js";
 import { tokens } from "./proyeccion.js";
 
 /**
@@ -314,7 +314,7 @@ function sinResolverEnPasos(ix: IndiceCodigo, pasos: Array<{ simbolo: string; ev
     const k = `${archivo}#${p.simbolo}`;
     if (vistos.has(k)) continue;
     vistos.add(k);
-    for (const s of ix.estructura.get(archivo)?.sinResolver ?? []) if (s.desde === p.simbolo) out.push(`llamada sin resolver en ${p.simbolo}: ${s.llamada} (${archivo}#L${s.linea}); el recorrido puede seguir por ahí`);
+    for (const s of ix.estructura.get(archivo)?.sinResolver ?? []) if (s.desde === p.simbolo) out.push(`llamada sin resolver en ${p.simbolo}: ${s.llamada} (${archivo}#L${s.linea})${s.motivo ? `: ${s.motivo}` : "; el recorrido puede seguir por ahí"}`);
   }
   return out.length > 8 ? [...out.slice(0, 8), `y ${out.length - 8} llamadas sin resolver más`] : out;
 }
@@ -555,6 +555,7 @@ type AtrPantalla = {
   envuelta: Array<{ componente: string; sale: Array<{ a: string | null; ruta: string; tipo: string; evidencia: string }> }>;
   sale: Array<{ a: string | null; ruta: string; tipo: string; evidencia: string }>;
   desdeEnvolturas?: Array<{ componente: string; tipo: string; evidencia: string }>;
+  pendiente?: string;
 };
 
 /**
@@ -586,16 +587,24 @@ function recorridoPantalla(ctx: Contexto, ix: IndiceCodigo, n: GraphNode) {
   const componente = a.componentes[a.componentes.length - 1] ?? null;
   const pasos: ReturnType<typeof paso>[] = [];
   let truncado = false;
-  // Con varios componentes (la misma ruta declarada dos veces) se recorren todos.
-  for (const c of a.componentes) {
+  // Con varios componentes (la misma ruta declarada dos veces) se recorren todos, y también lo que la envuelve: lo que
+  // hace un layout al abrirse lo hace cada pantalla de adentro.
+  // Una envoltura que no toca nada (un marco de diseño) no suma pasos.
+  const envolturas: string[] = [];
+  for (const c of [...raicesDePantalla(a).filter((c) => !a.componentes.includes(c)), ...a.componentes]) {
     const { archivo, simbolo } = partes(c);
     const r = ix.recorredor.desdeSimbolo(archivo, simbolo);
+    const propio = a.componentes.includes(c);
+    if (!propio && !r.pasos.some((x) => x.toca.length)) continue;
+    if (!propio) envolturas.push(c);
     pasos.push(...r.pasos.map((x) => paso(ix, x)));
     truncado ||= r.truncado;
   }
   const avisos = [
     ...(a.componentes.length > 1 ? [`la ruta ${a.ruta} se declara ${a.componentes.length} veces: se recorren todos sus componentes`] : []),
     ...(a.componentes.length === 0 ? ["no se encontró el componente de la pantalla"] : []),
+    ...(envolturas.length ? [`el recorrido incluye lo que hacen sus layouts y guardas (${envolturas.map((c) => partes(c).simbolo).join(", ")}): sus llamadas son de la pantalla`] : []),
+    ...(a.pendiente ? [`ruta sin resolver: ${a.pendiente}`] : []),
     ...(truncado ? [`recorrido cortado por profundidad (${LIMITES_AGENTE.nivel}) o cantidad de pasos (${LIMITES_AGENTE.pasos})`] : []),
     ...sinResolverEnPasos(ix, pasos),
   ];
@@ -947,7 +956,7 @@ export function riesgo(ctx: Contexto, p: RiesgoParams) {
   const pantallas = new Set<string>();
   for (const n of ctx.graph.nodes) {
     if (n.tipo !== "pantalla") continue;
-    if (((n.atributos as { componentes?: string[] }).componentes ?? []).some((c) => vistos.has(c))) pantallas.add(n.id);
+    if (raicesDePantalla(n.atributos as { componentes?: string[] }).some((c) => vistos.has(c))) pantallas.add(n.id);
   }
   for (const e of ctx.graph.edges) if (e.verbo === "llama_a" && e.endpoint && endpoints.includes(e.endpoint) && ctx.nodo.get(e.desde)?.tipo === "pantalla") pantallas.add(e.desde);
   const feats = new Set<string>();
@@ -1468,7 +1477,7 @@ export function llamadasDePantalla(ctx: Contexto, pantalla: string): Array<{ met
   const ix = ctx.codigo;
   const n = ctx.nodo.get(pantalla);
   if (!ix || !n) return [];
-  const vistos = new Set<string>((n.atributos as { componentes?: string[] }).componentes ?? []);
+  const vistos = new Set<string>(raicesDePantalla(n.atributos as { componentes?: string[] }));
   const cola = [...vistos];
   while (cola.length && vistos.size < 5000) {
     const k = cola.pop()!;
@@ -1539,7 +1548,7 @@ export function pantallasSinLlamadas(ctx: Contexto): string[] {
     }
     return false;
   };
-  return ctx.graph.nodes.filter((n) => n.tipo === "pantalla" && !((n.atributos as { componentes?: string[] }).componentes ?? []).some(alcanza)).map((n) => n.id);
+  return ctx.graph.nodes.filter((n) => n.tipo === "pantalla" && !raicesDePantalla(n.atributos as { componentes?: string[] }).some(alcanza)).map((n) => n.id);
 }
 
 export function llamadasPorResolver(ctx: Contexto, p: PorResolverParams = {}) {

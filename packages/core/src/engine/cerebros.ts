@@ -2,7 +2,7 @@ import { cmp } from "../canonical.js";
 import type { Conexion, Interna } from "../registro.js";
 import { aristasDeExtracciones, crearRecorredor, LIMITES_PANTALLA, tablasSinPagina, type AristaExtraccion, type EstructuraArchivo, type Paso, type Toque } from "../funcionalidades.js";
 import type { Graph } from "../schema.js";
-import { alcancePorPantalla } from "../pantallas.js";
+import { alcancePorPantalla, raicesDePantalla } from "../pantallas.js";
 import { paqueteDeArchivo, quienesUsan, type PaqueteDelRepo, type RepoLeido } from "../componentes.js";
 import { normalizar, rutaCoincide } from "./herramientas.js";
 import type { DerivaCruzada } from "./codigo.js";
@@ -152,7 +152,7 @@ function pantallasPorPendiente(graph: Graph, archivos: string[], evidencias: str
   for (const n of graph.nodes) {
     if (n.tipo !== "pantalla") continue;
     const vistas = new Set<number>();
-    for (const c of (n.atributos as { componentes?: string[] }).componentes ?? []) {
+    for (const c of raicesDePantalla(n.atributos as { componentes?: string[] })) {
       const i = c.lastIndexOf("#");
       if (i < 0) continue;
       for (const p of rec.desdeSimbolo(c.slice(0, i), c.slice(i + 1)).pasos) for (const t of p.toca) if (t.hasta.startsWith(MARCA)) vistas.add(Number(t.hasta.slice(1)));
@@ -489,7 +489,7 @@ export function trazasCruzadas(fuentes: FuenteTraza[], cruces: Cruce[]): TrazasC
       if (n.tipo !== "pantalla" || !conCruce.has(n.id)) continue;
       const pasos: Paso[] = [];
       const endpoints: string[] = [];
-      for (const comp of (n.atributos as { componentes?: string[] }).componentes ?? []) {
+      for (const comp of raicesDePantalla(n.atributos as { componentes?: string[] })) {
         const i = comp.lastIndexOf("#");
         if (i < 0) continue;
         for (const p of rec.desdeSimbolo(comp.slice(0, i), comp.slice(i + 1)).pasos) {

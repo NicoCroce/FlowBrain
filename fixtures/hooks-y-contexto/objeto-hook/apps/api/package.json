@@ -1,0 +1,5 @@
+{
+  "name": "@objeto-hook/api",
+  "private": true,
+  "dependencies": { "express": "4" }
+}

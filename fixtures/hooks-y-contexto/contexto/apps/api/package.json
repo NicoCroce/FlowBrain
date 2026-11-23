@@ -1,0 +1,5 @@
+{
+  "name": "@contexto/api",
+  "private": true,
+  "dependencies": { "express": "4" }
+}
