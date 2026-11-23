@@ -82,7 +82,8 @@ export const CONTRATOS_JS = String.raw`
       cifra(d.sinLlamadas.length, "endpoints que nadie llama", d.sinLlamadas.length ? "var(--feat)" : "") +
       (d.campos && d.campos.llamadasUnidas ? cifra(d.campos.conDiferencias, "con campos que no coinciden", d.campos.conDiferencias ? "var(--dudoso)" : "var(--tabla)") : "") + "</div>";
     var cruce = d.comunicadoCon === null ? ""
-      : d.comunicadoCon.length ? '<p class="subtitulo">Cruzado con ' + d.comunicadoCon.map(esc).join(", ") + ": lo que atiende o llama uno de esos cerebros no cuenta como deriva.</p>"
+      : d.comunicadoCon.length ? '<p class="subtitulo">Cruzado con ' + d.comunicadoCon.map(esc).join(", ") + ": lo que atiende o llama uno de esos cerebros no cuenta como deriva." +
+        (d.internas ? " Tampoco " + (d.internas === 1 ? "la llamada" : "las " + d.internas.toLocaleString("es") + " llamadas") + " al propio servidor que <code>flowbrain.yaml</code> declara " + (d.internas === 1 ? "interna" : "internas") + " (<code>internas</code>)." : "") + "</p>"
       : '<p class="aviso">Este cerebro no tiene la comunicación activa con ningún otro: todo lo que llame afuera figura como sin endpoint. Se activa en <code>flowbrain.yaml</code> (<code>comunicacion</code>).</p>';
 
     var sinEp = d.sinEndpoint.filter(function (x) { return contiene(x.l + " " + x.ev + " " + nombre(x.d), q); });

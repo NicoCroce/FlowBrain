@@ -69,6 +69,8 @@ export interface DerivaVisor {
   comunicadoCon?: string[];
   atendidasEnOtrosCerebros?: Array<{ cerebro: string; llamadas: number; endpoints: number }>;
   disputadasEntreCerebros?: Array<{ desde: string; llamada: string; ev: string; candidatos: string[] }>;
+  /** Llamadas al propio servidor que el registro declara internas (`internas` en flowbrain.yaml): no son deriva. */
+  internasDelServicio?: number;
   /** Comparación de campos (ausente en una deriva calculada antes de que existiera). */
   campos?: { llamadasUnidas: number; comparadas: number; sinDiferencias: number; conDiferencias: number; noComparables: Array<{ lado: string; motivo: string; llamadas: number; tipos?: string[] }> };
   camposQueNoCoinciden?: Array<{ llamada: string; ev: string; endpoint: string; cerebro?: string; evEndpoint: string } & Partial<Record<"cuerpo" | "query" | "respuesta", Record<string, unknown>>>>;
@@ -90,6 +92,7 @@ export function derivaDelVisor(d: DerivaVisor | undefined) {
     difieren: (d.camposQueNoCoinciden ?? []).map((x) => ({ l: x.llamada, ev: x.ev, e: x.endpoint, ...(x.cerebro ? { c: x.cerebro } : {}), eb: x.evEndpoint, ...(x.cuerpo ? { cuerpo: x.cuerpo } : {}), ...(x.query ? { query: x.query } : {}), ...(x.respuesta ? { respuesta: x.respuesta } : {}) })),
     // `null`: no se cruzó con otros cerebros (un brain solo). Vacío: se cruzó y no tiene comunicación con ninguno.
     comunicadoCon: d.comunicadoCon ?? null,
+    internas: d.internasDelServicio ?? 0,
     avisos: d.avisos,
   };
 }

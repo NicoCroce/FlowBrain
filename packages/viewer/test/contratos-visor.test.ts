@@ -128,12 +128,14 @@ describe("pantalla Contratos: deriva", () => {
   });
 
   it("con varios cerebros, cada uno su deriva: lo que atiende otro cerebro va aparte y la falta de comunicación se dice", () => {
-    const front = { ...deriva, llamadasSinEndpoint: [], comunicadoCon: ["back"], atendidasEnOtrosCerebros: [{ cerebro: "back", llamadas: 7, endpoints: 3 }], disputadasEntreCerebros: [{ desde: "svc-viejo", llamada: "GET /x", ev: "repo-a:x.ts#L1", candidatos: ["back/svc-a:GET:/x", "otro/svc-b:GET:/x"] }] };
+    const front = { ...deriva, llamadasSinEndpoint: [], comunicadoCon: ["back"], atendidasEnOtrosCerebros: [{ cerebro: "back", llamadas: 7, endpoints: 3 }], internasDelServicio: 2, disputadasEntreCerebros: [{ desde: "svc-viejo", llamada: "GET /x", ev: "repo-a:x.ts#L1", candidatos: ["back/svc-a:GET:/x", "otro/svc-b:GET:/x"] }] };
     const d = datosDeCerebros([{ nombre: "legado", sinRevisar: false, graph: lado("svc-viejo"), funcionalidades: [], deriva: front }, { nombre: "back", sinRevisar: false, graph: lado("svc-nuevo"), funcionalidades: [], deriva: { ...deriva, comunicadoCon: [] } }], [], []);
     expect((d.deriva as Array<{ c: number }>).map((x) => x.c)).toEqual([0, 1]);
     const v = montar(d);
     expect(v.cifras()).toEqual(["0 llamadas que nadie atiende", "7 llamadas que atiende otro cerebro", "1 en disputa entre cerebros", "1 endpoints que nadie llama"]);
     expect(v.pagina()).toContain("Cruzado con back");
+    // Las internas declaradas no son deriva, y se dice cuántas quedaron afuera.
+    expect(v.pagina()).toContain("Tampoco las 2 llamadas al propio servidor que <code>flowbrain.yaml</code> declara internas (<code>internas</code>).");
     expect(v.pagina()).toContain("Todas las llamadas con ruta tienen quién las atienda.");
     expect(v.pagina()).toContain("back <small>7 llamadas a 3 endpoints</small>");
     expect(v.pagina()).toContain("Candidatos: <code>back/svc-a:GET:/x</code>, <code>otro/svc-b:GET:/x</code>");
