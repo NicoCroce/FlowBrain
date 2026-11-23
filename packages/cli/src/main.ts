@@ -54,7 +54,7 @@ import { draftDir } from "@flowbrain/indexer";
 import { aplicar, ARCHIVO_VISOR, asegurarGitignore, crearRegistro, encontrarRepos, escribirVisor, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { evidencia } from "./evidencia.js";
-import { GUIA_ANALISIS, GUIA_ESPECIFICACIONES, GUIA_ESTUDIO, GUIA_FUNCIONALIDADES, NOMBRE_COMANDO, NOMBRE_ESPECIFICACIONES, NOMBRE_ESTUDIO, NOMBRE_FUNCIONALIDADES } from "./guia.js";
+import { GUIA_ANALISIS, GUIA_ESPECIFICACIONES, GUIA_ESTUDIO, GUIA_FUNCIONALIDADES, GUIA_TESTS, NOMBRE_COMANDO, NOMBRE_ESPECIFICACIONES, NOMBRE_ESTUDIO, NOMBRE_FUNCIONALIDADES, NOMBRE_TESTS } from "./guia.js";
 import { comandoBrain, comillas, init, instalarComando, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
 import { escribirIndex, indexar } from "@flowbrain/parsers";
@@ -107,10 +107,11 @@ Comandos:
                                             --guide imprime cómo deducir y completar las funcionalidades (para el modelo)
   specs [id|nombre] [--state propuesta|confirmada]   especificaciones de negocio y de producto: sin argumento, cuántas tiene
         [--type negocio|producto] [--untested]      cada funcionalidad, sus casos de uso (cumplidos o no) y cuántos casos de
-        [--problems] [--guide]                      test no verifican ninguna; con una funcionalidad, cada caso de uso y
+        [--problems] [--guide] [--guide-tests]      test no verifican ninguna; con una funcionalidad, cada caso de uso y
                                                     cada requisito con sus archivos y sus tests; --problems, solo los
                                                     casos de uso que una persona marcó como mal;
-                                            --guide imprime cómo deducirlas del código y de los tests (para el modelo)
+                                            --guide imprime cómo deducirlas del código y de los tests (para el modelo);
+                                            --guide-tests, cómo escribir los tests que faltan y anotarlos
   flow <"MÉTODO /ruta"|Clase.metodo>   pasos controller → servicio → repositorio, con lo que toca cada uno
   screen </ruta|Componente>               pantalla del front de punta a punta: de dónde se llega, a dónde lleva, qué llama del back
   callers <Clase.metodo|Clase> [--depth n]
@@ -178,6 +179,8 @@ async function prepararMaquina(env: NodeJS.ProcessEnv, cwd: string, settingsOpt?
   const comandoSpecs = join(comandos, `${NOMBRE_ESPECIFICACIONES}.md`);
   await writeFile(comandoEstudio, GUIA_ESTUDIO, "utf8");
   await writeFile(comandoSpecs, GUIA_ESPECIFICACIONES, "utf8");
+  const comandoTests = join(comandos, `${NOMBRE_TESTS}.md`);
+  await writeFile(comandoTests, GUIA_TESTS, "utf8");
   return [
     ...(bin ? [`Comando flowbrain en ${bin.archivo}${bin.enPath ? "" : ` (esa carpeta no está en tu PATH: agregá export PATH="${dirname(bin.archivo)}:$PATH" a tu ~/.zshrc)`}.`] : []),
     `Hooks de Claude Code ${cambio ? "registrados" : "ya estaban registrados"} en ${settings} (UserPromptSubmit y SessionEnd).`,
@@ -185,6 +188,7 @@ async function prepararMaquina(env: NodeJS.ProcessEnv, cwd: string, settingsOpt?
     `Comando /${NOMBRE_FUNCIONALIDADES} en ${comandoFeat}: deduce y completa las funcionalidades de producto de cada cerebro.`,
     `Comando /${NOMBRE_ESTUDIO} en ${comandoEstudio}: estudia cómo está hecho cada repo y escribe los extractores que completan el índice.`,
     `Comando /${NOMBRE_ESPECIFICACIONES} en ${comandoSpecs}: deduce las especificaciones de negocio y de producto de cada funcionalidad.`,
+    `Comando /${NOMBRE_TESTS} en ${comandoTests}: escribe los tests que faltan para las especificaciones y los anota en cada regla.`,
   ];
 }
 
@@ -236,6 +240,7 @@ export async function ejecutar(
         diff: { type: "string" },
         write: { type: "boolean" },
         guide: { type: "boolean" },
+        "guide-tests": { type: "boolean" },
         force: { type: "boolean" },
         all: { type: "boolean" },
         overwrite: { type: "boolean" },
@@ -391,6 +396,7 @@ export async function ejecutar(
     if (comando === "coverage" && o.guide) return { codigo: 0, stdout: GUIA_ESTUDIO, stderr: "" };
     if (comando === "feature" && o.guide) return { codigo: 0, stdout: GUIA_FUNCIONALIDADES, stderr: "" };
     if (comando === "specs" && o.guide) return { codigo: 0, stdout: GUIA_ESPECIFICACIONES, stderr: "" };
+    if (comando === "specs" && o["guide-tests"]) return { codigo: 0, stdout: GUIA_TESTS, stderr: "" };
     if (comando === "evidence") {
       // Con --guide, las instrucciones para el modelo que va a analizar; sin él, el informe.
       if (o.guide) return { codigo: 0, stdout: GUIA_ANALISIS, stderr: "" };

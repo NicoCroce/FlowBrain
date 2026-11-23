@@ -327,6 +327,9 @@ describe("dentro de un proyecto", () => {
     const specs = (await ejecutar(["specs", "--guide"], {}, dir)).stdout;
     expect(specs).toContain("Una regla por especificación");
     expect(await readFile(join(dir, "global/commands/flowbrain-specs.md"), "utf8")).toBe(specs);
+    const tests = (await ejecutar(["specs", "--guide-tests"], {}, dir)).stdout;
+    expect(tests).toContain("Si el test muestra que la regla no se cumple, no la arregles.");
+    expect(await readFile(join(dir, "global/commands/flowbrain-tests.md"), "utf8")).toBe(tests);
   }, 120_000);
 
   it("install sin nadie a quién preguntar: --repos elige la carpeta (un monorepo) y --single junta todo en un cerebro", async () => {

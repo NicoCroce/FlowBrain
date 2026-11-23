@@ -518,6 +518,8 @@ $ARGUMENTS
 - **Un caso con \`problema\`** lo marcó una persona como mal: corregí lo que dice (el caso, sus especificaciones, sus
   archivos o tests) y borrá \`problema\`. Si no estás de acuerdo, dejalo y explicale por qué en el informe.
 - No inventes tests: \`tests\` solo nombra casos que existen. Una especificación sin test es un dato útil, no un error.
+- **\`manual\`** lo escribe una persona cuando decide probar una regla a mano: no lo toques. Para escribir los tests que
+  faltan está \`/flowbrain-tests\` (\`flowbrain specs --guide-tests\`).
 - Respondé en el idioma del usuario. El texto de cada especificación, en el idioma del producto.
 
 ## Qué es cada tipo
@@ -584,4 +586,66 @@ $ARGUMENTS
 5. **Informar al usuario**, corto: por funcionalidad, cuántos casos de uso quedaron cumplidos y cuáles sin test (y
    cuáles son los más riesgosos de dejar así), qué corregiste de lo marcado como mal, y las preguntas abiertas. Lo
    revisa en el visor, pantalla Especificaciones, y marca con "Esto está mal" lo que no le cierre.
+`;
+
+export const NOMBRE_TESTS = "flowbrain-tests";
+
+/**
+ * Guía para que un modelo escriba los tests que faltan para las especificaciones de FlowBrain. Es el texto del comando
+ * `/flowbrain-tests` (lo escribe `flowbrain install`), lo que imprime `flowbrain specs --guide-tests` y la guía que
+ * sigue el agente cuando el visor le manda un pedido. A diferencia de `/flowbrain-specs`, esta sí escribe en los repos
+ * del proyecto, pero solo archivos de test: el código del producto no se toca, y una regla que no se cumple se avisa.
+ */
+export const GUIA_TESTS = `---
+description: Escribe los tests que faltan para las especificaciones de FlowBrain y los anota en cada regla
+---
+
+Vas a escribir los tests automáticos que verifican reglas de FlowBrain que hoy no tiene ningún test. Cada regla está en
+la página de su funcionalidad (\`.flowbrain/<cerebro>/product/<feat>.md\`, en \`especificaciones\`) con el texto en llano
+y el archivo que la cumple. Cuando el test pasa, lo anotás en la regla y la regla queda verificada.
+
+$ARGUMENTS
+
+## Reglas
+
+- **Solo escribís tests.** En los repos del proyecto creás o ampliás archivos de test; el código del producto no se toca,
+  ni para "hacerlo testeable". Si no se puede testear sin cambiarlo, decilo en el informe.
+- **Si el test muestra que la regla no se cumple, no la arregles.** Marcá el caso de uso como mal: en la página, en el
+  caso que contiene la regla, \`problema: "<qué encontraste>"\`. Lo decide una persona.
+- **No abras archivos de entorno reales** (\`.env\` y parecidos) ni uses servicios externos reales: lo que haga falta se
+  simula con lo que ya usan los tests del repo.
+- **Nada de commits ni push.** Los cambios quedan en cada repo para que la persona los revise.
+- **Un test por regla**, con un nombre que diga la regla en el idioma de los tests del repo. Si un test ya existente la
+  verifica y no estaba anotado, anotalo en vez de escribir otro.
+- **No toques** \`texto\`, \`tipo\`, \`estado\` ni \`manual\` de las reglas: solo agregás a \`tests\`.
+
+## Pasos
+
+1. **Qué falta.** Si el pedido trae reglas, son esas. Si no: \`flowbrain specs --untested --brain <cerebro>\` lista las
+   funcionalidades con reglas sin test, y \`flowbrain specs <feat> --untested --brain <cerebro>\` cada regla con su
+   archivo. Las de \`negocio\` primero. \`flowbrain brains\` dice la carpeta de cada repo.
+
+2. **Cómo testea el repo.** Antes de escribir, mirá cómo lo hace ese repo: el \`package.json\` (\`vitest\`, \`jest\`), el
+   \`composer.json\` o \`phpunit.xml\` (PHPUnit), el \`pyproject.toml\` (pytest), y dos o tres tests existentes cerca del
+   archivo que cumple la regla. Copiá su estilo: dónde van los archivos, cómo se llaman, qué se simula y con qué. Si el
+   repo tiene la herramienta pero ningún test, seguí la convención de la herramienta (\`*.test.tsx\` junto al archivo).
+
+3. **Escribir y correr.** Leé el archivo que cumple la regla (con \`flowbrain flow\` o \`flowbrain screen\` si hace falta el
+   recorrido) y escribí el test. Corré solo ese archivo de test con el comando del repo. Si falla:
+   - por cómo está escrito el test, corregí el test;
+   - porque el código no hace lo que dice la regla, dejá el test sin agregar y marcá el caso como mal (regla de arriba).
+
+4. **Anotar.** Por cada test que pasa, sumalo a \`tests\` de la regla:
+
+   \`\`\`yaml
+   tests:
+     - repo-tienda:src/pagos/validar-tarjeta.test.ts::rechaza una tarjeta vencida
+   \`\`\`
+
+   \`repo:ruta::nombre del caso\`, con el nombre tal cual (si está dentro de un \`describe\`, alcanza con el nombre del
+   caso). Después \`flowbrain compile\` dentro de \`.flowbrain/<cerebro>/\` y \`flowbrain specs <feat> --brain <cerebro>\`:
+   la regla ya no tiene \`sinTest\` y el test no aparece en \`rotos\` (si aparece, el nombre o la ruta no coinciden).
+
+5. **Informar**, corto: qué tests escribiste y en qué archivos, qué reglas no se cumplen (y en qué caso quedaron
+   marcadas), cuáles no pudiste testear y por qué, y que los cambios en los repos quedaron sin commitear para revisar.
 `;
