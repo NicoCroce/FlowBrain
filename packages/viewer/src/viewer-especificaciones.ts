@@ -26,14 +26,19 @@ export const ESPECIFICACIONES_JS = String.raw`
   };
   var PESO = { sin_codigo: 0, sin_test: 1, sin_reglas: 2, cumplido: 3 };
   var GRUPOS = [["", "Todos"], ["sintest", "Sin test"], ["problema", "Marcados como mal"], ["cumplido", "Cumplidos"]];
-  var inicial = function () { return { grupo: "", cerebro: "", q: "", abiertas: {} }; };
+  var inicial = function () { return { grupo: "", q: "", abiertas: {} }; };
   var S = inicial();
   var CLAVE = "flowbrain.especificaciones.v2";
-  var guardar = function () { try { if (typeof sessionStorage !== "undefined") sessionStorage.setItem(CLAVE, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ } };
+  // Los cerebros elegidos son una preferencia que dura (localStorage); el resto de la vista, solo la pestaña.
+  var CLAVE_CEREBROS = "flowbrain.especificaciones.cerebros";
+  var SEL = [];
+  var guardar = function () {
+    try { if (typeof sessionStorage !== "undefined") sessionStorage.setItem(CLAVE, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ }
+    try { if (typeof localStorage !== "undefined") localStorage.setItem(CLAVE_CEREBROS, JSON.stringify(SEL)); } catch (e) { /* sin almacenamiento */ }
+  };
   try {
     var previo = typeof sessionStorage !== "undefined" ? JSON.parse(sessionStorage.getItem(CLAVE) || "null") : null;
     if (previo) Object.keys(S).forEach(function (k) { if (previo[k] !== undefined && typeof previo[k] === typeof S[k]) S[k] = previo[k]; });
-    if (S.cerebro !== "" && !CEREBROS[Number(S.cerebro)]) S.cerebro = "";
   } catch (e) { /* sin almacenamiento */ }
   // MSG: { k: clave del caso, texto, error }. EDITA: clave del caso que se está marcando. PEDIDO: { k, copiado }.
   var MSG = null, EDITA = null, BORRADOR = "", PEDIDO = null, ocupado = false, FOCO = null;
@@ -56,9 +61,21 @@ export const ESPECIFICACIONES_JS = String.raw`
     return "cumplido";
   };
 
+  // ---------- Cerebros elegidos ----------
+  // Solo los que tienen funcionalidades; SEL vacío = todos. Se guardan por nombre: el orden del registro puede cambiar.
+  var CON_FICHAS = [];
+  FICHAS.forEach(function (f) { var c = cerebroDe(f.id); if (c && CON_FICHAS.indexOf(c) < 0) CON_FICHAS.push(c); });
+  try {
+    var guardados = typeof localStorage !== "undefined" ? JSON.parse(localStorage.getItem(CLAVE_CEREBROS) || "[]") : [];
+    if (Array.isArray(guardados)) SEL = guardados.filter(function (c) { return CON_FICHAS.indexOf(c) >= 0; });
+  } catch (e) { /* sin almacenamiento */ }
+  if (SEL.length >= CON_FICHAS.length) SEL = [];
+  var elegido = function (c) { return !SEL.length || SEL.indexOf(c) >= 0; };
+
   // ---------- Modelo: funcionalidades del producto (unidas entre cerebros) y sus casos de uso ----------
   // P = { id, nombre, resumen, fichas, cerebros, casos: [C], sueltas: [{ f, e }] }
-  // C = { k, id, nombre, quien, patas: [{ f, cerebro, reglas, estado }], problemas: [{ cerebro, texto }], estado }
+  // C = { k, id, nombre, quien, todas: [pata], patas: [pata de los cerebros elegidos], ocultas, problemas: [{ cerebro, texto }], estado }
+  // pata = { f, cerebro, reglas, estado }. El estado del caso sale solo de los cerebros elegidos.
   function armar() {
     var porLocal = {}, orden = [];
     FICHAS.forEach(function (f) {
@@ -73,27 +90,33 @@ export const ESPECIFICACIONES_JS = String.raw`
         var porIdSpec = {}, usadas = {};
         specs(f).forEach(function (e) { porIdSpec[e.id] = e; });
         (f.casos || []).forEach(function (c) {
-          if (!casos[c.id]) { casos[c.id] = { k: P.id + "|" + c.id, id: c.id, nombre: c.nombre, quien: c.quien || "", patas: [], problemas: [] }; ordenCasos.push(c.id); }
+          if (!casos[c.id]) { casos[c.id] = { k: P.id + "|" + c.id, id: c.id, nombre: c.nombre, quien: c.quien || "", todas: [], patas: [], ocultas: 0, problemas: [] }; ordenCasos.push(c.id); }
           var C = casos[c.id], reglas = c.especificaciones.map(function (id) { return porIdSpec[id]; }).filter(Boolean);
           reglas.forEach(function (e) { usadas[e.id] = true; });
           if (!C.quien && c.quien) C.quien = c.quien;
-          C.patas.push({ f: f, cerebro: cerebroDe(f.id), reglas: reglas, estado: estadoDeReglas(reglas) });
+          C.todas.push({ f: f, cerebro: cerebroDe(f.id), reglas: reglas, estado: estadoDeReglas(reglas) });
           if (c.problema) C.problemas.push({ cerebro: cerebroDe(f.id), texto: c.problema });
         });
         specs(f).forEach(function (e) { if (!usadas[e.id]) P.sueltas.push({ f: f, e: e }); });
       });
-      P.casos = ordenCasos.map(function (id) {
-        var C = casos[id];
-        C.estado = C.patas.reduce(function (a, p) { return PESO[p.estado] < PESO[a] ? p.estado : a; }, "cumplido");
-        if (C.patas.every(function (p) { return !p.reglas.length; })) C.estado = "sin_reglas";
-        return C;
-      });
+      P.casos = ordenCasos.map(function (id) { return casos[id]; });
       return P;
     });
   }
-  var PRODUCTO = armar();
+  function elegir(producto) {
+    producto.forEach(function (P) {
+      P.casos.forEach(function (C) {
+        C.patas = C.todas.filter(function (p) { return elegido(p.cerebro); });
+        C.ocultas = C.todas.length - C.patas.length;
+        C.estado = C.patas.reduce(function (a, p) { return PESO[p.estado] < PESO[a] ? p.estado : a; }, "cumplido");
+        if (C.patas.every(function (p) { return !p.reglas.length; })) C.estado = "sin_reglas";
+      });
+    });
+    return producto;
+  }
+  var PRODUCTO = elegir(armar());
 
-  var enCerebro = function (cerebros) { return S.cerebro === "" || cerebros.indexOf(CEREBROS[Number(S.cerebro)].nombre) >= 0; };
+  var enCerebro = function (cerebros) { return cerebros.some(elegido); };
   var cerebrosDelCaso = function (C) { return C.patas.map(function (p) { return p.cerebro; }); };
   var enGrupo = function (C, g) { return g === "sintest" ? C.estado === "sin_test" || C.estado === "sin_codigo" : g === "problema" ? C.problemas.length > 0 : g === "cumplido" ? C.estado === "cumplido" : true; };
   var sueltaEnGrupo = function (x, g) { return g === "sintest" ? !x.e.tests.length || !x.e.archivos.length : g === "cumplido" ? x.e.tests.length > 0 && x.e.archivos.length > 0 : g === "problema" ? false : true; };
@@ -103,18 +126,17 @@ export const ESPECIFICACIONES_JS = String.raw`
     return !q || (P.nombre + " " + P.id + " " + extra).toLowerCase().indexOf(q) >= 0;
   }
   var casoCoincide = function (P, C) {
-    return enGrupo(C, S.grupo) && enCerebro(cerebrosDelCaso(C)) &&
+    return enGrupo(C, S.grupo) && C.patas.length > 0 &&
       busca(P, C.nombre + " " + C.quien + " " + C.patas.map(function (p) { return p.cerebro + " " + p.reglas.map(function (e) { return textoDeRegla({ e: e }); }).join(" "); }).join(" "));
   };
   var sueltaCoincide = function (P, x) { return sueltaEnGrupo(x, S.grupo) && enCerebro([cerebroDe(x.f.id)]) && busca(P, textoDeRegla(x)); };
   var conSpecs = function (P) { return P.fichas.some(function (f) { return specs(f).length; }); };
   var visibles = function () { return PRODUCTO.filter(function (P) { return enCerebro(P.cerebros); }); };
-  var todosLosCasos = function () { var out = []; visibles().forEach(function (P) { P.casos.forEach(function (C) { if (enCerebro(cerebrosDelCaso(C))) out.push([P, C]); }); }); return out; };
+  var todosLosCasos = function () { var out = []; visibles().forEach(function (P) { P.casos.forEach(function (C) { if (C.patas.length) out.push([P, C]); }); }); return out; };
   var todasSueltas = function () { var out = []; visibles().forEach(function (P) { P.sueltas.forEach(function (x) { if (enCerebro([cerebroDe(x.f.id)])) out.push([P, x]); }); }); return out; };
   function filtrosActivos() {
     var out = [];
     GRUPOS.forEach(function (g) { if (g[0] && S.grupo === g[0]) out.push(g[1].toLowerCase()); });
-    if (S.cerebro !== "") out.push("cerebro " + CEREBROS[Number(S.cerebro)].nombre);
     if (S.q.trim()) out.push("«" + S.q.trim() + "»");
     return out;
   }
@@ -130,13 +152,13 @@ export const ESPECIFICACIONES_JS = String.raw`
       out = ["Agrupá en casos de uso las especificaciones que todavía no están en ninguno, " + GUIA + ". El mismo caso en otro cerebro lleva el mismo id. No cambies el texto de las especificaciones.", ""];
       items.forEach(function (P) {
         var porCerebro = {};
-        P.sueltas.forEach(function (x) { var c = cerebroDe(x.f.id); porCerebro[c] = (porCerebro[c] || 0) + 1; });
+        P.sueltas.forEach(function (x) { var c = cerebroDe(x.f.id); if (elegido(c)) porCerebro[c] = (porCerebro[c] || 0) + 1; });
         out.push("- " + P.id + " (" + P.nombre + "): " + Object.keys(porCerebro).map(function (c) { return plural(porCerebro[c], "especificación", "especificaciones") + " en " + c; }).join(", ") + ".");
       });
     } else {
       out = ["Escribí los casos de uso y las especificaciones de " + (items.length === 1 ? "esta funcionalidad" : "estas " + items.length + " funcionalidades") + " de FlowBrain " + GUIA + ".", ""];
       items.forEach(function (P) {
-        P.fichas.forEach(function (f) { var n = totalCasos(f); out.push("- " + P.id + " (" + P.nombre + "), cerebro " + cerebroDe(f.id) + ": " + (n ? plural(n, "caso de test", "casos de test") : "sin tests: salen del código") + "."); });
+        P.fichas.filter(function (f) { return elegido(cerebroDe(f.id)); }).forEach(function (f) { var n = totalCasos(f); out.push("- " + P.id + " (" + P.nombre + "), cerebro " + cerebroDe(f.id) + ": " + (n ? plural(n, "caso de test", "casos de test") : "sin tests: salen del código") + "."); });
       });
     }
     out.push("", "Al terminar, compilá cada cerebro y revisá con flowbrain specs <funcionalidad> --brain <cerebro> que no queden referencias rotas.");
@@ -201,43 +223,48 @@ export const ESPECIFICACIONES_JS = String.raw`
     C.patas.forEach(function (p) { p.reglas.forEach(function (e) { reglas.push([e, p.f]); }); });
     var varios = C.patas.length > 1;
     var marca = C.problemas.length
-      ? '<div class="es-problema"><b>Marcado como mal</b>' + porTexto(C.problemas).map(function (pr) { return "<p>«" + esc(pr[0]) + "»" + (varios && pr[1].length < C.patas.length ? " <small>(" + esc(pr[1].join(", ")) + ")</small>" : "") + "</p>"; }).join("") +
+      ? '<div class="es-problema"><b>Marcado como mal</b>' + porTexto(C.problemas).map(function (pr) { return "<p>«" + esc(pr[0]) + "»" + (C.todas.length > 1 && pr[1].length < C.todas.length ? " <small>(" + esc(pr[1].join(", ")) + ")</small>" : "") + "</p>"; }).join("") +
         "<small>El agente lo ve con <code>/flowbrain-specs</code> (o <code>flowbrain specs --problems</code>), lo corrige y saca la marca.</small>" +
         (ED ? ' <button type="button" class="boton" data-acc="desmarcar" data-k="' + esc(C.k) + '"' + (ocupado ? " disabled" : "") + ">Quitar la marca</button>" : "") + "</div>"
       : "";
     var form = EDITA === C.k
       ? '<div class="es-form"><label for="es-nota">Qué está mal</label><textarea id="es-nota" rows="3" maxlength="1000" placeholder="El nombre no es lo que hace la pantalla, falta una regla, el archivo o el test no es ese…">' + esc(BORRADOR) + "</textarea>" +
         '<div class="fd-acc"><button type="button" class="boton fd-pri" data-acc="guardar" data-k="' + esc(C.k) + '"' + (ocupado ? " disabled" : "") + '>Guardar</button><button type="button" class="boton" data-acc="cancelar">Cancelar</button></div>' +
-        "<small>Se guarda en la página de la funcionalidad de " + (varios ? "cada cerebro (" + esc(cerebrosDelCaso(C).join(", ")) + ")" : "su cerebro") + ".</small></div>"
+        "<small>Se guarda en la página de la funcionalidad de " + (C.todas.length > 1 ? "cada cerebro (" + esc(C.todas.map(function (p) { return p.cerebro; }).join(", ")) + ")" : "su cerebro") + ".</small></div>"
       : "";
     var msg = MSG && MSG.k === C.k ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + "</p>" : "";
     var accion = ED && EDITA !== C.k ? '<button type="button" class="boton" data-acc="marcar" data-k="' + esc(C.k) + '"' + (ocupado ? " disabled" : "") + ">Esto está mal</button>" : "";
     return '<li class="es-caso" id="es-caso-' + esc(C.k) + '"><div class="es-cabeza"><div><p class="es-nombre">' + esc(C.nombre) + "</p>" + (C.quien ? "<small>Quién: " + esc(C.quien) + "</small>" : "") + "</div>" +
       '<div class="es-acciones"><span class="fd-es ' + est.cls + '" title="' + esc(est.que) + '">' + (C.estado === "cumplido" ? "✔ " : "✘ ") + est.txt + "</span>" + accion + "</div></div>" +
       marca + form + msg +
+      (C.ocultas ? '<p class="es-ocultas"><small>' + plural(C.ocultas, "cerebro más", "cerebros más") + " fuera de los elegidos: " + esc(C.todas.filter(function (p) { return !elegido(p.cerebro); }).map(function (p) { return p.cerebro; }).join(", ")) + ".</small></p>" : "") +
       '<table class="es-patas"><thead><tr><th scope="col">Cerebro</th><th scope="col">Lo cumple</th><th scope="col">Lo verifica</th></tr></thead><tbody>' + C.patas.map(filaDeCerebro).join("") + "</tbody></table>" +
       (reglas.length ? '<details class="tf es-reglas"><summary>' + plural(reglas.length, "regla", "reglas") + ": " + esc(reglas.slice(0, 3).map(function (r) { return r[0].texto.replace(/\.$/, ""); }).join(" · ")) + (reglas.length > 3 ? " …" : "") + "</summary>" +
         '<ul class="lista">' + reglas.map(function (r) { return unaRegla(r[0], r[1], varios); }).join("") + "</ul></details>" : "") + "</li>";
   }
 
   // ---------- Una funcionalidad del producto ----------
+  // Lo de los cerebros elegidos: un caso que solo está en cerebros fuera de la elección no cuenta.
+  var vivos = function (P) { return P.casos.filter(function (C) { return C.patas.length; }); };
+  var sueltasVivas = function (P) { return P.sueltas.filter(function (x) { return elegido(cerebroDe(x.f.id)); }); };
   function pendientes(P) {
     var mal = 0, falta = 0, sueltasSinTest = 0;
-    P.casos.forEach(function (C) { if (C.problemas.length) mal++; if (C.estado !== "cumplido") falta++; });
-    P.sueltas.forEach(function (x) { if (!x.e.tests.length) sueltasSinTest++; });
+    vivos(P).forEach(function (C) { if (C.problemas.length) mal++; if (C.estado !== "cumplido") falta++; });
+    sueltasVivas(P).forEach(function (x) { if (!x.e.tests.length) sueltasSinTest++; });
     return [mal, falta, sueltasSinTest];
   }
   function unaFuncionalidad(P, casos, sueltas) {
     var abierta = !!S.abiertas[P.id] || !!S.q.trim();
-    var cumplidos = P.casos.filter(function (C) { return C.estado === "cumplido"; }).length;
-    var sinTest = P.casos.filter(function (C) { return C.estado === "sin_test" || C.estado === "sin_codigo"; }).length;
-    var mal = P.casos.filter(function (C) { return C.problemas.length; }).length;
-    var chips = (P.casos.length ? '<span class="chip">' + plural(P.casos.length, "caso de uso", "casos de uso") + "</span>" +
+    var vs = vivos(P), ns = sueltasVivas(P).length;
+    var cumplidos = vs.filter(function (C) { return C.estado === "cumplido"; }).length;
+    var sinTest = vs.filter(function (C) { return C.estado === "sin_test" || C.estado === "sin_codigo"; }).length;
+    var mal = vs.filter(function (C) { return C.problemas.length; }).length;
+    var chips = (vs.length ? '<span class="chip">' + plural(vs.length, "caso de uso", "casos de uso") + "</span>" +
         '<span class="chip es-ok">' + cumplidos + " cumplido" + (cumplidos === 1 ? "" : "s") + "</span>" +
         (sinTest ? '<span class="chip es-falta">' + sinTest + " sin test</span>" : "") +
         (mal ? '<span class="chip es-falta">' + mal + " marcado" + (mal === 1 ? "" : "s") + " como mal</span>" : "") : "") +
-      (P.sueltas.length ? '<span class="chip es-aviso">' + plural(P.sueltas.length, "regla sin caso de uso", "reglas sin caso de uso") + "</span>" : "") +
-      P.cerebros.map(function (c) { return '<span class="chip es-cerebro">' + esc(c) + "</span>"; }).join("");
+      (ns ? '<span class="chip es-aviso">' + plural(ns, "regla sin caso de uso", "reglas sin caso de uso") + "</span>" : "") +
+      P.cerebros.map(function (c) { return '<span class="chip es-cerebro' + (elegido(c) ? "" : " fuera") + '"' + (elegido(c) ? "" : ' title="Fuera de los cerebros elegidos"') + ">" + esc(c) + "</span>"; }).join("");
     var cuerpo = "";
     if (abierta) {
       var bloqueSueltas = sueltas.length
@@ -288,8 +315,18 @@ export const ESPECIFICACIONES_JS = String.raw`
     }).join("") + "</div>" + (porReglas ? '<p class="fd-nota">Todavía no hay casos de uso: los números cuentan reglas.</p>' : "");
   }
   function herramientas() {
-    return '<div class="fd-herr"><input id="es-q" type="search" placeholder="Buscar un caso de uso, una regla, una funcionalidad, un archivo o un test…" aria-label="Buscar" autocomplete="off" value="' + esc(S.q) + '">' +
-      (CEREBROS.length > 1 ? '<select id="es-cerebro" aria-label="Cerebro"><option value="">Todos los cerebros</option>' + CEREBROS.map(function (c, i) { return '<option value="' + i + '"' + (String(i) === S.cerebro ? " selected" : "") + ">" + esc(c.nombre) + "</option>"; }).join("") + "</select>" : "") + "</div>";
+    return '<div class="fd-herr"><input id="es-q" type="search" placeholder="Buscar un caso de uso, una regla, una funcionalidad, un archivo o un test…" aria-label="Buscar" autocomplete="off" value="' + esc(S.q) + '"></div>';
+  }
+  // Varios a la vez; lo elegido queda guardado en este navegador para la próxima vez.
+  function selectorDeCerebros() {
+    if (CON_FICHAS.length < 2) return "";
+    var boton = function (c) {
+      var on = SEL.indexOf(c) >= 0;
+      return '<button type="button" class="es-cer' + (on ? " on" : "") + '" data-acc="cerebro" data-k="' + esc(c) + '" aria-pressed="' + on + '">' + (on ? "✔ " : "") + esc(c) + "</button>";
+    };
+    return '<div class="es-cerebros" role="group" aria-label="Cerebros"><span class="lbl">Cerebros</span>' +
+      '<button type="button" class="es-cer' + (SEL.length ? "" : " on") + '" data-acc="cerebro" data-k="" aria-pressed="' + !SEL.length + '">Todos</button>' + CON_FICHAS.map(boton).join("") +
+      "<small>" + (SEL.length ? "Ves " + esc(SEL.join(", ")) + ": los casos cuentan solo lo de " + (SEL.length === 1 ? "ese cerebro" : "esos cerebros") + ". Queda guardado para la próxima vez." : "Elegí los cerebros que te importan: queda guardado para la próxima vez.") + "</small></div>";
   }
   function lista() {
     var activos = filtrosActivos(), sinFiltro = !S.grupo && !S.q.trim();
@@ -334,10 +371,10 @@ export const ESPECIFICACIONES_JS = String.raw`
     }
     var hay = todosLosCasos().length || todasSueltas().length;
     var nada = !hay
-      ? '<p class="aviso">Todavía no hay casos de uso ni reglas escritas' + (S.cerebro !== "" ? " en este cerebro" : "") + ". Se guardan en la página de cada funcionalidad y las deduce el agente: copiá el pedido de abajo y pegáselo, o corré <code>/flowbrain-specs</code>.</p>"
+      ? '<p class="aviso">Todavía no hay casos de uso ni reglas escritas' + (SEL.length ? " en " + esc(SEL.join(", ")) : "") + ". Se guardan en la página de cada funcionalidad y las deduce el agente: copiá el pedido de abajo y pegáselo, o corré <code>/flowbrain-specs</code>.</p>"
       : "";
     PEDIDOS = {};
-    var cabeza = "<h1>Especificaciones</h1>" + COMO + aviso() + cifras() + (hay ? grupos() : "") + (hay || CEREBROS.length > 1 ? herramientas() : "") + nada;
+    var cabeza = "<h1>Especificaciones</h1>" + COMO + aviso() + (CON_FICHAS.length > 1 ? selectorDeCerebros() : "") + cifras() + (hay ? grupos() : "") + (hay ? herramientas() : "") + nada;
     raiz.innerHTML = cabeza + '<div id="es-lista">' + lista() + "</div>";
     if (FOCO) { var s = elem("es-" + FOCO); FOCO = null; if (s && s.scrollIntoView) s.scrollIntoView(); }
   }
@@ -354,7 +391,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     var C = pc[1], hechos = [];
     ocupado = true; MSG = { k: k, texto: "Guardando…" }; pintarLista();
     var cadena = Promise.resolve();
-    C.patas.forEach(function (p) {
+    C.todas.forEach(function (p) {
       cadena = cadena.then(function () {
         return pedir({ tipo: "caso", cerebro: p.cerebro, funcionalidad: local(p.f.id, p.f.id), id: C.id, problema: texto || null }).then(function () {
           hechos.push(p.cerebro);
@@ -364,11 +401,11 @@ export const ESPECIFICACIONES_JS = String.raw`
     });
     cadena.then(function () {
       ocupado = false; EDITA = null; BORRADOR = "";
-      PRODUCTO = armar();
+      PRODUCTO = elegir(armar());
       MSG = { k: k, texto: texto ? "Quedó marcado como mal en " + hechos.join(", ") + ". El agente lo corrige con /flowbrain-specs; copiá el pedido desde «Marcados como mal»." : "Se le sacó la marca en " + hechos.join(", ") + "." };
       pintarTodo();
     }).catch(function (e) {
-      ocupado = false; PRODUCTO = armar();
+      ocupado = false; PRODUCTO = elegir(armar());
       MSG = { k: k, texto: (hechos.length ? "Se guardó en " + hechos.join(", ") + " pero falló en el resto: " : "") + e.message, error: true };
       pintarTodo();
     });
@@ -377,6 +414,14 @@ export const ESPECIFICACIONES_JS = String.raw`
   function accion(b) {
     var acc = b.getAttribute("data-acc"), k = b.getAttribute("data-k");
     if (acc === "limpiar") { S = inicial(); refrescar(true); return; }
+    if (acc === "cerebro") {
+      if (!k) SEL = [];
+      else if (SEL.indexOf(k) >= 0) SEL = SEL.filter(function (c) { return c !== k; });
+      else SEL = SEL.concat([k]);
+      if (SEL.length >= CON_FICHAS.length) SEL = [];
+      SEL.sort(function (a, b) { return CON_FICHAS.indexOf(a) - CON_FICHAS.indexOf(b); });
+      PRODUCTO = elegir(PRODUCTO); refrescar(true); return;
+    }
     if (acc === "grupo") { S.grupo = S.grupo === k && k !== "" ? "" : k || ""; refrescar(true); return; }
     if (acc === "abrir") { if (S.abiertas[k]) delete S.abiertas[k]; else S.abiertas[k] = true; refrescar(false); return; }
     if (acc === "todas") {
@@ -411,7 +456,6 @@ export const ESPECIFICACIONES_JS = String.raw`
     var b = ev.target.closest ? ev.target.closest(".es-ir[data-acc]") : null;
     if (b) { if (ev.preventDefault) ev.preventDefault(); accion(b); }
   });
-  raiz.addEventListener("change", function (ev) { if ((ev.target.id || "") === "es-cerebro") { S.cerebro = ev.target.value; refrescar(true); } });
   raiz.addEventListener("input", function (ev) {
     if (ev.target.id === "es-q") { S.q = ev.target.value; refrescar(false); }
     else if (ev.target.id === "es-nota") BORRADOR = ev.target.value;

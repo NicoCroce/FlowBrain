@@ -388,6 +388,12 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .es-sueltas { margin-top: 12px; padding: 12px; border: 1px dashed var(--borde2); border-radius: 10px; }
 .es-agrupar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; } .es-agrupar p { margin: 0; flex: 1 1 360px; } .es-agrupar .fd-plan { flex: 1 1 100%; }
 #especificaciones .fd-herr select { flex: 0 0 auto; width: auto; }
+.es-cerebros { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 16px; }
+.es-cerebros .lbl { margin-right: 4px; } .es-cerebros small { flex-basis: 100%; color: var(--suave); }
+.es-cer { height: 30px; padding: 0 12px; border: 1px solid var(--borde); border-radius: 999px; background: var(--tarjeta); color: var(--claro); font: 500 12px var(--sans); cursor: pointer; }
+.es-cer:hover { background: var(--hover); color: #FFFFFF; } .es-cer.on { background: #1D2740; border-color: var(--primario); color: #FFFFFF; }
+.chip.es-cerebro.fuera { opacity: .45; text-decoration: line-through; }
+.es-ocultas { margin: 0 0 4px; color: var(--suave); }
 .es-falta { color: var(--dudoso); border-color: #5B2A2A; } .es-ok { color: var(--tabla); border-color: #1E4D33; } .es-aviso { color: var(--feat); border-color: #5A4316; } .es-cerebro { color: var(--medio); }
 .es-ir { cursor: pointer; } .es-ir:hover { border-color: var(--borde2); }
 @media (max-width: 640px) { .es-cuerpo, .es-feat > .chips { margin-left: 0; } .es-patas tbody th { width: auto; } .es-patas td:last-child { width: auto; } }

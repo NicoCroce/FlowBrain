@@ -3,9 +3,11 @@ import { ESPECIFICACIONES_JS } from "../src/viewer-especificaciones.js";
 
 /** La pantalla Especificaciones, corrida con un DOM mínimo: casos de uso unidos entre cerebros, filtros, lo que falta y "Esto está mal". */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
-function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; fetch?: (url: string, init: { method: string; body: string; headers: Record<string, string> }) => Promise<unknown> } = {}) {
+function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; fetch?: (url: string, init: { method: string; body: string; headers: Record<string, string> }) => Promise<unknown>; local?: Map<string, string> } = {}) {
   const guardado = new Map<string, string>();
   const sessionStorage = { getItem: (k: string) => guardado.get(k) ?? null, setItem: (k: string, v: string) => void guardado.set(k, v) };
+  const local = opciones.local ?? new Map<string, string>();
+  const localStorage = { getItem: (k: string) => local.get(k) ?? null, setItem: (k: string, v: string) => void local.set(k, v) };
   const elementos = new Map<string, { innerHTML: string; oyentes: Record<string, Oyente>; addEventListener(t: string, f: Oyente): void }>();
   const el = (id: string) => {
     if (!elementos.has(id)) {
@@ -19,7 +21,7 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
   let borrador = "";
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   const window = { brainVisor: { D: datos, porId, esc }, brainEspecificaciones: null as null | { mostrar(f?: string | null): void }, FLOWBRAIN_EDICION: opciones.edicion, scrollTo() {} };
-  new Function("window", "document", "sessionStorage", "fetch", ESPECIFICACIONES_JS)(window, { getElementById: el }, sessionStorage, opciones.fetch);
+  new Function("window", "document", "sessionStorage", "localStorage", "fetch", ESPECIFICACIONES_JS)(window, { getElementById: el }, sessionStorage, localStorage, opciones.fetch);
   const raiz = el("especificaciones");
   let html = "";
   Object.defineProperty(raiz, "innerHTML", {
@@ -114,13 +116,35 @@ describe("pantalla Especificaciones", () => {
     v.tocar({ "data-acc": "grupo", "data-k": "cumplido" });
     expect(v.lista()).toContain("Nada coincide con los filtros: cumplidos. Hay 2 casos de uso en total.");
     v.tocar({ "data-acc": "limpiar" });
-    v.cambiar("es-cerebro", "1");
+    v.tocar({ "data-acc": "cerebro", "data-k": "back" });
     v.tocar({ "data-acc": "todas" });
     expect(v.casos()).toEqual(["Pagar el carrito"]);
     expect(v.pagina()).not.toContain("Sin casos de uso ni reglas (");
-    v.cambiar("es-cerebro", "");
+    v.tocar({ "data-acc": "cerebro", "data-k": "" });
     v.escribir("recibo");
     expect(v.casos()).toEqual(["Ver el recibo"]);
+  });
+
+  it("elige varios cerebros: los casos cuentan solo lo elegido, lo demás se nombra y la elección queda guardada", () => {
+    const local = new Map<string, string>();
+    const v = montar(datos(), { local });
+    expect(v.pagina()).toContain('data-acc="cerebro" data-k="" aria-pressed="true">Todos</button>');
+    v.tocar({ "data-acc": "cerebro", "data-k": "back" });
+    // Solo back: "pagar" pasa a cumplido (su regla de back tiene test) y "Ver el recibo" (solo en front) no está.
+    expect([...v.pagina().matchAll(/<div class="fd-cifra[^"]*"[^>]*><b[^>]*>(\d+)<\/b>/g)].map((m) => m[1]).slice(0, 4)).toEqual(["1", "1", "0", "1"]);
+    expect(v.pagina()).toContain("Ves back: los casos cuentan solo lo de ese cerebro.");
+    v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
+    expect(v.casos()).toEqual(["Pagar el carrito"]);
+    expect(v.lista()).toContain("1 cerebro más fuera de los elegidos: front.");
+    expect(v.lista()).not.toContain('<tr><th scope="row">front</th>');
+    expect(v.lista()).toContain('<span class="chip es-cerebro fuera"');
+    expect(JSON.parse(local.get("flowbrain.especificaciones.cerebros")!)).toEqual(["back"]);
+    // Otra vez abierta, recuerda la elección; elegir todos vuelve a "Todos".
+    const otra = montar(datos(), { local });
+    expect(otra.pagina()).toContain('data-k="back" aria-pressed="true">✔ back</button>');
+    otra.tocar({ "data-acc": "cerebro", "data-k": "front" });
+    expect(otra.pagina()).toContain('data-k="" aria-pressed="true">Todos</button>');
+    expect(JSON.parse(local.get("flowbrain.especificaciones.cerebros")!)).toEqual([]);
   });
 
   it("arma los pedidos para el agente: agrupar, escribir y corregir", () => {
