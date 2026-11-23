@@ -403,6 +403,8 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .es-hacer li .boton { flex: 0 0 auto; }
 .es-manual { color: var(--suave); font-style: italic; }
 .es-regla .fd-acc { margin-top: 8px; }
+.boton.es-pedir { background: #0EA5E9; border-color: #0EA5E9; color: #FFFFFF; } .boton.es-pedir:hover { background: #38BDF8; border-color: #38BDF8; }
+.es-verifica { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; } .es-verifica .boton { margin-left: auto; }
 .es-agente { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--primario); border-radius: 12px; background: var(--tarjeta); }
 .es-agente h2 { margin: 0 0 8px; font-size: 15px; } .es-trabajo { display: grid; gap: 6px; }
 .es-trabajo .es-cab { display: flex; justify-content: space-between; gap: 8px; align-items: center; }

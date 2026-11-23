@@ -198,7 +198,8 @@ export const ESPECIFICACIONES_JS = String.raw`
   function botonPedido(k, tipo, items, etiqueta) {
     PEDIDOS[k] = [tipo, items];
     if (AG) etiqueta = etiqueta.replace(/^Copiar pedido/, "Pedírselo al agente");
-    return '<button type="button" class="boton" data-acc="pedido" data-k="' + esc(k) + '">' + (PEDIDO && PEDIDO.k === k ? "Ocultar pedido" : etiqueta) + "</button>";
+    // Pedir un test es la acción de la pantalla: va en celeste, para encontrarla de un vistazo.
+    return '<button type="button" class="boton' + (tipo === "test" ? " es-pedir" : "") + '" data-acc="pedido" data-k="' + esc(k) + '">' + (PEDIDO && PEDIDO.k === k ? "Ocultar pedido" : etiqueta) + "</button>";
   }
   function cajaDelPedido(k) {
     if (!PEDIDO || PEDIDO.k !== k || !PEDIDOS[k]) return "";
@@ -281,7 +282,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       : sinTest ? '<span class="es-mal">✘ ' + (sinTest === p.reglas.length ? "sin test" : sinTest + " de " + p.reglas.length + " reglas sin test") + "</span>" + (nt ? " <small>(" + plural(nt, "test", "tests") + " en las otras)</small>" : "")
       : '<span class="es-bien">✔ ' + (nt ? plural(nt, "test", "tests") : "se prueba a mano") + "</span>" + (nt && p.reglas.some(function (e) { return e.manual; }) ? " <small>(y a mano)</small>" : "");
     var pedir = sinTest && sinTest < faltanDelCaso ? " " + botonPedido(pataK, "test", p.reglas.filter(sinVerificar).map(function (e) { return [e, p.f]; }), "Pedir " + (sinTest === 1 ? "el test" : "los " + sinTest)) : "";
-    return '<tr><th scope="row">' + esc(p.cerebro) + "</th><td>" + codigo + (sinCodigo && a.length ? ' <span class="es-mal">(' + sinCodigo + " sin archivo)</span>" : "") + "</td><td>" + test + pedir + "</td></tr>";
+    return '<tr><th scope="row">' + esc(p.cerebro) + "</th><td>" + codigo + (sinCodigo && a.length ? ' <span class="es-mal">(' + sinCodigo + " sin archivo)</span>" : "") + '</td><td><div class="es-verifica"><span>' + test + "</span>" + pedir + "</div></td></tr>";
   }
   function unCaso(P, C) {
     var est = ESTADO[C.estado], reglas = [];

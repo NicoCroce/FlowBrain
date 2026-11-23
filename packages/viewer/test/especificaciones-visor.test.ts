@@ -93,7 +93,7 @@ describe("pantalla Especificaciones", () => {
     expect(l).toContain("Quién: Cliente");
     expect(l).toContain('<tr><th scope="row">front</th>');
     expect(l).toContain("1 de 2 reglas sin test");
-    expect(l).toContain('<tr><th scope="row">back</th><td><code title="repo-api:src/Cobro.php">Cobro.php</code></td><td><span class="es-bien">✔ 1 test</span></td></tr>');
+    expect(l).toContain('<tr><th scope="row">back</th><td><code title="repo-api:src/Cobro.php">Cobro.php</code></td><td><div class="es-verifica"><span><span class="es-bien">✔ 1 test</span></span></div></td></tr>');
     expect(l).toContain("«falta el reintento» <small>(back)</small>");
     expect(l).toContain("✘ Sin reglas");
     // La regla que ningún caso agrupa se dice, con el pedido para el agente.
@@ -170,7 +170,7 @@ describe("pantalla Especificaciones", () => {
     // Cuenta las reglas de los casos (la suelta va en "agrupar"): "motivo", de negocio, no tiene test.
     expect(p).toContain("Pedir los tests que faltan</b><small>1 regla de negocio sin test.");
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
-    expect(v.lista()).toContain("Pedir el test que falta");
+    expect(v.lista()).toContain('class="boton es-pedir" data-acc="pedido" data-k="test|feat-pagos|pagar">Pedir el test que falta</button>');
     expect(v.lista()).toContain("Ningún test la verifica: si alguien la rompe, nada avisa.");
     v.tocar({ "data-acc": "pedido", "data-k": "test|feat-pagos|pagar" });
     const l = v.lista();
