@@ -85,7 +85,7 @@ afterAll(async () => {
 
 describe("el agente del visor", () => {
   it("la página sabe si hay agente; un pedido corre Claude Code con la guía y permisos acotados, y dice qué cambió", async () => {
-    expect((await pedir("GET", "/")).cuerpo).toContain('"agente":{"noDisponible":null}');
+    expect((await pedir("GET", "/")).cuerpo).toContain('"agente":{"noDisponible":null,"proveedores":[{"id":"claude-code"');
     const r = await pedir("POST", "/api/agente", { tipo: "test", pedido: "Escribí el test de la regla listar.", etiqueta: "1 test: Listar pedidos", cerebros: ["tienda"] });
     expect(r.estado).toBe(200);
     const t = await esperar(r.json["id"] as string);
@@ -97,7 +97,7 @@ describe("el agente del visor", () => {
     expect(await import("node:fs").then((f) => f.realpathSync(llamada.cwd))).toBe(await import("node:fs").then((f) => f.realpathSync(dir)));
     expect(llamada.root).toBe(reg);
     const prompt = llamada.args[llamada.args.indexOf("-p") + 1]!;
-    expect(prompt).toContain("Si el test muestra que la regla no se cumple, no la arregles.");
+    expect(prompt).toContain("Nunca modificás el código del producto.");
     expect(prompt).toContain("Escribí el test de la regla listar.");
     expect(prompt).not.toContain("$ARGUMENTS");
     for (const p of HERRAMIENTAS_PROHIBIDAS) expect(llamada.args).toContain(p);

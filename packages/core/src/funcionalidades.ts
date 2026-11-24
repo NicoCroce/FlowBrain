@@ -1,6 +1,6 @@
 import { cmp, cmpTuple } from "./canonical.js";
 import { MARCA_FIN, MARCA_INICIO } from "./render.js";
-import { dentroDe, TEST_REF, type CasoDeUso, type Especificacion, type Graph } from "./schema.js";
+import { dentroDe, TEST_REF, type CasoDeUso, type Especificacion, type Graph, type Hallazgo } from "./schema.js";
 
 /**
  * Vista de producto de cada funcionalidad (`feat`), derivada de las rutas de su campo `codigo`:
@@ -90,6 +90,8 @@ export interface EspecificacionDeFicha {
   rotos: string[];
   /** Por qué se prueba a mano y no necesita test (lo decidió una persona). */
   manual?: string;
+  /** Lo que el agente encontró al testearla (el código no la cumple, o no se puede testear sin tocarlo). */
+  hallazgo?: Hallazgo;
 }
 
 export interface PantallaFicha {
@@ -281,7 +283,7 @@ export function resolverEspecificaciones(especificaciones: Especificacion[], est
       if (c) tests.push({ archivo, caso: c.nombre, linea: c.linea });
       else rotos.push(t);
     }
-    return { id: e.id, texto: e.texto, tipo: e.tipo, estado: e.estado ?? "propuesta", archivos: [...(e.archivos ?? [])], tests, rotos, ...(e.manual ? { manual: e.manual } : {}) };
+    return { id: e.id, texto: e.texto, tipo: e.tipo, estado: e.estado ?? "propuesta", archivos: [...(e.archivos ?? [])], tests, rotos, ...(e.manual ? { manual: e.manual } : {}), ...(e.hallazgo ? { hallazgo: e.hallazgo } : {}) };
   });
 }
 

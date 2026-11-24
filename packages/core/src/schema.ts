@@ -186,6 +186,26 @@ export const ESTADOS_ESPECIFICACION = ["propuesta", "confirmada"] as const;
 /** Caso de test que verifica una especificación: `repo:ruta` (el archivo entero) o `repo:ruta::nombre del caso`. */
 export const TEST_REF = /^(repo-[a-z0-9-]+):([^\s#:]+)(?:::(.+))?$/;
 
+export const RESULTADOS_HALLAZGO = ["codigo_no_cumple", "no_testeable"] as const;
+export const DECISIONES_HALLAZGO = ["regla_mal", "codigo_mal"] as const;
+/**
+ * Informe de una regla que no quedó verificada con un test: `codigo_no_cumple` (el código hace otra cosa que la regla)
+ * o `no_testeable` (no se puede testear sin tocar el código). `hoy` dice qué hace el código hoy (`archivo#Ln`), `cambio`
+ * qué habría que cambiar (o, en `no_testeable`, el ajuste mínimo), `test` el test que lo demuestra (solo va acá: nunca
+ * queda un test fallando en el repo). `decision` la toma una persona: `regla_mal` (la corrige el agente con
+ * /flowbrain-specs y se borra el hallazgo) o `codigo_mal` (pasa a desarrollo).
+ */
+export const HallazgoSchema = z
+  .object({
+    resultado: z.enum(RESULTADOS_HALLAZGO),
+    hoy: z.string().min(1).max(1200).optional(),
+    cambio: z.string().min(1).max(1200),
+    test: z.string().min(1).max(4000).optional(),
+    decision: z.enum(DECISIONES_HALLAZGO).optional(),
+  })
+  .strict();
+export type Hallazgo = z.infer<typeof HallazgoSchema>;
+
 /**
  * Un requisito de una funcionalidad, en llano: qué tiene que cumplirse para que el caso de uso pase. `negocio` es una
  * regla del negocio (vale aunque cambie la pantalla); `producto`, cómo se comporta el producto para quien lo usa.
@@ -206,6 +226,11 @@ export const EspecificacionSchema = z
      * verificada; la escribe la persona desde el visor y el agente no la toca.
      */
     manual: z.string().min(1).max(300, "manual: máximo 300 caracteres").optional(),
+    /**
+     * Lo que el agente encontró al intentar testearla y que no se resuelve con un test: el código no la cumple o no se
+     * puede testear sin tocarlo. El agente nunca cambia el código del producto: deja el informe acá.
+     */
+    hallazgo: HallazgoSchema.optional(),
   })
   .strict();
 

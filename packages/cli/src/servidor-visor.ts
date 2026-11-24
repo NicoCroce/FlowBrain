@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { resolve } from "node:path";
 import { ConsultaError, leerRegistro, type Registro } from "@flowbrain/core";
 import { aplicarCerebro, htmlDelVisor } from "./cerebros.js";
-import { crearAgente, TIPOS_DE_PEDIDO, type Agente, type TipoDePedido } from "./agente.js";
+import { crearAgente, TIPOS_DE_PEDIDO, type Agente, type ReglaDePedido, type TipoDePedido } from "./agente.js";
 import { detalleDeArchivo, editar, type Edicion } from "./edicion.js";
 
 /**
@@ -45,13 +45,13 @@ class ErrorHttp extends Error {
   }
 }
 
-async function cuerpoJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function cuerpoJson(req: IncomingMessage, maximo = MAX_CUERPO): Promise<Record<string, unknown>> {
   if (!/^application\/json\b/i.test(req.headers["content-type"] ?? "")) throw new ErrorHttp(415, "el cuerpo tiene que ser application/json");
   const partes: Buffer[] = [];
   let total = 0;
   for await (const p of req) {
     total += (p as Buffer).length;
-    if (total > MAX_CUERPO) throw new ErrorHttp(413, "el pedido es demasiado grande");
+    if (total > maximo) throw new ErrorHttp(413, "el pedido es demasiado grande");
     partes.push(p as Buffer);
   }
   try {
@@ -66,8 +66,6 @@ async function cuerpoJson(req: IncomingMessage): Promise<Record<string, unknown>
 /** El servidor, sin escuchar todavía. `carpeta` es la del registro (`.flowbrain`). */
 export function crearServidorVisor(carpeta: string, opciones: { token?: string; agente?: Agente } = {}): ServidorVisor {
   const token = opciones.token ?? randomBytes(32).toString("hex");
-  // Los pedidos que la página le manda a Claude Code (pantalla Especificaciones), de a uno.
-  const agente = opciones.agente ?? crearAgente(() => leerRegistro(carpeta));
   const carpetaReal = rutaReal(carpeta);
   /** Cerebros con declaraciones en `calls.yaml` que todavía no entraron al índice. */
   const sinAplicar = new Set<string>();
@@ -78,6 +76,20 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
     cola = r.catch(() => undefined);
     return r;
   };
+  // Los pedidos que la página le manda al agente (pantalla Especificaciones). Lo que el agente resuelve se anota por
+  // la misma cola de ediciones, y al terminar un lote se actualiza el índice del cerebro.
+  const agente = opciones.agente ?? crearAgente(() => leerRegistro(carpeta), {
+    aplicar: async (ed) => enCola(async () => editar(await leerRegistro(carpeta), ed)),
+    reindexar: async (nombre) => {
+      await enCola(async () => {
+        const c = (await leerRegistro(carpeta)).cerebro(nombre);
+        if (c) {
+          await aplicarCerebro(c);
+          sinAplicar.delete(nombre);
+        }
+      });
+    },
+  });
   const puerto = () => (server.address() as { port: number } | null)?.port ?? 0;
   const propios = () => new Set([`127.0.0.1:${puerto()}`, `localhost:${puerto()}`]);
 
@@ -91,7 +103,7 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
     if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
       const html = await htmlDelVisor(registro);
       if (html === null) throw new ErrorHttp(409, "ningún cerebro está compilado: corré flowbrain brains apply");
-      const edicion = JSON.stringify({ token, sinAplicar: [...sinAplicar].sort(), agente: { noDisponible: agente.noDisponible() } }).replace(/</g, "\\u003c");
+      const edicion = JSON.stringify({ token, sinAplicar: [...sinAplicar].sort(), agente: { noDisponible: agente.noDisponible(), proveedores: agente.proveedores() } }).replace(/</g, "\\u003c");
       return { html: html.replace(MARCA_DATOS, `<script>window.FLOWBRAIN_EDICION=${edicion};</script>\n${MARCA_DATOS}`) };
     }
     if (!url.pathname.startsWith("/api/")) throw new ErrorHttp(404, "no existe");
@@ -109,16 +121,36 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
         }),
       };
     }
-    if (req.method === "GET" && url.pathname === "/api/agente") return { json: { noDisponible: agente.noDisponible(), trabajos: agente.lista() } };
+    if (req.method === "GET" && url.pathname === "/api/agente") return { json: { noDisponible: agente.noDisponible(), proveedores: agente.proveedores(), trabajos: agente.lista(), lotes: agente.lotes() } };
+    if (req.method === "POST" && url.pathname === "/api/agente/lote") {
+      const b = await cuerpoJson(req, 2 * 1024 * 1024);
+      const reglas = b["reglas"], proveedor = b["proveedor"], modelo = b["modelo"];
+      if (!Array.isArray(reglas) || !reglas.length || reglas.length > 3000) throw new ErrorHttp(400, "reglas tiene que ser una lista de 1 a 3000 reglas");
+      const validas: ReglaDePedido[] = reglas.map((x: Record<string, unknown>) => {
+        const { cerebro, funcionalidad, regla, repo, linea } = x ?? {};
+        if (typeof cerebro !== "string" || !registro.cerebro(cerebro) || typeof funcionalidad !== "string" || typeof regla !== "string" || typeof linea !== "string" || !linea.trim() || linea.length > 4000 || (repo !== null && repo !== undefined && typeof repo !== "string")) throw new ErrorHttp(400, `regla inválida: ${JSON.stringify(x).slice(0, 160)}`);
+        return { cerebro, funcionalidad, regla, repo: typeof repo === "string" ? repo : null, linea };
+      });
+      if ((proveedor !== undefined && typeof proveedor !== "string") || (modelo !== undefined && typeof modelo !== "string")) throw new ErrorHttp(400, "proveedor y modelo tienen que ser texto");
+      const no = agente.noDisponible();
+      if (no) throw new ErrorHttp(409, no);
+      return { json: agente.encolarLote({ reglas: validas, ...(proveedor ? { proveedor } : {}), ...(modelo ? { modelo } : {}) }) };
+    }
+    if (req.method === "POST" && url.pathname === "/api/agente/lote/cancelar") {
+      const { id } = await cuerpoJson(req);
+      const ts = typeof id === "string" ? agente.cancelarLote(id) : null;
+      if (!ts) throw new ErrorHttp(404, `no existe el lote: ${String(id)}`);
+      return { json: { trabajos: ts } };
+    }
     if (req.method === "POST" && url.pathname === "/api/agente") {
       const b = await cuerpoJson(req);
-      const tipo = b["tipo"], pedido = b["pedido"], etiqueta = b["etiqueta"], cerebros = b["cerebros"];
+      const tipo = b["tipo"], pedido = b["pedido"], etiqueta = b["etiqueta"], cerebros = b["cerebros"], proveedor = b["proveedor"], modelo = b["modelo"];
       if (!TIPOS_DE_PEDIDO.includes(tipo as TipoDePedido)) throw new ErrorHttp(400, `tipo de pedido desconocido: ${String(tipo)}`);
       if (typeof pedido !== "string" || !pedido.trim() || pedido.length > 40_000) throw new ErrorHttp(400, "falta el pedido, o es demasiado largo");
       if (!Array.isArray(cerebros) || cerebros.some((c) => typeof c !== "string" || !registro.cerebro(c))) throw new ErrorHttp(400, "cerebros tiene que ser una lista de cerebros del registro");
       const no = agente.noDisponible();
       if (no) throw new ErrorHttp(409, no);
-      return { json: agente.encolar({ tipo: tipo as TipoDePedido, pedido, etiqueta: typeof etiqueta === "string" && etiqueta.trim() ? etiqueta.trim().slice(0, 200) : "Pedido del visor", cerebros: cerebros as string[] }) };
+      return { json: agente.encolar({ tipo: tipo as TipoDePedido, pedido, etiqueta: typeof etiqueta === "string" && etiqueta.trim() ? etiqueta.trim().slice(0, 200) : "Pedido del visor", cerebros: cerebros as string[], ...(typeof proveedor === "string" ? { proveedor } : {}), ...(typeof modelo === "string" ? { modelo } : {}) }) };
     }
     if (req.method === "POST" && url.pathname === "/api/agente/cancelar") {
       const { id } = await cuerpoJson(req);

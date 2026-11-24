@@ -415,6 +415,8 @@ export interface EspecificacionesParams {
   sin_test?: boolean;
   /** Solo los casos de uso que una persona marcó como mal (`problema`). */
   con_problema?: boolean;
+  /** Solo las reglas con hallazgo: el código no las cumple o no se pueden testear sin tocarlo. */
+  con_hallazgo?: boolean;
   budget_tokens?: number | null;
 }
 
@@ -454,6 +456,22 @@ function casosSinEspecificacion(f: Ficha) {
   return (f.tests ?? []).flatMap((t) => (enteros.has(t.archivo) ? [] : t.casos.filter((c) => !nombrados.has(`${t.archivo}#${c.linea}`)).map((c) => ({ archivo: t.archivo, caso: c.nombre, linea: c.linea }))));
 }
 
+/**
+ * Reglas que un agente no pudo cerrar con un test, separadas como las ve la pantalla: `paraDecidir` (el código no la
+ * cumple y una persona todavía no dijo si está mal la regla o el código), `reglaAcorregir` (la regla está mal: la
+ * corrige el agente) y `paraDesarrollo` (el código está mal, o no se puede testear sin tocarlo).
+ */
+export function hallazgosDe(es: Array<{ id: string; hallazgo?: { resultado: string; decision?: string | undefined } | undefined }>) {
+  const con = es.filter((e) => e.hallazgo);
+  if (!con.length) return {};
+  return {
+    reglasConHallazgo: con.length,
+    paraDecidir: con.filter((e) => e.hallazgo!.resultado === "codigo_no_cumple" && !e.hallazgo!.decision).length,
+    reglaAcorregir: con.filter((e) => e.hallazgo!.decision === "regla_mal").length,
+    paraDesarrollo: con.filter((e) => e.hallazgo!.decision === "codigo_mal" || e.hallazgo!.resultado === "no_testeable").length,
+  };
+}
+
 function resumenDeEspecificaciones(f: Ficha) {
   const es = f.especificaciones ?? [];
   const { casos, sinCaso } = casosDeFicha(f);
@@ -471,6 +489,7 @@ function resumenDeEspecificaciones(f: Ficha) {
 
 const COMO_COMPLETAR = "Las especificaciones se escriben en `especificaciones` de la página de la funcionalidad (product/feat-*.md). La guía para deducirlas del código y de los tests: `flowbrain specs --guide`.";
 const COMO_AGRUPAR = "Hay especificaciones que no están en ningún caso de uso: agrupalas en `casos` de la página (nombre de lo que alguien hace, quién, y los ids de sus especificaciones). La guía: `flowbrain specs --guide`.";
+const COMO_HALLAZGOS = "Hay reglas con `hallazgo`: el agente que intentó testearlas encontró que el código no las cumple (`codigo_no_cumple`) o que no se pueden testear sin tocar el código (`no_testeable`). Sin `decision` las decide una persona; con `regla_mal`, corregí el texto de la regla (o borrala) con /flowbrain-specs y borrá el hallazgo; con `codigo_mal`, es trabajo de desarrollo: no lo arregles acá. Nunca se cambia el código del producto desde un pedido de tests.";
 const COMO_CORREGIR = "Una persona marcó casos de uso como mal (`problema`): corregí el caso o sus especificaciones según lo que dice y borrá `problema` de la página.";
 
 /**
@@ -481,7 +500,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
   const ix = indice(ctx);
   if (p.estado && p.estado !== "propuesta" && p.estado !== "confirmada") throw new ConsultaError("parametro_invalido", `estado desconocido: ${p.estado}. Los que hay: propuesta, confirmada`);
   if (p.tipo && p.tipo !== "negocio" && p.tipo !== "producto") throw new ConsultaError("parametro_invalido", `tipo desconocido: ${p.tipo}. Los que hay: negocio, producto`);
-  const pasa = (e: NonNullable<Ficha["especificaciones"]>[number]) => (!p.estado || e.estado === p.estado) && (!p.tipo || e.tipo === p.tipo) && (!p.sin_test || sinVerificar(e));
+  const pasa = (e: NonNullable<Ficha["especificaciones"]>[number]) => (!p.estado || e.estado === p.estado) && (!p.tipo || e.tipo === p.tipo) && (!p.sin_test || sinVerificar(e)) && (!p.con_hallazgo || !!e.hallazgo);
 
   if (!p.funcionalidad) {
     const fichas = [...ix.fichas.values()];
@@ -503,6 +522,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
       casosCumplidos: todosCasos.filter((c) => c.estado === "cumplido").length,
       casosSinTest: todosCasos.filter((c) => c.estado === "sin_test").length,
       casosConProblema: todosCasos.filter((c) => c.problema).length,
+      ...hallazgosDe(fichas.flatMap((f) => f.especificaciones ?? [])),
       especificacionesSinCaso: sinCaso,
       total: todas.length,
       confirmadas: todas.filter((e) => e.estado === "confirmada").length,
@@ -516,6 +536,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
         ...(todas.length === 0 && fichas.length ? [COMO_COMPLETAR] : []),
         ...(sinCaso ? [COMO_AGRUPAR] : []),
         ...(todosCasos.some((c) => c.problema) ? [COMO_CORREGIR] : []),
+        ...(fichas.some((f) => (f.especificaciones ?? []).some((e) => e.hallazgo)) ? [COMO_HALLAZGOS] : []),
         ...avisosIndice(ix),
       ],
     };
@@ -537,6 +558,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
     tests: e.tests.map((t) => (t.caso ? `${t.archivo}::${t.caso}${t.linea ? ` (L${t.linea})` : ""}` : `${t.archivo} (${t.casos ?? "?"} casos)`)),
     ...(sinVerificar(e) ? { sinTest: true as const } : {}),
     ...(e.manual ? { manual: e.manual } : {}),
+    ...(e.hallazgo ? { hallazgo: e.hallazgo } : {}),
     ...(e.rotos.length ? { rotos: e.rotos } : {}),
   }));
   const res = {
@@ -544,6 +566,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
     funcionalidad: f.id,
     nombre: nombre(ctx, f.id),
     ...resumenDeEspecificaciones(f),
+    ...hallazgosDe(f.especificaciones ?? []),
     // Qué puede hacer alguien con la funcionalidad. El mismo `id` en otro cerebro es el mismo caso, del otro lado.
     casos: cu.casos
       .filter((c) => !p.con_problema || c.problema)
@@ -556,6 +579,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
       ...((f.especificaciones ?? []).length === 0 ? [COMO_COMPLETAR] : []),
       ...(cu.sinCaso.length ? [COMO_AGRUPAR] : []),
       ...(cu.casos.some((c) => c.problema) ? [COMO_CORREGIR] : []),
+      ...((f.especificaciones ?? []).some((e) => e.hallazgo) ? [COMO_HALLAZGOS] : []),
       ...((f.especificaciones ?? []).some((e) => e.rotos.length) ? ["hay referencias que el índice ya no encuentra (`rotos`): un archivo movido o un caso renombrado; corregilas en la página"] : []),
       ...avisosIndice(ix),
     ],

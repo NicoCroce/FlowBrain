@@ -1,6 +1,6 @@
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { agregarCodigoAPagina, agregarDeclaracion, cambiarEstadoDeEspecificacion, marcarProblemaDeCaso, marcarPruebaManual, ARCHIVO_LLAMADAS, cargarContexto, cmp, ConsultaError, dentroDe, type Cerebro, type Contexto, type Registro } from "@flowbrain/core";
+import { agregarCodigoAPagina, agregarDeclaracion, anotarResultados, cambiarEstadoDeEspecificacion, decidirHallazgo, type ResultadoDeRegla, marcarProblemaDeCaso, marcarPruebaManual, ARCHIVO_LLAMADAS, cargarContexto, cmp, ConsultaError, dentroDe, type Cerebro, type Contexto, type Registro } from "@flowbrain/core";
 import { compileDirConVisor } from "@flowbrain/viewer";
 
 /**
@@ -22,7 +22,11 @@ export type Edicion =
   /** Marcar un caso de uso como mal, con lo que está mal (o sacarle la marca con `problema` vacío). */
   | { tipo: "caso"; cerebro: string; funcionalidad: string; id: string; problema: string | null }
   /** Decidir que una especificación se prueba a mano, con el motivo (o volver a pedirle test con `motivo` vacío). */
-  | { tipo: "manual"; cerebro: string; funcionalidad: string; id: string; motivo: string | null };
+  | { tipo: "manual"; cerebro: string; funcionalidad: string; id: string; motivo: string | null }
+  /** Anotar lo que un agente resolvió de varias reglas de una funcionalidad: tests que las verifican o hallazgos. */
+  | { tipo: "resultados"; cerebro: string; funcionalidad: string; items: ResultadoDeRegla[] }
+  /** Decidir qué hacer con el hallazgo de una regla: `regla_mal`, `codigo_mal` o `null` (sacar la decisión). */
+  | { tipo: "decision"; cerebro: string; funcionalidad: string; id: string; decision: string | null };
 
 export interface ResultadoEdicion {
   /** Archivo escrito, relativo a la carpeta del registro. */
@@ -140,6 +144,26 @@ export async function editar(registro: Registro, ed: Edicion): Promise<Resultado
       faltaReindexar: false,
       mensaje: !r.cambio ? "No cambió nada: ya estaba así." : marca ? `Quedó marcado como mal en ${c.nombre}: el agente lo ve con /flowbrain-specs y lo corrige.` : `Se le sacó la marca en ${c.nombre}.`,
     };
+  }
+
+  if (ed.tipo === "resultados" || ed.tipo === "decision") {
+    const n = typeof ed.funcionalidad === "string" ? ctx.nodo.get(ed.funcionalidad) : undefined;
+    if (!n || n.tipo !== "feat" || !n.pagina || !/\.md$/.test(n.pagina)) throw new ConsultaError("nodo_inexistente", `no existe la funcionalidad (o no tiene página): ${String(ed.funcionalidad)}`);
+    if (ed.tipo === "resultados" && (!Array.isArray(ed.items) || !ed.items.length || ed.items.some((i) => typeof i?.id !== "string"))) throw invalido("faltan las reglas resueltas: cada una con su id");
+    if (ed.tipo === "decision" && (typeof ed.id !== "string" || (ed.decision !== null && typeof ed.decision !== "string"))) throw invalido("falta el id de la regla, o la decisión no es texto");
+    const destino = await rutaDentro(c.raiz, n.pagina);
+    let r: { contenido: string; cambio: boolean };
+    try {
+      const previo = await readFile(destino, "utf8");
+      r = ed.tipo === "resultados" ? anotarResultados(n.pagina, previo, ed.items) : decidirHallazgo(n.pagina, previo, ed.id, ed.decision);
+    } catch (err) {
+      throw new ConsultaError("parametro_invalido", (err as Error).message);
+    }
+    if (r.cambio) {
+      await writeFile(destino, r.contenido, "utf8");
+      await compileDirConVisor(c.raiz);
+    }
+    return { escrito: rel(destino), cambio: r.cambio, faltaReindexar: false, mensaje: !r.cambio ? "No cambió nada: ya estaba así." : ed.tipo === "resultados" ? `Se anotó lo resuelto en ${c.nombre}.` : `Quedó decidido en ${c.nombre}.` };
   }
 
   if (ed.tipo === "manual") {
