@@ -1,8 +1,17 @@
 {
-  "name": "flowbrain",
+  "name": "@nicocroce/flowbrain",
   "version": "0.1.0",
   "description": "Grafo de conocimiento determinístico para agentes de código: Markdown + JSON compilados, servidos por MCP, hooks y CLI.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NicoCroce/FlowBrain.git",
+    "directory": "packages/flowbrain"
+  },
+  "homepage": "https://github.com/NicoCroce/FlowBrain/tree/main/packages/flowbrain#readme",
+  "bugs": {
+    "url": "https://github.com/NicoCroce/FlowBrain/issues"
+  },
   "type": "module",
   "bin": {
     "flowbrain": "dist/flowbrain.mjs"
@@ -11,6 +20,7 @@
     "dist",
     "SCHEMA.md",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "engines": {
@@ -28,10 +38,12 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
-    "tree-sitter-php": "0.24.2",
     "typescript": "5.9.3",
     "web-tree-sitter": "0.25.10",
     "yaml": "2.9.1",
     "zod": "3.25.76"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

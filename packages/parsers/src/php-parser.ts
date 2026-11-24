@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Language, Parser as TSParser, type Node } from "web-tree-sitter";
 import { normalizarRuta } from "@flowbrain/core";
 import { analizarUrl, type Parte } from "./url.js";
@@ -28,7 +29,10 @@ function obtenerParser(): Promise<TSParser> {
   parserListo ??= (async () => {
     const req = createRequire(import.meta.url);
     await TSParser.init();
-    const php = await Language.load(req.resolve("tree-sitter-php/tree-sitter-php.wasm"));
+    // El paquete publicado trae la gramática junto al bundle (dist/), así no instala tree-sitter-php, que compila
+    // un binario nativo al instalarse. En desarrollo se toma del paquete.
+    const junto = join(dirname(fileURLToPath(import.meta.url)), "tree-sitter-php.wasm");
+    const php = await Language.load(existsSync(junto) ? junto : req.resolve("tree-sitter-php/tree-sitter-php.wasm"));
     const p = new TSParser();
     p.setLanguage(php);
     return p;

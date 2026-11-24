@@ -63,13 +63,14 @@ describe("paquete flowbrain", () => {
   it("el bundle compila, informa la versión e inicializa un brain", async () => {
     await run("node", [join(RAIZ, "scripts/build.mjs")]);
     const bin = join(RAIZ, "packages/flowbrain/dist/flowbrain.mjs");
-    const pkg = JSON.parse(await readFile(join(RAIZ, "packages/flowbrain/package.json"), "utf8")) as { version: string };
+    const pkg = JSON.parse(await readFile(join(RAIZ, "packages/flowbrain/package.json"), "utf8")) as { name: string; version: string };
+    expect(pkg.name).toBe("@nicocroce/flowbrain");
     expect((await run("node", [bin, "--version"])).stdout).toBe(`${pkg.version}\n`);
     // El bundle trae todas las herramientas del MCP (si no, el paquete quedó viejo respecto del código).
     const bundle = await readFile(bin, "utf8");
     for (const h of ["buscar_nodo", "recorrer_grafo", "contrato_de", "trazar", "funcionalidad", "recorrido", "quien_llama", "impacto"]) expect(bundle).toContain(`"${h}"`);
     const { stdout } = await run("node", [bin, "init", join(dir, "b")], { cwd: dir });
-    expect(stdout).toContain(`npx -y flowbrain@${pkg.version} serve --root ${join(dir, "b")}`);
+    expect(stdout).toContain(`npx -y @nicocroce/flowbrain@${pkg.version} serve --root ${join(dir, "b")}`);
     expect(await readFile(join(dir, "b/_build/viewer.html"), "utf8")).toContain("<title>FlowBrain · visor</title>");
   }, 60_000);
 });

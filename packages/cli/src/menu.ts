@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { buscarRegistro, leerRegistro } from "@flowbrain/core";
 import { AGENTES, agentesConMcp, analizarCon, CONFIGS_MCP, conectarMcp, elegirAgente, type Agente } from "./agentes.js";
 import { ARCHIVO_VISOR } from "./cerebros.js";
-import { comandoBrain, VERSION } from "./init.js";
+import { comandoBrain, PAQUETE, VERSION } from "./init.js";
 import { asistente } from "./asistente.js";
 import { cerrarServidor, depsReales, prepararVisor, type ResultadoVisor } from "./visor-local.js";
 
@@ -288,8 +288,8 @@ const repoFlowbrain = () => resolve(dirname(fileURLToPath(import.meta.url)), "..
 
 async function actualizar(c: ContextoMenu, e: Entorno): Promise<void> {
   if (c.version !== "dev") {
-    if (!si(await e.preguntar("Voy a instalar la última versión publicada (npm install -g flowbrain@latest). ¿Sigo? (s/N) "))) return;
-    if ((await e.correr("npm", ["install", "-g", "flowbrain@latest"], c.proyecto)) !== 0) {
+    if (!si(await e.preguntar(`Voy a instalar la última versión publicada (npm install -g ${PAQUETE}@latest). ¿Sigo? (s/N) `))) return;
+    if ((await e.correr("npm", ["install", "-g", `${PAQUETE}@latest`], c.proyecto)) !== 0) {
       e.escribir("npm no pudo instalarla: revisá el mensaje de arriba.\n");
       return;
     }

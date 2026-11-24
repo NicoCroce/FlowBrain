@@ -218,7 +218,7 @@ Mover el visor a su propio paquete: `core` queda con esquema, compilación y mot
 
 ### Paso 22 · Publicar `flowbrain`
 
-Publicar el paquete cuando las fases 1 y 2 estén cerradas (decisión 72 pendiente).
+Publicar el paquete cuando las fases 1 y 2 estén cerradas (decisión 72 pendiente). Listo para publicar como `@nicocroce/flowbrain` (decisión 210).
 
 ---
 
@@ -366,7 +366,7 @@ Cron y gRPC como entradas de un recorrido: endpoints `CRON` (NestJS, node-cron, 
 ## Decisiones abiertas
 
 1. **Paso 13:** qué proyecto de otra pila se usa como segundo banco de pruebas. De eso dependen los lenguajes nuevos del paso 14.
-2. **Paso 22:** publicar en npm. El nombre `flowbrain` ya es de otro paquete (visto el 2026-11-21): hay que elegir otro nombre o un scope, y corregir la opción "Actualizar" del menú, que instala `flowbrain@latest`.
+2. **Paso 22:** publicar en npm. Resuelto el nombre: `@nicocroce/flowbrain` (dec. 210); el paquete está listo y falta que el usuario lo publique.
 3. Carpetas de ejemplo `afip` y `videoAnalysis` en `packages/indexer/test/borrador.test.ts`: renombrarlas si identifican al proyecto de referencia.
 
 ## Pendientes anotados en las decisiones

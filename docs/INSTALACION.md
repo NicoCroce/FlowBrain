@@ -40,7 +40,7 @@ Ya configurado, `flowbrain` sin argumentos (o `flowbrain menu`, que lo abre siem
 - **Reindexar** y **Ver estado** (todos los cerebros).
 - **Abrir el visor:** lo sirve en `http://127.0.0.1:4780` (o el siguiente puerto libre) para ver y corregir desde la página, y abre el navegador. Si ya hay un visor de FlowBrain corriendo para el mismo proyecto, abre ese. Queda andando hasta Ctrl+C, que lo corta y vuelve al menú. Si el servidor no puede arrancar, abre `flowbrain.html` (solo lectura) y dice por qué.
 - **Conectar un agente (MCP):** registra el servidor para todos tus proyectos en el agente que elijas; pregunta antes.
-- **Actualizar FlowBrain:** desde el repo, `git pull --ff-only`, `pnpm install` y `flowbrain setup`; con el paquete publicado, `npm install -g flowbrain@latest`. Pregunta antes.
+- **Actualizar FlowBrain:** desde el repo, `git pull --ff-only`, `pnpm install` y `flowbrain setup`; con el paquete publicado, `npm install -g @nicocroce/flowbrain@latest`. Pregunta antes.
 
 `flowbrain setup` deja lista la máquina (comando, hooks y comandos de Claude Code) sin tocar ningún proyecto. Sin terminal, `flowbrain` sin argumentos imprime la ayuda.
 
@@ -67,19 +67,19 @@ Con otro agente, las mismas instrucciones salen de `flowbrain evidence --guide`.
 
 El resto de este documento describe la instalación a mano, con la carpeta del brain donde se quiera.
 
-## Con el paquete publicado (`flowbrain`)
+## Con el paquete publicado (`@nicocroce/flowbrain`)
 
 ```bash
-npx flowbrain init mi-brain --claude-code
+npx @nicocroce/flowbrain init mi-brain --claude-code
 ```
 
 Crea el brain (estructura, `SCHEMA.md`, `README.md`), lo compila, registra los hooks `UserPromptSubmit` y `SessionEnd` en `~/.claude/settings.json` (conserva los demás hooks y deja un respaldo `settings.json.flowbrain.bak`) e imprime la única línea que falta, la del servidor MCP:
 
 ```bash
-claude mcp add --scope user flowbrain -- npx -y flowbrain@0.1.0 serve --root /ruta/absoluta/a/mi-brain
+claude mcp add --scope user flowbrain -- npx -y @nicocroce/flowbrain@0.1.0 serve --root /ruta/absoluta/a/mi-brain
 ```
 
-Los hooks y el servidor usan una versión fija (`flowbrain@0.1.0`) para que una publicación nueva no cambie el comportamiento sin aviso. `init` nunca pisa archivos existentes y se puede repetir. Sin `--claude-code` no toca la configuración de Claude Code. El paquete instala dos comandos equivalentes, `flowbrain` y `brain`.
+Los hooks y el servidor usan una versión fija (`@nicocroce/flowbrain@0.1.0`) para que una publicación nueva no cambie el comportamiento sin aviso. `init` nunca pisa archivos existentes y se puede repetir. Sin `--claude-code` no toca la configuración de Claude Code. El paquete se llama `@nicocroce/flowbrain` (el nombre `flowbrain` en npm es de otro proyecto) e instala el comando `flowbrain`.
 
 ## Desde el repo (desarrollo)
 

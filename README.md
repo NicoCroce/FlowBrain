@@ -31,7 +31,13 @@ El impacto sigue la dirección de las relaciones (una tabla → los métodos y e
 
 ## Instalación
 
-Requiere Node ≥ 20, pnpm y un agente de código que pueda correr comandos (Claude Code, Codex, OpenCode u otro): FlowBrain no trae ni elige un modelo, el análisis lo hace el que uses.
+Con el paquete publicado, parado en el proyecto:
+
+```bash
+npx @nicocroce/flowbrain install
+```
+
+Desde el código, requiere Node ≥ 20, pnpm y un agente de código que pueda correr comandos (Claude Code, Codex, OpenCode u otro): FlowBrain no trae ni elige un modelo, el análisis lo hace el que uses.
 
 ```bash
 git clone <este-repo> flowbrain && cd flowbrain

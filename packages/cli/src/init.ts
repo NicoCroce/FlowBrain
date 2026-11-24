@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { cmp } from "@flowbrain/core";
 
 /** Nombre del paquete publicado y versión (la inyecta el build; en desarrollo queda "dev"). */
-export const PAQUETE = "flowbrain";
+export const PAQUETE = "@nicocroce/flowbrain";
 declare const __FLOWBRAIN_VERSION__: string | undefined;
 export const VERSION = typeof __FLOWBRAIN_VERSION__ === "string" ? __FLOWBRAIN_VERSION__ : "dev";
 
@@ -68,7 +68,7 @@ export async function init(
   const raiz = resolve(dir);
   const cmd = comandoBrain(opciones.env);
   const archivos: Record<string, string> = {
-    "README.md": README(cmd.startsWith("npx") ? "npx flowbrain" : "flowbrain"),
+    "README.md": README(cmd.startsWith("npx") ? `npx ${PAQUETE}` : "flowbrain"),
     "SCHEMA.md": await leerSchema(),
     "product/.gitkeep": "",
     "technology/.gitkeep": "",
@@ -128,7 +128,7 @@ export async function instalarHooksClaudeCode(settingsPath: string, comando: str
 
 /**
  * Deja el comando `flowbrain` disponible en cualquier carpeta: un script en un directorio del PATH que llama a este
- * mismo código. Con el paquete instalado (`npm i -g flowbrain`) no hace falta. Devuelve dónde quedó y si ese directorio
+ * mismo código. Con el paquete instalado (`npm i -g @nicocroce/flowbrain`) no hace falta. Devuelve dónde quedó y si ese directorio
  * está en el PATH.
  */
 export async function instalarComando(env: NodeJS.ProcessEnv = process.env, bin?: string): Promise<{ archivo: string; enPath: boolean }> {

@@ -1,8 +1,10 @@
 // Empaqueta el CLI (y con él core, motor, parsers, indexador, hooks y MCP) en un único ESM para `flowbrain`.
 // Las dependencias de terceros quedan externas: se instalan con el paquete y se resuelven en tiempo de ejecución
-// (Cytoscape y la gramática WASM de PHP se leen por ruta).
+// (Cytoscape se lee por ruta). La gramática WASM de PHP se copia a dist/: así el paquete no depende de
+// tree-sitter-php, que compila un binario nativo al instalarse aunque solo se use su .wasm.
 import { build } from "esbuild";
 import { chmod, copyFile, readFile, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,5 +28,7 @@ await build({
   logLevel: "warning",
 });
 await chmod(salida, 0o755);
+const reqParsers = createRequire(join(raiz, "packages/parsers/package.json"));
+await copyFile(reqParsers.resolve("tree-sitter-php/tree-sitter-php.wasm"), join(pkgDir, "dist/tree-sitter-php.wasm"));
 for (const f of ["SCHEMA.md", "LICENSE"]) await copyFile(join(raiz, f), join(pkgDir, f));
-console.log(`flowbrain@${pkg.version} → ${salida}`);
+console.log(`${pkg.name}@${pkg.version} → ${salida}`);
