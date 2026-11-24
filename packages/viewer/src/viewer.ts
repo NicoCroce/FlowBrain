@@ -1,4 +1,4 @@
-import { CIERRE_DEL_PLAN, COMO_RESOLVER, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type CodigoVisor, type ArchivoSinAsociar, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { CIERRE_DEL_PLAN, COMO_RESOLVER, GUIA_TESTS, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type CodigoVisor, type ArchivoSinAsociar, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
 import { CONTRATOS_JS } from "./viewer-contratos.js";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
@@ -416,6 +416,25 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .es-pasos { margin: 0; padding-left: 18px; font-size: 12px; color: var(--suave); } .es-pasos li { overflow-wrap: anywhere; }
 .es-resultado { white-space: pre-wrap; font-size: 13px; } .es-cambios ul { margin: 4px 0 0; padding-left: 18px; font-size: 12px; } .boton.chico { height: 26px; padding: 0 10px; font-size: 12px; }
 .es-falta { color: var(--dudoso); border-color: #5B2A2A; } .es-ok { color: var(--tabla); border-color: #1E4D33; } .es-aviso { color: var(--feat); border-color: #5A4316; } .es-cerebro { color: var(--medio); }
+.es-titulo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; } .es-titulo h1 { margin: 0; }
+.boton.es-pedir.en-lista { background: #0B6FA0; border-color: #0B6FA0; }
+.es-panel { display: none; position: fixed; top: 56px; right: 0; bottom: 0; width: min(440px, 100vw); overflow-y: auto; padding: 16px; background: var(--panel); border-left: 1px solid var(--borde2, var(--borde)); box-shadow: -8px 0 24px rgba(0, 0, 0, .35); z-index: 30; }
+.es-panel.abierto { display: block; } .es-panel > * + * { margin-top: 12px; }
+.es-panel-cab { display: flex; align-items: center; justify-content: space-between; } .es-panel-cab h2 { margin: 0; font-size: 16px; }
+@media (min-width: 1100px) { #especificaciones.es-con-panel { padding-right: 460px; } }
+.es-agsel { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .es-agsel label { display: grid; gap: 4px; font-size: 12px; color: var(--suave); } .es-agsel select { width: 100%; }
+.es-totales { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); font-size: 13px; } .es-totales b { font-size: 15px; } .es-totales span { color: var(--suave); } .es-totales small { color: var(--suave); }
+.es-pedidos { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.es-pedido { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); } .es-pedido > div { min-width: 0; } .es-pedido .es-texto { margin: 0 0 6px; font-size: 13px; }
+.es-archivo { display: block; margin-top: 6px; color: var(--suave); overflow-wrap: anywhere; } .chip.es-neg { color: #7DD3FC; border-color: #0B6FA0; }
+.es-lote { padding: 12px; border: 1px solid var(--primario); border-radius: 12px; background: var(--tarjeta); display: grid; gap: 8px; } .es-lote .es-cab { display: flex; justify-content: space-between; align-items: center; gap: 8px; } .es-lote h3 { margin: 0; font-size: 14px; }
+.es-lote progress { width: 100%; height: 8px; accent-color: var(--primario); } .es-repo h4 { margin: 4px 0; font-size: 13px; } .es-repo ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.es-tanda { padding: 8px 10px; border: 1px solid var(--borde); border-radius: 8px; font-size: 12px; display: grid; gap: 4px; } .es-tanda .es-cab { display: flex; justify-content: space-between; gap: 8px; }
+.es-fin { display: grid; gap: 2px; font-size: 13px; } .es-fin span { color: var(--suave); }
+.es-res { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--borde); } .es-res .es-cab { display: flex; justify-content: space-between; align-items: center; gap: 8px; } .es-res h3 { margin: 0; font-size: 14px; } .es-res small { color: var(--suave); }
+.es-hallazgo, .es-verif { padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); display: grid; gap: 6px; } .es-hallazgo .es-texto, .es-verif .es-texto { margin: 0; font-size: 13px; }
+.es-verif small { overflow-wrap: anywhere; } .es-verif code { overflow-wrap: anywhere; } .es-panel h2 { text-transform: none; letter-spacing: 0; color: var(--text); font-size: 16px; }
+.es-test { margin: 6px 0 0; padding: 8px; background: #0B0F17; border-radius: 6px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .es-ir { cursor: pointer; } .es-ir:hover { border-color: var(--borde2); }
 @media (max-width: 640px) { .es-cuerpo, .es-feat > .chips { margin-left: 0; } .es-patas tbody th { width: auto; } .es-patas td:last-child { width: auto; } }
 .es-fila { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; } .es-fila .fd-plan { flex: 1 1 100%; margin: 4px 0 0; }
@@ -600,7 +619,8 @@ a.nb { text-decoration: none; }
 <script>${seguroEnScript(PRODUCTO_JS)}</script>
 <script>${seguroEnScript(PANTALLAS_JS)}</script>
 <script>${seguroEnScript(FIDELIDAD_JS)}</script>
-<script>${seguroEnScript(ESPECIFICACIONES_JS)}</script>
+<script>window.FLOWBRAIN_GUIA_TESTS=${seguroEnScript(JSON.stringify(GUIA_TESTS))};
+${seguroEnScript(ESPECIFICACIONES_JS)}</script>
 <script>${seguroEnScript(SIN_ASOCIAR_JS)}</script>
 <script>${seguroEnScript(CONTRATOS_JS)}</script>
 <script>${seguroEnScript(MAPA_JS)}</script>

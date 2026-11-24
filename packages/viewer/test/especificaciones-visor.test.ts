@@ -1,4 +1,6 @@
+import { resolveObjectURL } from "node:buffer";
 import { describe, expect, it } from "vitest";
+import { GUIA_TESTS } from "@flowbrain/core";
 import { ESPECIFICACIONES_JS } from "../src/viewer-especificaciones.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
 
@@ -21,17 +23,24 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
   for (const n of (datos["nodes"] as Array<{ id: string; n: string }> | undefined) ?? []) porId[n.id] = n;
   let borrador = "";
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const window = { brainVisor: { D: datos, porId, esc }, brainEspecificaciones: null as null | { mostrar(f?: string | null): void }, FLOWBRAIN_EDICION: opciones.edicion, scrollTo() {} };
-  new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
-  new Function("window", "document", "sessionStorage", "localStorage", "fetch", ESPECIFICACIONES_JS)(window, { getElementById: el }, sessionStorage, localStorage, opciones.fetch);
+  const window = { brainVisor: { D: datos, porId, esc }, brainEspecificaciones: null as null | { mostrar(f?: string | null): void }, FLOWBRAIN_EDICION: opciones.edicion, FLOWBRAIN_GUIA_TESTS: GUIA_TESTS, scrollTo() {} };
+  const descargas: Array<{ archivo: string; texto: () => Promise<string> }> = [];
+  const documento = {
+    getElementById: el,
+    body: { appendChild() {}, removeChild() {} },
+    createElement: () => ({ href: "", download: "", click() { const h = this.href; descargas.push({ archivo: this.download, texto: () => resolveObjectURL(h)!.text() }); } }),
+  };
+  new Function("window", "document", "sessionStorage", FILTROS_JS)(window, documento, sessionStorage);
+  new Function("window", "document", "sessionStorage", "localStorage", "fetch", ESPECIFICACIONES_JS)(window, documento, sessionStorage, localStorage, opciones.fetch);
   const raiz = el("especificaciones");
   let html = "";
   Object.defineProperty(raiz, "innerHTML", {
     get: () => html,
     set: (v: string) => {
       html = v;
-      const i = v.indexOf('<div id="es-lista">');
-      el("es-lista").innerHTML = i < 0 ? "" : v.slice(i);
+      const i = v.indexOf('<div id="es-lista">'), a = v.indexOf('<aside id="es-panel"');
+      el("es-lista").innerHTML = i < 0 ? "" : v.slice(i, a < 0 ? undefined : a);
+      if (a >= 0) el("es-panel").innerHTML = v.slice(v.indexOf(">", a) + 1, v.indexOf("</aside>", a));
     },
   });
   window.brainEspecificaciones!.mostrar();
@@ -40,6 +49,8 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
     pagina: () => raiz.innerHTML,
     lista: () => el("es-lista").innerHTML,
     agente: () => el("es-agente").innerHTML,
+    panel: () => el("es-panel").innerHTML,
+    descargas,
     casos: () => [...el("es-lista").innerHTML.matchAll(/<p class="es-nombre">([^<]+)<\/p>/g)].map((m) => m[1]),
     reglas: () => [...el("es-lista").innerHTML.matchAll(/<p class="es-texto">([^<]+?) <span/g)].map((m) => m[1]),
     cambiar: (id: string, value: string) => raiz.oyentes["change"]!({ target: { id, value } }),
@@ -172,15 +183,26 @@ describe("pantalla Especificaciones", () => {
     // Cuenta las reglas de los casos (la suelta va en "agrupar"): "motivo", de negocio, no tiene test.
     expect(p).toContain("Pedir los tests que faltan</b><small>1 regla de negocio sin test.");
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
-    expect(v.lista()).toContain('class="boton es-pedir" data-acc="pedido" data-k="test|feat-pagos|pagar">Pedir el test que falta</button>');
+    expect(v.lista()).toContain('class="boton es-pedir" data-acc="sumar" data-k="test|feat-pagos|pagar"');
+    expect(v.lista()).toContain("Pedir el test que falta</button>");
     expect(v.lista()).toContain("Ningún test la verifica: si alguien la rompe, nada avisa.");
-    v.tocar({ "data-acc": "pedido", "data-k": "test|feat-pagos|pagar" });
-    const l = v.lista();
-    expect(l).toContain("Escribí el test que verifica esta regla de FlowBrain, siguiendo la guía de flowbrain specs --guide-tests (en Claude Code: /flowbrain-tests).");
-    expect(l).toContain("- Cerebro front, feat-pagos (Pagos), caso pagar (Pagar el carrito), regla motivo [negocio]: Si el pago falla se muestra el motivo. La cumple: repo-web:src/pagos/Error.tsx.");
-    expect(l).toContain("No cambies el código del producto");
+    // Pedir el test no manda nada: suma la regla a la lista y abre el panel.
+    expect(v.panel()).toContain("La lista está vacía");
+    v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
+    const l = v.lista(), pn = v.panel();
+    expect(l).toContain("✔ En tests pedidos");
+    expect(l).not.toContain("Mandar al agente");
+    expect(pn).toContain("Si el pago falla se muestra el motivo.");
+    expect(pn).toContain("De negocio");
+    expect(pn).toContain("Pagar el carrito");
+    expect(pn).toContain("Pagos");
+    expect(pn).toContain(">front<");
+    expect(pn).toContain("<code>repo-web:src/pagos/Error.tsx</code>");
+    expect(pn).toContain("<b>1 regla</b>");
     // Sin servidor no se ofrece "No necesita test": no hay dónde guardarlo.
     expect(l).not.toContain('data-acc="manual"');
+    v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
+    expect(v.panel()).toContain("La lista está vacía");
   });
 
   it("con el servidor, No necesita test guarda el motivo, deja de contar y se puede deshacer", async () => {
@@ -212,41 +234,163 @@ describe("pantalla Especificaciones", () => {
     expect(v.lista()).toContain("Vuelve a contar como sin test");
   });
 
-  it("con el agente a mano, el pedido se manda directo y la pantalla muestra cómo va y qué cambió", async () => {
-    const enviados: Array<{ url: string; cuerpo: Record<string, unknown> | null }> = [];
-    const trabajo = { id: "t1", tipo: "test", etiqueta: "1 test: Pagar el carrito", estado: "terminado", pasos: ["Lee src/pagos/Error.tsx", "Corre: npx vitest run"], resultado: "Escribí 1 test.", cambios: [{ repo: "repos/web", archivos: ["src/pagos/Error.test.tsx"] }] };
-    const fetch = (url: string, init: { method?: string; body?: string }) => {
-      enviados.push({ url, cuerpo: init.body ? (JSON.parse(init.body) as Record<string, unknown>) : null });
-      const j = init.method === "POST" ? { id: "t1" } : { trabajos: enviados.some((x) => x.cuerpo) ? [trabajo] : [] };
-      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(j) });
-    };
-    const v = montar(datos(), { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: null } }, fetch });
-    v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
-    v.tocar({ "data-acc": "pedido", "data-k": "test|feat-pagos|pagar" });
-    // Con agente no copia solo: muestra el pedido y deja elegir.
-    expect(v.lista()).toContain('data-acc="mandar"');
-    expect(v.lista()).toContain("Mandar al agente");
-    expect(v.lista()).not.toContain("No se pudo copiar solo");
-    v.tocar({ "data-acc": "mandar", "data-k": "test|feat-pagos|pagar" });
-    for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 0));
-    const post = enviados.find((x) => x.cuerpo)!;
-    expect(post.url).toBe("/api/agente");
-    expect(post.cuerpo).toMatchObject({ tipo: "test", etiqueta: "1 test: Pagar el carrito", cerebros: ["front"] });
-    expect(String(post.cuerpo!["pedido"])).toContain("regla motivo [negocio]");
-    const p = v.agente();
-    expect(p).toContain("<h2>El agente</h2>");
-    expect(p).toContain("1 test: Pagar el carrito");
-    expect(p).toContain("<code>src/pagos/Error.test.tsx</code>");
-    expect(p).toContain("Recargar para ver los cambios");
-  });
+  const PROVEEDORES = [{ id: "claude-code", nombre: "Claude Code", version: "9.9.9", modelos: [
+    { id: "claude-fable-5-2", nombre: "Fable 5.2", costoPorReglaUsd: 0.9 }, { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true, costoPorReglaUsd: 0.4 },
+    { id: "claude-sonnet-5-5", nombre: "Sonnet 5.5", costoPorReglaUsd: 0.15 }, { id: "claude-haiku-5-5", nombre: "Haiku 5.5", costoPorReglaUsd: 0.04 }] }];
+  const tick = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0)); };
 
-  it("sin Claude Code en la máquina, el pedido se copia y dice por qué no se manda", () => {
+  it("sin Claude Code en la máquina, la lista sigue y dice por qué no se manda: se descarga el .md", () => {
     const v = montar(datos(), { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: "no se encontró Claude Code (claude) en esta máquina" } }, fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }) });
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
-    v.tocar({ "data-acc": "pedido", "data-k": "test|feat-pagos|pagar" });
-    expect(v.lista()).not.toContain('data-acc="mandar"');
-    expect(v.lista()).toContain("No se puede mandar directo: no se encontró Claude Code");
+    v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
+    expect(v.panel()).toContain("No hay ningún agente instalado en esta máquina: no se encontró Claude Code");
+    expect(v.panel()).toContain("Descargá el .md");
+    expect(v.panel()).not.toContain('id="es-prov"');
+    expect(v.panel()).toMatch(/data-acc="pedir-todos" disabled/);
   });
+
+  it("la lista queda guardada, se quita de a una o se vacía, y el .md trae la guía, las reglas por repo y el cierre", async () => {
+    const local = new Map<string, string>();
+    const d = datos();
+    const v = montar(d, { local });
+    v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
+    v.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|motivo" });
+    v.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|suelta" });
+    expect(v.panel()).toContain("<b>2 reglas</b>");
+    // Recargar la página: la lista vuelve igual, con el panel abierto.
+    const w = montar(d, { local });
+    expect(w.panel()).toContain("<b>2 reglas</b>");
+    expect(w.panel()).toContain("El botón de pagar se ve abajo.");
+    w.tocar({ "data-acc": "quitar", "data-k": "front/feat-pagos|suelta" });
+    expect(w.panel()).toContain("<b>1 regla</b>");
+    expect(JSON.parse(local.get("flowbrain.especificaciones.pedidos")!)).toHaveLength(1);
+    w.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
+    w.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|suelta" });
+    w.tocar({ "data-acc": "descargar-lista" });
+    expect(w.descargas[0]!.archivo).toBe("tests-pedidos.md");
+    const md = await w.descargas[0]!.texto();
+    expect(md).toContain("# Tests pedidos desde FlowBrain");
+    expect(md).toContain("Hace falta un agente con acceso al repo");
+    expect(md).toContain("Un chat web no sirve");
+    expect(md).toContain("Nunca modificás el código del producto.");
+    expect(md).toContain("## Los cuatro resultados");
+    expect(md).not.toContain("$ARGUMENTS");
+    expect(md).toContain("### repo-web (2)");
+    expect(md).toContain("regla motivo [negocio]: Si el pago falla se muestra el motivo.");
+    expect(md).toContain("## Al terminar");
+    expect(md).toContain("`flowbrain compile`");
+    expect(md).toContain("flowbrain specs <funcionalidad> --brain <cerebro>");
+    w.tocar({ "data-acc": "vaciar" });
+    expect(w.panel()).toContain("La lista está vacía");
+    expect(JSON.parse(local.get("flowbrain.especificaciones.pedidos")!)).toEqual([]);
+  });
+
+  it("pedir todos: elige proveedor y modelo, estima el costo, manda el lote, muestra el avance y separa lo que volvió", async () => {
+    const d = datos();
+    (d.funcionalidades[0]!.especificaciones[2] as { tipo: string }).tipo = "producto";
+    const estado: { trabajos: unknown[]; lotes: unknown[] } = { trabajos: [], lotes: [] };
+    const llamadas: Array<{ url: string; cuerpo: Record<string, any> | null }> = [];
+    const fetch = (url: string, init: { method?: string; body?: string }) => {
+      const cuerpo = init.body ? (JSON.parse(init.body) as Record<string, any>) : null;
+      llamadas.push({ url, cuerpo });
+      const j = url === "/api/agente/lote" ? { lote: { id: "L1" }, trabajos: [] } : url === "/api/agente" ? { ...estado, proveedores: PROVEEDORES } : { mensaje: "ok", cambio: true };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(j) });
+    };
+    const v = montar(d, { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: null, proveedores: PROVEEDORES } }, fetch });
+    v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
+    v.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|suelta" });
+    v.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|motivo" });
+    let p = v.panel();
+    // El selector muestra los proveedores instalados; el modelo por defecto va marcado.
+    expect(p).toContain('<option value="claude-code" selected>Claude Code</option>');
+    expect(p).toContain('<option value="claude-opus-5-5" selected>Opus 5.5 (por defecto)</option>');
+    for (const m of ["Fable 5.2", "Sonnet 5.5", "Haiku 5.5"]) expect(p).toContain(">" + m + "</option>");
+    expect(p).toContain("<b>2 reglas</b>");
+    expect(p).toContain("1 de negocio (van primero) · 1 de pantalla");
+    expect(p.indexOf("Si el pago falla")).toBeLessThan(p.indexOf("El botón de pagar"));
+    expect(p).toContain("Costo estimado: ≈ US$ 0.80");
+    v.cambiar("es-modelo", "claude-haiku-5-5");
+    p = v.panel();
+    expect(p).toContain("Costo estimado: ≈ US$ 0.080");
+    expect(p).toContain('<option value="claude-haiku-5-5" selected>Haiku 5.5</option>');
+    expect(p).toContain("Pedir todos (2)");
+    expect(p).toContain("Descargar .md");
+    // Nada se mandó hasta ahora, salvo mirar cómo está el agente.
+    expect(llamadas.filter((x) => x.cuerpo)).toEqual([]);
+
+    v.tocar({ "data-acc": "pedir-todos" });
+    estado.lotes = [{ id: "L1", estado: "corriendo", cerebros: ["front"] }];
+    estado.trabajos = [{ id: "t1", lote: "L1", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: ["Lee src/pagos/Error.tsx", "Corre: npx vitest run"], reglas: [{ cerebro: "front", funcionalidad: "feat-pagos", regla: "motivo" }, { cerebro: "front", funcionalidad: "feat-pagos", regla: "suelta" }] }];
+    await tick();
+    const post = llamadas.find((x) => x.url === "/api/agente/lote")!;
+    expect(post.cuerpo).toMatchObject({ proveedor: "claude-code", modelo: "claude-haiku-5-5" });
+    expect((post.cuerpo!["reglas"] as Array<Record<string, unknown>>).map((r) => r["regla"])).toEqual(["motivo", "suelta"]);
+    expect(post.cuerpo!["reglas"][0]).toMatchObject({ cerebro: "front", funcionalidad: "feat-pagos", repo: "repo-web" });
+    expect(String(post.cuerpo!["reglas"][0].linea)).toContain("regla motivo [negocio]: Si el pago falla se muestra el motivo.");
+    p = v.panel();
+    expect(p).toContain("Pidiendo 2 reglas en 1 repo a la vez");
+    expect(p).toContain("0 de 1 tandas");
+    expect(p).toContain("repo-web");
+    expect(p).toContain("Corre: npx vitest run");
+    expect(p).toContain("Pidiéndose…");
+    expect(p).toContain('data-acc="cancelar-lote"');
+    expect(p).toMatch(/data-acc="pedir-todos" disabled/);
+
+    // Terminó: una verificada con un test nuevo y una con el código que no la cumple. Cuesta, de verdad, 0.12.
+    estado.lotes = [{ id: "L1", estado: "terminado", cerebros: ["front"] }];
+    estado.trabajos = [{ ...(estado.trabajos[0] as object), estado: "terminado", costoUsd: 0.12, resultados: [
+      { cerebro: "front", funcionalidad: "feat-pagos", regla: "motivo", resultado: "a", tests: ["repo-web:src/pagos/Error.test.tsx::muestra el motivo"] },
+      { cerebro: "front", funcionalidad: "feat-pagos", regla: "suelta", resultado: "c", hoy: "src/pagos/Boton.tsx#L9: el botón se ve arriba", cambio: "Mover el botón abajo.", test: "it('abajo', () => {})" }] }];
+    (v as { cambiar: (a: string, b: string) => void }).cambiar("es-modelo", "claude-haiku-5-5");
+    // El panel vuelve a pedir el estado cada 2 s; acá se fuerza con otro pedido.
+    v.tocar({ "data-acc": "panel", "data-k": "" }); v.tocar({ "data-acc": "panel", "data-k": "" });
+    await new Promise((r) => setTimeout(r, 2100));
+    p = v.panel();
+    expect(p).toContain("Terminó");
+    expect(p).toContain("Costo real: US$ 0.12");
+    expect(p).toContain("1 verificadas con un test nuevo · 0 ya cubiertas · 1 con el código que no la cumple · 0 que no se pueden testear sin tocar código");
+    expect(p).toContain("Verificadas");
+    expect(p).toContain("repo-web:src/pagos/Error.test.tsx::muestra el motivo");
+    expect(p).toContain("Para decidir");
+    expect(p).toContain("src/pagos/Boton.tsx#L9: el botón se ve arriba");
+    expect(p).toContain("Mover el botón abajo.");
+    expect(p).toContain("El test que lo demuestra");
+    expect(p).toContain('data-acc="regla-mal"');
+    expect(p).toContain('data-acc="codigo-mal"');
+    // Lo que ya tiene resultado sale de la lista.
+    expect(p).toContain("La lista está vacía");
+
+    // «El código está mal» lo pasa a desarrollo y queda guardado en la página.
+    v.tocar({ "data-acc": "codigo-mal", "data-k": "front/feat-pagos|suelta" });
+    await tick();
+    const dec = llamadas.filter((x) => x.url === "/api/editar").pop()!;
+    expect(dec.cuerpo).toEqual({ tipo: "decision", cerebro: "front", funcionalidad: "feat-pagos", id: "suelta", decision: "codigo_mal" });
+    p = v.panel();
+    expect(p).toContain("Para desarrollo");
+    expect(p).toContain("Nada por decidir.");
+    expect(p).toContain("Descargar .md para tickets");
+    v.tocar({ "data-acc": "descargar-desarrollo" });
+    const md = await v.descargas.pop()!.texto();
+    expect(md).toContain("# Para desarrollo");
+    expect(md).toContain("## 1. El botón de pagar se ve abajo.");
+    expect(md).toContain("**Qué hace hoy el código:** src/pagos/Boton.tsx#L9: el botón se ve arriba");
+    expect(md).toContain("**Qué habría que cambiar:** Mover el botón abajo.");
+    expect(md).toContain("it('abajo', () => {})");
+
+    // «La regla está mal»: la corrige el agente.
+    v.tocar({ "data-acc": "deshacer", "data-k": "front/feat-pagos|suelta" });
+    await tick();
+    v.tocar({ "data-acc": "regla-mal", "data-k": "front/feat-pagos|suelta" });
+    await tick();
+    p = v.panel();
+    expect(p).toContain("La regla se corrige");
+    expect(p).toContain("Pedir la corrección");
+    v.tocar({ "data-acc": "corregir-reglas" });
+    await tick();
+    const corr = llamadas.find((x) => x.cuerpo?.["tipo"] === "corregir")!;
+    expect(corr.cuerpo).toMatchObject({ cerebros: ["front"], proveedor: "claude-code", modelo: "claude-haiku-5-5" });
+    expect(String(corr.cuerpo!["pedido"])).toContain("regla suelta");
+  }, 15_000);
 
   it("sin nada escrito o sin funcionalidades explica qué hacer", () => {
     const d = datos();
