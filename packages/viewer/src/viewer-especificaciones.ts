@@ -237,7 +237,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     // Pedir un test no manda nada: suma la regla a la lista de «Tests pedidos» (celeste, la acción de la pantalla).
     if (tipo === "test") {
       var yaEsta = items.length > 0 && items.every(function (it) { return enLista(it[1].id + "|" + it[0].id); });
-      return '<button type="button" class="boton es-pedir' + (yaEsta ? " en-lista" : "") + '" data-acc="sumar" data-k="' + esc(k) + '" aria-pressed="' + yaEsta + '" title="' + (yaEsta ? "Tocalo para sacarla de la lista" : "Suma la regla a la lista de tests pedidos: no se manda nada hasta «Pedir todos»") + '">' + (yaEsta ? "✔ En tests pedidos" : etiqueta) + "</button>";
+      return '<button type="button" class="boton es-pedir' + (yaEsta ? " en-lista" : "") + '" data-acc="sumar" data-k="' + esc(k) + '" data-et="' + esc(etiqueta) + '" aria-pressed="' + yaEsta + '" title="' + (yaEsta ? "Tocalo para sacarla de la lista" : "Suma la regla a la lista de tests pedidos: no se manda nada hasta «Pedir todos»") + '">' + (yaEsta ? "✔ En tests pedidos" : etiqueta) + "</button>";
     }
     if (AG) etiqueta = etiqueta.replace(/^Copiar pedido/, "Pedírselo al agente");
     // Pedir un test es la acción de la pantalla: va en celeste, para encontrarla de un vistazo.
@@ -551,6 +551,17 @@ export const ESPECIFICACIONES_JS = String.raw`
   }
   // Las de negocio primero: son las que más cuesta que se rompan sin aviso.
   var ordenadas = function () { return LISTA.slice().sort(function (a, b) { return (a.tipo === "negocio" ? 0 : 1) - (b.tipo === "negocio" ? 0 : 1); }); };
+  function botonesDePedido() {
+    var bs = raiz.querySelectorAll('[data-acc="sumar"]');
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i], p = PEDIDOS[b.getAttribute("data-k")];
+      if (!p) continue;
+      var ya = p[1].length > 0 && p[1].every(function (it) { return enLista(it[1].id + "|" + it[0].id); });
+      b.setAttribute("aria-pressed", String(ya));
+      if (b.classList) { if (ya) b.classList.add("en-lista"); else b.classList.remove("en-lista"); }
+      b.textContent = ya ? "✔ En tests pedidos" : (b.getAttribute("data-et") || "Pedir el test");
+    }
+  }
   function sumarOQuitar(items) {
     var todas = items.length > 0 && items.every(function (it) { return enLista(it[1].id + "|" + it[0].id); });
     if (todas) {
@@ -905,11 +916,18 @@ export const ESPECIFICACIONES_JS = String.raw`
       return;
     }
     if (acc === "mandar") { mandar(k); return; }
-    if (acc === "sumar") { var ps = PEDIDOS[k]; if (ps) { sumarOQuitar(ps[1]); pintarTodo(); } return; }
+    if (acc === "sumar") {
+      var ps = PEDIDOS[k];
+      if (!ps) return;
+      sumarOQuitar(ps[1]);
+      // Sin repintar la lista: así no se cierran las reglas que se estaban mirando. Solo cambian los botones y el panel.
+      if (raiz.querySelectorAll) { botonesDePedido(); pintarPanel(); } else pintarTodo();
+      return;
+    }
     if (acc === "panel") { PANEL = !PANEL; guardarLista(); pintarPanel(); return; }
     if (acc === "cerrar-panel") { PANEL = false; guardarLista(); pintarPanel(); return; }
-    if (acc === "quitar") { LISTA = LISTA.filter(function (x) { return x.k !== k; }); guardarLista(); pintarTodo(); return; }
-    if (acc === "vaciar") { LISTA = []; guardarLista(); pintarTodo(); return; }
+    if (acc === "quitar") { LISTA = LISTA.filter(function (x) { return x.k !== k; }); guardarLista(); if (raiz.querySelectorAll) { botonesDePedido(); pintarPanel(); } else pintarTodo(); return; }
+    if (acc === "vaciar") { LISTA = []; guardarLista(); if (raiz.querySelectorAll) { botonesDePedido(); pintarPanel(); } else pintarTodo(); return; }
     if (acc === "pedir-todos") { pedirTodos(); return; }
     if (acc === "descargar-lista") { if (!descargar("tests-pedidos.md", mdDeLista())) { PANEL_ERROR = "No se pudo descargar: copiá la lista desde el visor servido."; pintarPanel(); } return; }
     if (acc === "descargar-desarrollo") { if (!descargar("para-desarrollo.md", mdDesarrollo())) { PANEL_ERROR = "No se pudo descargar."; pintarPanel(); } return; }
