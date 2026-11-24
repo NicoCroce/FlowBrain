@@ -159,6 +159,7 @@ export function paginaDelVisor(datos: unknown): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FlowBrain · visor</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCc+PHJlY3Qgd2lkdGg9JzI0JyBoZWlnaHQ9JzI0JyByeD0nNicgZmlsbD0nIzBBMEMxMScvPjxnIGZpbGw9J25vbmUnIHN0cm9rZT0nIzlEQjRGRicgc3Ryb2tlLXdpZHRoPScxLjgnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCc+PGNpcmNsZSBjeD0nNicgY3k9JzcnIHI9JzIuMicvPjxjaXJjbGUgY3g9JzE4JyBjeT0nNicgcj0nMS42Jy8+PGNpcmNsZSBjeD0nMTInIGN5PScxNycgcj0nMycvPjxwYXRoIGQ9J003LjggOC40bDIuNiA2TTE2LjggNy4ybC0zLjQgNy40TTguMiA3bDguMi0uOCcvPjwvZz48L3N2Zz4=">
 <style>
 :root {
   color-scheme: dark;

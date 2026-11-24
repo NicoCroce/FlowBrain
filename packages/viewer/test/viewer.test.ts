@@ -16,7 +16,7 @@ describe("viewer.html", () => {
     const a = renderViewer(g);
     expect(renderViewer(g)).toBe(a);
     // Ninguna referencia a la red: todo va embebido.
-    expect(renderViewer(g)).not.toMatch(/<script[^>]+src=|<link[^>]+href=|https?:\/\//);
+    expect(renderViewer(g)).not.toMatch(/<script[^>]+src=|<link[^>]+href="(?!data:)|https?:\/\//);
     const d = datos(a);
     expect(d.nodes.map((n) => n.id)).toEqual(g.nodes.map((n) => n.id));
     expect(d.edges).toHaveLength(g.edges.length);

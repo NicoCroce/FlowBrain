@@ -476,7 +476,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
       if (MULTI) {
         var ct = project(OX[cb], OY[cb] + rb * 0.98, OZ[cb]);
         cajaNombre[cb] = null;
-        if (ct) { var agarrado = (ptr && ptr.cerebro === cb) || (!ptr && sobreNombre === cb); ctx.globalAlpha = agarrado ? 1 : 0.85; ctx.font = "600 " + Math.max(12, Math.min(22, 26000 * ct.s / 100)) + "px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = colorC(cb); ctx.fillText(CEREBROS[cb].nombre, ct.sx, ct.sy - 10);
+        if (ct) { var agarrado = (ptr && ptr.cerebro === cb) || (!ptr && sobreNombre === cb); ctx.globalAlpha = agarrado ? 0.95 : 0.5; ctx.font = "500 " + Math.max(11, Math.min(15, 18000 * ct.s / 100)) + "px Inter, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = colorC(cb); ctx.fillText(CEREBROS[cb].nombre, ct.sx, ct.sy - 10);
           var an = ctx.measureText(CEREBROS[cb].nombre).width + 24; cajaNombre[cb] = { x: ct.sx - an / 2, y: ct.sy - 38, w: an, h: 38 };
           if (agarrado) { ctx.globalAlpha = 0.5; ctx.fillRect(ct.sx - an / 2 + 12, ct.sy - 5, an - 24, 2); }
           ctx.textAlign = "start"; ctx.fillStyle = "#8FA6FF"; }
