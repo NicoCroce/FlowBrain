@@ -1,5 +1,7 @@
 # Instalación en Claude Code
 
+**Español** · [English](INSTALL.md)
+
 ## La forma corta: `flowbrain install` dentro del proyecto
 
 La primera vez en una máquina, desde este repo (después el comando `flowbrain` queda en el PATH):
