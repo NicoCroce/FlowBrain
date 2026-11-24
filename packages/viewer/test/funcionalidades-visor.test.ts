@@ -60,7 +60,7 @@ describe("visor: funcionalidades, dependencias y mapa 3D", () => {
     const html = renderViewer(graph, conTests);
     // El archivo de test se dibuja como tipo `test` (se prende y apaga aparte); los demás siguen siendo archivos.
     expect(html).toMatch(/"id":"repo-tienda:apps\/web\/src\/main\.tsx"[^}]*"t":"test"/);
-    expect(html).toContain('["test", "Tests", "Test"]');
+    expect(html).toContain('test: ["Tests", "Test", "Tests", "Test"]');
     expect(html).toContain("suma un producto");
     // Un build anterior, sin `tests` en las fichas, se sigue pudiendo dibujar.
     const viejas = funcionalidades.map((f) => { const { tests: _t, ...resto } = f; return resto; }) as typeof funcionalidades;

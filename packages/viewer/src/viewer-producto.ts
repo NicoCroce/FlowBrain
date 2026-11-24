@@ -8,6 +8,9 @@ export const PRODUCTO_JS = String.raw`
 (function () {
   "use strict";
   var V = window.brainVisor, D = V.D, porId = V.porId, esc = V.esc;
+  // Idioma (dec. 214): todo texto visible se arma al pintar con L(inglés, castellano).
+  var L = function (en, es) { return window.brainI18n && window.brainI18n.lang === "es" ? es : en; };
+  var num = function (n) { return Number(n).toLocaleString(window.brainI18n && window.brainI18n.lang === "es" ? "es" : "en"); };
   var fichas = D.funcionalidades || [];
   var porFicha = {};
   fichas.forEach(function (f) { porFicha[f.id] = f; });
@@ -18,8 +21,8 @@ export const PRODUCTO_JS = String.raw`
   var raiz = document.getElementById("producto");
 
   var nombre = function (id) { return porId[id] ? porId[id].n : id; };
-  var pendiente = function (r) { return !r || /^Borrador:/.test(r); };
-  var plural = function (n, uno, varios) { return n + " " + (n === 1 ? uno : varios); };
+  var pendiente = function (r) { return !r || /^(Borrador|Draft):/.test(r); };
+  var plural = function (n, uno, varios) { return num(n) + " " + (n === 1 ? uno : varios); };
   var hrefFicha = function (id) { return "#/f/" + encodeURIComponent(id); };
   var chipFeat = function (id) { return '<a class="chip" href="' + hrefFicha(id) + '">' + esc(nombre(id)) + "</a>"; };
 
@@ -42,7 +45,7 @@ export const PRODUCTO_JS = String.raw`
     }
     md.split("\n").forEach(function (l) {
       var m;
-      if (/^#\s/.test(l) || /^>\s*Borrador generado/.test(l)) return cerrar();
+      if (/^#\s/.test(l) || /^>\s*(Borrador generado|Draft generated)/.test(l)) return cerrar();
       if ((m = /^(#{2,4})\s+(.*)$/.exec(l))) { cerrar(); var h = "h" + (m[1].length + 1); out.push("<" + h + ">" + inline(esc(m[2])) + "</" + h + ">"); return; }
       if ((m = /^\s*[-*]\s+(.*)$/.exec(l))) return item("ul", m[1]);
       if ((m = /^\s*\d+[.)]\s+(.*)$/.exec(l))) return item("ol", m[1]);
@@ -93,16 +96,16 @@ export const PRODUCTO_JS = String.raw`
       datosDe(x).forEach(function (d) { tablas[d.tabla] = true; });
       x.usaFuncionalidades.concat(x.usadaPor).forEach(function (u) { rel[idBase(u)] = true; });
     });
-    var chips = [plural(archivos, "archivo", "archivos")];
+    var chips = [plural(archivos, L("file", "archivo"), L("files", "archivos"))];
     var nr = Object.keys(rel).length, nt = Object.keys(tablas).length;
-    if (nr) chips.push(plural(nr, "relacionada", "relacionadas"));
-    if (nt) chips.push(plural(nt, "tabla", "tablas"));
+    if (nr) chips.push(plural(nr, L("related", "relacionada"), L("related", "relacionadas")));
+    if (nt) chips.push(plural(nt, L("table", "tabla"), L("tables", "tablas")));
     if (api) chips.push("API: " + api);
     var casos = 0;
     grupo.forEach(function (x) { (x.tests || []).forEach(function (t) { casos += t.casos.length; }); });
-    chips.push(casos ? plural(casos, "test", "tests") : "sin tests");
+    chips.push(casos ? plural(casos, "test", "tests") : L("untested", "sin tests"));
     var cuerpo = "<h3>" + esc(nombre(f.id)) + "</h3>" +
-      (desc ? "<p>" + esc(desc) + "</p>" : '<p class="pendiente">Sin descripción todavía</p>') +
+      (desc ? "<p>" + esc(desc) + "</p>" : '<p class="pendiente">' + L("No description yet", "Sin descripción todavía") + "</p>") +
       '<div class="chips">' + chips.map(function (c) { return '<span class="chip">' + esc(c) + "</span>"; }).join("") + "</div>";
     if (!cerebroDe(f.id)) return '<a class="tarjeta" href="' + hrefFicha(f.id) + '">' + cuerpo + "</a>";
     // Varios enlaces: la tarjeta no puede ser un <a> (no se anidan); el título lleva a la primera ficha.
@@ -126,47 +129,50 @@ export const PRODUCTO_JS = String.raw`
   var itemsFu = function () { return ITEMS_FU || (ITEMS_FU = grupos().map(info)); };
   var nCerebros = function () { var v = {}; fichas.forEach(function (f) { var c = cerebroDe(f.id); if (c) v[c] = true; }); return Object.keys(v).length; };
   var fl = window.brainFiltros.crear({
-    pre: "fu", clave: "flowbrain.funcionalidades", unidad: ["funcionalidad", "funcionalidades"], todos: "todas las funcionalidades",
+    // Las etiquetas son funciones: brainFiltros las evalúa al pintar, así siguen el cambio de idioma.
+    pre: "fu", clave: "flowbrain.funcionalidades", unidad: function () { return L(["feature", "features"], ["funcionalidad", "funcionalidades"]); }, todos: function () { return L("all features", "todas las funcionalidades"); },
     items: itemsFu,
     grupos: [
-      { id: "", etiqueta: "Todas" },
-      { id: "sindesc", etiqueta: "Sin descripción", palabra: "sin descripción", es: function (x) { return !x.desc; }, ocultarVacio: true },
-      { id: "sintests", etiqueta: "Sin tests", palabra: "sin tests", es: function (x) { return !x.tests; }, ocultarVacio: true }
+      { id: "", etiqueta: function () { return L("All", "Todas"); } },
+      { id: "sindesc", etiqueta: function () { return L("No description", "Sin descripción"); }, palabra: function () { return L("no description", "sin descripción"); }, es: function (x) { return !x.desc; }, ocultarVacio: true },
+      { id: "sintests", etiqueta: function () { return L("Untested", "Sin tests"); }, palabra: function () { return L("untested", "sin tests"); }, es: function (x) { return !x.tests; }, ocultarVacio: true }
     ],
-    buscar: { ph: "Buscar por nombre o descripción…", texto: function (x) { return x.texto; } },
+    buscar: { ph: function () { return L("Search by name or description…", "Buscar por nombre o descripción…"); }, texto: function (x) { return x.texto; } },
     campos: [
-      { id: "cerebro", etiqueta: "Cerebro", propio: "el cerebro elegido", solo: function () { return nCerebros() > 1; }, de: function (x) { return x.c; },
-        etiquetaDe: function (v) { return v === SIN_CEREBRO ? "Sin cerebro" : v; }, palabra: function (v) { return "cerebro " + v; } },
-      { id: "tests", etiqueta: "Tests", todos: "Con o sin tests", propio: "los tests", de: function (x) { return x.tests ? "si" : "no"; },
-        etiquetaDe: function (v) { return v === "si" ? "Con tests" : "Sin tests"; }, palabra: function (v) { return v === "si" ? "con tests" : "sin tests"; } }
+      { id: "cerebro", etiqueta: function () { return L("Brain", "Cerebro"); }, propio: function () { return L("the chosen brain", "el cerebro elegido"); }, solo: function () { return nCerebros() > 1; }, de: function (x) { return x.c; },
+        etiquetaDe: function (v) { return v === SIN_CEREBRO ? L("No brain", "Sin cerebro") : v; }, palabra: function (v) { return L("brain ", "cerebro ") + v; } },
+      { id: "tests", etiqueta: "Tests", todos: function () { return L("With or without tests", "Con o sin tests"); }, propio: function () { return L("the tests", "los tests"); }, de: function (x) { return x.tests ? "si" : "no"; },
+        etiquetaDe: function (v) { return v === "si" ? L("With tests", "Con tests") : L("Untested", "Sin tests"); }, palabra: function (v) { return v === "si" ? L("with tests", "con tests") : L("untested", "sin tests"); } }
     ],
     paneles: [
-      { titulo: "Por cerebro", campo: "cerebro" },
+      { titulo: function () { return L("By brain", "Por cerebro"); }, campo: "cerebro" },
       { titulo: "Tests", campo: "tests", orden: "fijo" }
     ],
     cifras: function () {
       var xs = itemsFu(), sinDesc = xs.filter(function (x) { return !x.desc; }).length, sinTests = xs.filter(function (x) { return !x.tests; }).length;
-      var out = [[xs.length, "funcionalidades"]];
-      if (xs.length !== fichas.length) out.push([fichas.length, "fichas, una por cerebro que la tiene"]);
-      out.push([sinDesc, "sin descripción", sinDesc ? "var(--atencion)" : "", "sindesc"]);
-      out.push([sinTests, "sin tests", sinTests ? "var(--atencion)" : "", "sintests"]);
+      var out = [[xs.length, L("features", "funcionalidades")]];
+      if (xs.length !== fichas.length) out.push([fichas.length, L("cards, one per brain that has it", "fichas, una por cerebro que la tiene")]);
+      out.push([sinDesc, L("no description", "sin descripción"), sinDesc ? "var(--atencion)" : "", "sindesc"]);
+      out.push([sinTests, L("untested", "sin tests"), sinTests ? "var(--atencion)" : "", "sintests"]);
       return out;
     },
     alCambiar: function (todo) { if (todo) pintarCatalogo(); else { var l = document.getElementById("tarjetas"); if (l) l.innerHTML = tarjetas(); } }
   });
   function tarjetas() {
-    var lista = fl.filtrar().map(function (x) { return x.g; }).sort(function (a, b) { return nombre(a[0].id).localeCompare(nombre(b[0].id), "es"); });
+    var lista = fl.filtrar().map(function (x) { return x.g; }).sort(function (a, b) { return nombre(a[0].id).localeCompare(nombre(b[0].id), L("en", "es")); });
     if (!lista.length) return fl.vacio(itemsFu().length);
     return fl.resultado(lista.length) + '<div class="tarjetas">' + lista.map(tarjeta).join("") + "</div>";
   }
   function pintarCatalogo() {
     if (!fichas.length) {
-      raiz.innerHTML = "<h1>Funcionalidades</h1>" +
-        '<p class="aviso">Todavía no hay funcionalidades. <code>flowbrain draft &lt;repo&gt;</code> las propone a partir de las carpetas <code>features/</code>, <code>modules/</code> o <code>domains/</code> (o, sin ellas, <code>pages/</code>, <code>screens/</code> o <code>views/</code>) en <code>_drafts/product/</code>. Para completarlas con nombre de negocio y descripción, corré <code>/flowbrain-features</code> en Claude Code, o revisalas a mano y pasalas a <code>product/</code> con <code>flowbrain promote</code>.</p>';
+      raiz.innerHTML = "<h1>" + L("Features", "Funcionalidades") + "</h1>" +
+        '<p class="aviso">' + L("No features yet. <code>flowbrain draft &lt;repo&gt;</code> proposes them from the <code>features/</code>, <code>modules/</code> or <code>domains/</code> folders (or, without them, <code>pages/</code>, <code>screens/</code> or <code>views/</code>) in <code>_drafts/product/</code>. To complete them with a business name and description, run <code>/flowbrain-features</code> in Claude Code, or review them by hand and move them to <code>product/</code> with <code>flowbrain promote</code>.",
+          "Todavía no hay funcionalidades. <code>flowbrain draft &lt;repo&gt;</code> las propone a partir de las carpetas <code>features/</code>, <code>modules/</code> o <code>domains/</code> (o, sin ellas, <code>pages/</code>, <code>screens/</code> o <code>views/</code>) en <code>_drafts/product/</code>. Para completarlas con nombre de negocio y descripción, corré <code>/flowbrain-features</code> en Claude Code, o revisalas a mano y pasalas a <code>product/</code> con <code>flowbrain promote</code>.") + "</p>";
       return;
     }
-    raiz.innerHTML = "<h1>Funcionalidades</h1>" +
-      '<p class="subtitulo">Lo que el producto le permite hacer a quien lo usa, una tarjeta por funcionalidad: de qué cerebros es, cuánto código tiene, qué tablas y endpoints toca y si tiene tests. Tocá una para ver su ficha.</p>' +
+    raiz.innerHTML = "<h1>" + L("Features", "Funcionalidades") + "</h1>" +
+      '<p class="subtitulo">' + L("What the product lets its users do, one card per feature: which brains it belongs to, how much code it has, which tables and endpoints it touches and whether it has tests. Click one to see its card.",
+        "Lo que el producto le permite hacer a quien lo usa, una tarjeta por funcionalidad: de qué cerebros es, cuánto código tiene, qué tablas y endpoints toca y si tiene tests. Tocá una para ver su ficha.") + "</p>" +
       fl.html() + '<div id="tarjetas">' + tarjetas() + "</div>";
   }
   if (raiz) raiz.addEventListener("click", function (ev) { fl.manejar(ev, "click"); });
@@ -182,27 +188,28 @@ export const PRODUCTO_JS = String.raw`
   function enCerebros(f) {
     if (!cerebroDe(f.id)) return "";
     var otras = fichas.filter(function (x) { return x.id !== f.id && idBase(x.id) === idBase(f.id); });
-    return '<div class="chips ficha-cerebros">' + chipCerebro(f.id, true) + (otras.length ? '<small class="vacio">También en</small>' + otras.map(function (x) { return chipCerebro(x.id, false); }).join("") : "") + "</div>";
+    return '<div class="chips ficha-cerebros">' + chipCerebro(f.id, true) + (otras.length ? '<small class="vacio">' + L("Also in", "También en") + "</small>" + otras.map(function (x) { return chipCerebro(x.id, false); }).join("") : "") + "</div>";
   }
 
   // ---------- Cómo está construida ----------
-  var CAPA = { entrada: "Entrada", logica: "Lógica", dominio: "Dominio", datos: "Datos e integraciones", interfaz: "Interfaz", otros: "Otros" };
-  var VERBO_TOQUE = { lee_de: "lee", escribe_en: "escribe en", llama_a: "llama a" };
-  var capa = function (c) { return '<span class="capa capa-' + esc(c) + '">' + esc(CAPA[c] || c) + "</span>"; };
+  // Tablas de etiquetas como funciones: se leen al pintar, en el idioma del momento.
+  var CAPA = function () { return { entrada: L("Entry", "Entrada"), logica: L("Logic", "Lógica"), dominio: L("Domain", "Dominio"), datos: L("Data and integrations", "Datos e integraciones"), interfaz: L("Interface", "Interfaz"), otros: L("Other", "Otros") }; };
+  var VERBO_TOQUE = function () { return { lee_de: L("reads", "lee"), escribe_en: L("writes to", "escribe en"), llama_a: L("calls", "llama a") }; };
+  var capa = function (c) { return '<span class="capa capa-' + esc(c) + '">' + esc(CAPA()[c] || c) + "</span>"; };
   function corta(f, archivo) {
     for (var i = 0; i < f.codigo.length; i++) if (archivo.indexOf(f.codigo[i] + "/") === 0) return archivo.slice(f.codigo[i].length + 1);
     return archivo.slice(archivo.indexOf(":") + 1);
   }
   function toque(t) {
-    var destino = t.endpoint ? nombre(t.endpoint) + " (" + nombre(t.hasta) + ")" : nombre(t.hasta) + (t.sinPagina ? " · sin página" : "");
-    return '<span class="chip">' + esc(VERBO_TOQUE[t.verbo] || t.verbo) + " " + esc(destino) + "</span>";
+    var destino = t.endpoint ? nombre(t.endpoint) + " (" + nombre(t.hasta) + ")" : nombre(t.hasta) + (t.sinPagina ? L(" · no page", " · sin página") : "");
+    return '<span class="chip">' + esc(VERBO_TOQUE()[t.verbo] || t.verbo) + " " + esc(destino) + "</span>";
   }
   // Pasos de un recorrido, indentados por nivel, con lo que toca cada uno. cortar acorta la evidencia.
   function pasosHtml(pasos, cortar) {
     return '<ol class="pasos">' + pasos.map(function (p) {
       return '<li style="margin-left:' + p.nivel * 18 + 'px">' + (p.nivel ? '<span class="flecha">↳</span> ' : "") + capa(p.capa) + " <strong>" + esc(p.simbolo) + "</strong>" +
         ' <small><code>' + esc(cortar(p.evidencia)) + "</code></small>" +
-        (p.repite ? ' <small class="vacio">' + (p.repite === "ciclo" ? "(recursivo)" : "(ya recorrido arriba)") + "</small>" : "") +
+        (p.repite ? ' <small class="vacio">' + (p.repite === "ciclo" ? L("(recursive)", "(recursivo)") : L("(already traversed above)", "(ya recorrido arriba)")) + "</small>" : "") +
         (p.aviso ? ' <small class="vacio">⚠ ' + esc(p.aviso) + "</small>" : "") +
         (p.toca.length ? '<div class="chips toca">' + p.toca.map(toque).join("") + "</div>" : "") + "</li>";
     }).join("") + "</ol>";
@@ -211,9 +218,9 @@ export const PRODUCTO_JS = String.raw`
     var tablas = {}, otros = {};
     r.pasos.forEach(function (p) { p.toca.forEach(function (t) { if (t.verbo === "llama_a") otros[nombre(t.hasta)] = true; else tablas[nombre(t.hasta)] = true; }); });
     var partes = [];
-    if (r.pasos.length) partes.push(esc(r.pasos[0].simbolo) + " · " + plural(r.pasos.length, "paso", "pasos") + (r.truncado ? " (recortado)" : ""));
-    if (Object.keys(tablas).length) partes.push("tablas: " + esc(Object.keys(tablas).sort().join(", ")));
-    if (Object.keys(otros).length) partes.push("llama a: " + esc(Object.keys(otros).sort().join(", ")));
+    if (r.pasos.length) partes.push(esc(r.pasos[0].simbolo) + " · " + plural(r.pasos.length, L("step", "paso"), L("steps", "pasos")) + (r.truncado ? L(" (trimmed)", " (recortado)") : ""));
+    if (Object.keys(tablas).length) partes.push(L("tables: ", "tablas: ") + esc(Object.keys(tablas).sort().join(", ")));
+    if (Object.keys(otros).length) partes.push(L("calls: ", "llama a: ") + esc(Object.keys(otros).sort().join(", ")));
     return partes.join(" · ");
   }
   function recorridos(f) {
@@ -222,8 +229,8 @@ export const PRODUCTO_JS = String.raw`
     return f.recorridos.map(function (r) {
       var cuerpo = r.pasos.length
         ? pasosHtml(r.pasos, function (ev) { return corta(f, ev); })
-        : '<p class="vacio">No se encontró el método que atiende este endpoint.</p>';
-      if (r.truncado) cuerpo += '<p class="vacio">Recorrido recortado para que se pueda leer. Completo: <code>flowbrain flow "' + esc(nombre(r.endpoint)) + '"</code>.</p>';
+        : ('<p class="vacio">' + L("The method that handles this endpoint wasn't found.", "No se encontró el método que atiende este endpoint.") + "</p>");
+      if (r.truncado) cuerpo += '<p class="vacio">' + L("Flow trimmed to keep it readable. Full flow: ", "Recorrido recortado para que se pueda leer. Completo: ") + '<code>flowbrain flow "' + esc(nombre(r.endpoint)) + '"</code>.</p>';
       return "<details" + (abiertos ? " open" : "") + ' class="recorrido"><summary><code>' + esc(nombre(r.endpoint)) + "</code><br><small>" + resumenRecorrido(r) + "</small></summary>" + cuerpo + "</details>";
     }).join("");
   }
@@ -232,19 +239,19 @@ export const PRODUCTO_JS = String.raw`
     var peso = function (d) { return d.de || d.usadoPor.length ? 0 : d.elementos.length ? 1 : 2; };
     var orden = f.dominio.slice().sort(function (a, b) { return peso(a) - peso(b) || (a.archivo < b.archivo ? -1 : 1); });
     return orden.map(function (d) {
-      var otras = d.usadoPor.length ? "<br><small>También la usan: " + d.usadoPor.map(chipFeat).join(" ") + "</small>" : "";
-      var titulo = d.elementos.length ? esc(d.elementos.join(", ")) : '<span class="vacio">' + esc(plural(d.funciones, "función", "funciones")) + "</span>";
+      var otras = d.usadoPor.length ? "<br><small>" + L("Also used by: ", "También la usan: ") + d.usadoPor.map(chipFeat).join(" ") + "</small>" : "";
+      var titulo = d.elementos.length ? esc(d.elementos.join(", ")) : '<span class="vacio">' + esc(plural(d.funciones, L("function", "función"), L("functions", "funciones"))) + "</span>";
       return "<li><strong>" + titulo + "</strong>" +
-        "<br><small><code>" + esc(d.archivo.slice(d.archivo.indexOf(":") + 1)) + "</code>" + (d.de ? " · de " + chipFeat(d.de) : "") + "</small>" + otras + "</li>";
+        "<br><small><code>" + esc(d.archivo.slice(d.archivo.indexOf(":") + 1)) + "</code>" + (d.de ? L(" · from ", " · de ") + chipFeat(d.de) : "") + "</small>" + otras + "</li>";
     });
   }
   function construida(f) {
     // Para personas: los recorridos y el dominio compartido. Las capas y el detalle de archivos van por la CLI y el MCP.
     var compartido = dominio({ dominio: f.dominio.filter(function (d) { return d.de || d.usadoPor.length; }), codigo: f.codigo });
     if (!f.recorridos.length && !compartido.length) return "";
-    return "<section><h2>Cómo está construida</h2>" +
-      (f.recorridos.length ? "<h3>Qué ejecuta cada endpoint (" + f.recorridos.length + ")</h3><p><small>Desde el método que atiende el pedido: qué llama y qué datos toca en cada paso.</small></p>" + recorridos(f) : "") +
-      (compartido.length ? "<h3>Dominio compartido con otras funcionalidades (" + compartido.length + ")</h3><p><small>Tipos que esta funcionalidad usa y que también usan otras: un cambio acá las afecta.</small></p>" + lista(compartido) : "") +
+    return "<section><h2>" + L("How it's built", "Cómo está construida") + "</h2>" +
+      (f.recorridos.length ? "<h3>" + L("What each endpoint runs (", "Qué ejecuta cada endpoint (") + num(f.recorridos.length) + ")</h3><p><small>" + L("From the method that handles the request: what it calls and what data it touches at each step.", "Desde el método que atiende el pedido: qué llama y qué datos toca en cada paso.") + "</small></p>" + recorridos(f) : "") +
+      (compartido.length ? "<h3>" + L("Domain shared with other features (", "Dominio compartido con otras funcionalidades (") + num(compartido.length) + ")</h3><p><small>" + L("Types this feature uses that others use too: a change here affects them.", "Tipos que esta funcionalidad usa y que también usan otras: un cambio acá las afecta.") + "</small></p>" + lista(compartido) : "") +
       "</section>";
   }
 
@@ -253,28 +260,28 @@ export const PRODUCTO_JS = String.raw`
   function lista(items) { return items.length ? '<ul class="lista">' + items.join("") + "</ul>" : ""; }
   function ficha(id) {
     var f = porFicha[id], n = porId[id];
-    if (!f || !n) return '<p>No existe la funcionalidad <code>' + esc(id) + '</code>. <a href="#/funcionalidades">Volver al catálogo</a></p>';
+    if (!f || !n) return "<p>" + L("There's no feature ", "No existe la funcionalidad ") + "<code>" + esc(id) + '</code>. <a href="#/funcionalidades">' + L("Back to the catalog", "Volver al catálogo") + "</a></p>";
     var desde = function (v) { return D.edges.filter(function (e) { return e.s === id && e.v === v; }).map(function (e) { return e.h; }); };
 
     var consume = f.usa.filter(function (u) { return u.endpoint; }).map(function (u) {
       var de = (duenas[u.endpoint] || []).filter(function (x) { return x !== id; });
       return "<li><code>" + esc(nombre(u.endpoint)) + "</code><br><small>" + esc(nombre(u.hasta)) +
         (de.length ? " · " + de.map(function (x) { return esc(nombre(x)); }).join(", ") : "") +
-        (u.veces > 1 ? " · " + u.veces + " llamadas" : "") + " · <code>" + esc(u.evidencia) + "</code></small></li>";
+        (u.veces > 1 ? " · " + num(u.veces) + L(" calls", " llamadas") : "") + " · <code>" + esc(u.evidencia) + "</code></small></li>";
     });
     var expone = f.expone.map(function (e) {
       var la = (consumidoras[e] || []).filter(function (x) { return x !== id; });
-      return "<li><code>" + esc(nombre(e)) + "</code>" + (la.length ? "<br><small>La usan: " + la.map(function (x) { return esc(nombre(x)); }).join(", ") + "</small>" : "") + "</li>";
+      return "<li><code>" + esc(nombre(e)) + "</code>" + (la.length ? "<br><small>" + L("Used by: ", "La usan: ") + la.map(function (x) { return esc(nombre(x)); }).join(", ") + "</small>" : "") + "</li>";
     });
     var datos = datosDe(f).map(function (d) {
-      var que = [d.lee ? "lee" : "", d.escribe ? "escribe" : ""].filter(Boolean).join(" y ");
-      return "<li>" + esc(nombre(d.tabla)) + " <small>· " + que + (d.via ? " · a través de " + esc(nombre(d.via)) : "") + "</small></li>";
+      var que = [d.lee ? L("reads", "lee") : "", d.escribe ? L("writes", "escribe") : ""].filter(Boolean).join(L(" and ", " y "));
+      return "<li>" + esc(nombre(d.tabla)) + " <small>· " + que + (d.via ? L(" · through ", " · a través de ") + esc(nombre(d.via)) : "") + "</small></li>";
     });
     var externos = f.usa.filter(function (u) { return porId[u.hasta] && porId[u.hasta].t === "ext"; }).map(function (u) {
       return "<li>" + esc(nombre(u.hasta)) + " <small>· <code>" + esc(u.evidencia) + "</code></small></li>";
     });
-    var relacion = (f.usaFuncionalidades.length ? "<p><small>Usa</small><br>" + '<span class="chips">' + f.usaFuncionalidades.map(chipFeat).join("") + "</span></p>" : "") +
-      (f.usadaPor.length ? "<p><small>La usan</small><br>" + '<span class="chips">' + f.usadaPor.map(chipFeat).join("") + "</span></p>" : "");
+    var relacion = (f.usaFuncionalidades.length ? "<p><small>" + L("Uses", "Usa") + "</small><br>" + '<span class="chips">' + f.usaFuncionalidades.map(chipFeat).join("") + "</span></p>" : "") +
+      (f.usadaPor.length ? "<p><small>" + L("Used by", "La usan") + "</small><br>" + '<span class="chips">' + f.usadaPor.map(chipFeat).join("") + "</span></p>" : "");
     var equipo = desde("pertenece_a").map(function (t) { return "<li>" + esc(nombre(t)) + "</li>"; });
     var decisiones = desde("decidido_por").map(function (d) { return "<li>" + esc(nombre(d)) + (porId[d] && porId[d].r ? "<br><small>" + esc(porId[d].r) + "</small>" : "") + "</li>"; });
     var codigo = f.codigo.map(function (c) { return "<li><code>" + esc(c) + "</code></li>"; });
@@ -284,38 +291,38 @@ export const PRODUCTO_JS = String.raw`
     tests.forEach(function (t) { totalCasos += t.casos.length; });
     var caso = function (c) { return "<li>" + (c.grupo ? "<small>" + esc(c.grupo) + " ›</small> " : "") + esc(c.nombre) + " <small>L" + c.linea + "</small></li>"; };
     var pruebas = tests.length
-      ? "<p><small>Lo que hoy se prueba de esta funcionalidad, tal como lo nombran sus tests. Tocá un archivo para ver sus casos.</small></p>" +
+      ? "<p><small>" + L("What is tested of this feature today, as its tests name it. Click a file to see its cases.", "Lo que hoy se prueba de esta funcionalidad, tal como lo nombran sus tests. Tocá un archivo para ver sus casos.") + "</small></p>" +
         tests.slice().sort(function (a, b) { return b.casos.length - a.casos.length || (a.archivo < b.archivo ? -1 : 1); }).map(function (t, i) {
           var ruta = t.archivo.slice(t.archivo.indexOf(":") + 1);
-          return '<details class="tf"' + (i === 0 ? " open" : "") + "><summary><code>" + esc(ruta) + "</code> <small>· " + plural(t.casos.length, "caso", "casos") + (t.por === "importa" ? " · fuera de su código: es de esta porque es de la que más importa" : "") + "</small></summary>" +
-            (t.casos.length ? '<ul class="lista">' + t.casos.map(caso).join("") + "</ul>" : "<p><small>Es un test, pero no se le pudieron leer los casos: los arma al correr o no usa un framework conocido.</small></p>") + "</details>";
+          return '<details class="tf"' + (i === 0 ? " open" : "") + "><summary><code>" + esc(ruta) + "</code> <small>· " + plural(t.casos.length, L("case", "caso"), L("cases", "casos")) + (t.por === "importa" ? L(" · outside its code: it belongs here because this is the feature it imports the most", " · fuera de su código: es de esta porque es de la que más importa") : "") + "</small></summary>" +
+            (t.casos.length ? '<ul class="lista">' + t.casos.map(caso).join("") + "</ul>" : "<p><small>" + L("It's a test, but its cases couldn't be read: it builds them at runtime or doesn't use a known framework.", "Es un test, pero no se le pudieron leer los casos: los arma al correr o no usa un framework conocido.") + "</small></p>") + "</details>";
         }).join("")
-      : '<p class="aviso">No se encontraron tests de esta funcionalidad: ningún archivo de test vive en su código ni importa un archivo suyo. Si los hay y el índice es anterior a esta versión, se ven al reindexar.</p>';
+      : '<p class="aviso">' + L("No tests found for this feature: no test file lives in its code or imports one of its files. If there are some and the index predates this version, they show up after you reindex.", "No se encontraron tests de esta funcionalidad: ningún archivo de test vive en su código ni importa un archivo suyo. Si los hay y el índice es anterior a esta versión, se ven al reindexar.") + "</p>";
 
     return '<div class="ficha"><div class="texto">' +
-      '<a class="volver" href="#/funcionalidades">← Funcionalidades</a>' +
+      '<a class="volver" href="#/funcionalidades">← ' + L("Features", "Funcionalidades") + "</a>" +
       "<h1>" + esc(n.n) + "</h1>" +
       enCerebros(f) +
-      (pendiente(n.r) ? '<p class="subtitulo pendiente">Sin descripción todavía</p>' : '<p class="subtitulo">' + esc(n.r) + "</p>") +
-      (cuerpo || '<p class="aviso">La página no tiene texto. Escribí qué es y cómo se usa en <code>' + esc(n.p || "") + "</code>.</p>") +
+      (pendiente(n.r) ? '<p class="subtitulo pendiente">' + L("No description yet", "Sin descripción todavía") + "</p>" : '<p class="subtitulo">' + esc(n.r) + "</p>") +
+      (cuerpo || '<p class="aviso">' + L("The page has no text. Write what it is and how it's used in ", "La página no tiene texto. Escribí qué es y cómo se usa en ") + "<code>" + esc(n.p || "") + "</code>.</p>") +
       (window.brainPantallas ? window.brainPantallas.seccionFicha(f) : "") +
-      seccion("Qué consume (" + consume.length + ")", lista(consume)) +
-      seccion("Qué expone (" + expone.length + ")", lista(expone)) +
+      seccion(L("What it consumes (", "Qué consume (") + num(consume.length) + ")", lista(consume)) +
+      seccion(L("What it exposes (", "Qué expone (") + num(expone.length) + ")", lista(expone)) +
       construida(f) +
-      "<section><h2>Casos de uso (" + (f.casos || []).length + ")</h2>" + ((f.especificaciones || []).length
-        ? "<p>" + ((f.casos || []).length ? (f.casos || []).map(function (c) { return esc(c.nombre); }).join(" · ") + ". " : "Todavía no están agrupadas en casos de uso: hay " + (f.especificaciones || []).length + " reglas escritas, " + (f.especificaciones || []).filter(function (e) { return !e.tests.length; }).length + " sin test. ") + '<a href="#/especificaciones/' + esc(f.id) + '">Ver si están cumplidos</a></p>'
-        : '<p class="aviso">Nadie escribió todavía qué se puede hacer con esta funcionalidad. <a href="#/especificaciones">En Especificaciones</a> está el pedido para que el agente lo deduzca del código y de los tests.</p>') + "</section>" +
-      "<section><h2>Tests (" + (tests.length ? plural(totalCasos, "caso", "casos") + " en " + plural(tests.length, "archivo", "archivos") : "ninguno") + ")</h2>" + pruebas + "</section>" +
+      "<section><h2>" + L("Use cases (", "Casos de uso (") + num((f.casos || []).length) + ")</h2>" + ((f.especificaciones || []).length
+        ? "<p>" + ((f.casos || []).length ? (f.casos || []).map(function (c) { return esc(c.nombre); }).join(" · ") + ". " : (function (nr, ns) { return L("Not grouped into use cases yet: there are " + num(nr) + " written rules, " + num(ns) + " untested. ", "Todavía no están agrupadas en casos de uso: hay " + nr + " reglas escritas, " + ns + " sin test. "); })((f.especificaciones || []).length, (f.especificaciones || []).filter(function (e) { return !e.tests.length; }).length)) + '<a href="#/especificaciones/' + esc(f.id) + '">' + L("See whether they're met", "Ver si están cumplidos") + "</a></p>"
+        : '<p class="aviso">' + L("Nobody has written yet what can be done with this feature. ", "Nadie escribió todavía qué se puede hacer con esta funcionalidad. ") + '<a href="#/especificaciones">' + L("Specifications", "En Especificaciones") + "</a>" + L(" has the request for the agent to deduce it from the code and tests.", " está el pedido para que el agente lo deduzca del código y de los tests.") + "</p>") + "</section>" +
+      "<section><h2>Tests (" + (tests.length ? plural(totalCasos, L("case", "caso"), L("cases", "casos")) + L(" in ", " en ") + plural(tests.length, L("file", "archivo"), L("files", "archivos")) : L("none", "ninguno")) + ")</h2>" + pruebas + "</section>" +
       "</div><div>" +
-      seccion("Se relaciona con", relacion) +
-      seccion("Datos (" + datos.length + ")", lista(datos)) +
-      seccion("Servicios externos", lista(externos)) +
-      seccion("Equipo", lista(equipo)) +
-      seccion("Decisiones", lista(decisiones)) +
-      seccion("Código", lista(codigo) + "<p><small>" + plural(f.archivos, "archivo", "archivos") +
+      seccion(L("Related to", "Se relaciona con"), relacion) +
+      seccion(L("Data (", "Datos (") + num(datos.length) + ")", lista(datos)) +
+      seccion(L("External services", "Servicios externos"), lista(externos)) +
+      seccion(L("Team", "Equipo"), lista(equipo)) +
+      seccion(L("Decisions", "Decisiones"), lista(decisiones)) +
+      seccion(L("Code", "Código"), lista(codigo) + "<p><small>" + plural(f.archivos, L("file", "archivo"), L("files", "archivos")) +
         (f.implementan.length ? " · " + f.implementan.map(function (s) { return esc(nombre(s)); }).join(", ") : "") + "</small></p>" +
-        (n.p ? '<p><small>El texto de esta ficha se edita en <code>' + esc(n.p) + "</code></small></p>" : "")) +
-      '<p><a href="#/grafo/' + encodeURIComponent(id) + '">Verla en el mapa 3D →</a><br><a href="#/impacto/' + encodeURIComponent(id) + '">¿Qué se ve afectado si cambia? →</a></p>' +
+        (n.p ? "<p><small>" + L("This card's text is edited in ", "El texto de esta ficha se edita en ") + "<code>" + esc(n.p) + "</code></small></p>" : "")) +
+      '<p><a href="#/grafo/' + encodeURIComponent(id) + '">' + L("See it on the 3D map →", "Verla en el mapa 3D →") + '</a><br><a href="#/impacto/' + encodeURIComponent(id) + '">' + L("What is affected if it changes? →", "¿Qué se ve afectado si cambia? →") + "</a></p>" +
       "</div></div>";
   }
 

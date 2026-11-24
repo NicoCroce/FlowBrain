@@ -4,7 +4,7 @@ import { FILTROS_JS } from "../src/viewer-filtros.js";
 
 /** La pantalla Sin asociar, corrida con un DOM mínimo: qué agrupa, qué recomienda, qué dice cuando no hay nada y qué manda al asociar. */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
-function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; fetch?: (url: string, init: { method: string; body: string; headers: Record<string, string> }) => Promise<unknown> } = {}) {
+function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; lang?: "es"; fetch?: (url: string, init: { method: string; body: string; headers: Record<string, string> }) => Promise<unknown> } = {}) {
   const guardado = new Map<string, string>();
   const sessionStorage = { getItem: (k: string) => guardado.get(k) ?? null, setItem: (k: string, v: string) => void guardado.set(k, v) };
   const elementos = new Map<string, { innerHTML: string; value?: string; oyentes: Record<string, Oyente>; addEventListener(t: string, f: Oyente): void }>();
@@ -18,7 +18,7 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
   const porId: Record<string, { n: string }> = {};
   for (const n of (datos["nodes"] as Array<{ id: string; n: string }> | undefined) ?? []) porId[n.id] = n;
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const window = { brainVisor: { D: datos, porId, esc }, brainSinAsociar: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion };
+  const window = { brainVisor: { D: datos, porId, esc }, brainSinAsociar: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion, ...(opciones.lang ? { brainI18n: { lang: opciones.lang } } : {}) };
   new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
   new Function("window", "document", "sessionStorage", "fetch", SIN_ASOCIAR_JS)(window, { getElementById: el }, sessionStorage, opciones.fetch);
   const raiz = el("sinasociar");
@@ -74,12 +74,18 @@ describe("pantalla Sin asociar", () => {
     expect([...p.matchAll(/<div class="fd-cifra[^"]*"[^>]*><b[^>]*>(\d+)<\/b>/g)].map((m) => m[1])).toEqual(["5", "3", "1", "1", "3"]);
     expect(p).toContain('→ <a href="#/f/front%2Ffeat-pagos">Pagos</a></span> <small>lo importan 2 archivos de Pagos</small>');
     // La carpeta tiene recomendada porque la votan más de la mitad de sus archivos.
-    expect(p).toContain("Recomendada: Pagos (2 de 3)");
-    expect(p).toContain("Código compartido</span> <small>Lo usan 3 funcionalidades");
-    expect(p).toContain("Sin pista</span> <small>Nada lo une a una funcionalidad");
+    expect(p).toContain("Recommended: Pagos (2 of 3)");
+    expect(p).toContain("Shared code</span> <small>Used by 3 features");
+    expect(p).toContain("No hint</span> <small>Nothing links it to a feature");
     // Sin servidor es de solo lectura: lo dice y no ofrece asociar.
     expect(p).toContain("flowbrain viewer --serve");
     expect(p).not.toContain('data-acc="asociar');
+    // En castellano, la misma pantalla con sus textos de siempre.
+    const es = montar(datos(), { lang: "es" }).pagina();
+    expect(es).toContain("<h1>Sin asociar</h1>");
+    expect(es).toContain("Recomendada: Pagos (2 de 3)");
+    expect(es).toContain("Código compartido</span> <small>Lo usan 3 funcionalidades");
+    expect(es).toContain("Sin pista</span> <small>Nada lo une a una funcionalidad");
   });
 
   it("filtra por tipo de pista, recomendada, cerebro y texto; un vacío dice por qué", () => {
@@ -89,7 +95,7 @@ describe("pantalla Sin asociar", () => {
     v.tocar({ "data-fl": "sa", "data-grupo": "sinpista" });
     expect(v.archivos()).toEqual(["Texto.php"]);
     v.cambiar("sa-cerebro", "0");
-    expect(v.lista()).toContain("Ningún archivo coincide con sin pista, cerebro front. Hay 5 archivos sin asociar en total.");
+    expect(v.lista()).toContain("No file matches no hint, brain front. 5 unassigned files in total.");
     v.tocar({ "data-fl": "sa", "data-fl-limpiar": "1" });
     v.cambiar("sa-recomendada", "front/feat-pagos");
     expect(v.archivos()).toEqual(["dinero.ts", "moneda.ts", "nota.ts"]);
@@ -102,17 +108,22 @@ describe("pantalla Sin asociar", () => {
     const v = montar(datos());
     v.tocar({ "data-acc": "pedido" });
     const l = v.lista();
-    expect(l).toContain("Asociá estos 5 archivos");
-    expect(l).toContain("- repo-web:src/shared/dinero.ts (cerebro front): recomendada feat-pagos (lo importan 2 archivos de Pagos); otras: feat-envios");
-    expect(l).toContain("- repo-web:src/shared/fecha.ts (cerebro front): código compartido, lo usan 3 funcionalidades");
-    expect(l).toContain("- repo-api:src/Util/Texto.php (cerebro back): sin pista");
+    expect(l).toContain("Assign these 5 files");
+    expect(l).toContain("- repo-web:src/shared/dinero.ts (brain front): recommended feat-pagos (lo importan 2 archivos de Pagos); others: feat-envios");
+    expect(l).toContain("- repo-web:src/shared/fecha.ts (brain front): shared code, used by 3 features");
+    expect(l).toContain("- repo-api:src/Util/Texto.php (brain back): no hint");
+    // El pedido es para el modelo: va en inglés aunque el visor esté en castellano.
+    const es = montar(datos(), { lang: "es" });
+    es.tocar({ "data-acc": "pedido" });
+    expect(es.lista()).toContain("<h2>Pedido para el agente</h2>");
+    expect(es.lista()).toContain("Assign these 5 files");
   });
 
   it("sin índice, sin funcionalidades o sin nada que asociar explica qué pasa", () => {
     const d = datos();
-    expect(montar({ ...d, sinAsociar: null }).pagina()).toContain("No hay índice de código");
-    expect(montar({ ...d, funcionalidades: [] }).pagina()).toContain("Todavía no hay funcionalidades");
-    expect(montar({ ...d, sinAsociar: [] }).pagina()).toContain("Todos los archivos del índice son de alguna funcionalidad o librería");
+    expect(montar({ ...d, sinAsociar: null }).pagina()).toContain("There is no code index");
+    expect(montar({ ...d, funcionalidades: [] }).pagina()).toContain("There are no features yet");
+    expect(montar({ ...d, sinAsociar: [] }).pagina()).toContain("Every file in the index belongs to a feature or library");
   });
 
   it("con el servidor: asocia un archivo, o la carpeta entera si nada de ella tiene dueño, y lo asociado sale de la lista", async () => {
@@ -124,13 +135,13 @@ describe("pantalla Sin asociar", () => {
     const v = montar(datos(), { edicion: { token: "secreto", sinAplicar: [] }, fetch });
     const esperar = () => new Promise((ok) => setTimeout(ok, 0));
     const l = v.lista();
-    expect(l).toContain(`data-acc="asociar" data-f="front/feat-pagos" data-a="${W}src/shared/dinero.ts">Asociar a Pagos</button>`);
+    expect(l).toContain(`data-acc="asociar" data-f="front/feat-pagos" data-a="${W}src/shared/dinero.ts">Assign to Pagos</button>`);
     // La otra candidata, como botón secundario; y la carpeta libre se puede asociar entera.
     expect(l).toContain(`data-acc="asociar" data-f="front/feat-envios" title="importa 1 archivo de Envíos" data-a="${W}src/shared/dinero.ts">Envíos</button>`);
-    expect(l).toContain(`data-acc="asociar-carpeta" data-k="0|${W}src/shared" data-f="front/feat-pagos">Asociar la carpeta a Pagos</button>`);
+    expect(l).toContain(`data-acc="asociar-carpeta" data-k="0|${W}src/shared" data-f="front/feat-pagos">Assign the folder to Pagos</button>`);
     // En src/pagos ya hay archivos con dueño: se asocia de a uno, y se dice.
     expect(l).not.toContain(`data-k="0|${W}src/pagos"`);
-    expect(l).toContain("acá se asocia de a uno");
+    expect(l).toContain("here you assign them one by one");
 
     v.tocar({ "data-acc": "asociar", "data-a": `${W}src/pagos/nota.ts`, "data-f": "front/feat-pagos" });
     await esperar();
@@ -150,7 +161,7 @@ describe("pantalla Sin asociar", () => {
     await esperar();
     expect(pedidos[1]).toMatchObject({ archivo: "repo-web:src/shared/dinero.ts", funcionalidad: "feat-pagos", entrada: "repo-web:src/shared" });
     expect(v.archivos()).toEqual(["Texto.php"]);
-    expect(v.lista()).toContain("3 archivos salieron de la lista.");
+    expect(v.lista()).toContain("3 files left the list.");
 
     // Sin pista: se elige a mano, entre las funcionalidades de su mismo cerebro.
     v.tocar({ "data-acc": "otra", "data-k": "back/repo-api:src/Util/Texto.php" });
@@ -160,6 +171,6 @@ describe("pantalla Sin asociar", () => {
     v.tocar({ "data-acc": "asociar-elegida", "data-k": "back/repo-api:src/Util/Texto.php" });
     await esperar();
     expect(pedidos[2]).toMatchObject({ cerebro: "back", archivo: "repo-api:src/Util/Texto.php", funcionalidad: "feat-stock" });
-    expect(v.pagina()).toContain("Listo: ya no queda ningún archivo sin asociar.");
+    expect(v.pagina()).toContain("Done: no unassigned files left.");
   });
 });

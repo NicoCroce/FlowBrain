@@ -18,20 +18,47 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
   var css = getComputedStyle(document.documentElement);
   var color = function (v) { return css.getPropertyValue("--" + v).trim() || "#888888"; };
   var esc = function (s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  // Idioma: inglés primero; sin brainI18n (tests) queda en inglés.
+  var L = function (en, es) { return window.brainI18n && window.brainI18n.lang === "es" ? es : en; };
+  var num = function (n) { return Number(n).toLocaleString(window.brainI18n && window.brainI18n.lang === "es" ? "es" : "en"); };
+  var pl = function (n, uno, varios) { return n === 1 ? uno : varios; };
 
-  var TIPOS = [["feat", "Funcionalidades", "Funcionalidad"], ["pantalla", "Pantallas", "Pantalla"], ["componente", "Componentes", "Componente"], ["endpoint", "Endpoints", "Endpoint"], ["tabla", "Tablas", "Tabla"], ["svc", "Servicios", "Servicio"],
-    ["repo", "Repositorios", "Repositorio"], ["lib", "Librerías", "Librería"], ["ext", "Externos", "Externo"], ["queue", "Colas", "Cola"], ["db", "Bases de datos", "Base de datos"],
-    ["team", "Equipos", "Equipo"], ["decision", "Decisiones", "Decisión"], ["test", "Tests", "Test"], ["archivo", "Archivos", "Archivo"]];
+  // [tipo, plural, singular] en el idioma actual; los textos de cada idioma viven en TIPOS_TXT y rotular() los aplica.
+  var TIPOS_TXT = {
+    feat: ["Features", "Feature", "Funcionalidades", "Funcionalidad"], pantalla: ["Screens", "Screen", "Pantallas", "Pantalla"],
+    componente: ["Components", "Component", "Componentes", "Componente"], endpoint: ["Endpoints", "Endpoint", "Endpoints", "Endpoint"],
+    tabla: ["Tables", "Table", "Tablas", "Tabla"], svc: ["Services", "Service", "Servicios", "Servicio"],
+    repo: ["Repositories", "Repository", "Repositorios", "Repositorio"], lib: ["Libraries", "Library", "Librerías", "Librería"],
+    ext: ["External", "External", "Externos", "Externo"], queue: ["Queues", "Queue", "Colas", "Cola"], db: ["Databases", "Database", "Bases de datos", "Base de datos"],
+    team: ["Teams", "Team", "Equipos", "Equipo"], decision: ["Decisions", "Decision", "Decisiones", "Decisión"], test: ["Tests", "Test", "Tests", "Test"],
+    archivo: ["Files", "File", "Archivos", "Archivo"],
+  };
+  var TIPOS = ["feat", "pantalla", "componente", "endpoint", "tabla", "svc", "repo", "lib", "ext", "queue", "db", "team", "decision", "test", "archivo"].map(function (t) { return [t, "", ""]; });
   var TIPO = {};
-  TIPOS.forEach(function (t) { TIPO[t[0]] = { label: t[1], uno: t[2] }; });
+  TIPOS.forEach(function (t) { TIPO[t[0]] = { label: "", uno: "" }; });
   // Un tipo de nodo que el visor no conoce (lo trajo un extractor o una versión nueva) también se dibuja, con su nombre.
   D.nodes.forEach(function (n) {
     if (TIPO[n.t] || n.t === "contrato") return;
     var nom = n.t.charAt(0).toUpperCase() + n.t.slice(1).replace(/_/g, " ");
+    TIPOS_TXT[n.t] = [nom, nom, nom, nom];
     TIPO[n.t] = { label: nom, uno: nom };
     TIPOS.push([n.t, nom, nom]);
   });
-  var ORDEN_VERBOS = ["implementa", "navega_a", "usa", "llama_a", "lee_de", "escribe_en", "publica_en", "consume_de", "depende_de", "contiene", "vive_en", "recorrido", "prueba", "pertenece_a", "decidido_por"];
+  /** Pone los nombres de los tipos en el idioma actual (al cargar y al cambiar de idioma). */
+  function rotular() {
+    TIPOS.forEach(function (t) {
+      var x = TIPOS_TXT[t[0]];
+      t[1] = L(x[0], x[2]); t[2] = L(x[1], x[3]);
+      TIPO[t[0]].label = t[1]; TIPO[t[0]].uno = t[2];
+    });
+  }
+  rotular();
+  // Nombre de una relación en el idioma actual; en castellano, el verbo tal cual (sin el primer guion bajo).
+  var VERBO_EN = { implementa: "implements", navega_a: "navigates to", usa: "uses", llama_a: "calls", lee_de: "reads from", escribe_en: "writes to",
+    publica_en: "publishes to", consume_de: "consumes from", depende_de: "depends on", contiene: "contains", vive_en: "lives in", recorrido: "flow",
+    prueba: "tests", pertenece_a: "belongs to", decidido_por: "decided by" };
+  var verboTxt = function (v) { return L(VERBO_EN[v] || v.replace(/_/g, " "), v.replace("_", " ")); };
+  var ORDEN_VERBOS =["implementa", "navega_a", "usa", "llama_a", "lee_de", "escribe_en", "publica_en", "consume_de", "depende_de", "contiene", "vive_en", "recorrido", "prueba", "pertenece_a", "decidido_por"];
   var colores = {};
   /** Color de un tipo: la variable del tema; si el tema no la tiene (un tipo nuevo), uno estable sacado de su nombre. */
   var PALETA_EXTRA = ["#E0A458", "#7FB7BE", "#D3826F", "#A3C46C", "#B48EAD", "#88C0D0", "#EBCB8B", "#C97B84"];
@@ -134,8 +161,8 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     });
     var out = [];
     TIPOS.forEach(function (t) {
-      if (apag[t[0]]) out.push({ tipo: t[0], nodos: apag[t[0]], prender: true, texto: "Mostrar " + apag[t[0]].length + " " + (apag[t[0]].length === 1 ? t[2] : t[1]).toLowerCase() });
-      if (prend[t[0]]) out.push({ tipo: t[0], nodos: prend[t[0]], prender: false, texto: "Ocultar " + prend[t[0]].length + " " + (prend[t[0]].length === 1 ? t[2] : t[1]).toLowerCase() });
+      if (apag[t[0]]) out.push({ tipo: t[0], nodos: apag[t[0]], prender: true, texto: L("Show ", "Mostrar ") + apag[t[0]].length + " " + (apag[t[0]].length === 1 ? t[2] : t[1]).toLowerCase() });
+      if (prend[t[0]]) out.push({ tipo: t[0], nodos: prend[t[0]], prender: false, texto: L("Hide ", "Ocultar ") + prend[t[0]].length + " " + (prend[t[0]].length === 1 ? t[2] : t[1]).toLowerCase() });
     });
     return out;
   }
@@ -616,8 +643,8 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     pop = null;
     var ph = hov && !ptr && mouse ? pm.get(hov) : null;
     if (ph) {
-      var hijos = desc(hov).length, lineas = [hov.nombre, TIPO[hov.tipo].uno + " · " + hov.uso + " usos · " + hov.deg + " conexiones"];
-      if (hijos) lineas.push(hijos + " hijos se mueven con este nodo");
+      var hijos = desc(hov).length, lineas = [hov.nombre, TIPO[hov.tipo].uno + " · " + L(num(hov.uso) + pl(hov.uso, " use · ", " uses · ") + num(hov.deg) + pl(hov.deg, " connection", " connections"), hov.uso + " usos · " + hov.deg + " conexiones")];
+      if (hijos) lineas.push(L(num(hijos) + pl(hijos, " child moves", " children move") + " with this node", hijos + " hijos se mueven con este nodo"));
       var accs = relacionadosDe(hov);
       ctx.font = "500 12px " + color("sans");
       var w = 0; lineas.concat(accs.map(function (a) { return a.texto + "     "; })).forEach(function (t) { w = Math.max(w, ctx.measureText(t).width); });
@@ -718,8 +745,8 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     if (S.hiddenTypes[n.tipo] || S.hiddenIds[n.id]) { S.hiddenTypes[n.tipo] = false; delete S.hiddenIds[n.id]; actualizarActivos(); reacomodar(0.4); }
     seleccionar(id); focus(n);
   }
-  var PRESETS = [["producto", "Producto", ["feat", "endpoint", "tabla"]], ["arquitectura", "Arquitectura", ["svc", "repo", "lib", "ext", "queue", "db"]],
-    ["codigo", "Código", ["endpoint", "svc", "repo", "archivo"]], ["todo", "Todo", null]];
+  var PRESETS = [["producto", ["Product", "Producto"], ["feat", "endpoint", "tabla"]], ["arquitectura", ["Architecture", "Arquitectura"], ["svc", "repo", "lib", "ext", "queue", "db"]],
+    ["codigo", ["Code", "Código"], ["endpoint", "svc", "repo", "archivo"]], ["todo", ["All", "Todo"], null]];
   function presetActual() {
     var r = null;
     PRESETS.forEach(function (p) { if (TIPOS_PRESENTES.every(function (t) { return !S.hiddenTypes[t[0]] === (!p[2] || p[2].indexOf(t[0]) >= 0); })) r = p[0]; });
@@ -742,13 +769,13 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     if (!cs.length) return "";
     tablas.sort(function (a, b) { return a.c - b.c || (a.nombre < b.nombre ? -1 : 1); });
     var ocultos = TIPOS.filter(function (t) { return S.hiddenTypes[t[0]] && cs.some(function (c) { return porC[c][t[0]]; }); }).map(function (t) { return t[1].toLowerCase(); });
-    return '<div class="m3-caja"><span class="lbl">Recorrido de punta a punta</span>' +
+    return '<div class="m3-caja"><span class="lbl">' + L("End-to-end flow", "Recorrido de punta a punta") + '</span>' +
       cs.map(function (c) {
         var partes = TIPOS.filter(function (t) { return porC[c][t[0]]; }).map(function (t) { return porC[c][t[0]] + " " + (porC[c][t[0]] === 1 ? t[2] : t[1]).toLowerCase(); });
         return '<div class="nb m3-rc">' + (MULTI ? puntoC(c) + '<span class="corta">' + esc(CEREBROS[c].nombre) + "</span>" : "") + '<span class="vb">' + esc(partes.join(" · ")) + "</span></div>";
       }).join("") +
-      (tablas.length ? '<span class="lbl m3-sub">Tablas a las que llega</span>' + tablas.slice(0, 12).map(function (n) { return fila(n, "", MULTI && n.c !== sel.c ? '<span class="mc" style="color:' + colorC(n.c) + ";border-color:" + colorC(n.c) + '">' + esc(CEREBROS[n.c].nombre) + "</span>" : ""); }).join("") + (tablas.length > 12 ? '<p class="vacio">y ' + (tablas.length - 12) + " más: hacé clic en un endpoint para ver las suyas.</p>" : "") : '<p class="vacio">No llega a ninguna tabla indexada.</p>') +
-      (ocultos.length ? '<p class="vacio">Hay ' + ocultos.join(" y ") + " apagados en el panel izquierdo: esa parte del recorrido no se dibuja.</p>" : "") + "</div>";
+      (tablas.length ? '<span class="lbl m3-sub">' + L("Tables it reaches", "Tablas a las que llega") + '</span>' + tablas.slice(0, 12).map(function (n) { return fila(n, "", MULTI && n.c !== sel.c ? '<span class="mc" style="color:' + colorC(n.c) + ";border-color:" + colorC(n.c) + '">' + esc(CEREBROS[n.c].nombre) + "</span>" : ""); }).join("") + (tablas.length > 12 ? '<p class="vacio">' + L("and " + num(tablas.length - 12) + " more: click an endpoint to see its own.", "y " + (tablas.length - 12) + " más: hacé clic en un endpoint para ver las suyas.") + "</p>" : "") : '<p class="vacio">' + L("It doesn't reach any indexed table.", "No llega a ninguna tabla indexada.") + "</p>") +
+      (ocultos.length ? '<p class="vacio">' + L(ocultos.join(" and ") + " are turned off in the left panel: that part of the flow isn't drawn.", "Hay " + ocultos.join(" y ") + " apagados en el panel izquierdo: esa parte del recorrido no se dibuja.") + "</p>" : "") + "</div>";
   }
   /** Conexiones del nodo elegido, todas: primero las de su cerebro y después un grupo por cada otro cerebro, con su color. */
   var TOPE_GRUPO = 30;
@@ -757,46 +784,47 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
     var grupos = CEREBROS.length ? CEREBROS.map(function () { return []; }) : [[]];
     sel.adj.forEach(function (a) { grupos[a.n.c || 0].push(a); });
     var ids = grupos.map(function (_, i) { return i; }).filter(function (i) { return grupos[i].length; }).sort(function (a, b) { return (a === sel.c ? -1 : 0) - (b === sel.c ? -1 : 0) || a - b; });
-    if (!ids.length) return '<div><h3 class="lbl">Conexiones</h3><p class="vacio">Ninguna.</p></div>';
+    if (!ids.length) return '<div><h3 class="lbl">' + L("Connections", "Conexiones") + '</h3><p class="vacio">' + L("None.", "Ninguna.") + "</p></div>";
     // Con varios cerebros, una pestaña por cerebro con conexiones: se ve de a uno.
     var tab = ids.indexOf(Number(S.tabC)) >= 0 && S.tabC !== null ? Number(S.tabC) : ids[0];
     var tabs = MULTI && ids.length > 1 ? '<div class="m3-tabs" role="tablist">' + ids.map(function (i) {
       return '<button type="button" role="tab" class="m3-tab' + on(i === tab) + '" aria-selected="' + (i === tab) + '" data-tab-c="' + i + '"' + (i === tab ? ' style="border-color:' + colorC(i) + '"' : "") + ">" + puntoC(i) + esc(CEREBROS[i].nombre) + '<span class="ct">' + grupos[i].length + "</span></button>";
     }).join("") + "</div>" : "";
-    return (tabs ? '<h3 class="lbl">Conexiones<span class="ct">' + sel.adj.length + "</span></h3>" + tabs : "") + (tabs ? [tab] : ids).map(function (i) {
+    return (tabs ? '<h3 class="lbl">' + L("Connections", "Conexiones") + '<span class="ct">' + sel.adj.length + "</span></h3>" + tabs : "") + (tabs ? [tab] : ids).map(function (i) {
       var xs = grupos[i].slice().sort(orden), fuera = MULTI && i !== sel.c;
       var sale = xs.filter(function (a) { return a.e.a === sel; }).length, entra = xs.length - sale;
-      var titulo = !MULTI ? "Conexiones" : fuera ? "Con " + CEREBROS[i].nombre : "En " + CEREBROS[i].nombre;
-      var cuenta = (tabs ? "" : xs.length + " · ") + [sale ? sale + (fuera ? " hacia allá" : " salen") : "", entra ? entra + (fuera ? " desde allá" : " llegan") : ""].filter(Boolean).join(", ");
+      var titulo = !MULTI ? L("Connections", "Conexiones") : fuera ? L("With ", "Con ") + CEREBROS[i].nombre : L("In ", "En ") + CEREBROS[i].nombre;
+      var cuenta = (tabs ? "" : xs.length + " · ") + [sale ? sale + (fuera ? L(" to there", " hacia allá") : L(" outgoing", " salen")) : "", entra ? entra + (fuera ? L(" from there", " desde allá") : L(" incoming", " llegan")) : ""].filter(Boolean).join(", ");
       var ver = S.todas[i] ? xs : xs.slice(0, TOPE_GRUPO);
       return '<div class="m3-grupo"' + (fuera ? ' style="border-left-color:' + colorC(i) + '"' : "") + '><h3 class="lbl">' + (MULTI ? puntoC(i) : "") + esc(titulo) + '<span class="ct">' + cuenta + "</span></h3>" +
         ver.map(function (a) {
-          var va = a.e.a === sel, verbo = a.e.verbo.replace("_", " ");
+          var va = a.e.a === sel, verbo = verboTxt(a.e.verbo);
           return fila(a.n, (va ? verbo + " →" : "← " + verbo) + (fuera && a.e.ev > 1 ? " ×" + a.e.ev : ""), fuera && !tabs ? '<span class="mc" style="color:' + colorC(i) + ";border-color:" + colorC(i) + '">' + esc(CEREBROS[i].nombre) + "</span>" : "");
         }).join("") +
-        (xs.length > TOPE_GRUPO ? '<button type="button" class="btn" data-todas="' + i + '">' + (S.todas[i] ? "Ver menos" : "Ver las " + xs.length) + "</button>" : "") + "</div>";
+        (xs.length > TOPE_GRUPO ? '<button type="button" class="btn" data-todas="' + i + '">' + (S.todas[i] ? L("Show less", "Ver menos") : L("Show all " + num(xs.length), "Ver las " + xs.length)) + "</button>" : "") + "</div>";
     }).join("");
   }
   function ui() {
     var actual = presetActual();
-    $("presets").innerHTML = '<span class="lbl">Vista</span>' + PRESETS.map(function (p) { return '<button type="button" class="chip' + on(actual === p[0]) + '" aria-pressed="' + (actual === p[0]) + '" data-preset="' + p[0] + '">' + p[1] + "</button>"; }).join("");
-    $("m3-vis").textContent = N.filter(visible).length + " nodos";
+    $("presets").innerHTML = '<span class="lbl">' + L("View", "Vista") + '</span>' + PRESETS.map(function (p) { return '<button type="button" class="chip' + on(actual === p[0]) + '" aria-pressed="' + (actual === p[0]) + '" data-preset="' + p[0] + '">' + L(p[1][0], p[1][1]) + "</button>"; }).join("");
+    var nVis = N.filter(visible).length;
+    $("m3-vis").textContent = L(num(nVis) + pl(nVis, " node", " nodes"), nVis + " nodos");
     $("m3-cerebros").innerHTML = MULTI ? CEREBROS.map(function (c, i) {
       var v = !S.hiddenBrains[i];
       return '<button type="button" class="tg' + (v ? "" : " off") + '" aria-pressed="' + v + '" data-cerebro="' + i + '">' + puntoC(i) + esc(c.nombre) + '<span class="ct">' + c.nodos + "</span></button>";
     }).join("") : "";
     var hayTipos = TIPOS_PRESENTES.some(function (t) { return !S.hiddenTypes[t[0]]; });
-    $("m3-todo").innerHTML = '<button type="button" class="chip" data-tipos="todos">Prender todo</button><button type="button" class="chip' + on(!hayTipos) + '" data-tipos="ninguno">Apagar todo</button>';
+    $("m3-todo").innerHTML = '<button type="button" class="chip" data-tipos="todos">' + L("Turn all on", "Prender todo") + '</button><button type="button" class="chip' + on(!hayTipos) + '" data-tipos="ninguno">' + L("Turn all off", "Apagar todo") + "</button>";
     $("m3-tipos").innerHTML = TIPOS_PRESENTES.map(function (t) {
       var v = !S.hiddenTypes[t[0]];
       return '<button type="button" class="tg' + (v ? "" : " off") + '" aria-pressed="' + v + '" data-tipo="' + t[0] + '">' + sw(t[0]) + esc(t[1]) + '<span class="ct">' + cuentas[t[0]] + "</span></button>";
     }).join("");
     var nOcultos = Object.keys(S.hiddenIds).length;
-    $("m3-ocultos").innerHTML = nOcultos ? '<button type="button" class="chip" data-mostrar-ocultos="1">Mostrar ' + nOcultos + " nodos ocultos a mano</button>" : "";
-    $("m3-verbos").innerHTML = VERBOS.map(function (v) { var x = !S.hiddenVerbs[v]; return '<button type="button" class="chip' + on(x) + '" aria-pressed="' + x + '" data-verbo="' + v + '">' + v.replace("_", " ") + "</button>"; }).join("");
-    $("m3-tam").innerHTML = seg("tam", [["uso", "Uso en código"], ["deg", "Conexiones"], ["uni", "Igual"]], S.sizeMode);
-    $("m3-grupo").innerHTML = seg("grupo", [["feat", "Funcionalidad"], ["svc", "Servicio"], ["none", "Sin grupos"]], S.group);
-    $("m3-etq").innerHTML = seg("etq", [["grandes", "Grandes"], ["todas", "Todas"], ["ninguna", "Ninguna"]], S.labels);
+    $("m3-ocultos").innerHTML = nOcultos ? '<button type="button" class="chip" data-mostrar-ocultos="1">' + L("Show " + num(nOcultos) + pl(nOcultos, " node", " nodes") + " hidden by hand", "Mostrar " + nOcultos + " nodos ocultos a mano") + "</button>" : "";
+    $("m3-verbos").innerHTML = VERBOS.map(function (v) { var x = !S.hiddenVerbs[v]; return '<button type="button" class="chip' + on(x) + '" aria-pressed="' + x + '" data-verbo="' + v + '">' + esc(verboTxt(v)) + "</button>"; }).join("");
+    $("m3-tam").innerHTML = seg("tam", [["uso", L("Code usage", "Uso en código")], ["deg", L("Connections", "Conexiones")], ["uni", L("Equal", "Igual")]], S.sizeMode);
+    $("m3-grupo").innerHTML = seg("grupo", [["feat", L("Feature", "Funcionalidad")], ["svc", L("Service", "Servicio")], ["none", L("No groups", "Sin grupos")]], S.group);
+    $("m3-etq").innerHTML = seg("etq", [["grandes", L("Large", "Grandes")], ["todas", L("All", "Todas")], ["ninguna", L("None", "Ninguna")]], S.labels);
     $("m3-escala-txt").textContent = S.scale.toFixed(1) + "×";
     var drag = $("m3-drag"), rot = $("m3-rot");
     drag.classList.toggle("on", S.dragChildren); drag.setAttribute("aria-pressed", S.dragChildren);
@@ -813,39 +841,39 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
         var porTipo = {};
         N.forEach(function (n) { if (n.c === i) porTipo[n.tipo] = (porTipo[n.tipo] || 0) + 1; });
         var v = !S.hiddenBrains[i];
-        return '<div class="m3-cer"><h3>' + puntoC(i) + esc(c.nombre) + "</h3><p>" + c.nodos + " nodos" + (c.sinRevisar ? " · indexado sin revisión" : "") + "</p>" +
+        return '<div class="m3-cer"><h3>' + puntoC(i) + esc(c.nombre) + "</h3><p>" + L(num(c.nodos) + pl(c.nodos, " node", " nodes") + (c.sinRevisar ? " · indexed without review" : ""), c.nodos + " nodos" + (c.sinRevisar ? " · indexado sin revisión" : "")) + "</p>" +
           TIPOS.filter(function (t) { return porTipo[t[0]]; }).map(function (t) { return '<div class="nb">' + sw(t[0]) + '<span class="corta">' + esc(t[1]) + '</span><span class="vb">' + porTipo[t[0]] + "</span></div>"; }).join("") +
-          '<div class="m3-acciones"><button type="button" class="btn' + on(v) + '" aria-pressed="' + v + '" data-cerebro="' + i + '">' + (v ? "Apagar" : "Prender") + '</button><button type="button" class="btn" data-foco-cerebro="' + i + '">Enfocar</button></div></div>';
+          '<div class="m3-acciones"><button type="button" class="btn' + on(v) + '" aria-pressed="' + v + '" data-cerebro="' + i + '">' + (v ? L("Turn off", "Apagar") : L("Turn on", "Prender")) + '</button><button type="button" class="btn" data-foco-cerebro="' + i + '">' + L("Focus", "Enfocar") + "</button></div></div>";
       }).join("");
       var viaja = (D.conexiones || []).map(function (x) {
-        return '<div class="nb"><span class="corta">' + esc(x.desde) + " → " + esc(x.hacia) + '</span><span class="vb">' + (x.llamadas ? x.llamadas + " llamadas" : "sin llamadas") + (x.declarada ? (x.origen === "modelo" ? " · lo declaró un modelo" : "") : " · sin declarar") + "</span></div>";
+        return '<div class="nb"><span class="corta">' + esc(x.desde) + " → " + esc(x.hacia) + '</span><span class="vb">' + L((x.llamadas ? num(x.llamadas) + pl(x.llamadas, " call", " calls") : "no calls") + (x.declarada ? (x.origen === "modelo" ? " · declared by a model" : "") : " · not declared"), (x.llamadas ? x.llamadas + " llamadas" : "sin llamadas") + (x.declarada ? (x.origen === "modelo" ? " · lo declaró un modelo" : "") : " · sin declarar")) + "</span></div>";
       }).join("");
-      raiz.innerHTML = '<div class="m3-vacio"><h2 class="lbl">Cerebros</h2><p>Cada cerebro es un grupo de repos. Las líneas doradas son llamadas de un cerebro a otro.</p>' + bloques +
-        '<div class="m3-caja"><span class="lbl">Qué viaja entre cerebros</span>' + (viaja || '<p class="vacio">Nada: no hay comunicación activa o no se detectaron llamadas.</p>') + "</div></div>";
+      raiz.innerHTML = '<div class="m3-vacio"><h2 class="lbl">' + L("Brains", "Cerebros") + "</h2><p>" + L("Each brain is a group of repos. The golden lines are calls from one brain to another.", "Cada cerebro es un grupo de repos. Las líneas doradas son llamadas de un cerebro a otro.") + "</p>" + bloques +
+        '<div class="m3-caja"><span class="lbl">' + L("What travels between brains", "Qué viaja entre cerebros") + "</span>" + (viaja || '<p class="vacio">' + L("Nothing: communication isn't active or no calls were detected.", "Nada: no hay comunicación activa o no se detectaron llamadas.") + "</p>") + "</div></div>";
       return;
     }
     if (!sel) {
       var top = N.filter(function (n) { return n.tipo === "tabla" || n.tipo === "endpoint" || n.tipo === "feat"; }).sort(function (a, b) { return b.uso - a.uso || (a.id < b.id ? -1 : 1); }).slice(0, 6);
-      raiz.innerHTML = '<div class="m3-vacio"><h2 class="lbl">Detalle</h2><p>Hacé clic en un punto para ver qué es, cuánto se usa en el código y con qué se conecta.</p>' +
-        '<div class="m3-caja"><span class="lbl">Más usados</span>' + top.map(function (n) { return fila(n, n.uso + " usos"); }).join("") + "</div></div>";
+      raiz.innerHTML = '<div class="m3-vacio"><h2 class="lbl">' + L("Detail", "Detalle") + "</h2><p>" + L("Click a point to see what it is, how much the code uses it and what it connects to.", "Hacé clic en un punto para ver qué es, cuánto se usa en el código y con qué se conecta.") + "</p>" +
+        '<div class="m3-caja"><span class="lbl">' + L("Most used", "Más usados") + "</span>" + top.map(function (n) { return fila(n, L(num(n.uso) + pl(n.uso, " use", " uses"), n.uso + " usos")); }).join("") + "</div></div>";
       return;
     }
     var n = porId[sel.id];
     var enlaces = [];
-    if (sel.tipo === "feat") enlaces.push('<a href="#/f/' + encodeURIComponent(sel.id) + '">Abrir la ficha</a>');
-    enlaces.push('<a href="#/n/' + encodeURIComponent(sel.id) + '">Ficha técnica</a>');
-    enlaces.push('<a href="#/impacto/' + encodeURIComponent(sel.id) + '">¿Qué se ve afectado si cambia?</a>');
-    if (n.p) enlaces.push('<a href="../' + esc(n.p) + '">Página</a>');
+    if (sel.tipo === "feat") enlaces.push('<a href="#/f/' + encodeURIComponent(sel.id) + '">' + L("Open the card", "Abrir la ficha") + "</a>");
+    enlaces.push('<a href="#/n/' + encodeURIComponent(sel.id) + '">' + L("Technical sheet", "Ficha técnica") + "</a>");
+    enlaces.push('<a href="#/impacto/' + encodeURIComponent(sel.id) + '">' + L("What's affected if it changes?", "¿Qué se ve afectado si cambia?") + "</a>");
+    if (n.p) enlaces.push('<a href="../' + esc(n.p) + '">' + L("Page", "Página") + "</a>");
     raiz.innerHTML =
-      '<div class="m3-cab"><div class="m3-tipo">' + sw(sel.tipo) + '<span class="lbl">' + esc(TIPO[sel.tipo].uno) + "</span>" + (sel.pin ? '<span class="m3-fijado">Fijado</span>' : "") + "</div>" +
-      '<h2 class="m3-nombre">' + esc(sel.nombre) + "</h2><code>" + esc(sel.id) + "</code>" + (MULTI ? '<p class="m3-resumen">Cerebro: ' + esc(CEREBROS[sel.c].nombre) + "</p>" : "") + (n.r && !/^Borrador:/.test(n.r) ? '<p class="m3-resumen">' + esc(n.r) + "</p>" : "") + "</div>" +
-      '<div class="m3-stats"><div><b>' + sel.uso + "</b><span>usos en código</span></div><div><b>" + sel.deg + "</b><span>conexiones</span></div><div><b>" + desc(sel).length + "</b><span>hijos</span></div></div>" +
-      '<div class="m3-acciones"><button type="button" class="btn pri" data-acc="sep">Separar del resto</button><button type="button" class="btn" data-acc="focus">Enfocar</button>' +
-      '<button type="button" class="btn' + on(S.isolate) + '" aria-pressed="' + S.isolate + '" data-acc="iso">Aislar</button><button type="button" class="btn" data-acc="hide">Ocultar</button>' +
-      (sel.pin ? '<button type="button" class="btn ancho" data-acc="unpin">Volver a su lugar</button>' : "") + "</div>" +
+      '<div class="m3-cab"><div class="m3-tipo">' + sw(sel.tipo) + '<span class="lbl">' + esc(TIPO[sel.tipo].uno) + "</span>" + (sel.pin ? '<span class="m3-fijado">' + L("Pinned", "Fijado") + "</span>" : "") + "</div>" +
+      '<h2 class="m3-nombre">' + esc(sel.nombre) + "</h2><code>" + esc(sel.id) + "</code>" + (MULTI ? '<p class="m3-resumen">' + L("Brain: ", "Cerebro: ") + esc(CEREBROS[sel.c].nombre) + "</p>" : "") + (n.r && !/^Borrador:/.test(n.r) ? '<p class="m3-resumen">' + esc(n.r) + "</p>" : "") + "</div>" +
+      '<div class="m3-stats"><div><b>' + sel.uso + "</b><span>" + L("uses in code", "usos en código") + "</span></div><div><b>" + sel.deg + "</b><span>" + L("connections", "conexiones") + "</span></div><div><b>" + desc(sel).length + "</b><span>" + L("children", "hijos") + "</span></div></div>" +
+      '<div class="m3-acciones"><button type="button" class="btn pri" data-acc="sep">' + L("Separate from the rest", "Separar del resto") + '</button><button type="button" class="btn" data-acc="focus">' + L("Focus", "Enfocar") + "</button>" +
+      '<button type="button" class="btn' + on(S.isolate) + '" aria-pressed="' + S.isolate + '" data-acc="iso">' + L("Isolate", "Aislar") + '</button><button type="button" class="btn" data-acc="hide">' + L("Hide", "Ocultar") + "</button>" +
+      (sel.pin ? '<button type="button" class="btn ancho" data-acc="unpin">' + L("Back to its place", "Volver a su lugar") + "</button>" : "") + "</div>" +
       '<div class="m3-enlaces">' + enlaces.join("") + "</div>" +
       recorridoDe(sel) + conexionesDe(sel) +
-      '<button type="button" class="btn" data-acc="close">Cerrar detalle</button>';
+      '<button type="button" class="btn" data-acc="close">' + L("Close detail", "Cerrar detalle") + "</button>";
   }
   function resultados() {
     var q = S.query.trim().toLowerCase(), r = $("m3-res");
@@ -915,6 +943,8 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
   if (!MULTI) $("m3-lin-sec").hidden = true;
   $("m3-int").addEventListener("input", function (ev) { S.intensidad = parseFloat(ev.target.value) / 100; $("m3-int-txt").textContent = ev.target.value + "%"; });
   ui();
+  // Al cambiar de idioma: los nombres de los tipos y todos los paneles (el lienzo se repinta solo en cada cuadro).
+  if (window.brainI18n) window.brainI18n.alCambiar(function () { rotular(); ui(); resultados(); });
 
   function mostrarMapa() { if (!corriendo) { corriendo = true; loop(); } }
   // El color de un cerebro, por su número o su nombre: el mismo del mapa 3D en todas las pantallas.
