@@ -57,6 +57,7 @@ import { evidencia } from "./evidencia.js";
 import { GUIA_ANALISIS, GUIA_ESPECIFICACIONES, GUIA_ESTUDIO, GUIA_FUNCIONALIDADES, GUIA_TESTS, NOMBRE_COMANDO, NOMBRE_ESPECIFICACIONES, NOMBRE_ESTUDIO, NOMBRE_FUNCIONALIDADES, NOMBRE_TESTS } from "./guia.js";
 import { comandoBrain, comillas, init, instalarComando, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
+import { idioma as idiomaDelMenu, resolverIdioma } from "./idioma.js";
 import { escribirIndex, indexar } from "@flowbrain/parsers";
 
 const AYUDA = `flowbrain <comando> [opciones]
@@ -254,12 +255,14 @@ export async function ejecutar(
         single: { type: "boolean" },
         version: { type: "boolean", short: "v" },
         help: { type: "boolean", short: "h" },
+        lang: { type: "string" },
       },
     });
   } catch (e) {
     return { codigo: 2, stdout: "", stderr: `${(e as Error).message}\n\n${AYUDA}` };
   }
   const { values: o, positionals } = parsed;
+  await resolverIdioma({ ...opt("flag", o.lang), env, cwd });
   const [comando, arg] = positionals;
   if (o.version) return { codigo: 0, stdout: `${VERSION}\n`, stderr: "" };
   if (comando === "help") return { codigo: 0, stdout: AYUDA, stderr: "" };
@@ -765,7 +768,8 @@ if (esMain && process.argv[2] === "serve") {
   await servir(process.argv.slice(3), process.env, (raiz) => sync(raiz, { carpetas: (process.env.FLOWBRAIN_REPOS ?? "").split(":").filter(Boolean) }));
 } else if (esMain && process.argv[2] === "viewer" && process.argv.includes("--serve")) {
   // El visor con edición: un servidor en 127.0.0.1 que queda corriendo hasta Ctrl+C.
-  const { values } = parseArgs({ args: process.argv.slice(3), options: { serve: { type: "boolean" }, port: { type: "string" }, root: { type: "string" } } });
+  const { values } = parseArgs({ args: process.argv.slice(3), options: { serve: { type: "boolean" }, port: { type: "string" }, root: { type: "string" }, lang: { type: "string" } } });
+  await resolverIdioma({ ...opt("flag", values.lang), env: process.env, cwd: process.cwd() });
   const carpeta = resolve(process.cwd(), values.root ?? process.env.FLOWBRAIN_ROOT ?? (await buscarRegistro(process.cwd())) ?? ".");
   try {
     if (!(await esRegistro(carpeta))) throw new Error(`no hay ${ARCHIVO_REGISTRO} en ${carpeta}: corré flowbrain install en el proyecto`);
@@ -786,10 +790,15 @@ if (esMain && process.argv[2] === "serve") {
     try { return await rl.question(q); } finally { rl.close(); }
   } : undefined;
   const args = process.argv.slice(2);
-  if (interactivo && (args.length === 0 || (args.length === 1 && args[0] === "menu"))) {
+  // `--lang es` vale también para el menú: se aparta para decidir si se abre.
+  const sinLang = args.filter((a, i) => !(a === "--lang" || a.startsWith("--lang=") || (i > 0 && args[i - 1] === "--lang")));
+  if (interactivo && (sinLang.length === 0 || (sinLang.length === 1 && sinLang[0] === "menu"))) {
     // Sin argumentos y con una persona del otro lado: el menú.
+    const lang = args.find((a) => a.startsWith("--lang="))?.slice(7) ?? (args.includes("--lang") ? args[args.indexOf("--lang") + 1] : undefined);
+    await resolverIdioma({ ...opt("flag", lang), env: process.env, cwd: process.cwd() });
     const { menu, terminal } = await import("./menu.js");
-    await menu(process.cwd(), terminal((a, cwd) => ejecutar(a, process.env, cwd, leerStdin, preguntar)), { forzarMenu: args[0] === "menu" });
+    // Cada comando que corre el menú usa el idioma del menú (que se puede cambiar desde ahí).
+    await menu(process.cwd(), terminal((a, cwd) => ejecutar([...a, "--lang", idiomaDelMenu()], process.env, cwd, leerStdin, preguntar)), { forzarMenu: sinLang[0] === "menu" });
     process.exit(0);
   }
   const r = await ejecutar(args, process.env, process.cwd(), leerStdin, preguntar);

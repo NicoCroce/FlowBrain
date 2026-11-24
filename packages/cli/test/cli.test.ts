@@ -122,6 +122,6 @@ describe("flowbrain gen por CLI", () => {
 
   it("compile escribe el visor", async () => {
     const html = await readFile(join(raiz, "_build/viewer.html"), "utf8");
-    expect(html).toContain("<title>FlowBrain · visor</title>");
+    expect(html).toContain("<title>FlowBrain · viewer</title>");
   });
 });

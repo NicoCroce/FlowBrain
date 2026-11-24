@@ -32,6 +32,8 @@ const CerebroSchema = z
 export const RegistroSchema = z
   .object({
     version: z.literal(1),
+    /** Idioma de la CLI y el menú para quien no eligió otro (`--lang`, `FLOWBRAIN_LANG` o el menú): `en` o `es` (dec. 214). */
+    lang: z.enum(["en", "es"]).optional(),
     cerebros: z.array(CerebroSchema).min(1).max(MAX_CEREBROS, `como máximo ${MAX_CEREBROS} cerebros`),
     comunicacion: z.array(z.object({ entre: z.tuple([z.string(), z.string()]), activa: z.boolean() }).strict()).optional(),
     conexiones: z
@@ -107,6 +109,8 @@ export interface Interna {
 export interface Registro {
   /** Carpeta donde está `flowbrain.yaml`. */
   carpeta: string;
+  /** Idioma declarado en `flowbrain.yaml` (`lang`), si lo hay. */
+  lang: "en" | "es" | null;
   cerebros: Cerebro[];
   conexiones: Conexion[];
   internas: Interna[];
@@ -163,6 +167,7 @@ export function interpretarRegistro(texto: string, carpeta: string): Registro {
   const comunicados = (a: string, b: string) => a !== b && pares.get(clave(a, b)) === true;
   return {
     carpeta: base,
+    lang: r.data.lang ?? null,
     cerebros,
     conexiones,
     internas,

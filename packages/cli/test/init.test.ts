@@ -71,6 +71,6 @@ describe("paquete flowbrain", () => {
     for (const h of ["buscar_nodo", "recorrer_grafo", "contrato_de", "trazar", "funcionalidad", "recorrido", "quien_llama", "impacto"]) expect(bundle).toContain(`"${h}"`);
     const { stdout } = await run("node", [bin, "init", join(dir, "b")], { cwd: dir });
     expect(stdout).toContain(`npx -y @nicocroce/flowbrain@${pkg.version} serve --root ${join(dir, "b")}`);
-    expect(await readFile(join(dir, "b/_build/viewer.html"), "utf8")).toContain("<title>FlowBrain · visor</title>");
+    expect(await readFile(join(dir, "b/_build/viewer.html"), "utf8")).toContain("<title>FlowBrain · viewer</title>");
   }, 60_000);
 });

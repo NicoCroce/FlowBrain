@@ -87,7 +87,7 @@ describe("flowbrain viewer --serve", () => {
     const r = await pedir("GET", "/", { token: null });
     expect(r.estado).toBe(200);
     expect(r.cuerpo).toContain(`window.FLOWBRAIN_EDICION={"token":"${s.token}","sinAplicar":[],"agente":{"noDisponible":`);
-    expect(r.cuerpo).not.toMatch(/<script[^>]+src=|<link[^>]+href=/);
+    expect(r.cuerpo).not.toMatch(/<script[^>]+src=|<link[^>]+href="(?!data:)/);
     // El archivo en disco sigue siendo de solo lectura: el token no se escribe nunca.
     expect(await readFile(join(reg, "flowbrain.html"), "utf8")).not.toContain("FLOWBRAIN_EDICION=");
   });
