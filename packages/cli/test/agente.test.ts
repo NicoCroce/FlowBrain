@@ -90,14 +90,14 @@ describe("el agente del visor", () => {
     expect(r.estado).toBe(200);
     const t = await esperar(r.json["id"] as string);
     expect(t).toMatchObject({ estado: "terminado", etiqueta: "1 test: Listar pedidos", resultado: "Escribí 1 test en src/main.test.ts.", costoUsd: 0.05 });
-    expect(t["pasos"]).toEqual(["Miro cómo testea el repo.", "Lee repos/tienda/package.json", "Escribe repos/tienda/src/main.test.ts", "Corre: npx vitest run src/main.test.ts"]);
+    expect(t["pasos"]).toEqual(["Miro cómo testea el repo.", "Reads repos/tienda/package.json", "Writes repos/tienda/src/main.test.ts", "Runs: npx vitest run src/main.test.ts"]);
     expect(t["cambios"]).toEqual([{ repo: "repos/tienda", archivos: ["src/main.test.ts"] }]);
     const llamada = JSON.parse((await readFile(join(dir, "llamadas.jsonl"), "utf8")).trim().split("\n")[0]!) as { args: string[]; cwd: string; root: string };
     // En la carpeta del proyecto, con la guía de tests y el pedido adentro.
     expect(await import("node:fs").then((f) => f.realpathSync(llamada.cwd))).toBe(await import("node:fs").then((f) => f.realpathSync(dir)));
     expect(llamada.root).toBe(reg);
     const prompt = llamada.args[llamada.args.indexOf("-p") + 1]!;
-    expect(prompt).toContain("Nunca modificás el código del producto.");
+    expect(prompt).toContain("Never modify the product code.");
     expect(prompt).toContain("Escribí el test de la regla listar.");
     expect(prompt).not.toContain("$ARGUMENTS");
     for (const p of HERRAMIENTAS_PROHIBIDAS) expect(llamada.args).toContain(p);
@@ -118,9 +118,9 @@ describe("el agente del visor", () => {
 
   it("sin Claude Code lo dice, y la guía de cada tipo de pedido es la que corresponde", async () => {
     const sin = crearAgente(() => leerRegistro(reg), { comando: join(dir, "no-existe") });
-    expect(sin.noDisponible()).toContain("no se encontró Claude Code");
-    expect(() => sin.encolar({ tipo: "test", pedido: "x", etiqueta: "x", cerebros: [] })).toThrow("no se encontró Claude Code");
-    expect(indicacionesDelPedido("agrupar", "agrupá")).toContain("Toda especificación va en un caso de uso");
+    expect(sin.noDisponible()).toContain("was not found on this machine");
+    expect(() => sin.encolar({ tipo: "test", pedido: "x", etiqueta: "x", cerebros: [] })).toThrow("was not found on this machine");
+    expect(indicacionesDelPedido("agrupar", "agrupá")).toContain("Every specification goes in a use case");
     expect(indicacionesDelPedido("agrupar", "agrupá")).not.toMatch(/^---/);
     expect(pasosDeEvento({ type: "user" }, "/x")).toEqual([]);
   });

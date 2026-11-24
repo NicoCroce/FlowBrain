@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { avisosIndice } from "@flowbrain/core";
 import { cargadorConCache } from "@flowbrain/mcp";
-import { sync } from "../src/estado.js";
+import { sync, textoEstado } from "../src/estado.js";
+import { fijarIdioma } from "../src/idioma.js";
 import { ejecutar } from "../src/main.js";
 
 const F = (p: string) => resolve(dirname(fileURLToPath(import.meta.url)), "../../../fixtures", p);
@@ -34,25 +35,37 @@ describe("flowbrain sync, estado y doctor", () => {
   it("estado: repo al día, conteos y huecos; sync no hace nada si el clon no avanzó", async () => {
     const e = await brain("status");
     expect(e.codigo).toBe(0);
-    expect(e.stdout).toContain("repo-tienda: al día (indexado aaaaaaaaaaaa, clon aaaaaaaaaaaa)");
-    expect(e.stdout).toContain("Nodos: ");
-    expect(e.stdout).toContain("archivos fuera de toda funcionalidad o librería");
+    expect(e.stdout).toContain("repo-tienda: up to date (indexed aaaaaaaaaaaa, clone aaaaaaaaaaaa)");
+    expect(e.stdout).toContain("Nodes: ");
+    expect(e.stdout).toContain("files outside every feature or library");
     const j = JSON.parse((await brain("status", "--json")).stdout) as { nodos: Record<string, number>; desactualizado: boolean };
     expect(j.nodos["svc"]).toBe(3);
     expect(j.desactualizado).toBe(false);
     const s = await brain("sync");
     expect(s.codigo).toBe(0);
-    expect(s.stdout).toBe("repo-tienda: al día\nsin cambios: no hizo falta compilar\n");
+    expect(s.stdout).toBe("repo-tienda: up to date\nno changes: no need to compile\n");
+  });
+
+  it("el texto del estado sale en inglés o en castellano", () => {
+    const e = { repos: [{ repo: "r", indexado: null, clon: null, actual: null, estado: "al día" as const }], nodos: {}, aristas: {}, huecos: [], desactualizado: false };
+    expect(textoEstado(e)).toContain("r: up to date");
+    fijarIdioma("es");
+    try {
+      expect(textoEstado(e)).toContain("Repos indexados:\n  r: al día (indexado —, clon —)");
+      expect(textoEstado(e)).toContain("Huecos: ninguno");
+    } finally {
+      fijarIdioma("en");
+    }
   });
 
   it("cuando el clon avanza: estado sale con 1 y sync reindexa y recompila", async () => {
     await head("b");
     const e = await brain("status");
     expect(e.codigo).toBe(1);
-    expect(e.stdout).toContain("repo-tienda: desactualizado (indexado aaaaaaaaaaaa, clon bbbbbbbbbbbb)");
+    expect(e.stdout).toContain("repo-tienda: outdated (indexed aaaaaaaaaaaa, clone bbbbbbbbbbbb)");
     const s = await brain("sync");
-    expect(s.stdout).toContain("repo-tienda: reindexado");
-    expect(s.stdout).toContain("compilado: ");
+    expect(s.stdout).toContain("repo-tienda: reindexed");
+    expect(s.stdout).toContain("compiled: ");
     expect((await brain("status")).codigo).toBe(0);
   });
 
@@ -61,9 +74,9 @@ describe("flowbrain sync, estado y doctor", () => {
     await mkdir(otro);
     await cp(clon, join(otro, "tienda"), { recursive: true });
     await rm(clon, { recursive: true });
-    expect((await brain("status")).stdout).toContain("repo-tienda: sin clon");
+    expect((await brain("status")).stdout).toContain("repo-tienda: no clone");
     expect((await brain("sync")).codigo).toBe(1);
-    expect((await brain("status", "--repos", otro)).stdout).toContain("repo-tienda: al día");
+    expect((await brain("status", "--repos", otro)).stdout).toContain("repo-tienda: up to date");
   });
 
   it("el MCP con sincronización reindexa solo cuando el clon avanzó, antes de responder", async () => {
@@ -91,11 +104,12 @@ describe("flowbrain sync, estado y doctor", () => {
     const settings = join(dir, "settings.json");
     await writeFile(settings, "{}\n");
     const d = await brain("doctor", "--settings", settings, "--repos", join(dir, "clones"));
-    expect(d.stdout).toContain("ok    el grafo carga");
-    expect(d.stdout).toContain("ok    clon de repo-tienda");
-    expect(d.stdout).toContain("falta hooks de Claude Code");
+    expect(d.stdout).toMatch(/^ok\s+the graph loads/m);
+    expect(d.stdout).toMatch(/^ok\s+clone of repo-tienda/m);
+    expect(d.stdout).toContain("Claude Code hooks");
+    expect(d.stdout).not.toMatch(/^ok\s+Claude Code hooks/m);
     expect(d.codigo).toBe(1);
     await brain("init", raiz, "--claude-code", "--settings", settings);
-    expect((await brain("doctor", "--settings", settings, "--repos", join(dir, "clones"))).stdout).toContain("ok    hooks de Claude Code");
+    expect((await brain("doctor", "--settings", settings, "--repos", join(dir, "clones"))).stdout).toMatch(/^ok\s+Claude Code hooks/m);
   });
 });

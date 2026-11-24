@@ -102,7 +102,7 @@ export async function evidencia(registro: Registro, solo?: string): Promise<Evid
   for (const c of registro.cerebros) {
     const l = await livianoDe(c.nombre, c.raiz);
     if (l) livianos.push(l);
-    else avisos.push(`el cerebro ${c.nombre} no está indexado: corré flowbrain brains apply ${c.nombre}`);
+    else avisos.push(`brain ${c.nombre} is not indexed: run flowbrain brains apply ${c.nombre}`);
   }
   const svcDe = (ep: string) => ep.slice(0, ep.indexOf(":"));
   const bases: EvidenciaBase[] = [];

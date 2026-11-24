@@ -24,20 +24,20 @@ const lista = (ids: string[]) => {
   const u = [...new Set(ids)].sort(cmp);
   if (u.length === 0) return "—";
   const ver = u.slice(0, MAX_LISTA).map((x) => `\`${x}\``).join(", ");
-  return u.length > MAX_LISTA ? `${ver} (+${u.length - MAX_LISTA} más)` : ver;
+  return u.length > MAX_LISTA ? `${ver} (+${u.length - MAX_LISTA} more)` : ver;
 };
 
 /** Sección "este repo en el brain": servicios que viven acá, de qué dependen y quién los usa. */
 function seccionRepo(ctx: Contexto, repo: GraphNode): string[] {
   const svcs = (ctx.entrantes.get(repo.id) ?? []).filter((e) => e.verbo === "vive_en").map((e) => ctx.nodo.get(e.desde)!).filter(Boolean);
   svcs.sort((a, b) => cmp(a.id, b.id));
-  const lineas = [`Este repo es \`${repo.id}\` (${repo.nombre}) en el brain.${repo.resumen ? ` ${repo.resumen}` : ""}`];
+  const lineas = [`This repo is \`${repo.id}\` (${repo.nombre}) in the brain.${repo.resumen ? ` ${repo.resumen}` : ""}`];
   if (svcs.length > 0) {
-    lineas.push("", "Lo que vive acá:");
+    lineas.push("", "What lives here:");
     for (const s of svcs) {
       const usa = (ctx.salientes.get(s.id) ?? []).filter((e) => DEPENDENCIA.has(e.verbo) && e.hasta !== s.id).map((e) => e.hasta);
       const usan = (ctx.entrantes.get(s.id) ?? []).filter((e) => DEPENDENCIA.has(e.verbo) && e.desde !== s.id && !FINOS.has(ctx.nodo.get(e.desde)?.tipo ?? "")).map((e) => e.desde);
-      lineas.push(`- \`${s.id}\`${s.resumen ? ` — ${s.resumen}` : ""} Depende de: ${lista(usa)}. Lo usan: ${lista(usan)}.`);
+      lineas.push(`- \`${s.id}\`${s.resumen ? ` — ${s.resumen}` : ""} Depends on: ${lista(usa)}. Used by: ${lista(usan)}.`);
     }
   }
   return lineas;
@@ -49,24 +49,24 @@ export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): st
     "## FlowBrain",
     "",
     ...(ctx && repo ? [...seccionRepo(ctx, repo), ""] : []),
-    "Antes de explorar el código con grep, consultá el grafo de conocimiento por MCP (servidor `brain`):",
-    "- `buscar_nodo` para ubicar servicios, repos, tablas o features por nombre, y clases o métodos del código (con archivo y línea).",
-    "- `recorrer_grafo` con `verbos: [\"depende_de\"], direccion: \"in\"` para saber qué se rompe si cambiás algo.",
-    "- `contrato_de` para ver qué devuelve un endpoint.",
-    "- `trazar` para seguir un flujo desde una ruta HTTP o un archivo.",
-    "- `recorrido` para ver qué ejecuta un endpoint, un método o un hook del front (front → endpoint → controller → servicio → repositorio → tabla), con archivo y línea; `via` marca saltos por HTTP, eventos o colas.",
-    "- `pantalla` para una pantalla del front (`/login`, `LoginScreen`): de dónde se llega, a dónde lleva, qué guardas la envuelven y qué llama del back, de punta a punta.",
-    "- `quien_llama` antes de cambiar un método: quién lo llama (también por eventos, colas y HTTP desde otros repos) y qué endpoints y funcionalidades alcanza.",
-    "- `impacto` para saber qué funcionalidades se ven afectadas si cambia una tabla, un endpoint o un servicio.",
-    "- `riesgo` con un diff o los archivos que vas a tocar, antes de un cambio grande: qué alcanza y a quién avisar.",
-    "- `deriva` para ver llamadas que ningún endpoint atiende y endpoints que nadie llama; `paridad` para saber qué falta migrar de un servicio a otro.",
-    "- `infra` para saber cómo se construye, despliega y configura un servicio: imagen, pipelines, variables de entorno, proxy, Kubernetes, Helm, Terraform y serverless.",
-    "- `fidelidad` para saber qué tan confiable es lo que el grafo dice de un archivo o una funcionalidad (0 a 100) y qué le falta.",
-    "- `funcionalidad` para la ficha de una funcionalidad de producto: endpoints, consumo, datos y relaciones.",
-    "Los `avisos` de cada respuesta son huecos conocidos (no hay dato, no \"no pasa nada\"): llamadas sin resolver o índice desactualizado; ahí sí conviene mirar el código. `indice` dice de qué commit salió.",
-    "Sin MCP, los mismos comandos por CLI: `flowbrain search <texto>`, `flowbrain traverse <nodo>`, `flowbrain contract <nodo>`, `flowbrain trace --from <ruta>`, `flowbrain flow <endpoint|Clase.metodo>`, `flowbrain screen </ruta>`, `flowbrain callers <Clase.metodo>`, `flowbrain impact <pieza>`, `flowbrain feature <id>`.",
-    "Cada arista trae evidencia (`repo:ruta#Lnn`); abrí ese archivo antes de afirmar algo.",
-    `Si el código contradice al brain, escribí en tu respuesta una línea \`${PREFIJO_NOTA} <id-del-nodo>: <qué cambió>\`. Al cerrar la sesión el hook la guarda en \`_drafts/notes/\` para revisión.`,
+    "Before exploring the code with grep, query the knowledge graph over MCP (server `brain`):",
+    "- `buscar_nodo` to locate services, repos, tables or features by name, and classes or methods in the code (with file and line).",
+    "- `recorrer_grafo` with `verbos: [\"depende_de\"], direccion: \"in\"` to know what breaks if you change something.",
+    "- `contrato_de` to see what an endpoint returns.",
+    "- `trazar` to follow a flow from an HTTP route or a file.",
+    "- `recorrido` to see what an endpoint, a method or a front hook runs (front → endpoint → controller → service → repository → table), with file and line; `via` marks hops over HTTP, events or queues.",
+    "- `pantalla` for a front screen (`/login`, `LoginScreen`): where you reach it from, where it leads, which guards wrap it and what it calls in the back, end to end.",
+    "- `quien_llama` before changing a method: who calls it (also through events, queues and HTTP from other repos) and which endpoints and features it reaches.",
+    "- `impacto` to know which features are affected if a table, an endpoint or a service changes.",
+    "- `riesgo` with a diff or the files you are going to touch, before a large change: what it reaches and whom to tell.",
+    "- `deriva` to see calls no endpoint serves and endpoints nobody calls; `paridad` to know what is left to migrate from one service to another.",
+    "- `infra` to know how a service is built, deployed and configured: image, pipelines, environment variables, proxy, Kubernetes, Helm, Terraform and serverless.",
+    "- `fidelidad` to know how reliable what the graph says about a file or a feature is (0 to 100) and what it is missing.",
+    "- `funcionalidad` for the card of a product feature: endpoints, consumers, data and relations.",
+    "The `avisos` in each response are known gaps (missing data, not \"nothing happens\"): unresolved calls or an outdated index; that is where it pays to look at the code. `indice` says which commit it came from.",
+    "Without MCP, the same commands through the CLI: `flowbrain search <text>`, `flowbrain traverse <node>`, `flowbrain contract <node>`, `flowbrain trace --from <path>`, `flowbrain flow <endpoint|Class.method>`, `flowbrain screen </route>`, `flowbrain callers <Class.method>`, `flowbrain impact <piece>`, `flowbrain feature <id>`.",
+    "Every edge carries evidence (`repo:path#Lnn`); open that file before claiming anything.",
+    `If the code contradicts the brain, write a line \`${PREFIJO_NOTA} <node-id>: <what changed>\` in your answer. When the session ends the hook saves it in \`_drafts/notes/\` for review.`,
     "",
   ].join("\n");
 }
@@ -103,7 +103,7 @@ export function generarReglas(destino: Destino, ctx: Contexto | null, repo: Grap
         ...r,
         ruta: ".cursor/rules/flowbrain.mdc",
         modo: "archivo",
-        contenido: `---\ndescription: Grafo de conocimiento FlowBrain: servicios, contratos y dependencias de este repo\nalwaysApply: true\n---\n\n${bloque}`,
+        contenido: `---\ndescription: FlowBrain knowledge graph: services, contracts and dependencies of this repo\nalwaysApply: true\n---\n\n${bloque}`,
       };
     case "windsurf":
       return { ...r, ruta: ".windsurf/rules/flowbrain.md", modo: "archivo", contenido: `---\ntrigger: always_on\n---\n\n${bloque}` };

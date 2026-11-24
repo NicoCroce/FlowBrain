@@ -6,6 +6,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { agentesConMcp, partir } from "../src/agentes.js";
 import { asistente } from "../src/asistente.js";
 import { ejecutar } from "../src/main.js";
+import { fijarIdioma, idioma } from "../src/idioma.js";
 import { accion, contextoMenu, dibujar, elegir, opciones, PROMPT_ANALISIS, siguiente, type ContextoMenu, type Entorno } from "../src/menu.js";
 
 let dir: string;
@@ -42,16 +43,16 @@ const base: ContextoMenu = { proyecto: "/p", registro: null, cerebros: [], falta
 describe("menú", () => {
   it("sin configurar: primero configurar; reindexar, visor y estado no aparecen", () => {
     const ops = opciones(base).map((o) => o.clave);
-    expect(ops).toEqual(["configurar", "analizar", "mcp", "actualizar", "salir"]);
-    expect(opciones(base)[1]!.detalle).toContain("antes lo configura");
+    expect(ops).toEqual(["configurar", "analizar", "mcp", "actualizar", "idioma", "salir"]);
+    expect(opciones(base)[1]!.detalle).toContain("sets it up first");
   });
 
   it("configurado y con visor: todas las opciones, y el estado en la cabecera", () => {
     const c = { ...base, registro: "/p/.flowbrain", cerebros: ["web", "api"], visor: "/p/.flowbrain/flowbrain.html", mcp: true };
-    expect(opciones(c).map((o) => o.clave)).toEqual(["configurar", "analizar", "reindexar", "visor", "estado", "mcp", "actualizar", "salir"]);
+    expect(opciones(c).map((o) => o.clave)).toEqual(["configurar", "analizar", "reindexar", "visor", "estado", "mcp", "actualizar", "idioma", "salir"]);
     const t = dibujar(c, opciones(c), 0);
-    expect(t).toContain("2 cerebros: web, api");
-    expect(t).toContain("MCP conectado");
+    expect(t).toContain("2 brains: web, api");
+    expect(t).toContain("MCP connected");
   });
 
   it("detecta el proyecto desde un subdirectorio y lee sus cerebros", async () => {
@@ -62,7 +63,7 @@ describe("menú", () => {
     expect(c.proyecto).toBe(dir);
     expect(c.cerebros).toEqual(["web"]);
     expect(c.agentes).toEqual([]);
-    expect(opciones(c).find((o) => o.clave === "analizar")!.detalle).toContain("te doy las instrucciones");
+    expect(opciones(c).find((o) => o.clave === "analizar")!.detalle).toContain("I give you the instructions");
   });
 
   it("se elige con flechas, con el número o se sale con q", async () => {
@@ -101,7 +102,7 @@ describe("menú", () => {
   it("MCP en Codex corre su comando; en OpenCode, y en otro, muestra qué pegar", async () => {
     const c = { ...base, agentes: ["claude", "codex", "opencode"] as ContextoMenu["agentes"], mcpEn: ["codex"] as ContextoMenu["mcpEn"], mcp: true };
     const mcp = opciones(c).find((o) => o.clave === "mcp")!;
-    expect(mcp.detalle).toContain("conectado en Codex (OpenAI)");
+    expect(mcp.detalle).toContain("connected in Codex (OpenAI)");
     const codex = falso([], ["2", "s"]);
     await accion(mcp, c, codex.e);
     // Ya estaba conectado: lo quita y lo vuelve a registrar.
@@ -113,7 +114,7 @@ describe("menú", () => {
     expect(oc.salida.join("")).toMatch(/opencode\.json[\s\S]*"type": "local"[\s\S]*"serve",\s*"--sync"/);
     const otro = falso([], ["4"]);
     await accion(mcp, c, otro.e);
-    expect(otro.salida.join("")).toMatch(/Claude Code:[\s\S]*Codex \(OpenAI\):[\s\S]*OpenCode, en[\s\S]*serve --sync {2}\(stdio\)/);
+    expect(otro.salida.join("")).toMatch(/Claude Code:[\s\S]*Codex \(OpenAI\):[\s\S]*OpenCode, in[\s\S]*serve --sync {2}\(stdio\)/);
   });
 
   it("detecta en qué agentes está registrado el MCP y separa el comando en palabras", async () => {
@@ -130,11 +131,11 @@ describe("menú", () => {
     const c = { ...base, registro: "/p/.flowbrain", cerebros: ["web", "api"] };
     expect(siguiente(base)?.clave).toBe("configurar");
     expect(siguiente({ ...c, faltaIndice: ["web"], faltaAnalisis: ["web", "api"] })?.clave).toBe("reindexar");
-    expect(siguiente({ ...c, faltaAnalisis: ["web", "api"] })).toEqual({ clave: "analizar", motivo: "falta el análisis completo en todos los cerebros" });
+    expect(siguiente({ ...c, faltaAnalisis: ["web", "api"] })).toEqual({ clave: "analizar", motivo: "full analysis missing in all the brains" });
     expect(siguiente(c)?.clave).toBe("mcp");
     expect(siguiente({ ...c, mcp: true })).toBeNull();
     const conAnalisis = { ...c, faltaAnalisis: ["api"] };
-    expect(dibujar(conAnalisis, opciones(conAnalisis), 0)).toContain("Siguiente paso:");
+    expect(dibujar(conAnalisis, opciones(conAnalisis), 0)).toContain("Next step:");
     expect((await elegir(conAnalisis, opciones(conAnalisis), falso(["enter"]).e)).clave).toBe("analizar");
   });
 
@@ -147,6 +148,32 @@ describe("menú", () => {
     await accion(mcp, base, si.e);
     expect(si.corridas).toHaveLength(1);
     expect(si.corridas[0]).toMatch(/^sh -c claude mcp add --scope user flowbrain/);
+  });
+
+  it("la opción de idioma alterna inglés y castellano, lo guarda, dice dónde y el menú se redibuja en el nuevo idioma", async () => {
+    try {
+      const guardados: string[] = [];
+      const f = falso();
+      f.e.guardarIdioma = async (lang) => (guardados.push(lang), "/home/x/.config/flowbrain/config.json");
+      const op = opciones(base).find((o) => o.clave === "idioma")!;
+      expect(op.titulo).toBe("Language: English · switch to Español");
+      expect(await accion(op, base, f.e)).toBe(true);
+      expect(idioma()).toBe("es");
+      expect(guardados).toEqual(["es"]);
+      expect(f.salida.join("")).toContain("Quedó guardado en /home/x/.config/flowbrain/config.json");
+      const es = dibujar(base, opciones(base), 0);
+      expect(es).toContain("Configurar este proyecto");
+      expect(es).toContain("Idioma: castellano · cambiar a English");
+      // Y de vuelta; sin dónde guardarlo, lo dice.
+      const g = falso();
+      g.e.guardarIdioma = async () => null;
+      await accion(opciones(base).find((o) => o.clave === "idioma")!, base, g.e);
+      expect(idioma()).toBe("en");
+      expect(g.salida.join("")).toContain("only for this session");
+      expect(dibujar(base, opciones(base), 0)).toContain("Set up / update this project");
+    } finally {
+      fijarIdioma("en");
+    }
   });
 
   it("salir termina el menú", async () => {
@@ -191,7 +218,7 @@ describe("asistente de un proyecto nuevo", () => {
     for (const b of ["web", "api"]) expect(existsSync(join(p, ".flowbrain", b, "_build/graph.json"))).toBe(true);
     const texto = f.salida.join("");
     expect(texto).toMatch(/1\. api: express[\s\S]*2\. web: react/);
-    expect(texto).toContain("Lo que quedó sin tilde sigue pendiente");
+    expect(texto).toContain("Whatever is left unchecked is still pending");
     // Retoma: el proyecto ya está configurado e indexado; lo que sigue es el análisis.
     expect(siguiente(await f.e.contexto!(p))?.clave).toBe("analizar");
   });
@@ -215,7 +242,7 @@ describe("asistente de un proyecto nuevo", () => {
     const f = entorno(["", "n"]);
     await asistente(await f.e.contexto!(dir), f.e);
     expect(existsSync(join(dir, ".flowbrain"))).toBe(false);
-    expect(f.salida.join("")).toContain("No encontré código");
+    expect(f.salida.join("")).toContain("No code found");
   });
 
   it("si no se confirma, no toca nada", async () => {

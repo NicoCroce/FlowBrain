@@ -90,10 +90,10 @@ describe("registro de cerebros", () => {
     const con = (cuerpo: string) => interpretarRegistro(`version: 1\ncerebros:\n${cuerpo}`, "/tmp/x");
     const uno = (n: string) => `  - { nombre: ${n}, repos: [] }\n`;
     expect(con(uno("a") + uno("b")).cerebros.map((c) => `${c.nombre} ${c.raiz} ${c.curado}`)).toEqual(["a /tmp/x/a true", "b /tmp/x/b true"]);
-    expect(() => con(["a", "b", "c", "d", "e", "f", "g", "h", "i"].map(uno).join(""))).toThrow(/como máximo 8 cerebros/);
-    expect(() => con(uno("a") + uno("a"))).toThrow(/cerebro repetido: a/);
+    expect(() => con(["a", "b", "c", "d", "e", "f", "g", "h", "i"].map(uno).join(""))).toThrow(/at most 8 brains/);
+    expect(() => con(uno("a") + uno("a"))).toThrow(/duplicate brain: a/);
     expect(() => con(uno("a") + "comunicacion:\n  - { entre: [a, z], activa: true }\n")).toThrow(RegistroError);
-    expect(() => con(uno("a") + "conexiones:\n  - { desde: a/svc-x, hacia: z/svc-y }\n")).toThrow(/cerebro inexistente: z/);
+    expect(() => con(uno("a") + "conexiones:\n  - { desde: a/svc-x, hacia: z/svc-y }\n")).toThrow(/nonexistent brain: z/);
     const r = con(uno("a") + uno("b") + uno("c") + "comunicacion:\n  - { entre: [b, a], activa: true }\n  - { entre: [a, c], activa: false }\n");
     expect([r.comunicados("a", "b"), r.comunicados("b", "a"), r.comunicados("a", "c"), r.comunicados("b", "c")]).toEqual([true, true, false, false]);
     expect(r.vecinos("a").map((c) => c.nombre)).toEqual(["b"]);
@@ -105,7 +105,7 @@ describe("registro de cerebros", () => {
     expect(r.stdout).toContain("3 repos");
     const texto = await readFile(join(reg, "flowbrain.yaml"), "utf8");
     expect(texto).toContain('- ruta: "../repos/tienda-web"');
-    expect(texto).toContain("¿Cómo se agrupan estos 3 repos en cerebros (hasta 8)");
+    expect(texto).toContain("How should these 3 repos be grouped into brains (up to 8)");
     expect(texto).toContain("endpoints: 2");
     // Lo propuesto es un registro válido: un cerebro con todo.
     expect(interpretarRegistro(texto, reg).cerebros.map((c) => `${c.nombre} ${c.repos.length}`)).toEqual(["repos 3"]);
@@ -117,9 +117,9 @@ describe("registro de cerebros", () => {
     await registro(COMUNICADOS);
     const r = await brain(["brains", "apply"]);
     expect(r.codigo).toBe(0);
-    expect(r.stdout).toMatch(/^front: \d+ nodos/m);
-    expect(r.stdout).toMatch(/^legado \(sin curar\): \d+ nodos/m);
-    expect((await brain(["brains"])).stdout).toContain("  comunicado con: back");
+    expect(r.stdout).toMatch(/^front: \d+ nodes/m);
+    expect(r.stdout).toMatch(/^legado \(not curated\): \d+ nodes/m);
+    expect((await brain(["brains"])).stdout).toContain("  talks to: back");
     const enBack = JSON.parse((await brain(["search", "/pedidos", "--brain", "back"])).stdout) as { nodos: Array<{ id: string }> };
     expect(enBack.nodos.map((n) => n.id)).toEqual(["svc-tienda-api:GET:/pedidos", "svc-tienda-api:POST:/pedidos"]);
     // Parado en el repo del front, sin --brain: el suyo, donde esa ruta no es un endpoint.
@@ -128,14 +128,14 @@ describe("registro de cerebros", () => {
     // Fuera de todo repo y con varios cerebros, hay que elegir.
     const sinElegir = await brain(["search", "/pedidos"]);
     expect(sinElegir.codigo).not.toBe(0);
-    expect(sinElegir.stdout + sinElegir.stderr).toContain("elegí uno con --brain");
+    expect(sinElegir.stdout + sinElegir.stderr).toContain("pick one with --brain");
   }, 60_000);
 });
 
 describe("varios cerebros por MCP", () => {
   it("consulta el cerebro del repo actual, rotula la respuesta y avisa lo que hay en los comunicados", async () => {
     const { cliente, llamar } = await mcp(join(dir, "repos/tienda-web"));
-    expect(cliente.getInstructions()).toContain("varios cerebros");
+    expect(cliente.getInstructions()).toContain("several brains");
     const r = await llamar("buscar_nodo", { texto: "/pedidos" });
     expect(r["cerebro"]).toBe("front");
     expect((r["nodos"] as Array<{ tipo: string }>).filter((n) => n.tipo === "endpoint")).toEqual([]);
@@ -155,7 +155,7 @@ describe("varios cerebros por MCP", () => {
     const c = (await llamar("conexiones")) as { comunicadoCon: string[]; conexiones: Array<Record<string, unknown>>; avisos: string[] };
     expect(c.comunicadoCon).toEqual(["back"]);
     expect(c.conexiones.map((x) => `${x["desde"]} → ${x["hacia"]}: ${x["llamadas"]} llamadas, ${x["endpoints"]} endpoints, declarada ${x["declarada"]}`)).toEqual(["front/svc-tienda-web → back/svc-tienda-api: 2 llamadas, 2 endpoints, declarada false"]);
-    expect(c.avisos).toEqual(["llamadas detectadas sin conexión declarada: front/svc-tienda-web → back/svc-tienda-api (2)", "comunicación desactivada con: legado"]);
+    expect(c.avisos).toEqual(["calls detected without a declared connection: front/svc-tienda-web → back/svc-tienda-api (2)", "communication disabled with: legado"]);
     // Desde el back: el impacto de su endpoint dice quién lo llama desde otro cerebro.
     // La llamada del front no sale de ninguna pantalla: queda como servicio afectado, sin funcionalidades.
     const imp = (await llamar("impacto", { pieza: "GET /pedidos", cerebro: "back" })) as Record<string, unknown>;
@@ -170,7 +170,7 @@ describe("varios cerebros por MCP", () => {
     const db = (await llamar("deriva", { cerebro: "back" })) as unknown as Deriva;
     expect(db.consumidoresIndexados).toEqual({ "svc-tienda-api": ["front/svc-tienda-web"] });
     expect(db.endpointsSinLlamadasDetectadas).toEqual([]);
-    expect(db.avisos.join(" ")).not.toContain("no tiene consumidores indexados");
+    expect(db.avisos.join(" ")).not.toContain("has no indexed consumers");
     // Por consola, lo mismo.
     const cli = JSON.parse((await brain(["drift", "--brain", "front"])).stdout) as Deriva;
     expect([cli.llamadasSinEndpoint.length, cli.comunicadoCon]).toEqual([0, ["back"]]);
@@ -207,11 +207,11 @@ describe("varios cerebros por MCP", () => {
     // Y la deriva vuelve a ver las dos llamadas del front sin quien las atienda, y dice por qué.
     const apagada = (await llamar("deriva")) as unknown as Deriva;
     expect([apagada.llamadasSinEndpoint.length, apagada.comunicadoCon]).toEqual([2, []]);
-    expect(apagada.avisos.join(" ")).toContain("no tiene la comunicación activa con ningún otro");
+    expect(apagada.avisos.join(" ")).toContain("has no active communication with any other");
     // Y la fidelidad, por MCP y por consola, las cuenta como falta, igual que el visor (antes la consola daba 100).
     const fidApagada = (await llamar("fidelidad", { archivo: "src/api.ts" })) as unknown as Fid;
     expect(fidApagada.puntaje).toBeLessThan(100);
-    expect(fidApagada.faltas.join(" ")).toContain("2 llamadas HTTP que no se unieron a ningún endpoint, ni de este cerebro ni de los comunicados (L3, L7)");
+    expect(fidApagada.faltas.join(" ")).toContain("2 HTTP calls not linked to any endpoint, in this brain or the connected ones (L3, L7)");
     const fidCli = JSON.parse((await brain(["fidelity", "src/api.ts", "--brain", "front"])).stdout) as Fid;
     expect([fidCli.puntaje, fidCli.faltas]).toEqual([fidApagada.puntaje, fidApagada.faltas]);
     expect((await brain(["fidelity", "--brain", "front", "--plan"])).stdout).toContain("src/api.ts");
@@ -234,15 +234,15 @@ describe("varios cerebros por MCP", () => {
       "front/svc-tienda-web → back/svc-tienda-api: 2 (declarada true)",
       "front/svc-tienda-web → legado/svc-tienda-vieja: 0 (declarada true)",
     ]);
-    expect(r.avisos).toEqual(["conexión declarada sin llamadas que la respalden: front/svc-tienda-web → legado/svc-tienda-vieja"]);
+    expect(r.avisos).toEqual(["declared connection with no calls backing it: front/svc-tienda-web → legado/svc-tienda-vieja"]);
   });
 });
 
 describe("hook con varios cerebros", () => {
   const hook = async (cwd: string, prompt: string) => (await ejecutar(["hook", "claude-code", "--root", reg], {}, dir, async () => JSON.stringify({ prompt, cwd }))).stdout;
   it("carga solo el cerebro del repo donde se está; fuera de todo repo conocido no inyecta nada", async () => {
-    expect(await hook(join(dir, "repos/tienda-api"), "¿qué hace GET /pedidos?")).toContain("Repo actual: repo-tienda-api");
-    expect(await hook(join(dir, "repos/tienda-web"), "revisá el repo")).toContain("Repo actual: repo-tienda-web");
+    expect(await hook(join(dir, "repos/tienda-api"), "¿qué hace GET /pedidos?")).toContain("Current repo: repo-tienda-api");
+    expect(await hook(join(dir, "repos/tienda-web"), "revisá el repo")).toContain("Current repo: repo-tienda-web");
     expect(await hook(dir, "¿qué hace GET /pedidos?")).toBe("");
     expect(await hook(tmpdir(), "tienda-api")).toBe("");
   });
@@ -270,9 +270,9 @@ describe("dentro de un proyecto", () => {
     const preguntas: string[] = [];
     const responder = async (q: string) => (preguntas.push(q), preguntas.length === 1 ? "" : "1");
     const r = await ejecutar(["install", ...global()], { ...env, PATH: join(dir, "global/bin") }, proyecto, undefined, responder);
-    expect(preguntas[0]).toBe(`¿En qué carpeta están los repositorios? (Enter: ${proyecto}) `);
-    expect(preguntas[1]).toContain("Encontré 3: tienda-api, tienda-vieja, tienda-web.");
-    expect(r.stdout).toContain(`registro creado en ${join(proyecto, ".flowbrain/flowbrain.yaml")}: 3 repos en 3 cerebros`);
+    expect(preguntas[0]).toBe(`Which folder are the repositories in? (Enter: ${proyecto}) `);
+    expect(preguntas[1]).toContain("Found 3: tienda-api, tienda-vieja, tienda-web.");
+    expect(r.stdout).toContain(`registry created at ${join(proyecto, ".flowbrain/flowbrain.yaml")}: 3 repos in 3 brains`);
     const yaml = await readFile(join(proyecto, ".flowbrain/flowbrain.yaml"), "utf8");
     expect(yaml).toContain('  - nombre: tienda-web\n    curado: true\n    repos:\n      - ruta: "../tienda-web"');
     expect(yaml).toContain("comunicacion:\n  - { entre: [tienda-api, tienda-vieja], activa: true }\n  - { entre: [tienda-api, tienda-web], activa: true }\n  - { entre: [tienda-vieja, tienda-web], activa: true }");
@@ -281,7 +281,7 @@ describe("dentro de un proyecto", () => {
     expect(await readFile(join(dir, "global/bin/flowbrain"), "utf8")).toContain('exec flowbrain "$@"');
     expect(JSON.parse(await readFile(join(dir, "global/settings.json"), "utf8")).hooks.UserPromptSubmit[0].hooks[0].command).toBe("flowbrain hook claude-code");
     expect(r.stdout).toContain("claude mcp add --scope user flowbrain -- flowbrain serve --sync\n");
-    expect(r.stdout).not.toContain("no está en tu PATH");
+    expect(r.stdout).not.toContain("is not in your PATH");
     // Sin --root, parado adentro de un repo del proyecto.
     const b = JSON.parse((await ejecutar(["search", "/pedidos", "--types", "endpoint"], {}, join(proyecto, "tienda-api/src"))).stdout) as { nodos: Array<{ id: string }> };
     expect(b.nodos.map((n) => n.id)).toContain("svc-tienda-api:GET:/pedidos");
@@ -290,7 +290,7 @@ describe("dentro de un proyecto", () => {
     expect((await hook(join(proyecto, "tienda-api"))).stdout).toContain("<flowbrain-context>");
     expect(await hook(dir)).toEqual({ codigo: 0, stdout: "", stderr: "" });
     // Volver a correrlo actualiza, sin preguntar ni pisar el registro.
-    expect((await ejecutar(["install", ...global()], env, proyecto, undefined, responder)).stdout).toContain("registro existente");
+    expect((await ejecutar(["install", ...global()], env, proyecto, undefined, responder)).stdout).toContain("existing registry");
     expect(preguntas.length).toBe(2);
   }, 120_000);
 
@@ -309,7 +309,7 @@ describe("dentro de un proyecto", () => {
     expect(base.definiciones).toEqual([{ archivo: "tienda-web/.env.example#L1", nombre: "VITE_API_URL", texto: "VITE_API_URL=http://localhost:3000" }]);
     const conn = async () => JSON.parse((await ejecutar(["connections", "--brain", "tienda-web"], {}, proyecto)).stdout) as { conexiones: Array<Record<string, unknown>>; avisos: string[] };
     expect((await conn()).conexiones).toEqual([]);
-    expect((await conn()).avisos.join(" ")).toContain("2 llamadas coinciden con endpoints de más de un cerebro");
+    expect((await conn()).avisos.join(" ")).toContain("2 calls match endpoints of more than one brain");
     // El modelo analiza y deja escrito a dónde va esa base, con su evidencia.
     const archivo = join(proyecto, ".flowbrain/flowbrain.yaml");
     await writeFile(archivo, (await readFile(archivo, "utf8")) + ["", "conexiones:", "  - desde: tienda-web/svc-tienda-web", "    hacia: tienda-api/svc-tienda-api", "    por: VITE_API_URL", "    origen: modelo", '    evidencia: ["tienda-web/.env.example#L1"]', '    nota: "el puerto 3000 es el de tienda-api"', ""].join("\n"));
@@ -319,16 +319,16 @@ describe("dentro de un proyecto", () => {
     expect((await conn()).conexiones.map((x) => [x["desde"], x["hacia"], x["llamadas"], x["declarada"], x["origen"]])).toEqual([["tienda-web/svc-tienda-web", "tienda-api/svc-tienda-api", 2, true, "modelo"]]);
     // Las instrucciones para el modelo: por consola y como comando de Claude Code, que deja `install`.
     const guia = (await ejecutar(["evidence", "--guide"], {}, dir)).stdout;
-    expect(guia).toContain("Nunca abras archivos de entorno reales");
+    expect(guia).toContain("Never open real environment files");
     expect(await readFile(join(dir, "global/commands/flowbrain-index.md"), "utf8")).toBe(guia);
     const feats = (await ejecutar(["feature", "--guide"], {}, dir)).stdout;
-    expect(feats).toContain("Agrupar pantallas sueltas");
+    expect(feats).toContain("Group loose screens");
     expect(await readFile(join(dir, "global/commands/flowbrain-features.md"), "utf8")).toBe(feats);
     const specs = (await ejecutar(["specs", "--guide"], {}, dir)).stdout;
-    expect(specs).toContain("Una regla por especificación");
+    expect(specs).toContain("One rule per specification");
     expect(await readFile(join(dir, "global/commands/flowbrain-specs.md"), "utf8")).toBe(specs);
     const tests = (await ejecutar(["specs", "--guide-tests"], {}, dir)).stdout;
-    expect(tests).toContain("Nunca modificás el código del producto.");
+    expect(tests).toContain("Never modify the product code.");
     expect(await readFile(join(dir, "global/commands/flowbrain-tests.md"), "utf8")).toBe(tests);
   }, 120_000);
 
@@ -337,7 +337,7 @@ describe("dentro de un proyecto", () => {
     await mkdir(join(mono, ".git"), { recursive: true });
     for (const p of ["api", "web"]) await w(`mono/packages/${p}/package.json`, [`{ "name": "${p}" }`]);
     const r = await ejecutar(["install", "--repos", "packages", "--single", ...global()], env, mono);
-    expect(r.stdout).toContain("2 repos en un cerebro");
+    expect(r.stdout).toContain("2 repos in one brain");
     const yaml = await readFile(join(mono, ".flowbrain/flowbrain.yaml"), "utf8");
     expect(yaml).toContain('  - nombre: mono\n    curado: true\n    repos:\n      - ruta: "../packages/api"\n      - ruta: "../packages/web"');
     // Sin --single ni --split y sin terminal: un cerebro por paquete.

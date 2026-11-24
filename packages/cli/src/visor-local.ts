@@ -1,4 +1,5 @@
 import { request } from "node:http";
+import { L } from "./idioma.js";
 import { PUERTO_VISOR, rutaReal, servirVisor, type ServidorVisor } from "./servidor-visor.js";
 
 /**
@@ -44,17 +45,18 @@ export async function prepararVisor(registro: string, deps: DepsVisorLocal, opci
       s = await deps.servir(p);
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === "EADDRINUSE") continue;
-      return { modo: "estatico", motivo: `el servidor no pudo escuchar en el puerto ${p}: ${(e as Error).message}` };
+      return { modo: "estatico", motivo: L(`the server could not listen on port ${p}: ${(e as Error).message}`, `el servidor no pudo escuchar en el puerto ${p}: ${(e as Error).message}`) };
     }
     const url = s.url();
     const pag = await deps.pagina(url).catch((e: Error) => ({ estado: 0, error: e.message }));
     if (pag.estado !== 200) {
       await cerrarServidor(s);
-      return { modo: "estatico", motivo: `el servidor arrancó pero la página no cargó (${pag.estado || "sin respuesta"}${pag.error ? `: ${pag.error}` : ""})` };
+      const detalle = `${pag.estado || L("no response", "sin respuesta")}${pag.error ? `: ${pag.error}` : ""}`;
+      return { modo: "estatico", motivo: L(`the server started but the page did not load (${detalle})`, `el servidor arrancó pero la página no cargó (${detalle})`) };
     }
     return { modo: "nuevo", url, servidor: s };
   }
-  return { modo: "estatico", motivo: `los puertos ${puertos[0]} a ${puertos[puertos.length - 1]} están ocupados por otros programas` };
+  return { modo: "estatico", motivo: L(`ports ${puertos[0]} to ${puertos[puertos.length - 1]} are taken by other programs`, `los puertos ${puertos[0]} a ${puertos[puertos.length - 1]} están ocupados por otros programas`) };
 }
 
 export function cerrarServidor(s: ServidorVisor): Promise<void> {
@@ -73,7 +75,7 @@ function get(url: string, ms = 1500): Promise<{ estado: number; cuerpo: string }
       res.on("data", (c: string) => (cuerpo += c));
       res.on("end", () => ok({ estado: res.statusCode ?? 0, cuerpo }));
     });
-    req.on("timeout", () => req.destroy(new Error("no respondió a tiempo")));
+    req.on("timeout", () => req.destroy(new Error(L("did not respond in time", "no respondió a tiempo"))));
     req.on("error", mal);
     req.end();
   });

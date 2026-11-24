@@ -9,6 +9,7 @@ import { AGENTES, agentesConMcp, analizarCon, CONFIGS_MCP, conectarMcp, elegirAg
 import { ARCHIVO_VISOR } from "./cerebros.js";
 import { comandoBrain, PAQUETE, VERSION } from "./init.js";
 import { asistente } from "./asistente.js";
+import { fijarIdioma, guardarIdioma, idioma, L, type Idioma } from "./idioma.js";
 import { cerrarServidor, depsReales, prepararVisor, type ResultadoVisor } from "./visor-local.js";
 
 /**
@@ -17,7 +18,7 @@ import { cerrarServidor, depsReales, prepararVisor, type ResultadoVisor } from "
  * analizar, reindexar, abrir el visor. Cada opción corre los mismos comandos que se pueden escribir a mano.
  */
 
-export type Clave = "configurar" | "analizar" | "reindexar" | "visor" | "estado" | "mcp" | "actualizar" | "salir";
+export type Clave = "configurar" | "analizar" | "reindexar" | "visor" | "estado" | "mcp" | "actualizar" | "idioma" | "salir";
 
 export interface Opcion {
   clave: Clave;
@@ -61,14 +62,17 @@ export interface Entorno {
   visorLocal?: (registro: string) => Promise<ResultadoVisor>;
   /** Espera el Ctrl+C que corta el visor (por defecto, el SIGINT del proceso). */
   esperarCorte?: () => Promise<void>;
+  /** Guarda el idioma elegido en el menú y devuelve dónde (por defecto, `guardarIdioma` en las preferencias de la persona). */
+  guardarIdioma?: (lang: Idioma) => Promise<string | null>;
 }
 
+/** El pedido para el agente que analiza: va al modelo, así que siempre en inglés. */
 export const PROMPT_ANALISIS = [
-  "Hacé el análisis completo de FlowBrain en este proyecto, en orden y sin saltear pasos.",
-  "1. Estudiá cada repo y escribí los extractores que completan el índice: seguí las instrucciones que imprime `flowbrain coverage --guide`.",
-  "2. Analizá la comunicación real entre servicios: seguí las de `flowbrain evidence --guide`.",
-  "3. Deducí y completá las funcionalidades de producto: seguí las de `flowbrain feature --guide`.",
-  "Leé cada guía completa antes de empezar su paso. Al terminar, corré `flowbrain brains viewer` y dame un informe corto: qué cambió en cada cerebro y qué quedó sin determinar.",
+  "Run the full FlowBrain analysis in this project, in order and without skipping steps.",
+  "1. Study each repo and write the extractors that complete the index: follow the instructions printed by `flowbrain coverage --guide`.",
+  "2. Analyze the real communication between services: follow the ones from `flowbrain evidence --guide`.",
+  "3. Deduce and complete the product features: follow the ones from `flowbrain feature --guide`.",
+  "Read each guide in full before starting its step. When you finish, run `flowbrain brains viewer` and give me a short report: what changed in each brain and what is still undetermined.",
 ].join("\n");
 
 export async function contextoMenu(cwd: string, entorno: { hayComando(nombre: string): boolean; mcpConfig?: string[] } = { hayComando }): Promise<ContextoMenu> {
@@ -103,29 +107,47 @@ export function opciones(c: ContextoMenu): Opcion[] {
   const listo = !!c.registro;
   const out: Opcion[] = [
     listo
-      ? { clave: "configurar", titulo: "Actualizar la configuración", detalle: "comando, hooks y comandos de Claude Code al día, y reindexa los cerebros de flowbrain.yaml" }
-      : { clave: "configurar", titulo: "Configurar este proyecto", detalle: "detecta los subrepositorios, arma los cerebros e indexa todo" },
+      ? {
+          clave: "configurar",
+          titulo: L("Set up / update this project", "Actualizar la configuración"),
+          detalle: L("command, hooks and Claude Code commands up to date, and reindexes the brains in flowbrain.yaml", "comando, hooks y comandos de Claude Code al día, y reindexa los cerebros de flowbrain.yaml"),
+        }
+      : { clave: "configurar", titulo: L("Set up / update this project", "Configurar este proyecto"), detalle: L("detects the subrepositories, builds the brains and indexes everything", "detecta los subrepositorios, arma los cerebros e indexa todo") },
     {
       clave: "analizar",
-      titulo: "Analizar el proyecto completo",
+      titulo: L("Analyze the whole project", "Analizar el proyecto completo"),
       detalle: c.agentes.length
-        ? `el agente que elijas estudia cada repo, une los servicios y completa las funcionalidades${listo ? "" : " (antes lo configura)"}`
-        : "no encontré Claude Code, Codex ni OpenCode: te doy las instrucciones para el agente que uses",
+        ? L(
+            `the agent you pick studies each repo, joins the services and completes the features${listo ? "" : " (sets it up first)"}`,
+            `el agente que elijas estudia cada repo, une los servicios y completa las funcionalidades${listo ? "" : " (antes lo configura)"}`,
+          )
+        : L("Claude Code, Codex or OpenCode not found: I give you the instructions for the agent you use", "no encontré Claude Code, Codex ni OpenCode: te doy las instrucciones para el agente que uses"),
     },
   ];
-  if (listo) out.push({ clave: "reindexar", titulo: "Reindexar", detalle: "vuelve a correr parsers y extractores y regenera el visor" });
-  if (c.visor) out.push({ clave: "visor", titulo: "Abrir el visor", detalle: "lo abre en localhost para ver y corregir: funcionalidades, pantallas, fidelidad, impacto y mapa 3D" });
-  if (listo) out.push({ clave: "estado", titulo: "Ver estado", detalle: "repos al día, conteos y huecos conocidos de cada cerebro" });
+  if (listo) out.push({ clave: "reindexar", titulo: L("Re-index", "Reindexar"), detalle: L("runs parsers and extractors again and regenerates the viewer", "vuelve a correr parsers y extractores y regenera el visor") });
+  if (c.visor)
+    out.push({
+      clave: "visor",
+      titulo: L("Open the viewer", "Abrir el visor"),
+      detalle: L("opens it on localhost to see and fix: features, screens, fidelity, impact and 3D map", "lo abre en localhost para ver y corregir: funcionalidades, pantallas, fidelidad, impacto y mapa 3D"),
+    });
+  if (listo) out.push({ clave: "estado", titulo: L("See status", "Ver estado"), detalle: L("repos up to date, counts and known gaps of each brain", "repos al día, conteos y huecos conocidos de cada cerebro") });
+  const conectados = AGENTES.filter((a) => c.mcpEn.includes(a.id)).map((a) => a.nombre).join(", ");
   out.push(
     {
       clave: "mcp",
-      titulo: "Conectar un agente (MCP)",
+      titulo: L("Connect an agent (MCP)", "Conectar un agente (MCP)"),
       detalle: c.mcp
-        ? `conectado en ${AGENTES.filter((a) => c.mcpEn.includes(a.id)).map((a) => a.nombre).join(", ")}; suma otro o lo registra de nuevo`
-        : "registra el servidor MCP de FlowBrain en Claude Code, Codex u OpenCode, para todos tus proyectos",
+        ? L(`connected in ${conectados}; add another or register it again`, `conectado en ${conectados}; suma otro o lo registra de nuevo`)
+        : L("registers the FlowBrain MCP server in Claude Code, Codex or OpenCode, for all your projects", "registra el servidor MCP de FlowBrain en Claude Code, Codex u OpenCode, para todos tus proyectos"),
     },
-    { clave: "actualizar", titulo: "Actualizar FlowBrain", detalle: c.version === "dev" ? "trae la última versión del repo de FlowBrain y la instala" : `versión ${c.version}: instala la última publicada` },
-    { clave: "salir", titulo: "Salir", detalle: "" },
+    {
+      clave: "actualizar",
+      titulo: L("Update FlowBrain", "Actualizar FlowBrain"),
+      detalle: c.version === "dev" ? L("pulls the latest version from the FlowBrain repo and installs it", "trae la última versión del repo de FlowBrain y la instala") : L(`version ${c.version}: installs the latest published one`, `versión ${c.version}: instala la última publicada`),
+    },
+    { clave: "idioma", titulo: L("Language: English · switch to Español", "Idioma: castellano · cambiar a English"), detalle: L("saved for the next times", "queda guardado para las próximas veces") },
+    { clave: "salir", titulo: L("Quit", "Salir"), detalle: "" },
   );
   return out;
 }
@@ -135,11 +157,11 @@ export function opciones(c: ContextoMenu): Opcion[] {
  * anterior (el análisis mide lo que los parsers ya leyeron). El MCP no bloquea nada, va al final.
  */
 export function siguiente(c: ContextoMenu): { clave: Clave; motivo: string } | null {
-  const nombres = (xs: string[]) => (xs.length === c.cerebros.length && xs.length > 1 ? "todos los cerebros" : xs.join(", "));
-  if (!c.registro || !c.cerebros.length) return { clave: "configurar", motivo: "el proyecto no está configurado" };
-  if (c.faltaIndice.length) return { clave: "reindexar", motivo: `falta indexar ${nombres(c.faltaIndice)}` };
-  if (c.faltaAnalisis.length) return { clave: "analizar", motivo: `falta el análisis completo en ${nombres(c.faltaAnalisis)}` };
-  if (!c.mcp) return { clave: "mcp", motivo: "ningún agente consulta FlowBrain todavía" };
+  const nombres = (xs: string[]) => (xs.length === c.cerebros.length && xs.length > 1 ? L("all the brains", "todos los cerebros") : xs.join(", "));
+  if (!c.registro || !c.cerebros.length) return { clave: "configurar", motivo: L("the project is not set up", "el proyecto no está configurado") };
+  if (c.faltaIndice.length) return { clave: "reindexar", motivo: L(`${nombres(c.faltaIndice)} not indexed yet`, `falta indexar ${nombres(c.faltaIndice)}`) };
+  if (c.faltaAnalisis.length) return { clave: "analizar", motivo: L(`full analysis missing in ${nombres(c.faltaAnalisis)}`, `falta el análisis completo en ${nombres(c.faltaAnalisis)}`) };
+  if (!c.mcp) return { clave: "mcp", motivo: L("no agent queries FlowBrain yet", "ningún agente consulta FlowBrain todavía") };
   return null;
 }
 
@@ -147,16 +169,16 @@ const NEGRITA = "\x1b[1m", TENUE = "\x1b[2m", INVERSO = "\x1b[7m", FIN = "\x1b[0
 
 export function dibujar(c: ContextoMenu, ops: Opcion[], elegida: number): string {
   const estado = c.registro
-    ? `${c.cerebros.length} ${c.cerebros.length === 1 ? "cerebro" : "cerebros"}${c.cerebros.length ? `: ${c.cerebros.join(", ")}` : ""}`
-    : "sin configurar";
+    ? `${c.cerebros.length} ${c.cerebros.length === 1 ? L("brain", "cerebro") : L("brains", "cerebros")}${c.cerebros.length ? `: ${c.cerebros.join(", ")}` : ""}`
+    : L("not set up", "sin configurar");
   const lineas = [
     `${NEGRITA}FlowBrain${FIN} ${TENUE}${c.version}${FIN}`,
-    `${TENUE}Proyecto:${FIN} ${c.proyecto}`,
-    `${TENUE}Estado:${FIN}   ${estado} · MCP ${c.mcp ? "conectado" : "sin conectar"}`,
+    L(`${TENUE}Project:${FIN} ${c.proyecto}`, `${TENUE}Proyecto:${FIN} ${c.proyecto}`),
+    L(`${TENUE}Status:${FIN}  ${estado} · MCP ${c.mcp ? "connected" : "not connected"}`, `${TENUE}Estado:${FIN}   ${estado} · MCP ${c.mcp ? "conectado" : "sin conectar"}`),
     ...(() => {
       const s = siguiente(c);
       const o = s && ops.find((x) => x.clave === s.clave);
-      return [s && o ? `${NEGRITA}Siguiente paso:${FIN} ${o.titulo} (${s.motivo})` : `${TENUE}Todo al día.${FIN}`];
+      return [s && o ? `${NEGRITA}${L("Next step:", "Siguiente paso:")}${FIN} ${o.titulo} (${s.motivo})` : `${TENUE}${L("All up to date.", "Todo al día.")}${FIN}`];
     })(),
     "",
     ...ops.map((o, i) => {
@@ -165,7 +187,7 @@ export function dibujar(c: ContextoMenu, ops: Opcion[], elegida: number): string
       return i === elegida ? `${INVERSO} ${fila} ${FIN}  ${TENUE}${o.detalle}${FIN}` : `  ${fila}  ${TENUE}${o.detalle}${FIN}`;
     }),
     "",
-    `${TENUE}↑/↓ y Enter, o el número. q para salir.${FIN}`,
+    `${TENUE}${L("↑/↓ and Enter, or the number. q to quit.", "↑/↓ y Enter, o el número. q para salir.")}${FIN}`,
   ];
   return lineas.join("\n") + "\n";
 }
@@ -202,25 +224,25 @@ export async function accion(o: Opcion, c: ContextoMenu, e: Entorno): Promise<bo
         await asistente(c, e);
         break;
       }
-      e.escribir("Actualizando la máquina y reindexando…\n");
+      e.escribir(L("Updating the machine and reindexing…\n", "Actualizando la máquina y reindexando…\n"));
       mostrar(await e.flowbrain(["install"], c.proyecto));
       break;
     case "analizar": {
       if (!c.registro) {
         // El análisis necesita los cerebros y el índice: el asistente los arma y ofrece el análisis al final.
-        e.escribir("Antes de analizar hay que configurar el proyecto.\n");
+        e.escribir(L("The project has to be set up before analyzing it.\n", "Antes de analizar hay que configurar el proyecto.\n"));
         await asistente(c, e);
         break;
       }
       if (c.faltaIndice.length) {
-        e.escribir("Primero indexo lo que falta…\n");
+        e.escribir(L("First indexing what is missing…\n", "Primero indexo lo que falta…\n"));
         mostrar(await e.flowbrain(["brains", "apply"], c.proyecto));
       }
       await analizarCon(await elegirAgente(c, e, "analizar"), PROMPT_ANALISIS, c, e);
       break;
     }
     case "reindexar":
-      e.escribir("Reindexando…\n");
+      e.escribir(L("Reindexing…\n", "Reindexando…\n"));
       mostrar(await e.flowbrain(["brains", "apply"], c.proyecto));
       break;
     case "visor":
@@ -235,8 +257,28 @@ export async function accion(o: Opcion, c: ContextoMenu, e: Entorno): Promise<bo
     case "actualizar":
       await actualizar(c, e);
       break;
+    case "idioma":
+      await cambiarIdioma(e);
+      break;
   }
   return true;
+}
+
+/** Cambia el idioma del menú (inglés ↔ castellano), lo guarda y dice dónde. El menú se redibuja en el nuevo idioma. */
+async function cambiarIdioma(e: Entorno): Promise<void> {
+  const nuevo: Idioma = idioma() === "es" ? "en" : "es";
+  fijarIdioma(nuevo);
+  let donde: string | null = null;
+  try {
+    donde = await (e.guardarIdioma ?? ((i: Idioma) => guardarIdioma(process.env, i)))(nuevo);
+  } catch (x) {
+    e.escribir(L(`Could not save the preference: ${(x as Error).message}\n`, `No pude guardar la preferencia: ${(x as Error).message}\n`));
+  }
+  e.escribir(
+    donde
+      ? L(`Language: English. Saved in ${donde}.\n`, `Idioma: castellano. Quedó guardado en ${donde}.\n`)
+      : L("Language: English (only for this session: there is nowhere to save it).\n", "Idioma: castellano (solo por esta vez: no hay dónde guardarlo).\n"),
+  );
 }
 
 const abridor = () => (process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open");
@@ -251,35 +293,49 @@ const esperarSigint = () => new Promise<void>((ok) => process.once("SIGINT", () 
 export async function abrirVisor(c: ContextoMenu, e: Entorno): Promise<void> {
   const r: ResultadoVisor = c.registro
     ? await (e.visorLocal ?? ((reg) => prepararVisor(reg, depsReales(reg))))(c.registro).catch((x: Error) => ({ modo: "estatico" as const, motivo: x.message }))
-    : { modo: "estatico", motivo: "el proyecto no tiene .flowbrain/" };
+    : { modo: "estatico", motivo: L("the project has no .flowbrain/", "el proyecto no tiene .flowbrain/") };
   if (r.modo === "reusa") {
     await e.correr(abridor(), [r.url], c.proyecto);
-    e.escribir(`Ya había un visor de FlowBrain corriendo para este proyecto: abrí ${r.url}\nNo levanté otro. Se corta con Ctrl+C en la terminal donde se abrió.\n`);
+    e.escribir(
+      L(
+        `A FlowBrain viewer was already running for this project: opened ${r.url}\nI did not start another one. Stop it with Ctrl+C in the terminal where it was opened.\n`,
+        `Ya había un visor de FlowBrain corriendo para este proyecto: abrí ${r.url}\nNo levanté otro. Se corta con Ctrl+C en la terminal donde se abrió.\n`,
+      ),
+    );
     return;
   }
   if (r.modo === "nuevo") {
     await e.correr(abridor(), [r.url], c.proyecto);
     e.escribir(
       [
-        `Visor con edición en ${r.url}`,
-        `Solo esta máquina puede abrirlo. Lo que se corrige ahí se escribe en ${c.registro}.`,
-        "Queda corriendo mientras lo uses: Ctrl+C lo corta y volvés al menú.",
+        L(`Editable viewer at ${r.url}`, `Visor con edición en ${r.url}`),
+        L(`Only this machine can open it. What you fix there is written to ${c.registro}.`, `Solo esta máquina puede abrirlo. Lo que se corrige ahí se escribe en ${c.registro}.`),
+        L("It keeps running while you use it: Ctrl+C stops it and you go back to the menu.", "Queda corriendo mientras lo uses: Ctrl+C lo corta y volvés al menú."),
         "",
       ].join("\n"),
     );
     await (e.esperarCorte ?? esperarSigint)();
     await cerrarServidor(r.servidor);
-    e.escribir("\nVisor cerrado.\n");
+    e.escribir(L("\nViewer closed.\n", "\nVisor cerrado.\n"));
     return;
   }
   if (!c.visor) {
-    e.escribir(`No pude abrir el visor en localhost: ${r.motivo}.\nTampoco hay archivo estático (flowbrain.html): elegí Reindexar para generarlo.\n`);
+    e.escribir(
+      L(
+        `Could not open the viewer on localhost: ${r.motivo}.\nThere is no static file either (flowbrain.html): pick Re-index to generate it.\n`,
+        `No pude abrir el visor en localhost: ${r.motivo}.\nTampoco hay archivo estático (flowbrain.html): elegí Reindexar para generarlo.\n`,
+      ),
+    );
     return;
   }
   await e.correr(abridor(), [c.visor], c.proyecto);
   e.escribir(
-    `No pude abrir el visor en localhost: ${r.motivo}.\nAbrí el archivo estático, que muestra lo mismo pero no guarda correcciones: ${c.visor}\n` +
-      "Para corregir desde la página: flowbrain viewer --serve --port <otro>\n",
+    L(
+      `Could not open the viewer on localhost: ${r.motivo}.\nOpened the static file, which shows the same but does not save fixes: ${c.visor}\n` +
+        "To fix things from the page: flowbrain viewer --serve --port <another>\n",
+      `No pude abrir el visor en localhost: ${r.motivo}.\nAbrí el archivo estático, que muestra lo mismo pero no guarda correcciones: ${c.visor}\n` +
+        "Para corregir desde la página: flowbrain viewer --serve --port <otro>\n",
+    ),
   );
 }
 
@@ -288,28 +344,28 @@ const repoFlowbrain = () => resolve(dirname(fileURLToPath(import.meta.url)), "..
 
 async function actualizar(c: ContextoMenu, e: Entorno): Promise<void> {
   if (c.version !== "dev") {
-    if (!si(await e.preguntar(`Voy a instalar la última versión publicada (npm install -g ${PAQUETE}@latest). ¿Sigo? (s/N) `))) return;
+    if (!si(await e.preguntar(L(`I will install the latest published version (npm install -g ${PAQUETE}@latest). Continue? (y/N) `, `Voy a instalar la última versión publicada (npm install -g ${PAQUETE}@latest). ¿Sigo? (s/N) `)))) return;
     if ((await e.correr("npm", ["install", "-g", `${PAQUETE}@latest`], c.proyecto)) !== 0) {
-      e.escribir("npm no pudo instalarla: revisá el mensaje de arriba.\n");
+      e.escribir(L("npm could not install it: check the message above.\n", "npm no pudo instalarla: revisá el mensaje de arriba.\n"));
       return;
     }
     await e.correr("flowbrain", ["setup"], c.proyecto);
-    e.escribir("FlowBrain actualizado.\n");
+    e.escribir(L("FlowBrain updated.\n", "FlowBrain actualizado.\n"));
     return;
   }
   const repo = repoFlowbrain();
-  if (!si(await e.preguntar(`Voy a traer la última versión del repo de FlowBrain (${repo}: git pull y pnpm install) y dejar la máquina al día. ¿Sigo? (s/N) `))) return;
+  if (!si(await e.preguntar(L(`I will pull the latest version of the FlowBrain repo (${repo}: git pull and pnpm install) and bring the machine up to date. Continue? (y/N) `, `Voy a traer la última versión del repo de FlowBrain (${repo}: git pull y pnpm install) y dejar la máquina al día. ¿Sigo? (s/N) `)))) return;
   if ((await e.correr("git", ["-C", repo, "pull", "--ff-only"], repo)) !== 0) {
-    e.escribir("git pull no pudo avanzar (cambios locales o ramas que divergen): resolvelo en el repo y volvé a intentar.\n");
+    e.escribir(L("git pull could not move forward (local changes or diverging branches): fix it in the repo and try again.\n", "git pull no pudo avanzar (cambios locales o ramas que divergen): resolvelo en el repo y volvé a intentar.\n"));
     return;
   }
   if ((await e.correr("pnpm", ["install", "--frozen-lockfile"], repo)) !== 0) {
-    e.escribir("pnpm install falló: revisá el mensaje de arriba.\n");
+    e.escribir(L("pnpm install failed: check the message above.\n", "pnpm install falló: revisá el mensaje de arriba.\n"));
     return;
   }
   // El código nuevo deja la máquina al día (comandos de Claude Code y hooks); este proceso todavía tiene el viejo.
   await e.correr("sh", ["-c", `${comandoBrain()} setup`], c.proyecto);
-  e.escribir("FlowBrain actualizado. Si cambió algo del índice, elegí Reindexar.\n");
+  e.escribir(L("FlowBrain updated. If something in the index changed, pick Re-index.\n", "FlowBrain actualizado. Si cambió algo del índice, elegí Reindexar.\n"));
 }
 
 export async function menu(cwd: string, e: Entorno, opcionesMenu: { forzarMenu?: boolean } = {}): Promise<void> {
@@ -319,14 +375,14 @@ export async function menu(cwd: string, e: Entorno, opcionesMenu: { forzarMenu?:
   if (!inicial.registro && !opcionesMenu.forzarMenu) {
     await asistente(inicial, e);
     // Que el resumen del asistente no se borre: el menú aparece recién cuando la persona lo pide.
-    await e.preguntar("\nEnter para ir al menú ");
+    await e.preguntar(L("\nEnter to go to the menu ", "\nEnter para ir al menú "));
   }
   for (;;) {
     const c = await leer(cwd);
     const o = await elegir(c, opciones(c), e);
     e.limpiar();
     if (!(await accion(o, c, e))) return;
-    await e.preguntar("\nEnter para volver al menú ");
+    await e.preguntar(L("\nEnter to go back to the menu ", "\nEnter para volver al menú "));
   }
 }
 

@@ -23,8 +23,8 @@ describe("flowbrain gen", () => {
   it("apunta al nodo del repo, a sus servicios y a sus dependencias", () => {
     const r = generarReglas("claude", ctx, repoDe(ctx, "tienda"));
     expect(r.ruta).toBe("CLAUDE.md");
-    expect(r.contenido.startsWith(`${MARCA_REGLAS_INICIO}\n## FlowBrain\n\nEste repo es \`repo-tienda\``)).toBe(true);
-    expect(r.contenido).toContain("- `svc-payments` — Cobra pedidos a través de la pasarela y registra cada pago. Depende de: `ext-pasarela`, `tabla-pagos`. Lo usan: `ext-pasarela`, `svc-bff`.");
+    expect(r.contenido.startsWith(`${MARCA_REGLAS_INICIO}\n## FlowBrain\n\nThis repo is \`repo-tienda\``)).toBe(true);
+    expect(r.contenido).toContain("- `svc-payments` — Cobra pedidos a través de la pasarela y registra cada pago. Depends on: `ext-pasarela`, `tabla-pagos`. Used by: `ext-pasarela`, `svc-bff`.");
     expect(r.contenido.endsWith(`${MARCA_REGLAS_FIN}\n`)).toBe(true);
   });
 
@@ -42,7 +42,7 @@ describe("flowbrain gen", () => {
   it("sin nodo de repo genera el bloque genérico", () => {
     const r = generarReglas("agents", ctx, repoDe(ctx, "otro-repo"));
     expect(r.repo).toBeNull();
-    expect(r.contenido).not.toContain("Este repo es");
+    expect(r.contenido).not.toContain("This repo is");
     expect(r.contenido).toContain("`buscar_nodo`");
   });
 
