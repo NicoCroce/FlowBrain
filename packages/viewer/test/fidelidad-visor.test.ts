@@ -191,7 +191,7 @@ describe("pantalla Fidelidad", () => {
   it("fidelidad incierta: un apartado sin puntaje, con el porqué de cada archivo, fuera del promedio", () => {
     const v = montar(datos);
     // El promedio es solo de los medidos: (50 + 60 + 100 + 100) / 4.
-    expect(v.pagina()).toContain("<b style=\"color:var(--feat)\">77.5</b><span>puntaje promedio de lo medido</span>");
+    expect(v.pagina()).toContain("<b style=\"color:var(--atencion)\">77.5</b><span>puntaje promedio de lo medido</span>");
     expect(v.pagina()).toContain("<b>2</b><span>de fidelidad incierta</span>");
     v.grupo("incierta");
     // Primero los que tienen código; cada uno dice por qué no se lo puede medir.

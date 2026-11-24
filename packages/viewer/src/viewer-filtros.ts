@@ -32,7 +32,7 @@ export const FILTROS_JS = String.raw`
 
   /**
    * cfg = {
-   *   pre, clave (sessionStorage; sin clave no se guarda), items: () => [...], unidad: ["caso", "casos"], todos: "todos los casos",
+   *   pre, clave (sessionStorage; sin clave no se guarda), items: () => [...], unidad: ["caso", "casos"] (con "f" de tercero si es femenina: «Ninguna pieza»), todos: "todos los casos",
    *   grupos: [{ id, etiqueta, es(x), n?() , palabra?, sinPaneles?, ocultarVacio? }]  (el primero, id "", es "Todos"),
    *   buscar: { ph, texto(x) },
    *   campos: [{ id, etiqueta, de(x) → valor o lista, valores?() → [[v, etiqueta, n]], etiquetaDe?(v), todos?, palabra?(v),
@@ -153,7 +153,7 @@ export const FILTROS_JS = String.raw`
       var sinValor = xs.filter(function (x) { return !valoresDe(c, x).length; }).length;
       return vis.map(function (v) {
         var set = {}; set[c.id] = v;
-        return barra(pre, esc(etiquetaDe(c, v)), (100 * n[v]) / tope, cuenta(de[v]) + " · " + pct1(n[v], xs.length) + " %", set, sel === v, c.color ? c.color(v) : "");
+        return barra(pre, esc(etiquetaDe(c, v)), (100 * n[v]) / tope, cuenta(de[v]) + " · " + pct1(n[v], xs.length) + " %", set, sel === v, c.color ? c.color(v) : c.id === "cerebro" && window.brainVisor.colorCerebro ? window.brainVisor.colorCerebro(v) : "");
       }).join("") +
         (orden.length > vis.length ? '<p class="fd-sin">Y ' + plural(orden.length - vis.length, "valor más", "valores más") + ": elegilos en el filtro «" + esc(c.etiqueta) + "».</p>" : "") +
         (sinValor && p.sinValor ? '<p class="fd-sin">' + plural(sinValor, u[0], u[1]) + ": " + esc(p.sinValor) + "</p>" : "");
@@ -184,7 +184,9 @@ export const FILTROS_JS = String.raw`
     // Lista vacía: por qué (qué filtros) y cuántos hay en total, con el camino para salir. total: los ítems o cuántos son.
     function vacio(total, unidadTotal) {
       var a = activos(), ut = unidadTotal || u;
-      return '<p class="aviso">Ningún ' + esc(u[0]) + " coincide" + (a.length ? " con " + esc(a.join(", ")) : "") + ". Hay " + (typeof total === "number" ? plural(total, ut[0], ut[1]) : cuenta(total)) + " en total." +
+      // «todas las pantallas» → «Ninguna pantalla»; «todos los archivos» → «Ningún archivo».
+      var ningun = u[2] === "f" || /^todas\b/.test(cfg.todos || "") ? "Ninguna " : "Ningún ";
+      return '<p class="aviso">' + ningun + esc(u[0]) + " coincide" + (a.length ? " con " + esc(a.join(", ")) : "") + ". Hay " + (typeof total === "number" ? plural(total, ut[0], ut[1]) : cuenta(total)) + " en total." +
         (a.length ? ' <button type="button" class="boton" data-fl="' + pre + '" data-fl-limpiar="1">Quitar filtros</button>' : "") + "</p>";
     }
 

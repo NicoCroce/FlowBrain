@@ -96,7 +96,7 @@ export const MAPA_JS =
       { id: "usadas", etiqueta: "Alguien depende de ellas", palabra: "de las que algo depende", es: function (x) { return x.dep > 0; } },
       { id: "sueltas", etiqueta: "Nadie depende de ellas", palabra: "de las que nada depende", es: function (x) { return !x.dep; } }
     ],
-    buscar: { ph: "Buscar cualquier pieza: funcionalidad, tabla, endpoint, archivo, clase, método, hook… (Enter abre la primera)", texto: function (x) { return x.texto; } },
+    buscar: { ph: "Buscar una pieza: funcionalidad, tabla, endpoint, archivo, clase, método…", texto: function (x) { return x.texto; } },
     campos: [
       campoTipo("Todos"), campoCerebro,
       { id: "dependen", etiqueta: "Cuántas dependen directo", todos: "Cualquier cantidad", propio: "la cantidad elegida", de: function (x) { return x.tramo; },
@@ -110,7 +110,7 @@ export const MAPA_JS =
     ],
     cifras: function () {
       var n = function (t) { return PIEZAS.filter(function (x) { return x.t === t; }).length; };
-      return [[PIEZAS.length, "piezas"], [n("feat"), "funcionalidades"], [n("endpoint"), "endpoints"], [n("tabla"), "tablas"], [SIMS.length, "símbolos de código"], [PIEZAS.filter(function (x) { return x.dep >= 10; }).length, "con 10 o más dependientes", "var(--feat)"]];
+      return [[PIEZAS.length, "piezas"], [n("feat"), "funcionalidades"], [n("endpoint"), "endpoints"], [n("tabla"), "tablas"], [SIMS.length, "símbolos de código"], [PIEZAS.filter(function (x) { return x.dep >= 10; }).length, "con 10 o más dependientes", "var(--atencion)"]];
     },
     alCambiar: function (todo) { verInicio = VER_INICIO; if (todo) inicioImpacto(); else { var l = document.getElementById("im-lista"); if (l) l.innerHTML = listaInicio(); } }
   });
@@ -120,7 +120,7 @@ export const MAPA_JS =
     var vis = xs.slice(0, verInicio);
     return flInicio.resultado(xs, " · las que más dependientes tienen, primero") +
       '<ul class="lista">' + vis.map(function (x) { return "<li>" + enlaceImpacto(x.id) + " <small>· " + esc(TIPO[x.t] || x.t) + (SIM[x.id] ? " · <code>" + esc(donde(x.id)) + "</code>" : "") + " · " + (x.dep ? plural(x.dep, "pieza depende", "piezas dependen") + " directo" : "nada depende de ella") + "</small></li>"; }).join("") + "</ul>" +
-      (xs.length > vis.length ? '<p class="fd-mas"><button type="button" class="btn" id="im-mas">Mostrar ' + Math.min(VER_INICIO, xs.length - vis.length) + " más</button> <small>" + vis.length + " de " + xs.length.toLocaleString("es") + "</small></p>" : "");
+      (xs.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" id="im-mas">Mostrar ' + Math.min(VER_INICIO, xs.length - vis.length) + " más</button> <small>" + vis.length + " de " + xs.length.toLocaleString("es") + "</small></p>" : "");
   }
   function inicioImpacto() {
     FLI = flInicio;
@@ -219,14 +219,14 @@ export const MAPA_JS =
   var DET = { id: "", activa: "afecta", items: [] };
   var nivelDe = function (v) { return v === "1" ? "Directo" : "Nivel " + v; };
   var flDet = window.brainFiltros.crear({
-    pre: "imd", unidad: ["pieza", "piezas"], todos: "todo lo alcanzado",
+    pre: "imd", unidad: ["pieza", "piezas", "f"], todos: "todo lo alcanzado",
     items: function () { return DET.items; },
     grupos: [
       { id: "", etiqueta: "Todo" },
       { id: "directo", etiqueta: "Directo", palabra: "directo", es: function (x) { return x.nivel === 1; } },
       { id: "indirecto", etiqueta: "Indirecto", palabra: "indirecto", es: function (x) { return x.nivel > 1; } }
     ],
-    buscar: { ph: "Buscar en lo alcanzado: nombre, id o por qué", texto: function (x) { return nombre(x.id) + " " + x.id + " " + x.porque; } },
+    buscar: { ph: "Buscar en lo alcanzado: nombre, id o por qué…", texto: function (x) { return nombre(x.id) + " " + x.id + " " + x.porque; } },
     campos: [
       campoTipo("Todos"), campoCerebro,
       { id: "nivel", etiqueta: "Nivel", propio: "el nivel elegido", de: function (x) { return String(x.nivel); },
@@ -304,7 +304,7 @@ export const MAPA_JS =
       ? '<p class="explica">Lo que ' + esc(n.n) + " necesita: si cambia alguna de estas piezas, " + esc(n.n) + " puede verse afectada.</p>" + flDet.html() + '<div id="imd-lista">' + listaDetalle() + "</div>"
       : '<p class="aviso">' + esc(n.n) + (codigo ? " no llama ni usa otro código indexado." : " no depende de otras piezas en el grafo.") + "</p>";
     var tab = function (k, texto, cuenta) { return '<a class="pestana' + (activa === k ? " on" : "") + '" href="#/impacto/' + encodeURIComponent(id) + "/" + k + '">' + texto + " <b>" + cuenta + "</b></a>"; };
-    raizImpacto.innerHTML = '<a class="volver" href="#/impacto">← Otra pieza</a>' +
+    raizImpacto.innerHTML = '<a class="volver" href="#/impacto">← Impacto</a>' +
       "<h1>" + esc(n.n) + "</h1>" +
       (SIM[id] ? '<p class="subtitulo">' + esc(TIPO[n.t] || n.t) + " · <code>" + esc(donde(id)) + '</code> · <a href="#/n/' + encodeURIComponent(SIM[id].a) + '">su archivo</a> · <a href="#/impacto/' + encodeURIComponent(SIM[id].a) + '">impacto del archivo</a></p>' :
       '<p class="subtitulo">' + esc(TIPO[n.t] || n.t) + " · <code>" + esc(id) + "</code>" + (porFicha[id] ? ' · <a href="#/f/' + encodeURIComponent(id) + '">ficha de producto</a>' : "") + ' · <a href="#/n/' + encodeURIComponent(id) + '">ficha técnica</a> · <a href="#/grafo/' + encodeURIComponent(id) + '">mapa 3D</a></p>') +

@@ -917,6 +917,8 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + String.raw`
   ui();
 
   function mostrarMapa() { if (!corriendo) { corriendo = true; loop(); } }
-  window.brainVisor = { D: D, porId: porId, esc: esc, color: color, enfocar: function (id) { mostrarMapa(); irA(id); }, mostrarMapa: mostrarMapa };
+  // El color de un cerebro, por su número o su nombre: el mismo del mapa 3D en todas las pantallas.
+  var colorCerebro = function (v) { var i = typeof v === "number" || /^\d+$/.test(String(v)) ? Number(v) : CEREBROS.map(function (c) { return c.nombre; }).indexOf(String(v)); return i >= 0 && MULTI ? colorC(i) : ""; };
+  window.brainVisor = { D: D, porId: porId, esc: esc, color: color, colorCerebro: colorCerebro, enfocar: function (id) { mostrarMapa(); irA(id); }, mostrarMapa: mostrarMapa };
 })();
 `;

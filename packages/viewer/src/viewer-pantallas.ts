@@ -218,7 +218,7 @@ export const PANTALLAS_JS = String.raw`
       { id: "sinback", etiqueta: "No llaman al back", palabra: "que no llaman al back", es: function (x) { return !x.eps; } },
       { id: "sinfeat", etiqueta: "Sin funcionalidad", palabra: "sin funcionalidad", es: function (x) { return !x.feats.length; }, ocultarVacio: true }
     ],
-    buscar: { ph: "Filtrar por ruta, componente o funcionalidad", texto: function (x) { return x.texto; } },
+    buscar: { ph: "Buscar por ruta, componente o funcionalidad…", texto: function (x) { return x.texto; } },
     campos: [
       { id: "cerebro", etiqueta: "Cerebro", propio: "el cerebro elegido", solo: function () { return CEREBROS.length > 1; }, de: function (x) { return x.c; },
         etiquetaDe: nombreCerebro, palabra: function (v) { return "cerebro " + nombreCerebro(v); } },
@@ -228,7 +228,7 @@ export const PANTALLAS_JS = String.raw`
         valores: function () { var xs = itemsNv(); return TRAMOS.map(function (t) { return [t[0], t[1], xs.filter(function (x) { return x.tramo === t[0]; }).length]; }); },
         etiquetaDe: function (v) { for (var i = 0; i < TRAMOS.length; i++) if (TRAMOS[i][0] === v) return TRAMOS[i][1]; return v; },
         palabra: function (v) { for (var i = 0; i < TRAMOS.length; i++) if (TRAMOS[i][0] === v) return TRAMOS[i][1].toLowerCase(); return v; } },
-      { id: "guarda", etiqueta: "Guarda", todos: "Con o sin guarda", propio: "la guarda", de: function (x) { return x.guarda ? "si" : "no"; },
+      { id: "guarda", etiqueta: "Guarda (redirige si no se cumple)", todos: "Con o sin guarda", propio: "la guarda", de: function (x) { return x.guarda ? "si" : "no"; },
         etiquetaDe: function (v) { return v === "si" ? "Con guarda que redirige" : "Sin guarda"; }, palabra: function (v) { return v === "si" ? "con guarda" : "sin guarda"; } },
       { id: "entrada", etiqueta: "Cómo se llega", todos: "De cualquier lado", propio: "cómo se llega", de: function (x) { return x.entra ? "pantalla" : "afuera"; },
         etiquetaDe: function (v) { return v === "pantalla" ? "Desde otra pantalla" : "Solo desde afuera (mail, callback, URL)"; }, palabra: function (v) { return v === "pantalla" ? "se llega desde otra pantalla" : "se entra solo desde afuera"; } }
@@ -241,7 +241,7 @@ export const PANTALLAS_JS = String.raw`
     cifras: function () {
       var xs = itemsNv(), back = xs.filter(function (x) { return x.eps; }).length, sin = xs.filter(function (x) { return !x.feats.length; }).length;
       var aristas = D.edges.filter(function (e) { return e.v === "navega_a"; }).length;
-      return [[xs.length, "pantallas"], [aristas, "enlaces entre ellas"], [back, "llaman al back", "", "back"], [xs.length - back, "no llaman al back", "", "sinback"], [sin, "sin funcionalidad", sin ? "var(--feat)" : "", "sinfeat"]];
+      return [[xs.length, "pantallas"], [aristas, "enlaces entre ellas"], [back, "llaman al back", "", "back"], [xs.length - back, "no llaman al back", "", "sinback"], [sin, "sin funcionalidad", sin ? "var(--atencion)" : "", "sinfeat"]];
     },
     alCambiar: function (todo) { if (todo) pintarListado(); else { var l = document.getElementById("lista-pant"); if (l) l.innerHTML = listado(); } }
   });
@@ -265,11 +265,11 @@ export const PANTALLAS_JS = String.raw`
   }
   function pintarListado() {
     if (!pantallas.length) {
-      raiz.innerHTML = "<h1>Navegación</h1>" + '<p class="aviso">No se detectaron pantallas. Se leen de los routers del front (react-router, vue-router, Angular): <code>flowbrain index</code> y <code>flowbrain compile</code>.</p>';
+      raiz.innerHTML = "<h1>Pantallas</h1>" + '<p class="aviso">No se detectaron pantallas. Se leen de los routers del front (react-router, vue-router, Angular): <code>flowbrain index</code> y <code>flowbrain compile</code>.</p>';
       return;
     }
-    raiz.innerHTML = "<h1>Navegación</h1>" +
-      '<p class="subtitulo">Las pantallas del front, de dónde se llega a cada una, qué la envuelve y qué llama en el back. Tocá una barra para filtrar.</p>' +
+    raiz.innerHTML = "<h1>Pantallas</h1>" +
+      '<p class="subtitulo">Cada ruta del front: de dónde se llega, qué la envuelve (layouts y guardas que redirigen) y qué endpoints del back llama. Tocá una cifra o una barra para filtrar.</p>' +
       fl.html() + '<div id="lista-pant">' + listado() + "</div>";
   }
   // El filtro escucha en la raíz (la comparte con la ficha de producto): solo atiende lo suyo.
@@ -278,10 +278,10 @@ export const PANTALLAS_JS = String.raw`
   if (raiz) raiz.addEventListener("input", function (ev) { fl.manejar(ev, "input"); });
   function detalle(id) {
     var x = datos(id);
-    if (!x) return '<p>No existe la pantalla <code>' + esc(id) + '</code>. <a href="#/pantallas">Volver a Navegación</a></p>';
+    if (!x) return '<p>No existe la pantalla <code>' + esc(id) + '</code>. <a href="#/pantallas">Volver a Pantallas</a></p>';
     var otros = x.p.componentes.filter(function (c) { return c !== x.componente; });
     return '<div class="ficha"><div class="texto">' +
-      '<a class="volver" href="#/pantallas">← Navegación</a>' +
+      '<a class="volver" href="#/pantallas">← Pantallas</a>' +
       '<h1 class="ruta">' + esc(x.p.ruta) + "</h1>" +
       '<p class="subtitulo">' + (x.componente ? "Dibuja <strong>" + esc(simbolo(x.componente)) + "</strong> · <code>" + esc(archivo(x.componente)) + "</code>" : "Sin componente detectado") + "</p>" +
       "<section><h2>De punta a punta</h2>" + puntaAPunta(x) + "</section>" +

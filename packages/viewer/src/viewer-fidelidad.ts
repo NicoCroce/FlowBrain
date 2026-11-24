@@ -41,7 +41,7 @@ export const FIDELIDAD_JS = String.raw`
   var PL = { abierto: false, signals: {}, limite: 40, copiado: false };
 
   var plural = function (n, uno, varios) { return n.toLocaleString("es") + " " + (n === 1 ? uno : varios); };
-  var tono = function (p) { return p < 40 ? "var(--dudoso)" : p < 80 ? "var(--feat)" : "var(--tabla)"; };
+  var tono = function (p) { return p < 40 ? "var(--mal)" : p < 80 ? "var(--atencion)" : "var(--bien)"; };
   var promedio = function (xs) { if (!xs.length) return null; var s = 0; xs.forEach(function (x) { s += x.p; }); return Math.round((10 * s) / xs.length) / 10; };
   var cerebroDe = function (x) { return x.c !== undefined && CEREBROS[x.c] ? CEREBROS[x.c].nombre : ""; };
   // "cerebro/repo-x:src/a.ts" → { repo: "repo-x", ruta: "src/a.ts" }
@@ -93,7 +93,7 @@ export const FIDELIDAD_JS = String.raw`
       var pct = Math.round((1000 * ok) / total) / 10;
       return api.barra(SIGNAL[s], pct, pct + "% · " + (conFalta ? plural(conFalta, "archivo con falta", "archivos con falta") : "sin faltas"), { signal: s }, S.signal === s, tono(pct), SIGNAL[s] + ": " + MIDE[s]);
     }).join("");
-    if (!out) return '<p class="fd-sin">Estos archivos no tienen relaciones que medir por signal.</p>';
+    if (!out) return '<p class="fd-sin">Estos archivos no tienen relaciones que medir por eslabón.</p>';
     var noAplican = ORDEN_SIGNAL.filter(function (s) { return !xs.some(function (x) { return x.s[s] && x.s[s][1]; }); });
     return out + (noAplican.length ? '<p class="fd-sin">No aplican a estos archivos: ' + noAplican.map(function (s) { return SIGNAL[s]; }).join(", ") + ".</p>" : "");
   }
@@ -108,7 +108,7 @@ export const FIDELIDAD_JS = String.raw`
       { id: "completos", etiqueta: "Completos", es: function (x) { return !x.t.length; } },
       { id: "incierta", etiqueta: "Fidelidad incierta", es: function () { return false; }, n: function () { return INC.length; }, ocultarVacio: true, sinPaneles: true, notaPaneles: "los de fidelidad incierta no tienen puntaje" }
     ],
-    buscar: { ph: "Buscar por ruta o por lo que falta", texto: function (x) { return x.a + " " + x.t.map(function (t) { return t[2]; }).join(" "); } },
+    buscar: { ph: "Buscar por ruta o por lo que falta…", texto: function (x) { return x.a + " " + x.t.map(function (t) { return t[2]; }).join(" "); } },
     campos: [
       { id: "min", etiqueta: "Puntaje desde", tipo: "numero", min: 0, max: 100, inicial: 0, dim: "puntaje", propio: "el rango de puntaje", prueba: function (x, v) { return x.p >= v; }, palabra: function () { return "puntaje de " + S.min + " a " + S.max; } },
       { id: "max", etiqueta: "hasta", tipo: "numero", min: 0, max: 100, inicial: 100, dim: "puntaje", propio: "el rango de puntaje", prueba: function (x, v) { return x.p <= v; }, palabra: function () { return "puntaje de " + S.min + " a " + S.max; } },
@@ -131,14 +131,14 @@ export const FIDELIDAD_JS = String.raw`
           if (sinFeat) ops.unshift([NINGUNA, "Sin funcionalidad", sinFeat]);
           return ops;
         } },
-      { id: "signal", etiqueta: "Signal que falta", todos: "Cualquiera", propio: "la signal elegida", de: function () { return ""; },
+      { id: "signal", etiqueta: "Eslabón que falta", todos: "Cualquiera", propio: "el eslabón elegido", de: function () { return ""; },
         prueba: function (x, v) { var s = x.s[v]; return !!s && s[0] < s[1]; }, palabra: function (v) { return "le falta: " + SIGNAL[v]; },
         valores: function () { return ORDEN_SIGNAL.map(function (s) { return [s, SIGNAL[s]]; }); } }
     ],
     paneles: [
       { titulo: "Reparto por puntaje", salvo: "puntaje", html: panelReparto },
       { titulo: "Por cerebro", salvo: "cerebro", html: panelCerebros, solo: function () { return CEREBROS.length > 1; } },
-      { titulo: "Qué se entendió, por signal", salvo: "signal", html: panelSignals }
+      { titulo: "Qué se entendió, por eslabón", salvo: "signal", html: panelSignals }
     ],
     cifras: function () {
       var p = promedio(filas), completos = filas.filter(function (x) { return x.p === 100; }).length;
@@ -206,7 +206,7 @@ export const FIDELIDAD_JS = String.raw`
       '<p class="fd-nota">Arma un texto con lo que les falta a los archivos de la lista de abajo y cómo se resuelve cada cosa. Pegalo en tu agente (Claude Code u otro): con el código y el MCP a mano, hace el trabajo y te dice qué quedó en 100.</p>' +
       '<div class="fd-casillas"><span class="lbl">Qué relaciones completar</span>' + casillas + "</div>" +
       '<div class="fd-linea-plan">' + campo("fd-pl-n", "Cuántos archivos, de menor a mayor", '<input id="fd-pl-n" type="number" min="1" max="500" step="1" value="' + PL.limite + '">') +
-      '<button type="button" class="boton fd-pri" data-acc="copiar-plan"' + (texto ? "" : " disabled") + ">Copiar plan</button>" + notaCopia(PL.copiado) + "</div>" +
+      '<button type="button" class="boton pri" data-acc="copiar-plan"' + (texto ? "" : " disabled") + ">Copiar plan</button>" + notaCopia(PL.copiado) + "</div>" +
       (texto ? cajaDeTexto("fd-pl-texto", texto) : '<p class="aviso">Marcá al menos una relación para armar el plan.</p>') + "</div>";
   }
 
@@ -350,7 +350,7 @@ export const FIDELIDAD_JS = String.raw`
           x.f.map(function (id) { return '<a class="chip" href="#/f/' + encodeURIComponent(id) + '">' + esc(nombreFeat(id)) + "</a>"; }).join("") + "</div>" +
           '<p class="fd-nota">' + POR_QUE[x.m] + "</p></div></li>";
       }).join("") + "</ul>" +
-      (xs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="btn" data-acc="mas">Mostrar ' + Math.min(PASO, xs.length - visibles.length) + " más</button> <small>" + plural(visibles.length, "visible", "visibles") + " de " + xs.length.toLocaleString("es") + "</small></p>" : "");
+      (xs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="boton" data-acc="mas">Mostrar ' + Math.min(PASO, xs.length - visibles.length) + " más</button> <small>" + plural(visibles.length, "visible", "visibles") + " de " + xs.length.toLocaleString("es") + "</small></p>" : "");
   }
   function lista() {
     if (S.grupo === "incierta") return listaIncierta();
@@ -359,7 +359,7 @@ export const FIDELIDAD_JS = String.raw`
     var visibles = xs.slice(0, S.ver);
     return planDeLista() + fl.resultado(xs.length, " · promedio " + promedio(xs), '<button type="button" class="boton" data-acc="orden">' + (S.orden === "asc" ? "De menor a mayor" : "De mayor a menor") + "</button>") +
       '<ul class="lista fd-lista">' + visibles.map(fila).join("") + "</ul>" +
-      (xs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="btn" data-acc="mas">Mostrar ' + Math.min(PASO, xs.length - visibles.length) + " más</button> <small>" + plural(visibles.length, "visible", "visibles") + " de " + xs.length.toLocaleString("es") + "</small></p>" : "");
+      (xs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="boton" data-acc="mas">Mostrar ' + Math.min(PASO, xs.length - visibles.length) + " más</button> <small>" + plural(visibles.length, "visible", "visibles") + " de " + xs.length.toLocaleString("es") + "</small></p>" : "");
   }
 
   // ---------- Página ----------

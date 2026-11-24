@@ -16,7 +16,6 @@ export const PRODUCTO_JS = String.raw`
   var consumidoras = {};
   fichas.forEach(function (f) { f.usa.forEach(function (u) { if (u.endpoint) (consumidoras[u.endpoint] = consumidoras[u.endpoint] || []).push(f.id); }); });
   var raiz = document.getElementById("producto");
-  var filtro = "";
 
   var nombre = function (id) { return porId[id] ? porId[id].n : id; };
   var pendiente = function (r) { return !r || /^Borrador:/.test(r); };
@@ -109,18 +108,56 @@ export const PRODUCTO_JS = String.raw`
     // Varios enlaces: la tarjeta no puede ser un <a> (no se anidan); el título lleva a la primera ficha.
     return '<div class="tarjeta">' + cuerpo.replace("<h3>" + esc(nombre(f.id)) + "</h3>", '<h3><a href="' + hrefFicha(f.id) + '">' + esc(nombre(f.id)) + "</a></h3>") +
       '<div class="chips cerebros">' + grupo.map(function (x) {
-        return '<a class="chip" href="' + hrefFicha(x.id) + '" title="' + esc(nombre(x.id)) + '">' + esc(cerebroDe(x.id)) + "</a>";
+        var cc = V.colorCerebro ? V.colorCerebro(cerebroDe(x.id)) : "";
+        return '<a class="chip" href="' + hrefFicha(x.id) + '" title="' + esc(nombre(x.id)) + '">' + (cc ? '<span class="pc" style="background:' + cc + '"></span>' : "") + esc(cerebroDe(x.id)) + "</a>";
       }).join("") + "</div></div>";
   }
+  // El catálogo usa el mismo filtro y estadística que las demás pantallas de lista (viewer-filtros.ts): cifras,
+  // grupos, buscador, cerebro y paneles. Un ítem es una tarjeta: la misma funcionalidad en todos sus cerebros.
+  var SIN_CEREBRO = "\u0000";
+  function info(g) {
+    var desc = g.some(function (x) { return !pendiente((porId[x.id] || {}).r); }), tests = 0;
+    g.forEach(function (x) { (x.tests || []).forEach(function (t) { tests += t.casos.length; }); });
+    var cs = g.map(function (x) { return cerebroDe(x.id); }).filter(Boolean);
+    return { g: g, desc: desc, tests: tests, c: cs.length ? cs : [SIN_CEREBRO],
+      texto: g.map(function (f) { var n = porId[f.id] || {}; return [f.id, n.n || "", n.r || ""].concat(n.a || []).join(" "); }).join(" ") };
+  }
+  var ITEMS_FU = null;
+  var itemsFu = function () { return ITEMS_FU || (ITEMS_FU = grupos().map(info)); };
+  var nCerebros = function () { var v = {}; fichas.forEach(function (f) { var c = cerebroDe(f.id); if (c) v[c] = true; }); return Object.keys(v).length; };
+  var fl = window.brainFiltros.crear({
+    pre: "fu", clave: "flowbrain.funcionalidades", unidad: ["funcionalidad", "funcionalidades"], todos: "todas las funcionalidades",
+    items: itemsFu,
+    grupos: [
+      { id: "", etiqueta: "Todas" },
+      { id: "sindesc", etiqueta: "Sin descripción", palabra: "sin descripción", es: function (x) { return !x.desc; }, ocultarVacio: true },
+      { id: "sintests", etiqueta: "Sin tests", palabra: "sin tests", es: function (x) { return !x.tests; }, ocultarVacio: true }
+    ],
+    buscar: { ph: "Buscar por nombre o descripción…", texto: function (x) { return x.texto; } },
+    campos: [
+      { id: "cerebro", etiqueta: "Cerebro", propio: "el cerebro elegido", solo: function () { return nCerebros() > 1; }, de: function (x) { return x.c; },
+        etiquetaDe: function (v) { return v === SIN_CEREBRO ? "Sin cerebro" : v; }, palabra: function (v) { return "cerebro " + v; } },
+      { id: "tests", etiqueta: "Tests", todos: "Con o sin tests", propio: "los tests", de: function (x) { return x.tests ? "si" : "no"; },
+        etiquetaDe: function (v) { return v === "si" ? "Con tests" : "Sin tests"; }, palabra: function (v) { return v === "si" ? "con tests" : "sin tests"; } }
+    ],
+    paneles: [
+      { titulo: "Por cerebro", campo: "cerebro" },
+      { titulo: "Tests", campo: "tests", orden: "fijo" }
+    ],
+    cifras: function () {
+      var xs = itemsFu(), sinDesc = xs.filter(function (x) { return !x.desc; }).length, sinTests = xs.filter(function (x) { return !x.tests; }).length;
+      var out = [[xs.length, "funcionalidades"]];
+      if (xs.length !== fichas.length) out.push([fichas.length, "fichas, una por cerebro que la tiene"]);
+      out.push([sinDesc, "sin descripción", sinDesc ? "var(--atencion)" : "", "sindesc"]);
+      out.push([sinTests, "sin tests", sinTests ? "var(--atencion)" : "", "sintests"]);
+      return out;
+    },
+    alCambiar: function (todo) { if (todo) pintarCatalogo(); else { var l = document.getElementById("tarjetas"); if (l) l.innerHTML = tarjetas(); } }
+  });
   function tarjetas() {
-    var q = filtro.trim().toLowerCase();
-    var lista = grupos().filter(function (g) {
-      return !q || g.some(function (f) {
-        var n = porId[f.id] || {};
-        return [f.id, n.n || "", n.r || ""].concat(n.a || []).join(" ").toLowerCase().indexOf(q) >= 0;
-      });
-    }).sort(function (a, b) { return nombre(a[0].id).localeCompare(nombre(b[0].id), "es"); });
-    return lista.map(tarjeta).join("") || '<p class="vacio">Ninguna funcionalidad coincide.</p>';
+    var lista = fl.filtrar().map(function (x) { return x.g; }).sort(function (a, b) { return nombre(a[0].id).localeCompare(nombre(b[0].id), "es"); });
+    if (!lista.length) return fl.vacio(itemsFu().length);
+    return fl.resultado(lista.length) + '<div class="tarjetas">' + lista.map(tarjeta).join("") + "</div>";
   }
   function pintarCatalogo() {
     if (!fichas.length) {
@@ -128,16 +165,24 @@ export const PRODUCTO_JS = String.raw`
         '<p class="aviso">Todavía no hay funcionalidades. <code>flowbrain draft &lt;repo&gt;</code> las propone a partir de las carpetas <code>features/</code>, <code>modules/</code> o <code>domains/</code> (o, sin ellas, <code>pages/</code>, <code>screens/</code> o <code>views/</code>) en <code>_drafts/product/</code>. Para completarlas con nombre de negocio y descripción, corré <code>/flowbrain-features</code> en Claude Code, o revisalas a mano y pasalas a <code>product/</code> con <code>flowbrain promote</code>.</p>';
       return;
     }
-    var sin = fichas.filter(function (f) { return pendiente((porId[f.id] || {}).r); }).length;
     raiz.innerHTML = "<h1>Funcionalidades</h1>" +
-      '<p class="subtitulo">' + plural(grupos().length, "funcionalidad", "funcionalidades") +
-      (grupos().length !== fichas.length ? " en " + plural(fichas.length, "ficha", "fichas") + " de sus cerebros" : "") +
-      (sin ? " · " + sin + " sin descripción" : "") + "</p>" +
-      '<input id="filtro-feat" type="search" placeholder="Filtrar por nombre o descripción" autocomplete="off">' +
-      '<div class="tarjetas" id="tarjetas">' + tarjetas() + "</div>";
-    var input = document.getElementById("filtro-feat");
-    input.value = filtro;
-    input.addEventListener("input", function () { filtro = input.value; document.getElementById("tarjetas").innerHTML = tarjetas(); });
+      '<p class="subtitulo">Lo que el producto le permite hacer a quien lo usa, una tarjeta por funcionalidad: de qué cerebros es, cuánto código tiene, qué tablas y endpoints toca y si tiene tests. Tocá una para ver su ficha.</p>' +
+      fl.html() + '<div id="tarjetas">' + tarjetas() + "</div>";
+  }
+  if (raiz) raiz.addEventListener("click", function (ev) { fl.manejar(ev, "click"); });
+  if (raiz) raiz.addEventListener("change", function (ev) { fl.manejar(ev, "change"); });
+  if (raiz) raiz.addEventListener("input", function (ev) { fl.manejar(ev, "input"); });
+
+  // De qué cerebro es esta ficha y en cuáles más está la misma funcionalidad (el front que la muestra, el back que la atiende).
+  function chipCerebro(id, actual) {
+    var c = cerebroDe(id), cc = V.colorCerebro ? V.colorCerebro(c) : "";
+    var punto = cc ? '<span class="pc" style="background:' + cc + '"></span>' : "";
+    return actual ? '<span class="chip on">' + punto + esc(c) + "</span>" : '<a class="chip" href="' + hrefFicha(id) + '">' + punto + esc(c) + "</a>";
+  }
+  function enCerebros(f) {
+    if (!cerebroDe(f.id)) return "";
+    var otras = fichas.filter(function (x) { return x.id !== f.id && idBase(x.id) === idBase(f.id); });
+    return '<div class="chips ficha-cerebros">' + chipCerebro(f.id, true) + (otras.length ? '<small class="vacio">También en</small>' + otras.map(function (x) { return chipCerebro(x.id, false); }).join("") : "") + "</div>";
   }
 
   // ---------- Cómo está construida ----------
@@ -250,6 +295,7 @@ export const PRODUCTO_JS = String.raw`
     return '<div class="ficha"><div class="texto">' +
       '<a class="volver" href="#/funcionalidades">← Funcionalidades</a>' +
       "<h1>" + esc(n.n) + "</h1>" +
+      enCerebros(f) +
       (pendiente(n.r) ? '<p class="subtitulo pendiente">Sin descripción todavía</p>' : '<p class="subtitulo">' + esc(n.r) + "</p>") +
       (cuerpo || '<p class="aviso">La página no tiene texto. Escribí qué es y cómo se usa en <code>' + esc(n.p || "") + "</code>.</p>") +
       (window.brainPantallas ? window.brainPantallas.seccionFicha(f) : "") +
@@ -268,7 +314,7 @@ export const PRODUCTO_JS = String.raw`
       seccion("Decisiones", lista(decisiones)) +
       seccion("Código", lista(codigo) + "<p><small>" + plural(f.archivos, "archivo", "archivos") +
         (f.implementan.length ? " · " + f.implementan.map(function (s) { return esc(nombre(s)); }).join(", ") : "") + "</small></p>" +
-        (n.p ? '<p><small>Página: <code>' + esc(n.p) + "</code></small></p>" : "")) +
+        (n.p ? '<p><small>El texto de esta ficha se edita en <code>' + esc(n.p) + "</code></small></p>" : "")) +
       '<p><a href="#/grafo/' + encodeURIComponent(id) + '">Verla en el mapa 3D →</a><br><a href="#/impacto/' + encodeURIComponent(id) + '">¿Qué se ve afectado si cambia? →</a></p>' +
       "</div></div>";
   }

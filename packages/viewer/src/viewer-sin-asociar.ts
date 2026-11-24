@@ -88,7 +88,7 @@ export const SIN_ASOCIAR_JS = String.raw`
     var fs = featsDe(x);
     if (!fs.length) return '<p class="fd-nota">Este cerebro no tiene funcionalidades con página todavía: se crean con <code>/flowbrain-features</code>.</p>';
     return '<div class="fd-linea sa-otra"><select id="sa-feat" aria-label="Funcionalidad">' + fs.map(function (n) { return '<option value="' + esc(n.id) + '">' + esc(n.n) + "</option>"; }).join("") + "</select>" +
-      '<button type="button" class="boton fd-pri" data-acc="asociar-elegida" data-k="' + esc(clave) + '"' + (ocupado ? " disabled" : "") + ">Asociar</button></div>";
+      '<button type="button" class="boton pri" data-acc="asociar-elegida" data-k="' + esc(clave) + '"' + (ocupado ? " disabled" : "") + ">Asociar</button></div>";
   }
   function fila(x) {
     var que = x.g
@@ -98,7 +98,7 @@ export const SIN_ASOCIAR_JS = String.raw`
     var botones = "";
     if (ED) {
       var a = ' data-a="' + esc(x.a) + '"' + (ocupado ? " disabled" : "");
-      botones = (x.g ? '<button type="button" class="boton fd-pri" data-acc="asociar" data-f="' + esc(x.g[0]) + '"' + a + ">Asociar a " + esc(nombre(x.g[0])) + "</button>" : "") +
+      botones = (x.g ? '<button type="button" class="boton pri" data-acc="asociar" data-f="' + esc(x.g[0]) + '"' + a + ">Asociar a " + esc(nombre(x.g[0])) + "</button>" : "") +
         (x.o || []).map(function (o) { return '<button type="button" class="boton" data-acc="asociar" data-f="' + esc(o[0]) + '" title="' + esc(o[1]) + '"' + a + ">" + esc(nombre(o[0])) + "</button>"; }).join("") +
         '<button type="button" class="boton' + (OTRA === x.a ? " on" : "") + '" data-acc="otra" data-k="' + esc(x.a) + '">' + (x.g ? "Otra…" : "Elegir funcionalidad") + "</button>";
     }
@@ -114,7 +114,7 @@ export const SIN_ASOCIAR_JS = String.raw`
     if (ED && ruta) {
       var dis = ocupado ? " disabled" : "";
       acciones = g.libre
-        ? (g.feat ? '<button type="button" class="boton fd-pri" data-acc="asociar-carpeta" data-k="' + esc(g.k) + '" data-f="' + esc(g.feat) + '"' + dis + ">Asociar la carpeta a " + esc(nombre(g.feat)) + "</button>" : "") +
+        ? (g.feat ? '<button type="button" class="boton pri" data-acc="asociar-carpeta" data-k="' + esc(g.k) + '" data-f="' + esc(g.feat) + '"' + dis + ">Asociar la carpeta a " + esc(nombre(g.feat)) + "</button>" : "") +
           '<button type="button" class="boton' + (OTRA === g.k ? " on" : "") + '" data-acc="otra" data-k="' + esc(g.k) + '">' + (g.feat ? "A otra…" : "Asociar la carpeta…") + "</button>"
         : "";
     }
@@ -152,7 +152,7 @@ export const SIN_ASOCIAR_JS = String.raw`
     ],
     cifras: function () {
       var n = function (k) { return U.filter(function (x) { return clase(x) === k; }).length; };
-      return [[U.length, "archivos sin asociar", U.length ? "var(--feat)" : ""], [n("recomendada"), "con una funcionalidad recomendada", n("recomendada") ? "var(--tabla)" : "", "recomendada"],
+      return [[U.length, "archivos sin asociar", U.length ? "var(--atencion)" : ""], [n("recomendada"), "con una funcionalidad recomendada", n("recomendada") ? "var(--bien)" : "", "recomendada"],
         [n("compartido"), "de código compartido", "", "compartido"], [n("sinpista"), "sin ninguna pista", "", "sinpista"], [carpetas(U).length, "carpetas"]];
     },
     acciones: function () { return '<button type="button" class="boton' + (PEDIDO ? " on" : "") + '" data-acc="pedido">' + (PEDIDO ? "Ocultar pedido" : "Pedido para el agente") + "</button>"; },
@@ -167,7 +167,7 @@ export const SIN_ASOCIAR_JS = String.raw`
     var cs = carpetas(xs), visibles = cs.slice(0, S.cuantas);
     return msg + pedido(xs) + fl.resultado(xs, " en " + plural(cs.length, "carpeta", "carpetas")) +
       visibles.map(grupo).join("") +
-      (cs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="btn" data-acc="mas">Mostrar ' + Math.min(PASO, cs.length - visibles.length) + " carpetas más</button> <small>" + visibles.length + " de " + cs.length.toLocaleString("es") + "</small></p>" : "");
+      (cs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="boton" data-acc="mas">Mostrar ' + Math.min(PASO, cs.length - visibles.length) + " carpetas más</button> <small>" + visibles.length + " de " + cs.length.toLocaleString("es") + "</small></p>" : "");
   }
   var COMO = '<p class="subtitulo">Archivos que no son de ninguna funcionalidad ni librería, por carpeta. A cada uno se le recomienda una funcionalidad según quién lo usa, qué usa, qué endpoints atiende y de quién son sus vecinos. No restan puntaje de fidelidad: es una lista para completar el catálogo.</p>';
   function aviso() {

@@ -25,7 +25,7 @@ export const ESPECIFICACIONES_JS = String.raw`
   // Estado de un caso: el peor de sus cerebros. Orden: lo que más falta, primero.
   var ESTADO = {
     sin_codigo: { txt: "Sin código", cls: "no", que: "Alguna regla no dice qué archivo la cumple." },
-    sin_test: { txt: "Sin test", cls: "no", que: "Alguna regla no tiene un test que la verifique: si se rompe, nada avisa." },
+    sin_test: { txt: "Sin test", cls: "falta", que: "Alguna regla no tiene un test que la verifique: si se rompe, nada avisa." },
     sin_reglas: { txt: "Sin reglas", cls: "na", que: "El caso no tiene ninguna regla escrita." },
     cumplido: { txt: "Cumplido", cls: "ok", que: "Cada regla tiene el código que la cumple y un test que la verifica." }
   };
@@ -142,7 +142,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     });
     return ITEMS;
   }
-  var ESTADOS = [["cumplido", "Cumplido: código y test", "var(--tabla)"], ["sin_test", "Sin test", "var(--dudoso)"], ["sin_codigo", "Sin código", "var(--dudoso)"], ["sin_reglas", "Sin reglas", "var(--feat)"]];
+  var ESTADOS = [["cumplido", "Cumplido: código y test", "var(--bien)"], ["sin_test", "Sin test", "var(--atencion)"], ["sin_codigo", "Sin código", "var(--mal)"], ["sin_reglas", "Sin reglas", "var(--atencion)"]];
   var deEstado = function (v, i) { for (var j = 0; j < ESTADOS.length; j++) if (ESTADOS[j][0] === v) return ESTADOS[j][i]; return i === 1 ? v : ""; };
   var estadoDe = function (it) { return it.C ? it.C.estado : !it.x.e.archivos.length ? "sin_codigo" : sinVerificar(it.x.e) ? "sin_test" : "cumplido"; };
   var reglasDe = function (it) { var out = []; if (it.C) it.C.patas.forEach(function (p) { out = out.concat(p.reglas); }); else out.push(it.x.e); return out; };
@@ -191,9 +191,9 @@ export const ESPECIFICACIONES_JS = String.raw`
       var cs = todosLosCasos().map(function (x) { return x[1]; }), sueltas = todasSueltas().length;
       var cumplidos = cs.filter(function (C) { return C.estado === "cumplido"; }).length, sinTest = cs.filter(function (C) { return enGrupo(C, "sintest"); }).length, mal = cs.filter(function (C) { return C.problemas.length; }).length;
       var vacias = visibles().filter(function (P) { return !conSpecs(P); }).length;
-      var out = [[cs.length, "casos de uso"], [cumplidos, "cumplidos: código y test", cumplidos ? "var(--tabla)" : "", "cumplido"], [sinTest, "sin test que los verifique", sinTest ? "var(--dudoso)" : "", "sintest"], [mal, "marcados como mal", mal ? "var(--dudoso)" : "", "problema"]];
-      if (sueltas) out.push([sueltas, "reglas sin caso de uso", "var(--feat)"]);
-      if (vacias) out.push([vacias, "funcionalidades sin nada escrito", "var(--feat)"]);
+      var out = [[cs.length, "casos de uso"], [cumplidos, "cumplidos: código y test", cumplidos ? "var(--bien)" : "", "cumplido"], [sinTest, "sin test que los verifique", sinTest ? "var(--atencion)" : "", "sintest"], [mal, "marcados como mal", mal ? "var(--mal)" : "", "problema"]];
+      if (sueltas) out.push([sueltas, "reglas sin caso de uso", "var(--atencion)"]);
+      if (vacias) out.push([vacias, "funcionalidades sin nada escrito", "var(--atencion)"]);
       return out;
     },
     alCambiar: function (todo) { refrescar(todo); }
@@ -248,7 +248,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     var por = !ED ? "Para mandarlo directo al agente, abrí el visor desde el menú («Abrir el visor») o con <code>flowbrain viewer --serve</code>."
       : ED.agente && ED.agente.noDisponible ? "No se puede mandar directo: " + esc(ED.agente.noDisponible) + "." : "";
     var botones = AG
-      ? '<div class="fd-acc"><button type="button" class="boton fd-pri" data-acc="mandar" data-k="' + esc(k) + '"' + (PEDIDO.mandado ? " disabled" : "") + ">" + (PEDIDO.mandado ? "Mandado" : "Mandar al agente") + '</button><button type="button" class="boton" data-acc="copiar" data-k="' + esc(k) + '">Copiar</button></div>' +
+      ? '<div class="fd-acc"><button type="button" class="boton pri" data-acc="mandar" data-k="' + esc(k) + '"' + (PEDIDO.mandado ? " disabled" : "") + ">" + (PEDIDO.mandado ? "Mandado" : "Mandar al agente") + '</button><button type="button" class="boton" data-acc="copiar" data-k="' + esc(k) + '">Copiar</button></div>' +
         "<small>Lo hace Claude Code en esta máquina, en la carpeta del proyecto: escribe y corre los tests, pero no commitea. Usa tu plan de Claude. Ves el avance arriba, en «El agente».</small>"
       : "";
     return '<div class="fd-plan"><h2>Pedido para el agente</h2>' +
@@ -286,7 +286,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       : "";
     var form = MANUAL === k
       ? '<div class="es-form"><label for="es-motivo">Por qué no necesita un test automático</label><input id="es-motivo" type="text" maxlength="300" placeholder="Se prueba a mano en el celular antes de cada versión" value="' + esc(MOTIVO) + '">' +
-        '<div class="fd-acc"><button type="button" class="boton fd-pri" data-acc="guardar-manual" data-k="' + esc(k) + '"' + (ocupado ? " disabled" : "") + '>Guardar</button><button type="button" class="boton" data-acc="cancelar-manual">Cancelar</button></div>' +
+        '<div class="fd-acc"><button type="button" class="boton pri" data-acc="guardar-manual" data-k="' + esc(k) + '"' + (ocupado ? " disabled" : "") + '>Guardar</button><button type="button" class="boton" data-acc="cancelar-manual">Cancelar</button></div>' +
         "<small>Deja de contar como sin test. Se guarda en la página de la funcionalidad de " + esc(cerebroDe(f.id)) + ".</small></div>"
       : "";
     var msg = MSG && MSG.k === k ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + "</p>" : "";
@@ -333,7 +333,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       : "";
     var form = EDITA === C.k
       ? '<div class="es-form"><label for="es-nota">Qué está mal</label><textarea id="es-nota" rows="3" maxlength="1000" placeholder="El nombre no es lo que hace la pantalla, falta una regla, el archivo o el test no es ese…">' + esc(BORRADOR) + "</textarea>" +
-        '<div class="fd-acc"><button type="button" class="boton fd-pri" data-acc="guardar" data-k="' + esc(C.k) + '"' + (ocupado ? " disabled" : "") + '>Guardar</button><button type="button" class="boton" data-acc="cancelar">Cancelar</button></div>' +
+        '<div class="fd-acc"><button type="button" class="boton pri" data-acc="guardar" data-k="' + esc(C.k) + '"' + (ocupado ? " disabled" : "") + '>Guardar</button><button type="button" class="boton" data-acc="cancelar">Cancelar</button></div>' +
         "<small>Se guarda en la página de la funcionalidad de " + (C.todas.length > 1 ? "cada cerebro (" + esc(C.todas.map(function (p) { return p.cerebro; }).join(", ")) + ")" : "su cerebro") + ".</small></div>"
       : "";
     var msg = MSG && MSG.k === C.k ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + "</p>" : "";
@@ -370,7 +370,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     var mal = vs.filter(function (C) { return C.problemas.length; }).length;
     var chips = (vs.length ? '<span class="chip">' + plural(vs.length, "caso de uso", "casos de uso") + "</span>" +
         '<span class="chip es-ok">' + cumplidos + " cumplido" + (cumplidos === 1 ? "" : "s") + "</span>" +
-        (sinTest ? '<span class="chip es-falta">' + sinTest + " sin test</span>" : "") +
+        (sinTest ? '<span class="chip es-aviso">' + sinTest + " sin test</span>" : "") +
         (mal ? '<span class="chip es-falta">' + mal + " marcado" + (mal === 1 ? "" : "s") + " como mal</span>" : "") : "") +
       (ns ? '<span class="chip es-aviso">' + plural(ns, "regla sin caso de uso", "reglas sin caso de uso") + "</span>" : "") +
       P.cerebros.map(function (c) { return '<span class="chip es-cerebro' + (elegido(c) ? "" : " fuera") + '"' + (elegido(c) ? "" : ' title="Fuera de los cerebros elegidos"') + ">" + esc(c) + "</span>"; }).join("");
@@ -411,7 +411,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       var on = SEL.indexOf(c) >= 0;
       return '<button type="button" class="es-cer' + (on ? " on" : "") + '" data-acc="cerebro" data-k="' + esc(c) + '" aria-pressed="' + on + '">' + (on ? "✔ " : "") + esc(c) + "</button>";
     };
-    return '<div class="es-cerebros" role="group" aria-label="Cerebros"><span class="lbl">Cerebros</span>' +
+    return '<div class="es-cerebros" role="group" aria-label="Cerebros que seguís"><span class="lbl">Cerebros que seguís</span>' +
       '<button type="button" class="es-cer' + (SEL.length ? "" : " on") + '" data-acc="cerebro" data-k="" aria-pressed="' + !SEL.length + '">Todos</button>' + CON_FICHAS.map(boton).join("") +
       "<small>" + (SEL.length ? "Ves " + esc(SEL.join(", ")) + ": los casos cuentan solo lo de " + (SEL.length === 1 ? "ese cerebro" : "esos cerebros") + ". Queda guardado para la próxima vez." : "Elegí los cerebros que te importan: queda guardado para la próxima vez.") + "</small></div>";
   }
@@ -460,7 +460,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     });
     if (!cs.length && !sueltas) return "";
     var paso = function (hecho, titulo, detalle, acc, k) {
-      return '<li class="' + (hecho ? "hecho" : "") + '"><div><b>' + (hecho ? "✔ " : (pasos.length + 1) + ". ") + titulo + "</b>" + (detalle ? "<small>" + detalle + "</small>" : "") + "</div>" +
+      return '<li class="' + (hecho ? "hecho" : "") + '"><div><b>' + (pasos.length + 1) + ". " + (hecho ? "✔ " : "") + titulo + "</b>" + (detalle ? "<small>" + detalle + "</small>" : "") + "</div>" +
         (!hecho && acc ? '<button type="button" class="boton" data-acc="' + acc + '" data-k="' + esc(k || "") + '">Ver</button>' : "") + "</li>";
     };
     var pasos = [];
@@ -775,7 +775,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       : '<p class="fd-nota">' + (ED ? "No hay ningún agente instalado en esta máquina" + (ED.agente && ED.agente.noDisponible ? ": " + esc(ED.agente.noDisponible) : "") + "." : "Esta página es de solo lectura: no puede mandar los pedidos.") + " Descargá el .md y dáselo a tu agente (con acceso al repo, no un chat web).</p>";
     var totales = '<div class="es-totales"><b>' + plural(xs.length, "regla", "reglas") + "</b><span>" + neg + " de negocio (van primero) · " + (xs.length - neg) + " de pantalla</span>" +
       (AG && mo ? "<span>Costo estimado: " + (xs.length ? "≈ " + dolares(estimado) : dolares(0)) + ' <small>(aprox., con ' + esc(mo.nombre) + ")</small></span>" : "") + "</div>";
-    var botones = '<div class="fd-acc"><button type="button" class="boton fd-pri" data-acc="pedir-todos"' + (!AG || !xs.length || vivo || PIDIENDO ? " disabled" : "") + ">" + (PIDIENDO ? "Mandando…" : "Pedir todos" + (xs.length ? " (" + xs.length + ")" : "")) + '</button>' +
+    var botones = '<div class="fd-acc"><button type="button" class="boton pri" data-acc="pedir-todos"' + (!AG || !xs.length || vivo || PIDIENDO ? " disabled" : "") + ">" + (PIDIENDO ? "Mandando…" : "Pedir todos" + (xs.length ? " (" + xs.length + ")" : "")) + '</button>' +
       '<button type="button" class="boton" data-acc="descargar-lista"' + (!xs.length ? " disabled" : "") + '>Descargar .md</button><button type="button" class="boton" data-acc="vaciar"' + (!xs.length || vivo ? " disabled" : "") + ">Vaciar la lista</button></div>";
     var filas = xs.length
       ? '<ul class="es-pedidos">' + xs.map(function (x) {
