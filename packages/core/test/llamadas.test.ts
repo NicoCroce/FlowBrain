@@ -33,11 +33,11 @@ describe("llamadas declaradas (calls.yaml)", () => {
       expect(a[0]!.invoca).toBeUndefined();
       return r.rechazadas[0];
     };
-    expect(caso((l) => ((l[2] = '    hacia: "repo-x:src/Facturador.php#Facturador.noExiste"'), l))).toContain("no existe repo-x:src/Facturador.php#Facturador.noExiste en el índice");
-    expect(caso((l) => ((l[1] = "    linea: 99"), l))).toContain("la línea 99 no está dentro de PedidoController.crear (10-20)");
-    expect(caso((l) => ((l[2] = '    hacia: "repo-y:src/Facturador.php#Facturador.emitir"'), l))).toContain("el destino está en otro repo");
+    expect(caso((l) => ((l[2] = '    hacia: "repo-x:src/Facturador.php#Facturador.noExiste"'), l))).toContain("repo-x:src/Facturador.php#Facturador.noExiste is not in the index");
+    expect(caso((l) => ((l[1] = "    linea: 99"), l))).toContain("line 99 is not inside PedidoController.crear (10-20)");
+    expect(caso((l) => ((l[2] = '    hacia: "repo-y:src/Facturador.php#Facturador.emitir"'), l))).toContain("the target is in another repo");
     expect(leerLlamadasDeclaradas(yaml(['  - desde: "sin-forma"', "    linea: 1"])).rechazadas).toHaveLength(1);
-    expect(leerLlamadasDeclaradas("llamadas: [").rechazadas[0]).toContain("YAML inválido");
+    expect(leerLlamadasDeclaradas("llamadas: [").rechazadas[0]).toContain("invalid YAML");
   });
 
   it("llamadas HTTP declaradas: valen las que caen dentro de un símbolo que existe", () => {
@@ -47,6 +47,6 @@ describe("llamadas declaradas (calls.yaml)", () => {
     expect(d.rechazadas).toHaveLength(1);
     const r = httpDeclaradasDe(archivos(), "repo-x", d.http);
     expect(r.validas.map((h) => `${h.archivo}#L${h.linea} ${h.ruta}`)).toEqual(["src/PedidoController.php#L15 /facturas/{id}"]);
-    expect(r.rechazadas[0]).toContain("la línea 99 no está dentro de PedidoController.crear");
+    expect(r.rechazadas[0]).toContain("line 99 is not inside PedidoController.crear");
   });
 });

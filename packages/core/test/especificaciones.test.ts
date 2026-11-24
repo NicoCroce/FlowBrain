@@ -58,10 +58,10 @@ describe("especificaciones en la página de una funcionalidad", () => {
         ].join("\n"),
       ),
     );
-    expect(e.some((x) => x.includes("id repetido: a"))).toBe(true);
-    expect(e.some((x) => x.includes('especificaciones.a.archivos con formato inválido: "src/suelto.ts"'))).toBe(true);
-    expect(e.some((x) => x.includes("especificaciones.a.tests: repo inexistente: repo-otro"))).toBe(true);
-    expect(errores(conEspecificaciones("technology/svc-bff.md", "especificaciones: []")).join("\n")).toContain("especificaciones solo aplica a feat");
+    expect(e.some((x) => x.includes("duplicate id: a"))).toBe(true);
+    expect(e.some((x) => x.includes('especificaciones.a.archivos with invalid format: "src/suelto.ts"'))).toBe(true);
+    expect(e.some((x) => x.includes("especificaciones.a.tests: nonexistent repo: repo-otro"))).toBe(true);
+    expect(errores(conEspecificaciones("technology/svc-bff.md", "especificaciones: []")).join("\n")).toContain("especificaciones only applies to feat");
     expect(errores(conEspecificaciones("product/feat-checkout.md", "especificaciones:\n  - { id: a, texto: Uno, tipo: tecnica }")).length).toBeGreaterThan(0);
   });
 });
@@ -145,10 +145,10 @@ describe("casos de uso de una funcionalidad", () => {
 
   it("un caso que nombra una especificación que no existe, o una que ya está en otro caso, no compila", () => {
     const e = errores(conEspecificaciones("product/feat-checkout.md", ESPECS + "\ncasos:\n  - { id: a, nombre: A, especificaciones: [paga, nada] }\n  - { id: b, nombre: B, especificaciones: [paga] }\n  - { id: a, nombre: C }"));
-    expect(e.some((x) => x.includes("casos.a: no hay una especificación con id nada"))).toBe(true);
-    expect(e.some((x) => x.includes("casos: id repetido: a"))).toBe(true);
-    expect(e.some((x) => x.includes("la especificación paga ya está en el caso a"))).toBe(true);
-    expect(errores(conEspecificaciones("technology/svc-bff.md", "casos: []")).join("\n")).toContain("casos solo aplica a feat");
+    expect(e.some((x) => x.includes("casos.a: there is no specification with id nada"))).toBe(true);
+    expect(e.some((x) => x.includes("casos: duplicate id: a"))).toBe(true);
+    expect(e.some((x) => x.includes("specification paga is already in use case a"))).toBe(true);
+    expect(errores(conEspecificaciones("technology/svc-bff.md", "casos: []")).join("\n")).toContain("casos only applies to feat");
   });
 
   it("el estado de un caso es el de su regla más floja: sin código, sin test, cumplido", () => {
@@ -186,8 +186,8 @@ describe("casos de uso de una funcionalidad", () => {
     expect(d.casos.map((c) => [c.id, c.estado, c.problema ?? null])).toEqual([["pagar", "cumplido", null], ["limitar", "sin_test", "el tope es por semana"]]);
     expect(d.especificacionesSinCaso).toEqual(["suelta"]);
     expect(d.especificaciones.map((e) => e.caso ?? null)).toEqual(["pagar", "limitar", null]);
-    expect(d.avisos.some((a) => a.includes("agrupalas en `casos`"))).toBe(true);
-    expect(d.avisos.some((a) => a.includes("borrá `problema`"))).toBe(true);
+    expect(d.avisos.some((a) => a.includes("group them in `casos`"))).toBe(true);
+    expect(d.avisos.some((a) => a.includes("delete `problema`"))).toBe(true);
     const solo = especificaciones(ctx, { funcionalidad: "pagos", con_problema: true, budget_tokens: null }) as unknown as { casos: Array<{ id: string }> };
     expect(solo.casos.map((c) => c.id)).toEqual(["limitar"]);
     const r = especificaciones(ctx, { budget_tokens: null }) as unknown as Record<string, unknown>;
@@ -204,7 +204,7 @@ describe("casos de uso de una funcionalidad", () => {
     expect(marcarProblemaDeCaso("feat-x.md", a.contenido, "pagar", "falta el reintento").cambio).toBe(false);
     const b = marcarProblemaDeCaso("feat-x.md", a.contenido, "pagar", null);
     expect(b.contenido).not.toContain("problema");
-    expect(() => marcarProblemaDeCaso("feat-x.md", pagina, "otro", "x")).toThrow("no tiene un caso de uso con id otro");
+    expect(() => marcarProblemaDeCaso("feat-x.md", pagina, "otro", "x")).toThrow("has no use case with id otro");
   });
 
   it("No necesita test escribe manual en la especificación, y vacío lo saca", () => {
@@ -212,7 +212,7 @@ describe("casos de uso de una funcionalidad", () => {
     const a = marcarPruebaManual("feat-x.md", pagina, "movil", "se prueba en el celular");
     expect(a.contenido).toContain('    manual: "se prueba en el celular"\n');
     expect(marcarPruebaManual("feat-x.md", a.contenido, "movil", null).contenido).not.toContain("manual");
-    expect(() => marcarPruebaManual("feat-x.md", pagina, "movil", "x".repeat(301))).toThrow("no puede pasar de 300");
-    expect(() => marcarPruebaManual("feat-x.md", pagina, "otra", "x")).toThrow("no tiene una especificación con id otra");
+    expect(() => marcarPruebaManual("feat-x.md", pagina, "movil", "x".repeat(301))).toThrow("cannot exceed 300");
+    expect(() => marcarPruebaManual("feat-x.md", pagina, "otra", "x")).toThrow("has no specification with id otra");
   });
 });

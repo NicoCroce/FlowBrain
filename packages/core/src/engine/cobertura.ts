@@ -36,7 +36,7 @@ export function leerControles(texto: string): { controles: Control[]; malFormado
   try {
     doc = parse(texto);
   } catch (e) {
-    return { controles, malFormados: [`${ARCHIVO_CONTROLES}: YAML inválido (${(e as Error).message.split("\n")[0]})`] };
+    return { controles, malFormados: [`${ARCHIVO_CONTROLES}: invalid YAML (${(e as Error).message.split("\n")[0]})`] };
   }
   const t = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
   const lista = (doc as { controles?: unknown } | null)?.controles;
@@ -45,7 +45,7 @@ export function leerControles(texto: string): { controles: Control[]; malFormado
     const ok =
       (c.tipo === "endpoint" && c.metodo && c.ruta) || (c.tipo === "pantalla" && c.ruta) || (c.tipo === "llamada" && c.archivo && c.metodo && c.ruta) || (c.tipo === "traza" && c.endpoint && /^[A-Za-z]+ \//.test(c.endpoint) && c.tabla) || (c.tipo === "alcanza" && c.pantalla && c.metodo && c.ruta?.startsWith("/"));
     if (ok) controles.push(Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined)) as unknown as Control);
-    else malFormados.push(`control ${i + 1}: tipo desconocido o faltan campos (${JSON.stringify(x).slice(0, 120)})`);
+    else malFormados.push(`control ${i + 1}: unknown type or missing fields (${JSON.stringify(x).slice(0, 120)})`);
   });
   return { controles, malFormados };
 }
@@ -70,7 +70,7 @@ const pct = (n: number, de: number) => (de ? Math.round((1000 * n) / de) / 10 : 
 
 export function cobertura(ctx: Contexto, p: CoberturaParams = {}) {
   const ix = ctx.codigo;
-  if (!ix) throw new ConsultaError("parametro_invalido", "no hay índice de código: corré `flowbrain index <repo>` y `flowbrain compile`");
+  if (!ix) throw new ConsultaError("parametro_invalido", "there is no code index: run `flowbrain index <repo>` and `flowbrain compile`");
   const r = llamadasPorResolver(ctx, { limite: 0, ...(p.declaradas ? { declaradas: p.declaradas } : {}) });
   const lado = (r as { delLadoQueLlama?: { pantallas?: number; pantallasSinLlamadas?: number; funcionalidadesSinLlamadas?: unknown[]; httpSinRuta: { total: number } } }).delLadoQueLlama;
   const pendientes = ix.llamadasPendientes.filter((l) => l.llamada);
@@ -113,10 +113,10 @@ export function cobertura(ctx: Contexto, p: CoberturaParams = {}) {
   const sinColumnas = tablas.filter((n) => !(n.atributos["columnas"] as unknown[] | undefined)?.length).sort((a, b) => (a.nombre < b.nombre ? -1 : 1));
   const extractores = p.extractores ?? [];
   const avisos = [
-    ...extractores.filter((e) => e.error).map((e) => `el extractor ${e.repo}/${e.extractor} no corrió: ${e.error}`),
-    ...extractores.filter((e) => e.caida).map((e) => `el extractor ${e.repo}/${e.extractor} devolvió bastante menos que la vez anterior (${e.antes} antes): el código cambió y puede haber quedado viejo`),
-    ...extractores.filter((e) => e.rechazados).map((e) => `el extractor ${e.repo}/${e.extractor} tuvo ${e.rechazados} datos rechazados: ${e.motivos[0] ?? ""}`),
-    ...(fallan.length ? [`${fallan.length} de ${(p.controles ?? []).length} controles ya no se cumplen: algo que estaba verificado dejó de salir`] : []),
+    ...extractores.filter((e) => e.error).map((e) => `extractor ${e.repo}/${e.extractor} did not run: ${e.error}`),
+    ...extractores.filter((e) => e.caida).map((e) => `extractor ${e.repo}/${e.extractor} returned much less than last time (${e.antes} before): the code changed and it may be outdated`),
+    ...extractores.filter((e) => e.rechazados).map((e) => `extractor ${e.repo}/${e.extractor} had ${e.rechazados} rejected items: ${e.motivos[0] ?? ""}`),
+    ...(fallan.length ? [`${fallan.length} of ${(p.controles ?? []).length} checks no longer pass: something that was verified stopped showing up`] : []),
   ];
   return {
     herramienta: "cobertura",

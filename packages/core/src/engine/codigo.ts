@@ -211,13 +211,13 @@ export function avisosIndice(ix: IndiceCodigo): string[] {
   return Object.keys(ix.commits)
     .sort(cmp)
     .filter((r) => ix.actuales[r] && ix.actuales[r] !== ix.commits[r])
-    .map((r) => `índice desactualizado: ${r} se indexó en ${corto(ix.commits[r]!)} y el clon está en ${corto(ix.actuales[r]!)}; las líneas pueden no coincidir (corré \`flowbrain index\` y \`flowbrain compile\`)`);
+    .map((r) => `outdated index: ${r} was indexed at ${corto(ix.commits[r]!)} and the clone is at ${corto(ix.actuales[r]!)}; lines may not match (run \`flowbrain index\` and \`flowbrain compile\`)`);
 }
 
 // ------------------------------------------------------------------ utilidades
 
 function indice(ctx: Contexto): IndiceCodigo {
-  if (!ctx.codigo) throw new ConsultaError("parametro_invalido", "no hay índice de código: corré `flowbrain index <repo>` y `flowbrain compile`");
+  if (!ctx.codigo) throw new ConsultaError("parametro_invalido", "there is no code index: run `flowbrain index <repo>` and `flowbrain compile`");
   return ctx.codigo;
 }
 const corto = (c: string) => c.slice(0, 12);
@@ -294,15 +294,15 @@ function sugerencias(ix: IndiceCodigo, ref: string): string[] {
   return [...ix.porNombre.keys()].filter((n) => normalizar(n).includes(q)).sort(cmp).slice(0, 8);
 }
 
-const toque = (t: { verbo: string; hasta: string; endpoint: string | null; sinPagina?: true }) => `${t.verbo} ${t.endpoint ?? t.hasta}${t.sinPagina ? " (tabla sin página en el brain)" : ""}`;
+const toque = (t: { verbo: string; hasta: string; endpoint: string | null; sinPagina?: true }) => `${t.verbo} ${t.endpoint ?? t.hasta}${t.sinPagina ? " (table without a page in the brain)" : ""}`;
 const paso = (ix: IndiceCodigo, p: Paso) => ({
   n: p.nivel,
   simbolo: p.simbolo,
   ev: p.evidencia,
   ...(p.toca.length ? { toca: p.toca.map(toque) } : {}),
   ...(p.aviso ? { aviso: p.aviso } : {}),
-  ...(p.via ? { via: p.via.startsWith("HTTP ") ? `por HTTP: ${p.via.slice(5)}` : `en diferido, por evento o cola ${p.via}` } : {}),
-  ...(p.repite ? { repite: p.repite === "ciclo" ? "llamada recursiva: no se expande" : "ya recorrido antes: toca resume lo que tocó (él y lo que llama)" } : {}),
+  ...(p.via ? { via: p.via.startsWith("HTTP ") ? `over HTTP: ${p.via.slice(5)}` : `deferred, through event or queue ${p.via}` } : {}),
+  ...(p.repite ? { repite: p.repite === "ciclo" ? "recursive call: not expanded" : "already walked: toca summarizes what it touched (itself and what it calls)" } : {}),
 });
 
 /** Llamadas sin resolver dentro de los pasos de un recorrido: ahí el recorrido puede seguir y no lo sabemos. */
@@ -314,9 +314,9 @@ function sinResolverEnPasos(ix: IndiceCodigo, pasos: Array<{ simbolo: string; ev
     const k = `${archivo}#${p.simbolo}`;
     if (vistos.has(k)) continue;
     vistos.add(k);
-    for (const s of ix.estructura.get(archivo)?.sinResolver ?? []) if (s.desde === p.simbolo) out.push(`llamada sin resolver en ${p.simbolo}: ${s.llamada} (${archivo}#L${s.linea})${s.motivo ? `: ${s.motivo}` : "; el recorrido puede seguir por ahí"}`);
+    for (const s of ix.estructura.get(archivo)?.sinResolver ?? []) if (s.desde === p.simbolo) out.push(`unresolved call in ${p.simbolo}: ${s.llamada} (${archivo}#L${s.linea})${s.motivo ? `: ${s.motivo}` : "; the flow may continue there"}`);
   }
-  return out.length > 8 ? [...out.slice(0, 8), `y ${out.length - 8} llamadas sin resolver más`] : out;
+  return out.length > 8 ? [...out.slice(0, 8), `and ${out.length - 8} more unresolved calls`] : out;
 }
 
 /** Llamadas sin resolver en todo el código indexado cuyo método se llama igual que el buscado: posibles llamadores que no se ven. */
@@ -327,11 +327,11 @@ function sinResolverConNombre(ix: IndiceCodigo, claves: string[]): string[] {
     if (ES_TEST.test(archivo)) continue;
     for (const s of e.sinResolver ?? []) {
       const m = s.llamada.split(".").pop()!;
-      if (nombres.has(m)) out.push(`posible llamador no resuelto: ${s.desde} @ ${archivo}#L${s.linea} llama ${s.llamada} (tipo sin resolver)`);
+      if (nombres.has(m)) out.push(`possible unresolved caller: ${s.desde} @ ${archivo}#L${s.linea} calls ${s.llamada} (unresolved type)`);
     }
   }
   out.sort(cmp);
-  return out.length > 8 ? [...out.slice(0, 8), `y ${out.length - 8} posibles llamadores no resueltos más`] : out;
+  return out.length > 8 ? [...out.slice(0, 8), `and ${out.length - 8} more possible unresolved callers`] : out;
 }
 
 // ------------------------------------------------------------------ funcionalidad
@@ -351,7 +351,7 @@ function resolverFeat(ctx: Contexto, ix: IndiceCodigo, ref: string): Ficha {
   });
   if (feats.length === 1) return ix.fichas.get(feats[0]!)!;
   const parecidas = [...ix.fichas.keys()].filter((id) => normalizar(`${id} ${nombre(ctx, id)}`).includes(q)).sort(cmp);
-  throw new ConsultaError("nodo_inexistente", `no existe la funcionalidad: ${ref}${parecidas.length ? ` (¿${parecidas.slice(0, 6).join(", ")}?)` : ""}`);
+  throw new ConsultaError("nodo_inexistente", `no such feature: ${ref}${parecidas.length ? ` (${parecidas.slice(0, 6).join(", ")}?)` : ""}`);
 }
 
 export function funcionalidad(ctx: Contexto, p: FuncionalidadParams) {
@@ -395,8 +395,8 @@ export function funcionalidad(ctx: Contexto, p: FuncionalidadParams) {
     datosVia: via,
     dominioCompartido: f.dominio.filter((d) => d.de || d.usadoPor.length).map((d) => ({ archivo: d.archivo, elementos: d.elementos, de: d.de, usadoPor: d.usadoPor })),
     avisos: [
-      ...(f.recorridos.some((r) => r.pasos.some((x) => x.aviso)) ? [`hay pasos de repositorio sin tabla detectada: ver recorrido(endpoint)`] : []),
-      ...(f.expone.length === 0 && f.usa.length === 0 ? ["sin endpoints expuestos ni consumidos dentro de codigo"] : []),
+      ...(f.recorridos.some((r) => r.pasos.some((x) => x.aviso)) ? [`there are repository steps without a detected table: see recorrido(endpoint)`] : []),
+      ...(f.expone.length === 0 && f.usa.length === 0 ? ["no endpoints exposed or consumed within codigo"] : []),
       ...avisosIndice(ix),
     ],
     indice: versiones(ix),
@@ -487,10 +487,10 @@ function resumenDeEspecificaciones(f: Ficha) {
   };
 }
 
-const COMO_COMPLETAR = "Las especificaciones se escriben en `especificaciones` de la página de la funcionalidad (product/feat-*.md). La guía para deducirlas del código y de los tests: `flowbrain specs --guide`.";
-const COMO_AGRUPAR = "Hay especificaciones que no están en ningún caso de uso: agrupalas en `casos` de la página (nombre de lo que alguien hace, quién, y los ids de sus especificaciones). La guía: `flowbrain specs --guide`.";
-const COMO_HALLAZGOS = "Hay reglas con `hallazgo`: el agente que intentó testearlas encontró que el código no las cumple (`codigo_no_cumple`) o que no se pueden testear sin tocar el código (`no_testeable`). Sin `decision` las decide una persona; con `regla_mal`, corregí el texto de la regla (o borrala) con /flowbrain-specs y borrá el hallazgo; con `codigo_mal`, es trabajo de desarrollo: no lo arregles acá. Nunca se cambia el código del producto desde un pedido de tests.";
-const COMO_CORREGIR = "Una persona marcó casos de uso como mal (`problema`): corregí el caso o sus especificaciones según lo que dice y borrá `problema` de la página.";
+const COMO_COMPLETAR = "Specifications are written in `especificaciones` of the feature page (product/feat-*.md). The guide to deduce them from the code and the tests: `flowbrain specs --guide`.";
+const COMO_AGRUPAR = "Some specifications are in no use case: group them in `casos` of the page (name of what someone does, who, and the ids of its specifications). The guide: `flowbrain specs --guide`.";
+const COMO_HALLAZGOS = "Some rules have a `hallazgo` (finding): the agent that tried to test them found that the code does not satisfy them (`codigo_no_cumple`) or that they cannot be tested without touching the code (`no_testeable`). Without `decision`, a person decides; with `regla_mal`, fix the rule text (or delete it) with /flowbrain-specs and delete the finding; with `codigo_mal`, it is development work: don't fix it here. The product code is never changed from a test request.";
+const COMO_CORREGIR = "A person marked use cases as wrong (`problema`): fix the case or its specifications according to what it says and delete `problema` from the page.";
 
 /**
  * Requisitos de negocio y de producto de cada funcionalidad: qué tiene que cumplirse, qué archivos lo cumplen y qué
@@ -498,8 +498,8 @@ const COMO_CORREGIR = "Una persona marcó casos de uso como mal (`problema`): co
  */
 export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) {
   const ix = indice(ctx);
-  if (p.estado && p.estado !== "propuesta" && p.estado !== "confirmada") throw new ConsultaError("parametro_invalido", `estado desconocido: ${p.estado}. Los que hay: propuesta, confirmada`);
-  if (p.tipo && p.tipo !== "negocio" && p.tipo !== "producto") throw new ConsultaError("parametro_invalido", `tipo desconocido: ${p.tipo}. Los que hay: negocio, producto`);
+  if (p.estado && p.estado !== "propuesta" && p.estado !== "confirmada") throw new ConsultaError("parametro_invalido", `unknown state: ${p.estado}. Available: propuesta, confirmada`);
+  if (p.tipo && p.tipo !== "negocio" && p.tipo !== "producto") throw new ConsultaError("parametro_invalido", `unknown type: ${p.tipo}. Available: negocio, producto`);
   const pasa = (e: NonNullable<Ficha["especificaciones"]>[number]) => (!p.estado || e.estado === p.estado) && (!p.tipo || e.tipo === p.tipo) && (!p.sin_test || sinVerificar(e)) && (!p.con_hallazgo || !!e.hallazgo);
 
   if (!p.funcionalidad) {
@@ -532,7 +532,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
       funcionalidadesSinEspecificaciones: fichas.filter((f) => !(f.especificaciones ?? []).length).length,
       funcionalidades: filas,
       avisos: [
-        ...(fichas.length === 0 ? ["no hay funcionalidades: primero `flowbrain feature --guide`"] : []),
+        ...(fichas.length === 0 ? ["there are no features: first run `flowbrain feature --guide`"] : []),
         ...(todas.length === 0 && fichas.length ? [COMO_COMPLETAR] : []),
         ...(sinCaso ? [COMO_AGRUPAR] : []),
         ...(todosCasos.some((c) => c.problema) ? [COMO_CORREGIR] : []),
@@ -580,7 +580,7 @@ export function especificaciones(ctx: Contexto, p: EspecificacionesParams = {}) 
       ...(cu.sinCaso.length ? [COMO_AGRUPAR] : []),
       ...(cu.casos.some((c) => c.problema) ? [COMO_CORREGIR] : []),
       ...((f.especificaciones ?? []).some((e) => e.hallazgo) ? [COMO_HALLAZGOS] : []),
-      ...((f.especificaciones ?? []).some((e) => e.rotos.length) ? ["hay referencias que el índice ya no encuentra (`rotos`): un archivo movido o un caso renombrado; corregilas en la página"] : []),
+      ...((f.especificaciones ?? []).some((e) => e.rotos.length) ? ["there are references the index no longer finds (`rotos`): a moved file or a renamed test case; fix them in the page"] : []),
       ...avisosIndice(ix),
     ],
     indice: versiones(ix),
@@ -614,7 +614,7 @@ export function recorrido(ctx: Contexto, p: RecorridoParams) {
     const claves = resolverSimbolo(ix, p.desde).filter((k) => ix.estructura.get(partes(k).archivo)?.simbolos.some((s) => s.nombre === partes(k).simbolo && s.tipo !== "clase"));
     if (!claves.length) {
       const s = sugerencias(ix, p.desde);
-      throw new ConsultaError("nodo_inexistente", `ni endpoint ni símbolo: ${p.desde}${s.length ? ` (¿${s.join(", ")}?)` : ""}`);
+      throw new ConsultaError("nodo_inexistente", `neither an endpoint nor a symbol: ${p.desde}${s.length ? ` (${s.join(", ")}?)` : ""}`);
     }
     recorridos = claves.slice(0, 3).map((k) => {
       const { archivo, simbolo } = partes(k);
@@ -623,9 +623,9 @@ export function recorrido(ctx: Contexto, p: RecorridoParams) {
     });
   }
   const avisos = [
-    ...(recorridos.some((r) => !r.atiende) ? ["no se encontró el método que atiende algún endpoint (¿otro lenguaje o framework sin soporte?)"] : []),
-    ...(recorridos.some((r) => r.truncado) ? [`recorrido cortado por profundidad (${LIMITES_AGENTE.nivel}) o cantidad de pasos (${LIMITES_AGENTE.pasos})`] : []),
-    ...((eps.length || 0) > 3 ? [`${eps.length} endpoints coinciden; se muestran 3`] : []),
+    ...(recorridos.some((r) => !r.atiende) ? ["the method serving some endpoint was not found (another unsupported language or framework?)"] : []),
+    ...(recorridos.some((r) => r.truncado) ? [`flow cut by depth (${LIMITES_AGENTE.nivel}) or number of steps (${LIMITES_AGENTE.pasos})`] : []),
+    ...((eps.length || 0) > 3 ? [`${eps.length} endpoints match; showing 3`] : []),
     ...sinResolverEnPasos(ix, recorridos.flatMap((r) => r.pasos)),
     ...avisosIndice(ix),
   ];
@@ -662,7 +662,7 @@ function resolverPantalla(ctx: Contexto, ref: string): GraphNode | null {
     const conRuta = pantallas.map((x) => ({ ruta: (x.atributos as AtrPantalla).ruta, n: x }));
     const hit = pantallaDeRuta(ruta, conRuta);
     if (hit) return hit.n;
-    if (explicita) throw new ConsultaError("nodo_inexistente", `no hay una pantalla con la ruta ${ruta}`);
+    if (explicita) throw new ConsultaError("nodo_inexistente", `there is no screen with the route ${ruta}`);
     return null;
   }
   const porComponente = pantallas.filter((x) => x.aliases.includes(ref));
@@ -689,11 +689,11 @@ function recorridoPantalla(ctx: Contexto, ix: IndiceCodigo, n: GraphNode) {
     truncado ||= r.truncado;
   }
   const avisos = [
-    ...(a.componentes.length > 1 ? [`la ruta ${a.ruta} se declara ${a.componentes.length} veces: se recorren todos sus componentes`] : []),
-    ...(a.componentes.length === 0 ? ["no se encontró el componente de la pantalla"] : []),
-    ...(envolturas.length ? [`el recorrido incluye lo que hacen sus layouts y guardas (${envolturas.map((c) => partes(c).simbolo).join(", ")}): sus llamadas son de la pantalla`] : []),
-    ...(a.pendiente ? [`ruta sin resolver: ${a.pendiente}`] : []),
-    ...(truncado ? [`recorrido cortado por profundidad (${LIMITES_AGENTE.nivel}) o cantidad de pasos (${LIMITES_AGENTE.pasos})`] : []),
+    ...(a.componentes.length > 1 ? [`route ${a.ruta} is declared ${a.componentes.length} times: all its components are walked`] : []),
+    ...(a.componentes.length === 0 ? ["the screen component was not found"] : []),
+    ...(envolturas.length ? [`the flow includes what its layouts and guards do (${envolturas.map((c) => partes(c).simbolo).join(", ")}): their calls belong to the screen`] : []),
+    ...(a.pendiente ? [`unresolved route: ${a.pendiente}`] : []),
+    ...(truncado ? [`flow cut by depth (${LIMITES_AGENTE.nivel}) or number of steps (${LIMITES_AGENTE.pasos})`] : []),
     ...sinResolverEnPasos(ix, pasos),
   ];
   return { componente: componente ? cita(ix, componente) : null, pasos, truncado, avisos };
@@ -711,7 +711,7 @@ export function pantalla(ctx: Contexto, p: PantallaParams) {
   if (!n) {
     const q = normalizar(p.ruta);
     const parecidas = ctx.graph.nodes.filter((x) => x.tipo === "pantalla" && normalizar(`${x.nombre} ${x.aliases.join(" ")}`).includes(q)).map((x) => x.nombre);
-    throw new ConsultaError("nodo_inexistente", `no existe la pantalla: ${p.ruta}${parecidas.length ? ` (¿${parecidas.slice(0, 6).join(", ")}?)` : ""}`);
+    throw new ConsultaError("nodo_inexistente", `no such screen: ${p.ruta}${parecidas.length ? ` (${parecidas.slice(0, 6).join(", ")}?)` : ""}`);
   }
   const a = n.atributos as AtrPantalla;
   const r = recorridoPantalla(ctx, ix, n);
@@ -719,11 +719,11 @@ export function pantalla(ctx: Contexto, p: PantallaParams) {
   let back: number | null = null;
   const delFront = r.pasos.filter((x) => {
     if (back !== null && x.n > back) return false;
-    back = x.via?.startsWith("por HTTP") ? x.n : null;
+    back = x.via?.startsWith("over HTTP") ? x.n : null;
     return back === null;
   });
   const llama = [...new Set(delFront.flatMap((x) => (x.toca ?? []).filter((t) => t.startsWith("llama_a ")).map((t) => t.slice(8))))];
-  const salida = (s: AtrPantalla["sale"][number]) => ({ a: s.a ? nombre(ctx, s.a) : `${s.ruta} (sin pantalla conocida)`, tipo: s.tipo, ev: s.evidencia });
+  const salida = (s: AtrPantalla["sale"][number]) => ({ a: s.a ? nombre(ctx, s.a) : `${s.ruta} (no known screen)`, tipo: s.tipo, ev: s.evidencia });
   const entran = ctx.graph.edges.filter((e) => e.verbo === "navega_a" && e.hasta === n.id);
   const res = {
     id: n.id,
@@ -734,7 +734,7 @@ export function pantalla(ctx: Contexto, p: PantallaParams) {
     envuelta: a.envuelta.map((e) => ({ componente: cita(ix, e.componente), lleva: e.sale.map(salida) })),
     llegaDesde: [
       ...entran.map((e) => ({ desde: nombre(ctx, e.desde), ev: e.evidencia })),
-      ...(a.desdeEnvolturas ?? []).map((d) => ({ desde: `${partes(d.componente).simbolo} (layout o guarda, ${d.tipo})`, ev: d.evidencia })),
+      ...(a.desdeEnvolturas ?? []).map((d) => ({ desde: `${partes(d.componente).simbolo} (layout or guard, ${d.tipo})`, ev: d.evidencia })),
     ],
     vaA: a.sale.map(salida),
     llamaAlBack: llama,
@@ -745,7 +745,7 @@ export function pantalla(ctx: Contexto, p: PantallaParams) {
     })(),
     recorrido: r.pasos,
     avisos: [
-      ...(entran.length === 0 && !(a.desdeEnvolturas ?? []).length ? ["ninguna pantalla conocida lleva acá: se entra desde afuera (link, mail, callback) o con una ruta armada en tiempo de ejecución"] : []),
+      ...(entran.length === 0 && !(a.desdeEnvolturas ?? []).length ? ["no known screen leads here: it is entered from outside (link, email, callback) or with a route built at runtime"] : []),
       ...r.avisos,
       ...avisosIndice(ix),
     ],
@@ -765,11 +765,11 @@ export interface QuienLlamaParams {
 export function quienLlama(ctx: Contexto, p: QuienLlamaParams) {
   const ix = indice(ctx);
   const prof = p.profundidad ?? 3;
-  if (!Number.isInteger(prof) || prof < 1 || prof > 6) throw new ConsultaError("parametro_invalido", "profundidad debe estar entre 1 y 6");
+  if (!Number.isInteger(prof) || prof < 1 || prof > 6) throw new ConsultaError("parametro_invalido", "profundidad must be between 1 and 6");
   const inicio = resolverSimbolo(ix, p.simbolo);
   if (!inicio.length) {
     const s = sugerencias(ix, p.simbolo);
-    throw new ConsultaError("nodo_inexistente", `no existe el símbolo: ${p.simbolo}${s.length ? ` (¿${s.join(", ")}?)` : ""}`);
+    throw new ConsultaError("nodo_inexistente", `no such symbol: ${p.simbolo}${s.length ? ` (${s.join(", ")}?)` : ""}`);
   }
   const vistos = new Set(inicio);
   const llamadas: Array<{ nivel: number; quien: string; llama_a: string; via?: string }> = [];
@@ -778,7 +778,7 @@ export function quienLlama(ctx: Contexto, p: QuienLlamaParams) {
     const siguiente: string[] = [];
     for (const k of frente) {
       for (const l of [...(ix.llamadores.get(k) ?? [])].sort((a, b) => cmp(a.clave, b.clave))) {
-        llamadas.push({ nivel, quien: cita(ix, l.clave, l.linea), llama_a: partes(k).simbolo, ...(l.via ? { via: `evento o cola ${l.via}` } : {}) });
+        llamadas.push({ nivel, quien: cita(ix, l.clave, l.linea), llama_a: partes(k).simbolo, ...(l.via ? { via: `event or queue ${l.via}` } : {}) });
         if (!vistos.has(l.clave)) {
           vistos.add(l.clave);
           siguiente.push(l.clave);
@@ -802,7 +802,7 @@ export function quienLlama(ctx: Contexto, p: QuienLlamaParams) {
     ),
     llamadas,
     avisos: [
-      ...(frente.length ? [`hay más llamadores por encima de la profundidad ${prof}`] : []),
+      ...(frente.length ? [`there are more callers above depth ${prof}`] : []),
       ...sinResolverConNombre(ix, inicio),
       ...avisosIndice(ix),
     ],
@@ -818,7 +818,7 @@ export interface ImpactoParams {
   budget_tokens?: number | null;
 }
 
-const VERBO: Record<string, string> = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" };
+const VERBO: Record<string, string> = { usa: "uses", escribe_en: "writes to", lee_de: "reads", llama_a: "calls", implementa: "is implemented by", vive_en: "lives in", publica_en: "publishes to", consume_de: "consumes from", depende_de: "depends on", alimenta: "receives messages from" };
 
 export interface InfraParams {
   /** Servicio, repo, base, cola, externo o endpoint. Sin nodo: toda la infraestructura del brain. */
@@ -839,7 +839,7 @@ export function infra(ctx: Contexto, p: InfraParams) {
   let ids: string[];
   const esEndpoint = p.nodo !== undefined && ctx.nodo.get(p.nodo)?.tipo === "endpoint";
   if (p.nodo !== undefined) {
-    if (!ctx.nodo.has(p.nodo)) throw new ConsultaError("nodo_inexistente", `no existe el nodo: ${p.nodo}`);
+    if (!ctx.nodo.has(p.nodo)) throw new ConsultaError("nodo_inexistente", `no such node: ${p.nodo}`);
     const vive = (verboDesde: "salientes" | "entrantes") => (ctx[verboDesde].get(p.nodo!) ?? []).filter((e) => e.verbo === "vive_en").map((e) => (verboDesde === "salientes" ? e.hasta : e.desde));
     ids = esEndpoint ? ctx.graph.nodes.map((n) => n.id) : [p.nodo, ...vive("salientes"), ...vive("entrantes")];
   } else ids = ctx.graph.nodes.map((n) => n.id);
@@ -868,10 +868,10 @@ export function infra(ctx: Contexto, p: InfraParams) {
       ? []
       : [
           esEndpoint
-            ? "ninguna ruta de Ingress, evento http ni route_key declarados en los repos llega a este endpoint"
+            ? "no Ingress route, http event or route_key declared in the repos reaches this endpoint"
             : ctx.graph.nodes.some((n) => n.atributos["infra"])
-              ? "nada coincide: no hay infraestructura declarada para eso en los repos indexados"
-              : "el brain no tiene infraestructura indexada (corré flowbrain index y flowbrain compile)",
+              ? "nothing matches: no infrastructure is declared for that in the indexed repos"
+              : "the brain has no indexed infrastructure (run flowbrain index and flowbrain compile)",
         ],
   };
   return ajustarLista(res, "items", p.budget_tokens);
@@ -895,7 +895,7 @@ function columnasDe(ctx: Contexto, id: string): string[] | null {
   return cols?.length ? cols.map((c) => `${c.nombre} ${c.tipo}${c.pk ? " pk" : ""}${c.nulo ? " null" : ""}`) : null;
 }
 
-const VERBO_IDA: Record<string, string> = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "se apoya en", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" };
+const VERBO_IDA: Record<string, string> = { usa: "uses", escribe_en: "writes to", lee_de: "reads", llama_a: "calls", implementa: "relies on", vive_en: "lives in", publica_en: "publishes to", consume_de: "consumes from", depende_de: "depends on", alimenta: "receives messages from" };
 
 export function impactoDe(ctx: Contexto, p: ImpactoParams) {
   const ix = indice(ctx);
@@ -910,8 +910,8 @@ export function impactoDe(ctx: Contexto, p: ImpactoParams) {
     if (nodos.length === 1) id = nodos[0]!.id;
   }
   // Un símbolo de código: el impacto es quién lo llama.
-  if (!id && resolverSimbolo(ix, p.pieza).length) return { ...quienLlama(ctx, { simbolo: p.pieza, ...(p.budget_tokens !== undefined ? { budget_tokens: p.budget_tokens } : {}) }), nota: "es un símbolo de código: impacto = quién lo llama" };
-  if (!id) throw new ConsultaError("nodo_inexistente", `no se pudo resolver la pieza: ${p.pieza}`);
+  if (!id && resolverSimbolo(ix, p.pieza).length) return { ...quienLlama(ctx, { simbolo: p.pieza, ...(p.budget_tokens !== undefined ? { budget_tokens: p.budget_tokens } : {}) }), nota: "it is a code symbol: impact = who calls it" };
+  if (!id) throw new ConsultaError("nodo_inexistente", `could not resolve the piece: ${p.pieza}`);
 
   const niveles = recorrerImpacto(ix.dependencias, id);
   const info = new Map<string, { via: string; verbo: string }>();
@@ -919,7 +919,7 @@ export function impactoDe(ctx: Contexto, p: ImpactoParams) {
   const porque = (x: string) => {
     const out: string[] = [];
     for (let c = info.get(x); c; c = info.get(c.via)) out.push(`${VERBO[c.verbo] ?? c.verbo} ${c.via}`);
-    return out.join(", que ");
+    return out.join(", which ");
   };
   const afectados = niveles.flatMap((nv, i) => nv.map((x) => ({ nivel: i + 1, id: x.id, tipo: ctx.nodo.get(x.id)?.tipo ?? "", porque: porque(x.id) })));
   // La otra dirección: de qué depende la pieza (si cambia algo de esto, la afecta a ella).
@@ -929,7 +929,7 @@ export function impactoDe(ctx: Contexto, p: ImpactoParams) {
   const porqueIda = (x: string) => {
     const out: string[] = [];
     for (let c = infoIda.get(x); c; c = infoIda.get(c.via)) out.unshift(`${c.via} ${VERBO_IDA[c.verbo] ?? c.verbo}`);
-    return out.join(", que ") + ` ${x}`;
+    return out.join(", which ") + ` ${x}`;
   };
   const dependeDe = ida.flatMap((nv, i) => nv.map((x) => ({ nivel: i + 1, id: x.id, tipo: ctx.nodo.get(x.id)?.tipo ?? "", porque: porqueIda(x.id) })));
   const res = {
@@ -941,7 +941,7 @@ export function impactoDe(ctx: Contexto, p: ImpactoParams) {
     ...(ix.tocanTabla.has(id) ? { tocadaPor: ix.tocanTabla.get(id)!.map((t) => ({ verbo: t.verbo, quien: t.clave.includes("#") && !/#L\d/.test(t.clave) ? cita(ix, t.clave) : t.clave, ev: t.evidencia })) } : {}),
     tecnicas: afectados.filter((a) => a.tipo !== "feat"),
     dependeDe,
-    avisos: [...(afectados.length ? [] : [`nada depende de esta pieza en el grafo${dependeDe.length ? "; en `dependeDe` está lo que, si cambia, la afecta a ella" : ""}`]), ...avisosIndice(ix)],
+    avisos: [...(afectados.length ? [] : [`nothing depends on this piece in the graph${dependeDe.length ? "; `dependeDe` lists what affects it if it changes" : ""}`]), ...avisosIndice(ix)],
     indice: versiones(ix),
   };
   return ajustarLista(res, ["dependeDe", "tecnicas", "tocadaPor", "columnas", "funcionalidades"], p.budget_tokens);
@@ -996,10 +996,10 @@ export function archivosDeDiff(diff: string): Array<{ ruta: string; rangos: Arra
 export function riesgo(ctx: Contexto, p: RiesgoParams) {
   const ix = indice(ctx);
   const prof = p.profundidad ?? 4;
-  if (!Number.isInteger(prof) || prof < 1 || prof > 6) throw new ConsultaError("parametro_invalido", "profundidad debe estar entre 1 y 6");
+  if (!Number.isInteger(prof) || prof < 1 || prof > 6) throw new ConsultaError("parametro_invalido", "profundidad must be between 1 and 6");
   const entradas = [...(p.diff ? archivosDeDiff(p.diff) : []), ...(p.archivos ?? []).map((ruta) => ({ ruta, rangos: [] as Array<[number, number]> }))];
-  if (!entradas.length) throw new ConsultaError("parametro_invalido", "riesgo necesita un diff o una lista de archivos");
-  if (p.repo !== undefined && ctx.nodo.get(p.repo)?.tipo !== "repo") throw new ConsultaError("nodo_inexistente", `no existe el repo: ${p.repo}`);
+  if (!entradas.length) throw new ConsultaError("parametro_invalido", "riesgo needs a diff or a list of files");
+  if (p.repo !== undefined && ctx.nodo.get(p.repo)?.tipo !== "repo") throw new ConsultaError("nodo_inexistente", `no such repo: ${p.repo}`);
 
   const todos = [...ix.estructura.keys()];
   const fuera: string[] = [], ambiguos: string[] = [];
@@ -1061,12 +1061,12 @@ export function riesgo(ctx: Contexto, p: RiesgoParams) {
 
   const escribe = [...tablas.entries()].filter(([, v]) => v.has("escribe_en")).map(([t]) => t).sort(cmp);
   const motivos = [
-    ...(otrosRepos.length ? [`lo consumen por HTTP otros repos: ${otrosRepos.join(", ")}`] : []),
-    ...(feats.size >= 3 ? [`alcanza ${feats.size} funcionalidades`] : []),
-    ...(escribe.length ? [`cambia código que escribe en ${escribe.join(", ")}`] : []),
-    ...(endpoints.length ? [`alcanza ${endpoints.length} endpoint${endpoints.length > 1 ? "s" : ""}`] : []),
-    ...(pantallas.size ? [`alcanza ${pantallas.size} pantalla${pantallas.size > 1 ? "s" : ""}`] : []),
-    ...(feats.size > 0 && feats.size < 3 ? [`alcanza ${feats.size} funcionalidad${feats.size > 1 ? "es" : ""}`] : []),
+    ...(otrosRepos.length ? [`consumed over HTTP by other repos: ${otrosRepos.join(", ")}`] : []),
+    ...(feats.size >= 3 ? [`reaches ${feats.size} features`] : []),
+    ...(escribe.length ? [`changes code that writes to ${escribe.join(", ")}`] : []),
+    ...(endpoints.length ? [`reaches ${endpoints.length} endpoint${endpoints.length > 1 ? "s" : ""}`] : []),
+    ...(pantallas.size ? [`reaches ${pantallas.size} screen${pantallas.size > 1 ? "s" : ""}`] : []),
+    ...(feats.size > 0 && feats.size < 3 ? [`reaches ${feats.size} feature${feats.size > 1 ? "s" : ""}`] : []),
   ];
   const nivel = otrosRepos.length || feats.size >= 3 || escribe.length ? "alto" : endpoints.length || pantallas.size || feats.size === 2 ? "medio" : "bajo";
   const res = {
@@ -1082,12 +1082,12 @@ export function riesgo(ctx: Contexto, p: RiesgoParams) {
     usos,
     llamadores: alcanzados.filter((k) => !tocados.has(k)).map((k) => cita(ix, k)),
     avisos: [
-      ...(fuera.length ? [`archivos fuera del índice (no se pudo medir su alcance): ${fuera.join(", ")}`] : []),
-      ...(ambiguos.length ? [`ruta en varios repos, se tomaron todos (pasá repo): ${ambiguos.join(", ")}`] : []),
-      ...(sinSimbolo.length ? [`cambios fuera de todo símbolo (imports, código suelto de nivel superior, configuración): ${[...new Set(sinSimbolo)].sort(cmp).join(", ")}`] : []),
-      ...(sinUsos.length ? [`tipos o constantes que ningún símbolo indexado nombra (si se usan, es fuera del código analizado: otro repo, plantillas, texto o reflexión): ${sinUsos.join(", ")}`] : []),
-      ...(sinRegistro.size ? [`el índice de ${[...sinRegistro].sort(cmp).join(", ")} no registra quién usa tipos y constantes (indexado antes de registrarlos, o su parser no los sigue): corré \`flowbrain index\` y \`flowbrain compile\` para seguirlos`] : []),
-      ...(cortado ? [`hay más llamadores por encima de la profundidad ${prof}`] : []),
+      ...(fuera.length ? [`files outside the index (their reach could not be measured): ${fuera.join(", ")}`] : []),
+      ...(ambiguos.length ? [`path in several repos, all were taken (pass repo): ${ambiguos.join(", ")}`] : []),
+      ...(sinSimbolo.length ? [`changes outside any symbol (imports, loose top-level code, configuration): ${[...new Set(sinSimbolo)].sort(cmp).join(", ")}`] : []),
+      ...(sinUsos.length ? [`types or constants no indexed symbol names (if used, it is outside the analyzed code: another repo, templates, text or reflection): ${sinUsos.join(", ")}`] : []),
+      ...(sinRegistro.size ? [`the index of ${[...sinRegistro].sort(cmp).join(", ")} does not record who uses types and constants (indexed before they were recorded, or its parser does not follow them): run \`flowbrain index\` and \`flowbrain compile\` to follow them`] : []),
+      ...(cortado ? [`there are more callers above depth ${prof}`] : []),
       ...sinResolverConNombre(ix, [...tocados]),
       ...avisosIndice(ix),
     ],
@@ -1182,12 +1182,12 @@ function camposDeForma(f: Record<string, string>): Campos {
  */
 function camposDelBack(nombre: string, tipos: Record<string, Record<string, string>>): Campos | { motivo: string } {
   const partes = nombre.split(" | ").map((x) => x.trim()).filter((x) => x && x !== "null" && x !== "undefined");
-  if (!partes.length) return { motivo: `el back declara \`${nombre}\`, sin campos` };
-  if (partes.some((x) => x.endsWith("[]"))) return { motivo: `el back declara un arreglo (\`${nombre}\`): se comparan objetos` };
+  if (!partes.length) return { motivo: `the back end declares \`${nombre}\`, without fields` };
+  if (partes.some((x) => x.endsWith("[]"))) return { motivo: `the back end declares an array (\`${nombre}\`): only objects are compared` };
   const sin = partes.filter((x) => !tipos[x]);
-  if (sin.length) return { motivo: `el back declara \`${sin.join(" | ")}\` y el contrato no tiene su forma` };
+  if (sin.length) return { motivo: `the back end declares \`${sin.join(" | ")}\` and the contract does not have its shape` };
   // Una forma vacía es un tipo de claves libres (`Record<string, …>`, un arreglo asociativo): acepta cualquier campo.
-  if (partes.every((x) => !Object.keys(tipos[x]!).length)) return { motivo: `el back declara \`${nombre}\`, sin campos declarados (acepta cualquiera)` };
+  if (partes.every((x) => !Object.keys(tipos[x]!).length)) return { motivo: `the back end declares \`${nombre}\`, with no declared fields (accepts any)` };
   const out: Campos = new Map();
   const vistos = new Map<string, number>();
   for (const x of partes)
@@ -1252,9 +1252,9 @@ function compararLlamada(k: CamposDeLlamada | undefined, c: ContratoEndpoint, me
     if (lado === "cuerpo" && !front && !conCuerpo) return;
     // No manda nada y el back no declara nada: no hay qué comparar.
     if (!back && front?.forma && !Object.keys(front.forma).length) return;
-    if (!front) return void noComparables.push({ lado, motivo: lado === "cuerpo" ? "no se sabe qué cuerpo manda la llamada" : "no se sabe qué query manda la llamada" });
-    if (!front.forma) return void noComparables.push({ lado, motivo: "la llamada manda un tipo sin campos que comparar", tipo: front.tipo });
-    if (!back) return void noComparables.push({ lado, motivo: lado === "cuerpo" ? "el back no declara el tipo del cuerpo" : "el back no declara el tipo de la query" });
+    if (!front) return void noComparables.push({ lado, motivo: lado === "cuerpo" ? "unknown body sent by the call" : "unknown query sent by the call" });
+    if (!front.forma) return void noComparables.push({ lado, motivo: "the call sends a type with no fields to compare", tipo: front.tipo });
+    if (!back) return void noComparables.push({ lado, motivo: lado === "cuerpo" ? "the back end does not declare the body type" : "the back end does not declare the query type" });
     const b = camposDelBack(back, c.tipos);
     if ("motivo" in b) return void noComparables.push({ lado, motivo: b.motivo.replace(/`[^`]*`/, "un tipo"), tipo: back });
     comparados++;
@@ -1272,9 +1272,9 @@ function compararLlamada(k: CamposDeLlamada | undefined, c: ContratoEndpoint, me
   entrada("cuerpo", k?.envia, conCuerpo || k?.envia ? c.request : null);
   entrada("query", k?.query, c.query);
   const f = k?.espera;
-  if (!f) noComparables.push({ lado: "respuesta", motivo: "la llamada no tipa la respuesta" });
-  else if (!f.forma) noComparables.push({ lado: "respuesta", motivo: "la llamada espera un tipo sin campos que comparar", tipo: f.tipo });
-  else if (!c.response) noComparables.push({ lado: "respuesta", motivo: "el back no declara el tipo de respuesta" });
+  if (!f) noComparables.push({ lado: "respuesta", motivo: "the call does not type the response" });
+  else if (!f.forma) noComparables.push({ lado: "respuesta", motivo: "the call expects a type with no fields to compare", tipo: f.tipo });
+  else if (!c.response) noComparables.push({ lado: "respuesta", motivo: "the back end does not declare the response type" });
   else {
     const b = camposDelBack(c.response, c.tipos);
     if ("motivo" in b) noComparables.push({ lado: "respuesta", motivo: b.motivo.replace(/`[^`]*`/, "un tipo"), tipo: c.response });
@@ -1305,7 +1305,7 @@ function compararLlamada(k: CamposDeLlamada | undefined, c: ContratoEndpoint, me
  */
 export function deriva(ctx: Contexto, p: DerivaParams) {
   const ix = indice(ctx);
-  if (p.nodo !== undefined && ctx.nodo.get(p.nodo)?.tipo !== "svc") throw new ConsultaError("nodo_inexistente", `no existe el servicio: ${p.nodo}`);
+  if (p.nodo !== undefined && ctx.nodo.get(p.nodo)?.tipo !== "svc") throw new ConsultaError("nodo_inexistente", `no such service: ${p.nodo}`);
   const endpoints = ctx.graph.nodes.filter((n) => n.tipo === "endpoint");
   const svcDe = (ep: string) => ep.slice(0, ep.indexOf(":"));
   const x = p.cruzadas;
@@ -1364,12 +1364,12 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
     camposQueNoCoinciden: campos.difieren,
     consumidoresIndexados: Object.fromEntries(svcs.map((s) => [s, [...(consumidores.get(s) ?? [])].sort(cmp)])),
     avisos: [
-      ...svcs.filter((s) => !(consumidores.get(s)?.size ?? 0)).map((s) => `${s} no tiene consumidores indexados${x?.vecinos.length ? ` (ni acá ni en ${x.vecinos.join(", ")})` : ""}: no se puede decir qué endpoints suyos no se usan`),
-      ...(x && !x.vecinos.length ? ["este cerebro no tiene la comunicación activa con ningún otro: lo que llame afuera figura como sin endpoint (flowbrain brains lo muestra)"] : []),
-      ...(x && sinEndpoint.length ? [`las llamadas sin endpoint no las atiende ni este cerebro ni ${x.vecinos.join(", ") || "ningún otro"}: o la ruta ya no existe, o el servicio que la atiende no está indexado o no está comunicado`] : []),
-      ...(disputadas.length ? [`${disputadas.length} llamadas coinciden con endpoints de más de un cerebro: falta declarar a qué servicio va cada base de URL (flowbrain evidence las lista)`] : []),
-      ...(programadas ? [`${programadas} ${programadas === 1 ? "tarea programada (CRON) no se cuenta" : "tareas programadas (CRON) no se cuentan"} entre los endpoints sin llamadas: las dispara un horario, no una llamada`] : []),
-      ...(sinAnalizar ? [`${sinAnalizar} llamadas con URL armada en tiempo de ejecución no se pudieron analizar: alguna puede ser la que usa un endpoint listado como sin llamadas`] : []),
+      ...svcs.filter((s) => !(consumidores.get(s)?.size ?? 0)).map((s) => `${s} has no indexed consumers${x?.vecinos.length ? ` (neither here nor in ${x.vecinos.join(", ")})` : ""}: it is not possible to say which of its endpoints are unused`),
+      ...(x && !x.vecinos.length ? ["this brain has no active communication with any other: what it calls outside shows up as without endpoint (flowbrain brains shows it)"] : []),
+      ...(x && sinEndpoint.length ? [`calls without endpoint are served neither by this brain nor by ${x.vecinos.join(", ") || "any other"}: either the path no longer exists, or the service that serves it is not indexed or not connected`] : []),
+      ...(disputadas.length ? [`${disputadas.length} calls match endpoints of more than one brain: declare which service each URL base goes to (flowbrain evidence lists them)`] : []),
+      ...(programadas ? [`${programadas} ${programadas === 1 ? "scheduled task (CRON) is" : "scheduled tasks (CRON) are"} not counted among the uncalled endpoints: a schedule triggers them, not a call`] : []),
+      ...(sinAnalizar ? [`${sinAnalizar} calls with a URL built at runtime could not be analyzed: one of them may be the caller of an endpoint listed as uncalled`] : []),
       ...campos.avisos,
       ...avisosIndice(ix),
     ],
@@ -1409,7 +1409,7 @@ function compararCampos(ctx: Contexto, ix: IndiceCodigo, nodo: string | undefine
   };
   for (const u of unidas) {
     if (!u.contrato) {
-      anotar("respuesta", u.cerebro ? `no se cargó el contrato del endpoint en ${u.cerebro}` : "el endpoint no tiene contrato", undefined, u);
+      anotar("respuesta", u.cerebro ? `the endpoint contract in ${u.cerebro} was not loaded` : "the endpoint has no contract", undefined, u);
       continue;
     }
     const metodo = /^(\w+)/.exec(u.endpoint.slice(u.endpoint.indexOf(":") + 1))?.[1] ?? "";
@@ -1443,10 +1443,10 @@ function compararCampos(ctx: Contexto, ix: IndiceCodigo, nodo: string | undefine
   const sinCampos = [...ix.sinCampos].sort(cmp);
   const entrantes = nodo ? [...(x?.entrantes.keys() ?? [])].some((e) => svcDe(e) === nodo) : (x?.entrantes.size ?? 0) > 0;
   const avisos = [
-    ...(sinCampos.length ? [`el índice de ${sinCampos.join(", ")} no trae los campos de las llamadas (se indexó antes de registrarlos): corré \`flowbrain index\` para que \`deriva\` los compare`] : []),
-    ...(unidas.length ? ["los campos se comparan en el primer nivel del objeto (no adentro de `data`), por nombre; un lado sin tipo o sin forma figura en `campos.noComparables`, no como coincidencia"] : []),
-    ...(grpc ? [`${grpc} ${grpc === 1 ? "llamada gRPC unida no se compara" : "llamadas gRPC unidas no se comparan"} por campos: los mensajes están en el \`.proto\` y el índice no lee lo que arma el cliente`] : []),
-    ...(entrantes ? ["los campos de las llamadas que llegan desde otros cerebros se comparan en la deriva del cerebro que llama"] : []),
+    ...(sinCampos.length ? [`the index of ${sinCampos.join(", ")} does not include call fields (indexed before they were recorded): run \`flowbrain index\` so \`deriva\` compares them`] : []),
+    ...(unidas.length ? ["fields are compared at the top level of the object (not inside `data`), by name; a side without a type or shape shows up in `campos.noComparables`, not as a match"] : []),
+    ...(grpc ? [`${grpc} linked gRPC ${grpc === 1 ? "call is" : "calls are"} not compared by fields: messages live in the \`.proto\` and the index does not read what the client builds`] : []),
+    ...(entrantes ? ["the fields of calls coming from other brains are compared in the drift of the calling brain"] : []),
   ];
   return { resumen, difieren, avisos };
 }
@@ -1482,7 +1482,7 @@ export interface LadoParidad {
  */
 export function paridadEntre(viejo: LadoParidad, nuevo: LadoParidad, budget_tokens?: number | null) {
   const p = { viejo: viejo.svc, nuevo: nuevo.svc, budget_tokens };
-  for (const l of [viejo, nuevo]) if (l.ctx.nodo.get(l.svc)?.tipo !== "svc") throw new ConsultaError("nodo_inexistente", `no existe el servicio: ${l.svc}${l.cerebro ? ` en el cerebro ${l.cerebro}` : ""}`);
+  for (const l of [viejo, nuevo]) if (l.ctx.nodo.get(l.svc)?.tipo !== "svc") throw new ConsultaError("nodo_inexistente", `no such service: ${l.svc}${l.cerebro ? ` in brain ${l.cerebro}` : ""}`);
   const entreCerebros = viejo.ctx !== nuevo.ctx;
   // Entre cerebros, la misma tabla puede tener la página con otro id (`tabla-club-has-users` y `tabla-clubhasusers`):
   // se compara el nombre sin separadores ni mayúsculas. En un mismo brain, el id.
@@ -1542,10 +1542,10 @@ export function paridadEntre(viejo: LadoParidad, nuevo: LadoParidad, budget_toke
     pantallas,
     tablasSinMigrar: sinPar([...tv], [...tn], tabla),
     avisos: [
-      ...(endpoints.total.viejo + pantallas.total.viejo === 0 ? [`${p.viejo} no tiene endpoints ni pantallas indexados`] : []),
-      ...(endpoints.total.nuevo + pantallas.total.nuevo === 0 ? [`${p.nuevo} no tiene endpoints ni pantallas indexados`] : []),
-      "se emparejó por método y ruta: una pieza renombrada figura como faltante de un lado y nueva del otro",
-      ...(entreCerebros ? ["cada servicio está en su cerebro: las tablas se comparan por nombre, sin guiones ni mayúsculas (`tabla-club-has-users` y `tabla-clubhasusers` son la misma); una tabla renombrada figura como diferencia"] : []),
+      ...(endpoints.total.viejo + pantallas.total.viejo === 0 ? [`${p.viejo} has no indexed endpoints or screens`] : []),
+      ...(endpoints.total.nuevo + pantallas.total.nuevo === 0 ? [`${p.nuevo} has no indexed endpoints or screens`] : []),
+      "matched by method and path: a renamed piece shows up as missing on one side and new on the other",
+      ...(entreCerebros ? ["each service is in its own brain: tables are compared by name, ignoring hyphens and case (`tabla-club-has-users` and `tabla-clubhasusers` are the same); a renamed table shows up as a difference"] : []),
     ],
   };
   // Recorte por presupuesto: primero lo nuevo, después las diferencias, al final lo que falta (lo que más importa).

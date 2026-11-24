@@ -6,89 +6,89 @@
  * resultados (a, b, c, d). Vive en core porque el visor la lleva en el `.md` que se descarga.
  */
 export const GUIA_TESTS = `---
-description: Resuelve cada regla de FlowBrain: la verifica con un test, o informa por qué no se puede
+description: Resolves each FlowBrain rule: verifies it with a test, or reports why it can't
 ---
 
-Vas a resolver reglas de FlowBrain que hoy no tienen ningún test. Cada regla está en la página de su funcionalidad
-(\`.flowbrain/<cerebro>/product/<feat>.md\`, en \`especificaciones\`) con el texto en llano y el archivo que la cumple.
-Hace falta un agente con acceso al repo (leer el código y correr los tests): un chat web no sirve.
+You are going to resolve FlowBrain rules that have no test today. Each rule lives in the page of its feature
+(\`.flowbrain/<brain>/product/<feat>.md\`, under \`especificaciones\`) with its plain-language text and the file that satisfies it.
+This needs an agent with access to the repo (read the code and run the tests): a web chat won't do.
 
 $ARGUMENTS
 
-## Reglas
+## Rules
 
-- **Nunca modificás el código del producto.** Ni para arreglarlo, ni para "hacerlo testeable". Solo creás o ampliás
-  archivos de test en los repos del proyecto, con la herramienta y el estilo que ya usa cada repo.
-- **Nunca queda un test que falla en el repo.** Un test rojo rompe la integración continua. Si para mostrar que el
-  código no cumple la regla escribiste un test que falla, ese test va dentro del informe (resultado c) y se borra del repo.
-- **No abras archivos de entorno reales** (\`.env\` y parecidos) ni uses servicios externos reales: lo que haga falta se
-  simula con lo que ya usan los tests del repo.
-- **Nada de commits ni push.** Los cambios quedan en cada repo para que la persona los revise.
-- **Un test por regla**, con un nombre que diga la regla en el idioma de los tests del repo.
-- **No toques** \`texto\`, \`tipo\`, \`estado\` ni \`manual\` de las reglas.
+- **Never modify the product code.** Not to fix it, not to "make it testable". You only create or extend
+  test files in the project repos, with the tool and style each repo already uses.
+- **Never leave a failing test in the repo.** A red test breaks continuous integration. If you wrote a failing test to show
+  that the code does not satisfy the rule, that test goes inside the report (outcome c) and is deleted from the repo.
+- **Do not open real environment files** (\`.env\` and the like) or use real external services: whatever is needed is
+  mocked with what the repo's tests already use.
+- **No commits or pushes.** The changes stay in each repo for the person to review.
+- **One test per rule**, with a name that states the rule in the language of the repo's tests.
+- **Do not touch** \`texto\`, \`tipo\`, \`estado\` or \`manual\` of the rules.
 
-## Los cuatro resultados
+## The four outcomes
 
-Cada regla termina en uno, y solo uno, de estos:
+Each rule ends in one, and only one, of these:
 
-- **a. Verificada con un test nuevo**, escrito sobre el código que ya existe, que pasa.
-- **b. Ya tenía un test que la cubre.** Se anota ese test; no escribís nada.
-- **c. El código no cumple la regla.** No tocás el código ni dejás un test fallando en el repo. Armás un informe con:
-  qué dice la regla; qué hace hoy el código (\`archivo#Ln\`); qué habría que cambiar, en palabras; y el test que lo
-  demuestra, dentro del informe (no en el repo). Antes de dar c, descartá que la regla esté mal escrita: si el código
-  tiene sentido y la regla es la dudosa, el informe lo dice, porque lo decide una persona.
-- **d. No se puede testear sin tocar código.** El informe dice cuál sería el ajuste mínimo (por ejemplo: exportar una
-  función, inyectar un reloj) y por qué hace falta.
+- **a. Verified with a new test**, written against the existing code, that passes.
+- **b. It already had a test covering it.** Record that test; you write nothing.
+- **c. The code does not satisfy the rule.** You don't touch the code or leave a failing test in the repo. Write a report with:
+  what the rule says; what the code does today (\`file#Ln\`); what would have to change, in words; and the test that
+  proves it, inside the report (not in the repo). Before giving c, rule out that the rule is badly written: if the code
+  makes sense and the rule is the doubtful one, the report says so, because a person decides.
+- **d. It cannot be tested without touching code.** The report says what the minimal adjustment would be (for example: export a
+  function, inject a clock) and why it is needed.
 
-## Pasos
+## Steps
 
-1. **Qué falta.** Si el pedido trae reglas, son esas. Si no: \`flowbrain specs --untested --brain <cerebro>\` lista las
-   funcionalidades con reglas sin test, y \`flowbrain specs <feat> --untested --brain <cerebro>\` cada regla con su
-   archivo. Las de \`negocio\` primero. \`flowbrain brains\` dice la carpeta de cada repo.
+1. **What is missing.** If the request includes rules, those are the ones. Otherwise: \`flowbrain specs --untested --brain <brain>\` lists the
+   features with untested rules, and \`flowbrain specs <feat> --untested --brain <brain>\` each rule with its
+   file. \`negocio\` (business) rules first. \`flowbrain brains\` gives the folder of each repo.
 
-2. **Cómo testea el repo.** Antes de escribir, mirá cómo lo hace ese repo: el \`package.json\` (\`vitest\`, \`jest\`), el
-   \`composer.json\` o \`phpunit.xml\` (PHPUnit), el \`pyproject.toml\` (pytest), y dos o tres tests existentes cerca del
-   archivo que cumple la regla. Copiá su estilo: dónde van los archivos, cómo se llaman, qué se simula y con qué. Si el
-   repo tiene la herramienta pero ningún test, seguí la convención de la herramienta (\`*.test.tsx\` junto al archivo).
+2. **How the repo tests.** Before writing, look at how that repo does it: the \`package.json\` (\`vitest\`, \`jest\`), the
+   \`composer.json\` or \`phpunit.xml\` (PHPUnit), the \`pyproject.toml\` (pytest), and two or three existing tests near the
+   file that satisfies the rule. Copy their style: where the files go, how they are named, what is mocked and with what. If the
+   repo has the tool but no tests, follow the tool's convention (\`*.test.tsx\` next to the file).
 
-3. **Una regla por vez.** Primero buscá si ya hay un test que la cubra (b). Si no, leé el archivo que la cumple (con
-   \`flowbrain flow\` o \`flowbrain screen\` si hace falta el recorrido) y escribí el test sobre el código tal como está.
-   Corré solo ese archivo de test con el comando del repo.
-   - Pasa: resultado a.
-   - Falla por cómo está escrito el test: corregí el test.
-   - Falla porque el código no hace lo que dice la regla: resultado c. Guardá el test para el informe y borralo del repo.
-   - No hay forma de testearla sin cambiar el código: resultado d.
+3. **One rule at a time.** First look for an existing test that covers it (b). If there is none, read the file that satisfies it (with
+   \`flowbrain flow\` or \`flowbrain screen\` if you need the flow) and write the test against the code as it is.
+   Run only that test file with the repo's command.
+   - It passes: outcome a.
+   - It fails because of how the test is written: fix the test.
+   - It fails because the code does not do what the rule says: outcome c. Keep the test for the report and delete it from the repo.
+   - There is no way to test it without changing the code: outcome d.
 
-4. **Responder.** Cerrá con un bloque \`flowbrain-resultados\` que tenga una entrada por regla, con \`cerebro\`,
-   \`funcionalidad\` (el id local, \`feat-…\`) y \`regla\` tal cual figuran en el pedido:
+4. **Answer.** Finish with a \`flowbrain-resultados\` block with one entry per rule, with \`cerebro\`,
+   \`funcionalidad\` (the local id, \`feat-…\`) and \`regla\` exactly as they appear in the request:
 
    \`\`\`flowbrain-resultados
    [
-     { "cerebro": "web", "funcionalidad": "feat-pagos", "regla": "rechaza-tarjeta-vencida", "resultado": "a",
-       "tests": ["repo-tienda:src/pagos/validar-tarjeta.test.ts::rechaza una tarjeta vencida"] },
-     { "cerebro": "web", "funcionalidad": "feat-pagos", "regla": "reintenta-cobro", "resultado": "b",
-       "tests": ["repo-tienda:src/pagos/cobro.test.ts::reintenta hasta tres veces"] },
-     { "cerebro": "web", "funcionalidad": "feat-pagos", "regla": "descuento-maximo", "resultado": "c",
-       "hoy": "src/pagos/descuento.ts#L40: acepta hasta 100% de descuento",
-       "cambio": "Limitar el descuento al 50% que dice la regla.",
-       "test": "it('rechaza más de 50%', () => { expect(() => descontar(100, 60)).toThrow() })" },
-     { "cerebro": "web", "funcionalidad": "feat-pagos", "regla": "cobra-en-hora-local", "resultado": "d",
-       "ajuste": "Recibir la hora por parámetro en cobrar(): hoy usa new Date() adentro." }
+     { "cerebro": "web", "funcionalidad": "feat-payments", "regla": "rejects-expired-card", "resultado": "a",
+       "tests": ["repo-shop:src/payments/validate-card.test.ts::rejects an expired card"] },
+     { "cerebro": "web", "funcionalidad": "feat-payments", "regla": "retries-charge", "resultado": "b",
+       "tests": ["repo-shop:src/payments/charge.test.ts::retries up to three times"] },
+     { "cerebro": "web", "funcionalidad": "feat-payments", "regla": "maximum-discount", "resultado": "c",
+       "hoy": "src/payments/discount.ts#L40: accepts up to 100% discount",
+       "cambio": "Cap the discount at the 50% the rule states.",
+       "test": "it('rejects more than 50%', () => { expect(() => discount(100, 60)).toThrow() })" },
+     { "cerebro": "web", "funcionalidad": "feat-payments", "regla": "charges-in-local-time", "resultado": "d",
+       "ajuste": "Take the time as a parameter in charge(): today it uses new Date() inside." }
    ]
    \`\`\`
 
-   Los tests de a y b van como \`repo:ruta::nombre del caso\`, con el nombre tal cual.
+   The tests of a and b go as \`repo:path::test case name\`, with the name verbatim.
 
-5. **Anotar.** Si te pidieron las reglas desde el visor, el servidor anota lo que respondiste: no edites las páginas ni
-   compiles. Si trabajás por tu cuenta (por ejemplo, desde un \`.md\` que te pasaron), anotalo vos:
-   - a y b: sumá cada test a \`tests\` de la regla.
-   - c y d: agregá \`hallazgo\` a la regla, con \`resultado: codigo_no_cumple\` o \`no_testeable\`, \`hoy\` (solo c), \`cambio\`
-     (qué cambiar; en d, el ajuste mínimo) y \`test\` (solo c, entre comillas de bloque \`|\`).
+5. **Record.** If the rules were requested from the viewer, the server records what you answered: don't edit the pages or
+   compile. If you work on your own (for example, from a \`.md\` you were given), record it yourself:
+   - a and b: add each test to the rule's \`tests\`.
+   - c and d: add \`hallazgo\` to the rule, with \`resultado: codigo_no_cumple\` or \`no_testeable\`, \`hoy\` (c only), \`cambio\`
+     (what to change; in d, the minimal adjustment) and \`test\` (c only, as a \`|\` block scalar).
 
-   Después \`flowbrain compile\` dentro de \`.flowbrain/<cerebro>/\` y \`flowbrain specs <feat> --brain <cerebro>\`: las
-   reglas con a o b ya no tienen \`sinTest\` y sus tests no aparecen en \`rotos\` (si aparecen, el nombre o la ruta no
-   coinciden). Los hallazgos se ven con \`flowbrain specs --findings\`.
+   Then \`flowbrain compile\` inside \`.flowbrain/<brain>/\` and \`flowbrain specs <feat> --brain <brain>\`: the
+   rules with a or b no longer have \`sinTest\` and their tests don't appear in \`rotos\` (if they do, the name or the path don't
+   match). Findings are shown with \`flowbrain specs --findings\`.
 
-6. **Informar**, corto: cuántas reglas terminaron en cada resultado, los archivos de test que escribiste, y que los
-   cambios en los repos quedaron sin commitear para revisar.
+6. **Report**, briefly: how many rules ended in each outcome, the test files you wrote, and that the
+   changes in the repos were left uncommitted for review.
 `;

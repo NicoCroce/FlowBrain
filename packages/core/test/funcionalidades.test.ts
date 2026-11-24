@@ -74,9 +74,9 @@ describe("funcionalidades", () => {
 
   it("codigo con formato inválido o en una página que no es feat falla", () => {
     expect(() => compile(conFuncionalidades("repo-tienda:apps/bff#L3"))).toThrow(CompileError);
-    expect(() => compile(conFuncionalidades("repo-noexiste:src"))).toThrow(/repo inexistente/);
+    expect(() => compile(conFuncionalidades("repo-noexiste:src"))).toThrow(/nonexistent repo/);
     const mal = { ...base, paginas: base.paginas.map((p) => (p.ruta === "technology/svc-bff.md" ? { ...p, contenido: p.contenido.replace("vive_en:", "codigo: [\"repo-tienda:apps\"]\nvive_en:") } : p)) };
-    expect(() => compile(mal)).toThrow(/codigo solo aplica a feat/);
+    expect(() => compile(mal)).toThrow(/codigo only applies to feat/);
   });
 
   it("el modelo de dependencias une el grafo técnico con lo que derivan las fichas", () => {

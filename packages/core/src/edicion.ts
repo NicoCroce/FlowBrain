@@ -14,7 +14,7 @@ import { CODIGO, dentroDe, DECISIONES_HALLAZGO, ESTADOS_ESPECIFICACION, Hallazgo
  * entrada o una carpeta que la contiene), devuelve el contenido sin cambios.
  */
 export function agregarCodigoAPagina(archivo: string, contenido: string, entrada: string): { contenido: string; cambio: boolean } {
-  if (!CODIGO.test(entrada)) throw new Error(`entrada de código inválida: ${entrada} (va como repo-x:ruta/dentro/del/repo)`);
+  if (!CODIGO.test(entrada)) throw new Error(`invalid code entry: ${entrada} (format: repo-x:path/inside/the/repo)`);
   const p = parsePagina(archivo, contenido);
   const doc = parseDocument(p.frontmatter, { version: "1.2", schema: "core" });
   let seq = doc.get("codigo", true);
@@ -33,12 +33,12 @@ export function agregarCodigoAPagina(archivo: string, contenido: string, entrada
  * y la da por buena, `propuesta` para volver atrás. No toca el texto ni el resto de la página.
  */
 export function cambiarEstadoDeEspecificacion(archivo: string, contenido: string, id: string, estado: string): { contenido: string; cambio: boolean } {
-  if (!(ESTADOS_ESPECIFICACION as readonly string[]).includes(estado)) throw new Error(`estado desconocido: ${estado} (va ${ESTADOS_ESPECIFICACION.join(" o ")})`);
+  if (!(ESTADOS_ESPECIFICACION as readonly string[]).includes(estado)) throw new Error(`unknown estado: ${estado} (expected ${ESTADOS_ESPECIFICACION.join(" or ")})`);
   const p = parsePagina(archivo, contenido);
   const doc = parseDocument(p.frontmatter, { version: "1.2", schema: "core" });
   const seq = doc.get("especificaciones", true);
   const item = isSeq(seq) ? seq.items.find((x) => isMap(x) && x.get("id") === id) : undefined;
-  if (!item || !isMap(item)) throw new Error(`la página ${archivo} no tiene una especificación con id ${id}`);
+  if (!item || !isMap(item)) throw new Error(`page ${archivo} has no specification with id ${id}`);
   if ((item.get("estado") ?? "propuesta") === estado) return { contenido, cambio: false };
   item.set("estado", estado);
   const frontmatter = doc.toString({ lineWidth: 0, flowCollectionPadding: false });
@@ -50,7 +50,7 @@ export function cambiarEstadoDeEspecificacion(archivo: string, contenido: string
  * o le saca la marca (`problema` nulo o vacío). El agente lee la marca, corrige el caso y la borra.
  */
 export function marcarProblemaDeCaso(archivo: string, contenido: string, id: string, problema: string | null): { contenido: string; cambio: boolean } {
-  return ponerTexto(archivo, contenido, { lista: "casos", que: "un caso de uso", id, campo: "problema", valor: problema, max: 1000, nombre: "el comentario" });
+  return ponerTexto(archivo, contenido, { lista: "casos", que: "use case", id, campo: "problema", valor: problema, max: 1000, nombre: "The comment" });
 }
 
 /**
@@ -58,7 +58,7 @@ export function marcarProblemaDeCaso(archivo: string, contenido: string, id: str
  * especificación con `manual` cuenta como verificada aunque no tenga test.
  */
 export function marcarPruebaManual(archivo: string, contenido: string, id: string, motivo: string | null): { contenido: string; cambio: boolean } {
-  return ponerTexto(archivo, contenido, { lista: "especificaciones", que: "una especificación", id, campo: "manual", valor: motivo, max: 300, nombre: "el motivo" });
+  return ponerTexto(archivo, contenido, { lista: "especificaciones", que: "specification", id, campo: "manual", valor: motivo, max: 300, nombre: "The reason" });
 }
 
 /** Lo que un agente resolvió de una regla: tests nuevos o ya existentes que la verifican, o un hallazgo (o `null`: borrarlo). */
@@ -85,9 +85,9 @@ export function anotarResultados(archivo: string, contenido: string, resultados:
   let cambio = false;
   for (const r of resultados) {
     const item = isSeq(seq) ? seq.items.find((x) => isMap(x) && x.get("id") === r.id) : undefined;
-    if (!item || !isMap(item)) throw new Error(`la página ${archivo} no tiene una especificación con id ${r.id}`);
+    if (!item || !isMap(item)) throw new Error(`page ${archivo} has no specification with id ${r.id}`);
     for (const t of r.tests ?? []) {
-      if (!TEST_REF.test(t)) throw new Error(`test inválido: ${t} (va repo-x:ruta::nombre del caso)`);
+      if (!TEST_REF.test(t)) throw new Error(`invalid test: ${t} (format: repo-x:path::test case name)`);
     }
     const previos: unknown = item.get("tests", true);
     const nuevos = (r.tests ?? []).filter((t) => !(isSeq(previos) && previos.items.some((x) => String((x as Scalar).value ?? x) === t)));
@@ -128,14 +128,14 @@ export function anotarResultados(archivo: string, contenido: string, resultados:
  * (pasa a desarrollo). `null` borra la decisión. Solo vale sobre una regla que tiene hallazgo.
  */
 export function decidirHallazgo(archivo: string, contenido: string, id: string, decision: string | null): { contenido: string; cambio: boolean } {
-  if (decision !== null && !(DECISIONES_HALLAZGO as readonly string[]).includes(decision)) throw new Error(`decisión desconocida: ${decision} (va ${DECISIONES_HALLAZGO.join(" o ")})`);
+  if (decision !== null && !(DECISIONES_HALLAZGO as readonly string[]).includes(decision)) throw new Error(`unknown decision: ${decision} (expected ${DECISIONES_HALLAZGO.join(" or ")})`);
   const p = parsePagina(archivo, contenido);
   const doc = parseDocument(p.frontmatter, { version: "1.2", schema: "core" });
   const seq = doc.get("especificaciones", true);
   const item = isSeq(seq) ? seq.items.find((x) => isMap(x) && x.get("id") === id) : undefined;
-  if (!item || !isMap(item)) throw new Error(`la página ${archivo} no tiene una especificación con id ${id}`);
+  if (!item || !isMap(item)) throw new Error(`page ${archivo} has no specification with id ${id}`);
   const h = item.get("hallazgo", true);
-  if (!isMap(h)) throw new Error(`la especificación ${id} no tiene hallazgo`);
+  if (!isMap(h)) throw new Error(`specification ${id} has no finding`);
   if ((h.get("decision") ?? null) === decision) return { contenido, cambio: false };
   if (decision) h.set("decision", decision);
   else h.delete("decision");
@@ -145,12 +145,12 @@ export function decidirHallazgo(archivo: string, contenido: string, id: string, 
 /** Pone (o borra, si viene vacío) un texto entre comillas en el elemento `id` de una lista del frontmatter, texto a texto. */
 function ponerTexto(archivo: string, contenido: string, o: { lista: string; que: string; id: string; campo: string; valor: string | null; max: number; nombre: string }): { contenido: string; cambio: boolean } {
   const nota = (o.valor ?? "").replace(/\s+/g, " ").trim();
-  if (nota.length > o.max) throw new Error(`${o.nombre} no puede pasar de ${o.max} caracteres`);
+  if (nota.length > o.max) throw new Error(`${o.nombre} cannot exceed ${o.max} characters`);
   const p = parsePagina(archivo, contenido);
   const doc = parseDocument(p.frontmatter, { version: "1.2", schema: "core" });
   const seq = doc.get(o.lista, true);
   const item = isSeq(seq) ? seq.items.find((x) => isMap(x) && x.get("id") === o.id) : undefined;
-  if (!item || !isMap(item)) throw new Error(`la página ${archivo} no tiene ${o.que} con id ${o.id}`);
+  if (!item || !isMap(item)) throw new Error(`page ${archivo} has no ${o.que} with id ${o.id}`);
   if ((item.get(o.campo) ?? "") === nota) return { contenido, cambio: false };
   if (nota) {
     const v = doc.createNode(nota) as Scalar;
@@ -161,7 +161,7 @@ function ponerTexto(archivo: string, contenido: string, o: { lista: string; que:
   return { contenido: `---\n${frontmatter.endsWith("\n") ? frontmatter : `${frontmatter}\n`}---\n${p.cuerpo}`, cambio: true };
 }
 
-const CABECERA = "# Llamadas que el código no declara con tipos, resueltas leyendo el código. Se aplican al indexar.\n";
+const CABECERA = "# Calls the code does not declare with types, resolved by reading the code. Applied when indexing.\n";
 
 /** Suma una declaración a `calls.yaml` (`texto` es `null` si el archivo todavía no existe). No repite una que ya esté. */
 export function agregarDeclaracion(texto: string | null, seccion: "llamadas", item: LlamadaDeclarada): { contenido: string; cambio: boolean };
@@ -169,7 +169,7 @@ export function agregarDeclaracion(texto: string | null, seccion: "http", item: 
 export function agregarDeclaracion(texto: string | null, seccion: "llamadas" | "http", item: LlamadaDeclarada | HttpDeclarada): { contenido: string; cambio: boolean } {
   const previo = texto ?? CABECERA;
   const doc = parseDocument(previo, { version: "1.2", schema: "core" });
-  if (doc.errors.length) throw new Error(`${ARCHIVO_LLAMADAS}: YAML inválido (${doc.errors[0]!.message.split("\n")[0]}); corregilo antes de sumar declaraciones`);
+  if (doc.errors.length) throw new Error(`${ARCHIVO_LLAMADAS}: invalid YAML (${doc.errors[0]!.message.split("\n")[0]}); fix it before adding declarations`);
   let seq = doc.get(seccion, true);
   const ya = (isSeq(seq) ? (seq.toJSON() as Array<Record<string, unknown>>) : []).some((x) => x?.["desde"] === item.desde && x["linea"] === item.linea);
   if (ya) return { contenido: previo, cambio: false };

@@ -23,17 +23,17 @@ interface Comunes {
 
 function comunes(c: Comunes, porDefecto: Proyeccion): { proyeccion: Proyeccion; budget: number | null } {
   const proyeccion = c.proyeccion ?? porDefecto;
-  if (!PROYECCIONES.includes(proyeccion)) throw new ConsultaError("parametro_invalido", `proyeccion inválida: ${String(proyeccion)}`);
+  if (!PROYECCIONES.includes(proyeccion)) throw new ConsultaError("parametro_invalido", `invalid proyeccion: ${String(proyeccion)}`);
   const budget = c.budget_tokens === undefined ? BUDGET_POR_DEFECTO : c.budget_tokens;
   if (budget !== null && (!Number.isInteger(budget) || budget < 1)) {
-    throw new ConsultaError("parametro_invalido", "budget_tokens debe ser un entero positivo o null");
+    throw new ConsultaError("parametro_invalido", "budget_tokens must be a positive integer or null");
   }
   return { proyeccion, budget };
 }
 
 function nodoOError(ctx: Contexto, id: string): GraphNode {
   const n = ctx.nodo.get(id);
-  if (!n) throw new ConsultaError("nodo_inexistente", `no existe el nodo: ${id}`);
+  if (!n) throw new ConsultaError("nodo_inexistente", `no such node: ${id}`);
   return n;
 }
 
@@ -126,9 +126,9 @@ function buscarSimbolos(ctx: Contexto, q: string): SimboloHallado[] {
 export function buscarNodo(ctx: Contexto, p: BuscarParams) {
   const { proyeccion, budget } = comunes(p, "resumen");
   const q = normalizar(p.texto ?? "");
-  if (q === "") throw new ConsultaError("parametro_invalido", "texto vacío");
+  if (q === "") throw new ConsultaError("parametro_invalido", "empty texto");
   const limite = p.limite ?? 10;
-  if (!Number.isInteger(limite) || limite < 1) throw new ConsultaError("parametro_invalido", "limite debe ser un entero positivo");
+  if (!Number.isInteger(limite) || limite < 1) throw new ConsultaError("parametro_invalido", "limite must be a positive integer");
 
   const hits: Array<{ n: GraphNode; c: Coincidencia }> = [];
   for (const n of ctx.graph.nodes) {
@@ -182,7 +182,7 @@ function expandirVerbos(verbos: string[] | undefined): Set<Verbo> {
   if (!verbos || verbos.length === 0) return new Set(VERBOS.filter((v) => v !== "contiene" && v !== "expone"));
   const out = new Set<Verbo>();
   for (const v of verbos) {
-    if (!(VERBOS as readonly string[]).includes(v)) throw new ConsultaError("parametro_invalido", `verbo desconocido: ${v}`);
+    if (!(VERBOS as readonly string[]).includes(v)) throw new ConsultaError("parametro_invalido", `unknown verbo: ${v}`);
     for (const x of SUPERVERBO[v as Verbo] ?? [v as Verbo]) out.add(x);
   }
   return out;
@@ -192,10 +192,10 @@ export function recorrerGrafo(ctx: Contexto, p: RecorrerParams) {
   const { proyeccion, budget } = comunes(p, "resumen");
   const raiz = nodoOError(ctx, p.nodo);
   const direccion = p.direccion ?? "out";
-  if (!["out", "in", "both"].includes(direccion)) throw new ConsultaError("parametro_invalido", `direccion inválida: ${direccion}`);
+  if (!["out", "in", "both"].includes(direccion)) throw new ConsultaError("parametro_invalido", `invalid direccion: ${direccion}`);
   const profundidad = p.profundidad ?? 1;
   if (!Number.isInteger(profundidad) || profundidad < 1 || profundidad > PROFUNDIDAD_MAX) {
-    throw new ConsultaError("parametro_invalido", `profundidad debe estar entre 1 y ${PROFUNDIDAD_MAX}`);
+    throw new ConsultaError("parametro_invalido", `profundidad must be between 1 and ${PROFUNDIDAD_MAX}`);
   }
   const verbos = expandirVerbos(p.verbos);
 
@@ -248,9 +248,9 @@ export function contratoDe(ctx: Contexto, p: ContratoParams) {
     filtro = n.id;
     n = nodoOError(ctx, n.id.slice(0, n.id.indexOf(":")));
   }
-  if (n.tipo !== "svc") throw new ConsultaError("parametro_invalido", `contrato_de requiere un svc o un endpoint; ${n.id} es ${n.tipo}`);
+  if (n.tipo !== "svc") throw new ConsultaError("parametro_invalido", `contrato_de requires a svc or an endpoint; ${n.id} is ${n.tipo}`);
   const contrato = ctx.contratos.get(n.id);
-  if (!contrato) throw new ConsultaError("nodo_inexistente", `${n.id} no tiene contrato`);
+  if (!contrato) throw new ConsultaError("nodo_inexistente", `${n.id} has no contract`);
   if (p.endpoint !== undefined) {
     const m = ENDPOINT_REF.exec(p.endpoint);
     filtro = m ? `${n.id}:${m[1]}:${normalizarRuta(m[2]!)}` : p.endpoint;
@@ -330,7 +330,7 @@ function resolverDesde(ctx: Contexto, desde: string): Inicio {
         return (metodo === null || a.metodo === metodo) && rutaCoincide(a.ruta, r);
       })
       .map((x) => x.id);
-    if (eps.length === 0) throw new ConsultaError("nodo_inexistente", `ningún endpoint coincide con: ${desde}`);
+    if (eps.length === 0) throw new ConsultaError("nodo_inexistente", `no endpoint matches: ${desde}`);
     return conEndpoints(eps);
   }
 
@@ -347,7 +347,7 @@ function resolverDesde(ctx: Contexto, desde: string): Inicio {
   const q = normalizar(desde);
   const porNombre = ctx.graph.nodes.filter((x) => [x.nombre, ...x.aliases].some((k) => normalizar(k) === q)).map((x) => x.id);
   if (porNombre.length === 1) return { semillas: [], expandir: porNombre, nivelExpansion: 1 };
-  throw new ConsultaError("nodo_inexistente", `no se pudo resolver desde: ${desde}`);
+  throw new ConsultaError("nodo_inexistente", `could not resolve desde: ${desde}`);
 }
 
 /** Dirección del flujo de datos de una arista: [origen, destino]. `consume_de` fluye de la cola al svc. */
@@ -363,7 +363,7 @@ function datoDe(ctx: Contexto, e: GraphEdge): string | null {
 
 export function trazar(ctx: Contexto, p: TrazarParams) {
   const { proyeccion, budget } = comunes(p, "resumen");
-  if (!p.desde) throw new ConsultaError("parametro_invalido", "desde es obligatorio");
+  if (!p.desde) throw new ConsultaError("parametro_invalido", "desde is required");
   if (p.hasta !== undefined) nodoOError(ctx, p.hasta);
   const inicio = resolverDesde(ctx, p.desde);
 

@@ -62,7 +62,7 @@ export function leerLlamadasDeclaradas(texto: string): { llamadas: LlamadaDeclar
   try {
     doc = parse(texto);
   } catch (e) {
-    return { llamadas, http, rechazadas: [`${ARCHIVO_LLAMADAS}: YAML inválido (${(e as Error).message.split("\n")[0]})`] };
+    return { llamadas, http, rechazadas: [`${ARCHIVO_LLAMADAS}: invalid YAML (${(e as Error).message.split("\n")[0]})`] };
   }
   const texto_ = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
   const listaHttp = (doc as { http?: unknown } | null)?.http;
@@ -70,14 +70,14 @@ export function leerLlamadasDeclaradas(texto: string): { llamadas: LlamadaDeclar
     const desde = texto_(x?.["desde"]), metodo = texto_(x?.["metodo"]), ruta = texto_(x?.["ruta"]), base = texto_(x["base"]), origen = texto_(x["origen"]), nota = texto_(x["nota"]);
     if (desde && partes(desde) && metodo && ruta?.startsWith("/") && Number.isInteger(x["linea"])) {
       http.push({ desde, linea: x["linea"] as number, metodo: metodo.toUpperCase(), ruta, ...(base ? { base } : {}), ...(origen ? { origen } : {}), ...(nota ? { nota } : {}) });
-    } else rechazadas.push(`http ${i + 1}: faltan \`desde\` (repo:ruta#Simbolo), \`linea\`, \`metodo\` o \`ruta\` (que empiece con /)`);
+    } else rechazadas.push(`http ${i + 1}: missing \`desde\` (repo:path#Symbol), \`linea\`, \`metodo\` or \`ruta\` (starting with /)`);
   });
   const lista = (doc as { llamadas?: unknown } | null)?.llamadas;
   if (!Array.isArray(lista)) return { llamadas, http, rechazadas };
   lista.forEach((x: Record<string, unknown>, i) => {
     if (typeof x?.["desde"] === "string" && typeof x["hacia"] === "string" && Number.isInteger(x["linea"]) && partes(x["desde"]) && partes(x["hacia"])) {
       llamadas.push({ desde: x["desde"], hacia: x["hacia"], linea: x["linea"] as number, ...(typeof x["origen"] === "string" ? { origen: x["origen"] } : {}), ...(typeof x["nota"] === "string" ? { nota: x["nota"] } : {}) });
-    } else rechazadas.push(`llamada ${i + 1}: faltan \`desde\` y \`hacia\` (repo:ruta#Simbolo) o \`linea\``);
+    } else rechazadas.push(`call ${i + 1}: missing \`desde\` and \`hacia\` (repo:path#Symbol) or \`linea\``);
   });
   return { llamadas, http, rechazadas };
 }
@@ -90,8 +90,8 @@ export function httpDeclaradasDe(archivos: ArchivoIndexado[], repo: string, decl
     const de = partes(d.desde)!;
     if (de.repo !== repo) continue;
     const s = porRuta.get(de.ruta)?.simbolos.find((x) => x.nombre === de.simbolo);
-    if (!s) rechazadas.push(`${d.desde}: no existe en el índice`);
-    else if (d.linea < s.linea || d.linea > (s.fin ?? s.linea)) rechazadas.push(`${d.desde}: la línea ${d.linea} no está dentro de ${de.simbolo} (${s.linea}-${s.fin ?? s.linea})`);
+    if (!s) rechazadas.push(`${d.desde}: not in the index`);
+    else if (d.linea < s.linea || d.linea > (s.fin ?? s.linea)) rechazadas.push(`${d.desde}: line ${d.linea} is not inside ${de.simbolo} (${s.linea}-${s.fin ?? s.linea})`);
     else validas.push({ ...d, archivo: de.ruta });
   }
   return { validas, rechazadas };
@@ -109,12 +109,12 @@ export function aplicarLlamadasDeclaradas(archivos: ArchivoIndexado[], repo: str
     const de = partes(d.desde)!, a = partes(d.hacia)!;
     if (de.repo !== repo) continue;
     const motivo = (() => {
-      if (a.repo !== repo) return "el destino está en otro repo: una llamada declarada es entre métodos del mismo repo";
+      if (a.repo !== repo) return "the target is in another repo: a declared call is between methods of the same repo";
       const origen = porRuta.get(de.ruta), destino = porRuta.get(a.ruta);
       const s = origen?.simbolos.find((x) => x.nombre === de.simbolo);
-      if (!origen || !s) return `no existe ${d.desde} en el índice`;
-      if (!destino?.simbolos.some((x) => x.nombre === a.simbolo)) return `no existe ${d.hacia} en el índice`;
-      if (d.linea < s.linea || d.linea > (s.fin ?? s.linea)) return `la línea ${d.linea} no está dentro de ${de.simbolo} (${s.linea}-${s.fin ?? s.linea})`;
+      if (!origen || !s) return `${d.desde} is not in the index`;
+      if (!destino?.simbolos.some((x) => x.nombre === a.simbolo)) return `${d.hacia} is not in the index`;
+      if (d.linea < s.linea || d.linea > (s.fin ?? s.linea)) return `line ${d.linea} is not inside ${de.simbolo} (${s.linea}-${s.fin ?? s.linea})`;
       if (!(origen.invoca ?? []).some((x) => x.desde === de.simbolo && x.archivo === a.ruta && x.simbolo === a.simbolo)) {
         (origen.invoca ??= []).push({ desde: de.simbolo, archivo: a.ruta, simbolo: a.simbolo, linea: d.linea });
         origen.invoca.sort((x, y) => x.linea - y.linea || (x.simbolo < y.simbolo ? -1 : 1));

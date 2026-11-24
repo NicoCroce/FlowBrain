@@ -43,9 +43,9 @@ describe("flowbrain verify", () => {
     await rm(archivo);
     const r1 = await verifyDir(brain, { repos: { "repo-tienda": clon }, hoy: HOY });
     expect(r1.nuevas.map((d) => [d.desde, d.verbo, d.hasta, d.motivo])).toEqual([
-      ["svc-payments", "llama_a", "ext-pasarela", "archivo inexistente"],
+      ["svc-payments", "llama_a", "ext-pasarela", "file does not exist"],
       // La relación fina del endpoint cita la misma línea: cae con ella.
-      ["svc-payments:POST:/payments", "llama_a", "ext-pasarela", "archivo inexistente"],
+      ["svc-payments:POST:/payments", "llama_a", "ext-pasarela", "file does not exist"],
     ]);
     expect(await estado("svc-payments", "ext-pasarela")).toBe("dudoso");
 
@@ -66,8 +66,8 @@ describe("flowbrain verify", () => {
     const simbolos = new Map([["repo-x:src/a.ts", new Map([[2, ["cobrar"]], [3, ["pagar"]]])]]);
     const r = await verificarAristas(g, async () => ["// arriba", "export function cobrar() {}", "// la función se movió"], simbolos);
     expect(r.dudosas.map((d) => [d.evidencia, d.motivo])).toEqual([
-      ["repo-x:src/a.ts#L3", "la línea 3 ya no contiene `pagar`"],
-      ["repo-x:src/a.ts#L9", "línea 9 fuera del archivo (3 líneas)"],
+      ["repo-x:src/a.ts#L3", "line 3 no longer contains `pagar`"],
+      ["repo-x:src/a.ts#L9", "line 9 outside the file (3 lines)"],
     ]);
   });
 
@@ -92,7 +92,7 @@ describe("flowbrain verify", () => {
   });
 
   it("una verificación con formato inválido hace fallar compile con un mensaje claro", () => {
-    expect(() => compile({ paginas: [], contratos: [], archivos: [], verificacion: { ruta: "_build/verification.json", contenido: '{"x":1}' } })).toThrow(/verificación con formato inválido/);
+    expect(() => compile({ paginas: [], contratos: [], archivos: [], verificacion: { ruta: "_build/verification.json", contenido: '{"x":1}' } })).toThrow(/verification with invalid format/);
   });
 });
 

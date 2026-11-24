@@ -37,11 +37,11 @@ const APERTURA = "---\n";
 export function parsePagina(archivo: string, contenido: string): PaginaParseada {
   const texto = contenido.replace(/\r\n/g, "\n");
   if (!texto.startsWith(APERTURA)) {
-    throw new CompileError([{ archivo, linea: 1, mensaje: "falta el frontmatter (la página debe empezar con ---)" }]);
+    throw new CompileError([{ archivo, linea: 1, mensaje: "missing frontmatter (the page must start with ---)" }]);
   }
   const resto = texto.slice(APERTURA.length);
   const m = /^---[ \t]*$/m.exec(resto);
-  if (!m) throw new CompileError([{ archivo, linea: 1, mensaje: "frontmatter sin delimitador de cierre ---" }]);
+  if (!m) throw new CompileError([{ archivo, linea: 1, mensaje: "frontmatter without closing delimiter ---" }]);
   const frontmatter = resto.slice(0, m.index);
   const tras = resto.slice(m.index + m[0].length);
   const cuerpo = tras.startsWith("\n") ? tras.slice(1) : tras;
@@ -54,7 +54,7 @@ export function parsePagina(archivo: string, contenido: string): PaginaParseada 
       doc.errors.map((err) => ({
         archivo,
         linea: (err.linePos?.[0]?.line ?? 1) + offset,
-        mensaje: `YAML inválido: ${err.message.split("\n")[0]}`,
+        mensaje: `invalid YAML: ${err.message.split("\n")[0]}`,
       })),
     );
   }

@@ -130,9 +130,9 @@ export function contextoParaPrompt(ctx: Contexto, p: ContextoPromptParams): Cont
 
   const cabecera = [
     "<flowbrain-context>",
-    "Grafo de conocimiento del sistema (determinístico, con evidencia). Herramientas MCP: buscar_nodo, recorrer_grafo, contrato_de, trazar, recorrido, pantalla, quien_llama, impacto, funcionalidad.",
+    "Knowledge graph of the system (deterministic, with evidence). MCP tools: buscar_nodo, recorrer_grafo, contrato_de, trazar, recorrido, pantalla, quien_llama, impacto, funcionalidad.",
   ];
-  if (repo) cabecera.push(`Repo actual: ${repo.id} — ${repo.nombre}${repo.resumen ? `: ${repo.resumen}` : ""}`);
+  if (repo) cabecera.push(`Current repo: ${repo.id} — ${repo.nombre}${repo.resumen ? `: ${repo.resumen}` : ""}`);
   const cierre = "</flowbrain-context>";
 
   const lineas = [...cabecera];
@@ -149,7 +149,7 @@ export function contextoParaPrompt(ctx: Contexto, p: ContextoPromptParams): Cont
     secciones.push({ titulo: s.titulo, resultado });
     lineas.push(`## ${s.titulo}`, stringifyCompact(resultado));
   }
-  if (omitidas > 0) lineas.push(`(${omitidas} secciones omitidas por presupuesto)`);
+  if (omitidas > 0) lineas.push(`(${omitidas} sections omitted due to budget)`);
   lineas.push(cierre);
   return { repo: repo?.id ?? null, secciones, omitidas, texto: lineas.join("\n") + "\n" };
 }

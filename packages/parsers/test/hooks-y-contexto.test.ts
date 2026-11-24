@@ -61,12 +61,12 @@ describe("layout: la pantalla hereda lo que hace lo que la envuelve (fixtures/ho
     expect(llama(ctx, "/admin/usuarios")).toEqual(["svc-api:GET:/api/sesion", "svc-api:GET:/api/permisos", "svc-api:GET:/api/usuarios"]);
     expect(llama(ctx, "/")).toEqual(["svc-api:GET:/api/sesion"]);
     expect(llama(ctx, "/torneos/{id}/listas")).toEqual(["svc-api:GET:/api/listas"]);
-    expect(pantalla(ctx, { ruta: "/admin/usuarios", budget_tokens: null }).avisos).toContain("el recorrido incluye lo que hacen sus layouts y guardas (Marco, Admin): sus llamadas son de la pantalla");
+    expect(pantalla(ctx, { ruta: "/admin/usuarios", budget_tokens: null }).avisos).toContain("the flow includes what its layouts and guards do (Marco, Admin): their calls belong to the screen");
   });
 
   it("la navegación del layout no pasa a la pantalla, y la ruta sin resolver lo dice", () => {
     const r = pantalla(ctx, { ruta: "/{url}/x", budget_tokens: null });
-    expect(r.avisos.some((a) => a.startsWith("ruta sin resolver: ruta armada con el `path` de la ruta que monta a Perdido"))).toBe(true);
+    expect(r.avisos.some((a) => a.startsWith("unresolved route: ruta armada con el `path` de la ruta que monta a Perdido"))).toBe(true);
   });
 });
 
