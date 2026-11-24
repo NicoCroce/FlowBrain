@@ -86,6 +86,8 @@ export const MAPA_JS =
     var k = Object.keys(quien).length;
     return { id: n.id, t: n.t, c: cerebroIdx(n.id), dep: k, tramo: k === 0 ? "0" : k <= 2 ? "1-2" : k <= 9 ? "3-9" : "10+", texto: [n.id, n.n].concat(n.a || []).join(" ") };
   }).sort(function (a, b) { return b.dep - a.dep || porOrden(a.t, b.t) || (nombre(a.id) < nombre(b.id) ? -1 : 1); });
+  var PIEZA = {};
+  PIEZAS.forEach(function (x) { PIEZA[x.id] = x; });
   var VER_INICIO = 50, verInicio = VER_INICIO;
   var tramoDe = function (v) { for (var i = 0; i < DEPENDIENTES.length; i++) if (DEPENDIENTES[i][0] === v) return DEPENDIENTES[i][1]; return v; };
   var flInicio = window.brainFiltros.crear({
@@ -114,13 +116,62 @@ export const MAPA_JS =
     },
     alCambiar: function (todo) { verInicio = VER_INICIO; if (todo) inicioImpacto(); else { var l = document.getElementById("im-lista"); if (l) l.innerHTML = listaInicio(); } }
   });
+  // La portada, segmentada: arriba lo de producto y servicios en una columna por tipo (las 10 con más dependientes,
+  // «Ver todas» filtra por ese tipo); abajo el código agrupado por archivo, con sus clases y métodos plegados adentro.
+  // Así un archivo, su clase y sus métodos no salen como filas sueltas que se repiten.
+  var COLUMNA = 10;
+  var esCodigo = function (x) { return !!SIM[x.id] || x.t === "archivo" || x.t === "test"; };
+  var filaPieza = function (x, conDonde) {
+    // En la columna el tipo ya está en el título; dentro de un archivo se dice (clase, método…) y en qué línea.
+    return "<li>" + enlaceImpacto(x.id) + " <small>· " + (conDonde ? esc(TIPO[x.t] || x.t) + (SIM[x.id] ? " · L" + SIM[x.id].l : "") + " · " : "") + (x.dep ? plural(x.dep, "pieza depende", "piezas dependen") + " directo" : "nadie depende") + "</small></li>";
+  };
+  function columnas(xs, S) {
+    var porTipo = {};
+    xs.forEach(function (x) { (porTipo[x.t] = porTipo[x.t] || []).push(x); });
+    var tipos = Object.keys(porTipo).sort(porOrden), uno = tipos.length === 1;
+    if (!tipos.length) return "";
+    return '<h2 class="titulo-seccion">Producto y servicios</h2><div class="grupos-impacto' + (uno ? " uno" : "") + '">' + tipos.map(function (t) {
+      var ys = porTipo[t], vis = uno ? ys.slice(0, verInicio) : ys.slice(0, COLUMNA);
+      var mas = uno
+        ? (ys.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" id="im-mas">Mostrar ' + Math.min(VER_INICIO, ys.length - vis.length) + " más</button> <small>" + vis.length + " de " + ys.length + "</small></p>" : "")
+        : (ys.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" data-fl="im" data-fl-set="' + esc(JSON.stringify({ tipo: t })) + '">Ver ' + (ys.length === 1 ? "la" : "las " + ys.length) + "</button></p>" : "");
+      return '<section class="grupo-impacto" data-tipo="' + t + '"><h2>' + puntoT(t) + " " + esc(mayus(tituloT(t, 2))) + ' <small class="cuenta">' + ys.length.toLocaleString("es") + "</small></h2>" +
+        '<ul class="lista">' + vis.map(function (x) { return filaPieza(x, false); }).join("") + "</ul>" + mas + "</section>";
+    }).join("") + "</div>";
+  }
+  function porArchivo(xs, S) {
+    if (!xs.length) return "";
+    var grupos = {}, orden = [];
+    xs.forEach(function (x) {
+      var a = SIM[x.id] ? SIM[x.id].a : x.id;
+      var g = grupos[a];
+      if (!g) { g = grupos[a] = { archivo: null, sims: [], tope: 0 }; orden.push(a); }
+      if (SIM[x.id]) g.sims.push(x); else g.archivo = x;
+      if (x.dep > g.tope) g.tope = x.dep;
+    });
+    orden.sort(function (a, b) { return grupos[b].tope - grupos[a].tope || (a < b ? -1 : 1); });
+    var vis = orden.slice(0, verInicio), buscando = !!(S.q && S.q.trim());
+    var html = vis.map(function (a) {
+      var g = grupos[a], arch = g.archivo || PIEZA[a], ruta = a.slice(a.indexOf(":") + 1);
+      // El archivo que no pasó el filtro (se buscó un método suyo) se nombra igual, para saber dónde está.
+      var cab = (porId[a] ? enlaceImpacto(a) : punto(a) + " <code>" + esc(ruta) + "</code>") +
+        " <small>· " + esc(TIPO[(arch && arch.t) || "archivo"]) + (arch ? " · " + (arch.dep ? plural(arch.dep, "pieza depende", "piezas dependen") + " directo" : "nadie depende") : "") +
+        (g.sims.length ? " · " + plural(g.sims.length, "símbolo", "símbolos") : "") + "</small>";
+      if (!g.sims.length) return '<li class="im-archivo">' + cab + "</li>";
+      var sims = g.sims.slice().sort(function (x, y) { return y.dep - x.dep || (nombre(x.id) < nombre(y.id) ? -1 : 1); });
+      return '<li class="im-archivo"><details' + (buscando || !g.archivo ? " open" : "") + "><summary>" + cab + '</summary><ul class="lista im-simbolos">' + sims.map(function (x) { return filaPieza(x, true); }).join("") + "</ul></details></li>";
+    }).join("");
+    return '<h2 class="titulo-seccion">Código, por archivo <small class="cuenta">' + plural(orden.length, "archivo", "archivos") + "</small></h2>" +
+      '<p class="explica">Cada archivo con sus clases, métodos y funciones adentro, ordenados por cuántas piezas dependen de ellos. Abrí un archivo para verlos.</p>' +
+      '<ul class="lista im-codigo">' + html + "</ul>" +
+      (orden.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" id="im-mas">Mostrar ' + Math.min(VER_INICIO, orden.length - vis.length) + " archivos más</button> <small>" + vis.length + " de " + orden.length + "</small></p>" : "");
+  }
   function listaInicio() {
-    var xs = flInicio.filtrar();
+    var xs = flInicio.filtrar(), S = flInicio.S();
     if (!xs.length) return flInicio.vacio(PIEZAS.length);
-    var vis = xs.slice(0, verInicio);
-    return flInicio.resultado(xs, " · las que más dependientes tienen, primero") +
-      '<ul class="lista">' + vis.map(function (x) { return "<li>" + enlaceImpacto(x.id) + " <small>· " + esc(TIPO[x.t] || x.t) + (SIM[x.id] ? " · <code>" + esc(donde(x.id)) + "</code>" : "") + " · " + (x.dep ? plural(x.dep, "pieza depende", "piezas dependen") + " directo" : "nada depende de ella") + "</small></li>"; }).join("") + "</ul>" +
-      (xs.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" id="im-mas">Mostrar ' + Math.min(VER_INICIO, xs.length - vis.length) + " más</button> <small>" + vis.length + " de " + xs.length.toLocaleString("es") + "</small></p>" : "");
+    var producto = xs.filter(function (x) { return !esCodigo(x); }), codigo = xs.filter(esCodigo);
+    return flInicio.resultado(xs, " · lo de producto por tipo y el código por archivo; las que más dependientes tienen, primero") +
+      columnas(producto, S) + porArchivo(codigo, S);
   }
   function inicioImpacto() {
     FLI = flInicio;

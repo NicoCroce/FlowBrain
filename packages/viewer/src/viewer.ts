@@ -244,6 +244,8 @@ label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
 .resumen-impacto .chip { font-size: 13px; color: var(--text); }
 .grupos-impacto { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-top: 16px; }
 .grupos-impacto.uno { grid-template-columns: 1fr; }
+.titulo-seccion { display: flex; align-items: center; gap: 8px; margin: 28px 0 10px !important; }
+.im-codigo > li { padding: 6px 0; } .im-codigo summary { cursor: pointer; } .im-simbolos { margin: 6px 0 2px 22px; } .im-simbolos li { padding: 5px 0; }
 .pestanas { display: flex; gap: 4px; margin: 6px 0 16px; border-bottom: 1px solid var(--borde); }
 .pestana { padding: 8px 14px; border-bottom: 2px solid transparent; color: var(--medio); text-decoration: none; font: 500 13px var(--sans); }
 .pestana b { color: var(--suave); font-weight: 600; margin-left: 4px; }
