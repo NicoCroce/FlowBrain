@@ -78,10 +78,10 @@ npx @nicocroce/flowbrain init mi-brain --claude-code
 It creates the brain (structure, `SCHEMA.md`, `README.md`), compiles it, registers the `UserPromptSubmit` and `SessionEnd` hooks in `~/.claude/settings.json` (keeping your other hooks and leaving a `settings.json.flowbrain.bak` backup) and prints the only line left to run, the one for the MCP server:
 
 ```bash
-claude mcp add --scope user flowbrain -- npx -y @nicocroce/flowbrain@0.1.0 serve --root /ruta/absoluta/a/mi-brain
+claude mcp add --scope user flowbrain -- npx -y @nicocroce/flowbrain@0.1.1 serve --root /ruta/absoluta/a/mi-brain
 ```
 
-The hooks and the server use a pinned version (`@nicocroce/flowbrain@0.1.0`) so that a new release doesn't change behavior without notice. `init` never overwrites existing files and can be run again. Without `--claude-code` it doesn't touch the Claude Code configuration. The package is named `@nicocroce/flowbrain` (the `flowbrain` name on npm belongs to another project) and installs the `flowbrain` command.
+The hooks and the server use a pinned version (`@nicocroce/flowbrain@0.1.1`) so that a new release doesn't change behavior without notice. `init` never overwrites existing files and can be run again. Without `--claude-code` it doesn't touch the Claude Code configuration. The package is named `@nicocroce/flowbrain` (the `flowbrain` name on npm belongs to another project) and installs the `flowbrain` command.
 
 ## From the repo (development)
 

@@ -78,10 +78,10 @@ npx @nicocroce/flowbrain init mi-brain --claude-code
 Crea el brain (estructura, `SCHEMA.md`, `README.md`), lo compila, registra los hooks `UserPromptSubmit` y `SessionEnd` en `~/.claude/settings.json` (conserva los demás hooks y deja un respaldo `settings.json.flowbrain.bak`) e imprime la única línea que falta, la del servidor MCP:
 
 ```bash
-claude mcp add --scope user flowbrain -- npx -y @nicocroce/flowbrain@0.1.0 serve --root /ruta/absoluta/a/mi-brain
+claude mcp add --scope user flowbrain -- npx -y @nicocroce/flowbrain@0.1.1 serve --root /ruta/absoluta/a/mi-brain
 ```
 
-Los hooks y el servidor usan una versión fija (`@nicocroce/flowbrain@0.1.0`) para que una publicación nueva no cambie el comportamiento sin aviso. `init` nunca pisa archivos existentes y se puede repetir. Sin `--claude-code` no toca la configuración de Claude Code. El paquete se llama `@nicocroce/flowbrain` (el nombre `flowbrain` en npm es de otro proyecto) e instala el comando `flowbrain`.
+Los hooks y el servidor usan una versión fija (`@nicocroce/flowbrain@0.1.1`) para que una publicación nueva no cambie el comportamiento sin aviso. `init` nunca pisa archivos existentes y se puede repetir. Sin `--claude-code` no toca la configuración de Claude Code. El paquete se llama `@nicocroce/flowbrain` (el nombre `flowbrain` en npm es de otro proyecto) e instala el comando `flowbrain`.
 
 ## Desde el repo (desarrollo)
 

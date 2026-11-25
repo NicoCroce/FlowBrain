@@ -1,5 +1,9 @@
 # Cambios
 
+## 0.1.1 · 2026-11-25
+
+- El README del paquete es el mismo del repo (inglés y castellano), con imágenes y links que funcionan en npm.
+
 ## 0.1.0 · 2026-11-24
 
 Primera versión publicada, como `@nicocroce/flowbrain` (el comando es `flowbrain`).
