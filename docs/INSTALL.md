@@ -224,3 +224,11 @@ Targets: `claude` (block in `CLAUDE.md`), `agents` (block in `AGENTS.md`), `curs
 ```bash
 pnpm -s -C "$FLOWBRAIN_TOOL" flowbrain context --root "$FLOWBRAIN_ROOT" --repo . --prompt "¿qué se rompe si cambio /checkout?"
 ```
+
+## Publishing a version (maintainers)
+
+```bash
+pnpm release patch     # or minor, major, x.y.z; without an argument, the current version
+```
+
+First add a `## x.y.z` section to `packages/flowbrain/CHANGELOG.md` with what changes (it can stay uncommitted: it goes into the version commit). The command checks that you are on `main`, with no other changes and up to date with `origin`; bumps the version, commits and pushes it; runs `npm publish` (typecheck, tests, build and 2FA); waits for npm to finish processing the version (it takes a few minutes, and you must not publish again); and creates the `vx.y.z` tag on GitHub with the CHANGELOG notes, plus a release if `gh` is installed. If something fails halfway, run it again with the same version and it picks up where it left off. `--dry-run` shows what it would do without touching anything.

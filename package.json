@@ -13,7 +13,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "flowbrain": "tsx packages/cli/src/main.ts",
     "brain": "tsx packages/cli/src/main.ts",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

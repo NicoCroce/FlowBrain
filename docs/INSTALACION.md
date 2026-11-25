@@ -224,3 +224,11 @@ Destinos: `claude` (bloque en `CLAUDE.md`), `agents` (bloque en `AGENTS.md`), `c
 ```bash
 pnpm -s -C "$FLOWBRAIN_TOOL" flowbrain context --root "$FLOWBRAIN_ROOT" --repo . --prompt "¿qué se rompe si cambio /checkout?"
 ```
+
+## Publicar una versión (mantenedores)
+
+```bash
+pnpm release patch     # o minor, major, x.y.z; sin argumento, la versión actual
+```
+
+Antes, agregá en `packages/flowbrain/CHANGELOG.md` una sección `## x.y.z` con lo que cambia (puede quedar sin commitear: va en el commit de la versión). El comando controla que estés en `main`, sin otros cambios y al día con `origin`; sube la versión, la commitea y pushea; corre `npm publish` (typecheck, tests, build y el 2FA); espera a que npm termine de procesar la versión (tarda unos minutos y no hay que volver a publicar); y deja el tag `vx.y.z` en GitHub con las notas del CHANGELOG, más una release si está `gh`. Si algo falla a mitad, se vuelve a correr con la misma versión y sigue desde lo que falta. `--dry-run` muestra qué haría sin tocar nada.
