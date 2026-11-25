@@ -64,6 +64,11 @@ En un proyecto de 7 cerebros, una pregunta típica suma unos 3–8k tokens de Fl
 
 ## Mientras desarrollás: cómo se mantiene al día
 
+**¿Una funcionalidad nueva entra de punta a punta?**
+
+- **Lo técnico entra solo.** Endpoints, métodos, llamadas, tablas, pantallas e infraestructura se regeneran desde el código. Con `serve --sync`, cuando un repo tiene un commit nuevo, la siguiente consulta lo reindexa y ya ve el flujo completo, de la pantalla a la tabla. Lo que no está commiteado no se ve: el grafo sigue en el commit anterior y las respuestas avisan que el índice quedó atrás.
+- **Lo de producto se propone y lo revisás vos.** Qué funcionalidad es, sus reglas de negocio y sus tests no se agregan solos. Los archivos nuevos aparecen en `sin_asociar` con una sugerencia de a qué funcionalidad pertenecen. `/flowbrain-features` y `/flowbrain-specs` generan borradores, y `flowbrain promote` los confirma.
+
 ### El código nuevo entra solo, en el commit
 
 El grafo de código (endpoints, métodos, llamadas, tablas, pantallas, infraestructura) **se regenera desde el código**, no se escribe a mano. Con el servidor MCP en modo `serve --sync`, en cada consulta FlowBrain compara el commit indexado con el `HEAD` de cada clon. Si un clon avanzó, reindexa y recompila ese repo antes de responder. Los extractores propios del proyecto se vuelven a correr y se verifican en cada indexación.
@@ -81,9 +86,32 @@ Las **funcionalidades** (qué es una feature, qué reglas de negocio cumple, qu�
 - `flowbrain promote` los pasa a `product/` y `technology/`. Si el cerebro deja de compilar con las páginas nuevas, deshace todo.
 - `fidelidad` mide de 0 a 100 qué tan entendido quedó cada archivo o funcionalidad, y qué falta.
 
+### Qué cuesta mantenerlo al día
+
+**Actualizar el grafo de código no consume tokens del modelo.** Reindexar y recompilar son programas: parsers y extractores del proyecto que corren en tu máquina, sin llamar a ningún LLM. Lo que cuesta es tiempo de CPU (en un proyecto de 7 cerebros, unos dos minutos para todo; con `--sync`, solo los repos que avanzaron). Eso pasa **una vez por commit**, cuando la siguiente consulta detecta que el clon se movió, y no mientras el agente escribe código.
+
+Los tokens se gastan solo en dos momentos:
+
+| Momento | Quién lo hace | Tokens |
+|---|---|---|
+| Reindexar después de un commit | FlowBrain (parsers + extractores) | 0 |
+| Consultar el grafo | el agente, por MCP o el hook | lo de las tres capas de arriba |
+| Proponer producto: funcionalidades, especificaciones, asignar archivos sin funcionalidad | el agente, cuando se lo pide la regla o corrés `/flowbrain-features` o `/flowbrain-specs` | lo que lea y escriba para esos borradores |
+| Promover borradores (`flowbrain promote`) | FlowBrain | 0 |
+
+Mientras desarrollás sin commitear, FlowBrain no gasta nada en mantenerse al día: el agente lee el código que está cambiando, como sin FlowBrain, y el grafo se pone al día solo en el próximo commit.
+
 ### Cuando el código contradice al grafo
 
 Si mientras trabaja el agente ve que el código dice otra cosa que el grafo, escribe en su respuesta una línea `flowbrain-nota <nodo>: <qué cambió>`. El hook `SessionEnd` guarda esas notas en `_drafts/notes/` para que las revises. **FlowBrain no reescribe solo su conocimiento curado**: lo de código se regenera del código, y lo de producto pasa por tu revisión. Ese control es lo que lo mantiene confiable.
+
+### Lo que las reglas le piden al agente
+
+El bloque de reglas (`flowbrain gen …`) y las instrucciones del servidor MCP le enseñan al agente a mantener el grafo al día mientras desarrolla:
+
+- **Lo no commiteado se lee del código.** Para archivos que creó o cambió y todavía no commiteó, lee el código y no el grafo.
+- **Antes de cambiar, mira quién usa.** Antes de tocar un método, un endpoint o una tabla, consulta `quien_llama` o `impacto`.
+- **Lo nuevo se propone, no se impone.** Cuando agrega una funcionalidad o archivos nuevos, ya commiteados revisa `sin_asociar` y dice a qué funcionalidad pertenece cada archivo. Para una funcionalidad nueva propone su página como borrador en `_drafts/product/feat-<id>.md`. Nunca edita `product/` ni `technology/` directamente: vos revisás y promovés con `flowbrain promote`.
 
 ### ¿Y las mejoras en el propio código?
 

@@ -68,6 +68,11 @@ export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): st
     "Every edge carries evidence (`repo:path#Lnn`); open that file before claiming anything.",
     `If the code contradicts the brain, write a line \`${PREFIJO_NOTA} <node-id>: <what changed>\` in your answer. When the session ends the hook saves it in \`_drafts/notes/\` for review.`,
     "",
+    "While you develop:",
+    "- The graph only sees committed code: the index follows each clone's commit (`flowbrain serve --sync` reindexes when it moves; otherwise `flowbrain sync`). For files you created or changed and have not committed, read the code, not the graph.",
+    "- Before changing a method, an endpoint or a table, ask `quien_llama` or `impacto`; it may be used from another repo over HTTP, events or queues.",
+    "- When you add a feature or new files, once they are committed check `sin_asociar` (`flowbrain unassigned`) and say which feature each new file belongs to. For a new feature, propose its page as a draft in `.flowbrain/<brain>/_drafts/product/feat-<id>.md` (or with the `/flowbrain-features` guide). Never edit `product/` or `technology/` directly: the user reviews drafts and moves them with `flowbrain promote`.",
+    "",
   ].join("\n");
 }
 

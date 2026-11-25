@@ -66,4 +66,12 @@ describe("hook SessionEnd", () => {
   it("el bloque de reglas enseña la marca", () => {
     expect(bloqueReglas()).toContain("flowbrain-nota <node-id>: <what changed>");
   });
+
+  it("el bloque de reglas enseña a mantener el grafo al día mientras se desarrolla", () => {
+    const b = bloqueReglas();
+    expect(b).toContain("The graph only sees committed code");
+    expect(b).toContain("`sin_asociar` (`flowbrain unassigned`)");
+    expect(b).toContain("_drafts/product/feat-<id>.md");
+    expect(b).toContain("`flowbrain promote`");
+  });
 });

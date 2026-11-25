@@ -64,6 +64,11 @@ In a 7-brain project, a typical question adds about 3–8k tokens from FlowBrain
 
 ## While you develop: how it stays current
 
+**Does a new feature come in end to end?**
+
+- **The technical side comes in by itself.** Endpoints, methods, calls, tables, screens and infrastructure are regenerated from the code. With `serve --sync`, when a repo has a new commit, the next query reindexes it and already sees the whole flow, from screen to table. Uncommitted work is not visible: the graph stays at the previous commit and answers warn that the index fell behind.
+- **The product side is proposed, and you review it.** What feature it is, its business rules and its tests are not added on their own. New files show up in `sin_asociar` with a suggestion of which feature they belong to. `/flowbrain-features` and `/flowbrain-specs` produce drafts, and `flowbrain promote` confirms them.
+
 ### New code comes in by itself, at the commit
 
 The code graph (endpoints, methods, calls, tables, screens, infrastructure) is **regenerated from the code**, not written by hand. With the MCP server in `serve --sync` mode, on every query FlowBrain compares the indexed commit with each clone's `HEAD`. If a clone moved, it reindexes and recompiles that repo before answering. The project's own extractors run again and are verified on every indexing.
@@ -81,9 +86,32 @@ Uncommitted work is not visible yet: the graph stays at the previous commit, and
 - `flowbrain promote` moves them into `product/` and `technology/`. If the brain stops compiling with the new pages, it undoes everything.
 - `fidelidad` (fidelity) scores from 0 to 100 how well each file or feature is understood, and what is missing.
 
+### What it costs to stay current
+
+**Updating the code graph uses no model tokens.** Reindexing and recompiling are programs: parsers and the project's own extractors running on your machine, without calling any LLM. The cost is CPU time (in a 7-brain project, about two minutes for everything; with `--sync`, only the repos that moved). That happens **once per commit**, when the next query detects the clone moved, not while the agent is writing code.
+
+Tokens are spent only at these moments:
+
+| Moment | Who does it | Tokens |
+|---|---|---|
+| Reindexing after a commit | FlowBrain (parsers + extractors) | 0 |
+| Querying the graph | the agent, over MCP or the hook | the three layers above |
+| Proposing product: features, specifications, assigning unassigned files | the agent, when the rule asks or you run `/flowbrain-features` or `/flowbrain-specs` | whatever it reads and writes for those drafts |
+| Promoting drafts (`flowbrain promote`) | FlowBrain | 0 |
+
+While you develop without committing, FlowBrain spends nothing on staying current: the agent reads the code it is changing, as it would without FlowBrain, and the graph catches up by itself at the next commit.
+
 ### When the code contradicts the graph
 
 If, while working, the agent sees that the code says something different from the graph, it writes a line `flowbrain-nota <node>: <what changed>` in its answer. The `SessionEnd` hook saves those notes in `_drafts/notes/` for you to review. **FlowBrain does not rewrite its curated knowledge on its own**: the code layer is regenerated from the code, and the product layer goes through your review. That control is what keeps it trustworthy.
+
+### What the rules ask of the agent
+
+The rules block (`flowbrain gen …`) and the MCP server instructions teach the agent to keep the graph current while it develops:
+
+- **Uncommitted work is read from the code.** For files it created or changed and has not committed, it reads the code, not the graph.
+- **Check who uses it before changing it.** Before touching a method, an endpoint or a table, it asks `quien_llama` or `impacto`.
+- **New things are proposed, not imposed.** When it adds a feature or new files, once they are committed it checks `sin_asociar` and says which feature each file belongs to. For a new feature it proposes the page as a draft in `_drafts/product/feat-<id>.md`. It never edits `product/` or `technology/` directly: you review and promote with `flowbrain promote`.
 
 ### What about improvements to the code itself?
 
