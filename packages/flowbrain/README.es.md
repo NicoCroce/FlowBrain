@@ -1,141 +1,131 @@
 # FlowBrain
 
-[English](README.md) · **Español**
+[English](https://github.com/NicoCroce/FlowBrain/blob/main/README.md) · **Español**
 
-> **¿Qué entiende la IA sobre tu proyecto?** FlowBrain lo deja a la vista para que lo verifiques y lo corrijas, y así cada respuesta sea más determinística. Empezá por la [guía](https://github.com/NicoCroce/FlowBrain/blob/main/docs/GUIA.md).
+<p align="center"><img src="https://raw.githubusercontent.com/NicoCroce/FlowBrain/main/docs/images/hero-question.es.svg" alt="¿Qué entendió realmente la IA de tu proyecto? FlowBrain te lo muestra: funcionalidades, impacto, reglas y tests, con evidencia." width="100%"></p>
 
-FlowBrain arma un **grafo de conocimiento de tu sistema** para que un agente de código (Claude Code, Codex, OpenCode u otro) entienda el producto antes de tocarlo: qué funcionalidades tiene, qué pantallas las forman, qué endpoints llaman, qué métodos ejecutan, qué tablas tocan y **qué se rompe si algo cambia**, también entre repositorios y servicios distintos.
+## ¿Alguna vez te preguntaste qué entendió la IA de todo tu proyecto?
 
-- **Lee el código, no adivina.** Los parsers leen TypeScript/JavaScript (React, React Native, Vue, Svelte, Astro, Next, Nest, Express…), PHP, OpenAPI, esquemas de base de datos e infraestructura (Docker, CI, Kubernetes, Helm, Terraform, serverless). Lo que un parser no entiende lo completa tu agente: estudia el repo y escribe *extractores* que FlowBrain verifica dato por dato.
-- **Determinístico.** Ninguna consulta llama a un LLM. Cada dato cita su evidencia (`repo:ruta#Ln`), así el agente abre el archivo justo en vez de recorrer el repo con grep.
-- **Para agentes y para personas.** Servidor MCP, hooks de Claude Code, CLI y un visor web con mapa, funcionalidades, especificaciones e impacto.
+Los agentes de código escriben más rápido de lo que cualquiera alcanza a revisar. Se suman funcionalidades, cambian reglas, se multiplican los tests, y al poco tiempo nadie sabe qué casos de uso están cubiertos de verdad. FlowBrain lo convierte en algo que podés **ver, verificar y corregir**:
+
+- **¿Qué entendió la IA?** Cada funcionalidad, pantalla, endpoint, método y tabla, en un visor con mapa 3D. Cada dato apunta a la línea de código de donde salió.
+- **¿Qué se rompe si cambio esto?** El impacto de un cambio entre funcionalidades, repositorios y servicios, antes de tocarlo.
+- **¿Qué funcionalidades tiene de verdad mi producto?** FlowBrain las reúne desde el código y muestra cada una de punta a punta, de la pantalla a la tabla.
+- **¿Qué casos de uso cubren mis tests y qué reglas cumple mi producto?** Para cada funcionalidad: sus reglas de negocio y de producto, el archivo que implementa cada regla y el test que la verifica, y las reglas que todavía ningún test verifica. La IA desarrolla tan rápido que muchas veces ni sabemos qué casos de uso está cubriendo. FlowBrain los deja a la vista.
+
+<p align="center"><img src="https://raw.githubusercontent.com/NicoCroce/FlowBrain/main/docs/images/hero-flow.es.svg" alt="Una funcionalidad de punta a punta: pantallas, endpoints, servicios, tablas y los tests que la verifican." width="100%"></p>
+
+Empezá por la [guía](https://github.com/NicoCroce/FlowBrain/blob/main/docs/GUIA.md).
+
+---
+
+Grafo de conocimiento de un sistema de software, hecho para que un agente de código entienda el producto antes de tocarlo: qué funcionalidades tiene, qué pantallas las forman, qué endpoints llaman, qué métodos ejecutan, qué tablas tocan y **qué se rompe si algo cambia**, también entre repositorios y servicios distintos.
+
+<p align="center"><img src="https://raw.githubusercontent.com/NicoCroce/FlowBrain/main/docs/images/code-to-graph.svg" alt="Código disperso de un lado y un grafo ordenado del otro: cada funcionalidad con sus pantallas, endpoints, servicios y tablas." width="100%"></p>
+
+- **Agnóstico a la tecnología.** Los parsers leen TypeScript/JavaScript (React, React Native, Vue, Svelte, Astro, Next, Nest, Express…), PHP, OpenAPI, esquemas de base de datos e infraestructura. Lo que un parser no entiende (Go, Python, Dart, Ruby, un framework propio) lo completa un modelo: estudia el repo y escribe *extractores* del proyecto que corren en cada indexación y que FlowBrain verifica dato por dato.
+- **Determinístico.** Ninguna consulta llama a un LLM. Todo dato cita su evidencia (`repo:ruta#Ln`).
+- **Para agentes y para personas.** Servidor MCP, hooks de Claude Code, CLI y un visor HTML con mapa 3D.
+
+## Qué responde
+
+| Pregunta | MCP | CLI |
+|---|---|---|
+| ¿Qué hace esta funcionalidad de producto? | `funcionalidad` | `flowbrain feature <id>` |
+| Esta pantalla, de punta a punta | `pantalla` | `flowbrain screen </ruta>` |
+| Qué ejecuta un endpoint, paso a paso | `recorrido` | `flowbrain flow "POST /x"` |
+| Qué se rompe si cambio esto (y de qué depende) | `impacto` | `flowbrain impact <pieza>` |
+| Qué tan riesgoso es este diff | `riesgo` | `git diff \| flowbrain risk --diff -` |
+| Quién llama a este método | `quien_llama` | `flowbrain callers <Clase.metodo>` |
+| Por dónde viaja un dato entre servicios | `trazar` | `flowbrain trace --from <x>` |
+| Qué recibe y devuelve un endpoint | `contrato_de` | `flowbrain contract <nodo>` |
+| Llamadas sin endpoint y endpoints sin uso | `deriva` | `flowbrain drift` |
+| Qué falta migrar de un servicio a otro | `paridad` | `flowbrain parity <viejo> <nuevo>` |
+| Cómo se construye y despliega | `infra` | `flowbrain infra` |
+| Qué tiene que cumplir una funcionalidad, qué archivo lo cumple y qué test lo verifica | `especificaciones` | `flowbrain specs [feat]` |
+| Qué archivos no son de ninguna funcionalidad y a cuál conviene asociarlos | `sin_asociar` | `flowbrain unassigned [carpeta]` |
+| Qué tan entendido quedó cada archivo (0 a 100), qué le falta y un plan para llevarlo a 100 | `fidelidad` | `flowbrain fidelity [--plan]` |
+| Qué llamadas cruzan entre cerebros | `conexiones` | `flowbrain connections` |
+| Buscar un nodo / recorrer el grafo | `buscar_nodo`, `recorrer_grafo` | `flowbrain search`, `flowbrain traverse` |
+
+El impacto sigue la dirección de las relaciones (una tabla → los métodos y endpoints que la usan → las pantallas y funcionalidades que los llaman) y cruza de cerebro en cerebro hasta cuatro saltos: cambiar una tabla de un servicio en Go llega a la pantalla del front en Vue que, pasando por una API en Python, termina escribiendo en ella.
 
 ## Instalación
 
-Parado en la carpeta del proyecto (la que tiene tus repos adentro, o un repo solo):
+Con el paquete publicado, parado en el proyecto:
 
 ```bash
 npx @nicocroce/flowbrain install
 ```
 
-O instalado global, para tener el comando `flowbrain` siempre a mano:
+Desde el código, requiere Node ≥ 20, pnpm y un agente de código que pueda correr comandos (Claude Code, Codex, OpenCode u otro): FlowBrain no trae ni elige un modelo, el análisis lo hace el que uses.
 
 ```bash
-npm i -g @nicocroce/flowbrain
-flowbrain install
+git clone <este-repo> flowbrain && cd flowbrain
+pnpm install
+cd /ruta/al/proyecto
+pnpm -s -C /ruta/a/flowbrain flowbrain install "$PWD"
 ```
 
-El paquete se llama `@nicocroce/flowbrain`, pero el comando es `flowbrain`. La instalación no compila nada nativo: no corre scripts de instalación.
+`install` deja el comando `flowbrain` en el PATH, los hooks de Claude Code y los comandos `/flowbrain-study`, `/flowbrain-index`, `/flowbrain-features` y `/flowbrain-specs`; crea `.flowbrain/` en el proyecto, pregunta dónde están los repositorios y si va un cerebro por repo o uno solo, indexa todo y deja el visor en `.flowbrain/flowbrain.html`. Al final imprime la línea del servidor MCP:
 
-## Cómo se usa
+```bash
+claude mcp add --scope user flowbrain -- flowbrain serve --sync
+```
 
-### 1. `flowbrain install`
+### El menú
 
-- Deja los hooks y los comandos de Claude Code. Con `npx` no queda el comando `flowbrain` en el PATH: para tenerlo, instalalo global (`npm i -g @nicocroce/flowbrain`); si no, cada comando de esta guía se corre como `npx @nicocroce/flowbrain …`.
-- Crea `.flowbrain/` en el proyecto, te muestra los repositorios que encontró (con su tecnología) y pregunta si va **un cerebro por repo** o **uno solo** para todo. Sin preguntar: `--repos <carpeta>` y `--split` o `--single`.
-- Indexa todo y deja el visor en `.flowbrain/flowbrain.html`.
-- Imprime la línea para conectar el MCP.
-
-Los hooks y el MCP quedan apuntando a una versión fija (`npx -y @nicocroce/flowbrain@<versión>`), para que una publicación nueva no cambie nada sin aviso. Volver a correr `flowbrain install` actualiza.
-
-### 2. El menú
-
-Después, en el proyecto o en cualquiera de sus subrepos:
+Después, en cualquier proyecto (o en cualquiera de sus subrepos), alcanza con escribir:
 
 ```bash
 flowbrain
 ```
 
-Abre un menú en la terminal: configurar el proyecto, analizarlo completo con el agente que elijas, reindexar, abrir el visor, ver el estado, conectar el MCP a un agente y actualizar FlowBrain. Si lo cortás a mitad, la próxima vez sigue desde el primer paso pendiente.
+En un proyecto sin configurar arranca un asistente que hace todo en orden: prepara la máquina, te muestra los subrepositorios que encontró (con su tecnología) para que elijas cuáles entran y cómo se agrupan, indexa, conecta el MCP y ofrece el análisis completo con el agente que elijas (Claude Code, Codex, OpenCode, u otro: te da el pedido para pegarlo). Si lo cortás, la próxima vez sigue desde el primer paso pendiente. Ya configurado, abre un menú en la terminal (flechas y Enter, o el número) con lo que se puede hacer ahí: configurar el proyecto (detecta los subrepositorios y arma los cerebros), analizarlo completo con el agente que elijas, reindexar, abrir el visor, ver el estado, conectar el MCP a un agente y actualizar FlowBrain. Las opciones dependen del estado: sin `.flowbrain/`, lo primero es configurarlo. Cada opción corre los mismos comandos que se pueden escribir a mano.
 
-### 3. El visor en localhost
+Volver a correr `flowbrain install` actualiza. Detalle completo, instalación a mano y CI en [docs/INSTALACION.md](https://github.com/NicoCroce/FlowBrain/blob/main/docs/INSTALACION.md).
 
-```bash
-flowbrain viewer --serve
-```
+## Cómo se completa un proyecto
 
-Lo sirve en `http://127.0.0.1:4780` (o el siguiente puerto libre). Muestra el mapa del sistema, las funcionalidades, pantallas, contratos, especificaciones, impacto y qué tan entendido quedó cada archivo. Desde ahí se puede corregir: sumar un archivo a una funcionalidad, confirmar reglas, declarar llamadas y **pedir tests** (ver abajo). Todo lo que guarda son archivos del cerebro, versionables.
+Con Claude Code abierto en la carpeta del proyecto (con otro agente, el menú da un único pedido que recorre los mismos pasos con `flowbrain coverage --guide`, `evidence --guide` y `feature --guide`):
 
-### 4. El MCP en tu agente
+1. **`/flowbrain-study`**: el modelo estudia cómo está hecho cada repo, escribe `profile.md`, extractores en `.flowbrain/<cerebro>/extractors/<repo-id>/` para lo que los parsers no ven, y controles (`checks.yaml`) que tienen que seguir cumpliéndose. `flowbrain coverage` mide el avance.
+2. **`/flowbrain-index`**: decide a qué servicio va cada llamada entre repos (por base de URL, configuración e infraestructura) y lo declara con evidencia.
+3. **`/flowbrain-features`**: deduce las funcionalidades de producto, las explica y las une con sus pantallas, endpoints y tablas.
+4. **`/flowbrain-specs`**: deduce de los tests y del código las especificaciones de cada funcionalidad (requisitos de negocio y de producto), con el archivo que las cumple y el caso que las verifica; quedan propuestas hasta que una persona las confirma.
+5. **`flowbrain brains viewer`**: regenera el visor. Con **`flowbrain viewer --serve`** se abre en `http://127.0.0.1:4780` la pantalla Fidelidad deja corregir lo que le falta a cada archivo , la pantalla Especificaciones deja confirmar cada requisito y la pantalla Sin asociar deja sumar cada archivo suelto a su funcionalidad (solo escribe en `.flowbrain/`).
 
-En Claude Code, para todos tus proyectos:
+<p align="center"><img src="https://raw.githubusercontent.com/NicoCroce/FlowBrain/main/docs/images/features-map.es.svg" alt="Mapa del producto: cada funcionalidad en el centro de sus pantallas, endpoints y tablas." width="100%"></p>
 
-```bash
-claude mcp add --scope user flowbrain -- npx -y @nicocroce/flowbrain@0.1.0 serve --sync
-```
+Todo lo que el modelo escribe queda en `.flowbrain/`, legible y versionable junto al proyecto; lo derivado (`_build/`, el visor) queda fuera de git.
 
-En Codex:
+## Estructura
 
-```bash
-codex mcp add flowbrain -- npx -y @nicocroce/flowbrain@0.1.0 serve --sync
-```
-
-Cualquier otro cliente MCP (OpenCode, Cursor, etc.): el comando es `npx -y @nicocroce/flowbrain@0.1.0 serve --sync` por stdio. El menú (`flowbrain` → *Conectar un agente*) lo registra por vos en el que elijas. Con `--sync` el servidor reindexa los repos que avanzaron antes de responder.
-
-### 5. Varios cerebros: `flowbrain.yaml`
-
-En un proyecto con varios servicios (un front, una API, un backend viejo, workers…), cada uno puede ser un cerebro y `.flowbrain/flowbrain.yaml` dice cuáles hay y cómo se comunican: qué base de URL va a qué servicio. Con eso las consultas cruzan de cerebro en cerebro: cambiar una tabla de un servicio llega a la pantalla del front que, pasando por otra API, termina escribiendo en ella.
-
-```bash
-flowbrain brains                 # cerebros del registro y su estado
-flowbrain brains apply           # crea e indexa los que falten
-flowbrain connections            # qué viaja entre cerebros
-```
-
-## Herramientas del MCP
-
-| Herramienta | Para qué |
+| Paquete | Qué hace |
 |---|---|
-| `buscar_nodo` | Encontrar algo cuando no sabés su id: una clase, un método, una palabra. |
-| `recorrer_grafo` | Vecinos de un nodo por tipo de relación. |
-| `funcionalidad` | Qué hace una funcionalidad de producto: endpoints, pantallas, datos y relaciones. |
-| `pantalla` | Una pantalla del front de punta a punta: de dónde se llega, a dónde lleva, qué llama del back. |
-| `recorrido` | Qué ejecuta un endpoint o un método, paso a paso, y qué toca cada paso. |
-| `contrato_de` | Qué recibe y devuelve un endpoint, y quién lo llama. |
-| `quien_llama` | Quién llama a un método o a una clase. |
-| `impacto` | Qué se rompe si cambia una tabla, un endpoint, un servicio o una funcionalidad. |
-| `riesgo` | Alcance de un cambio concreto: un diff o unos archivos. |
-| `trazar` | Por dónde viaja un dato entre servicios. |
-| `deriva` | Endpoints que nadie llama y llamadas que nadie atiende, campo por campo. |
-| `paridad` | Qué falta migrar de un servicio a otro. |
-| `infra` | Cómo se construye, despliega y configura un servicio: imagen, pipeline, variables, proxy, Kubernetes, Helm, Terraform, serverless. |
-| `especificaciones` | Qué tiene que cumplir una funcionalidad (reglas de negocio y de producto), qué archivo lo cumple y qué test lo verifica. |
-| `sin_asociar` | Archivos que no son de ninguna funcionalidad y a cuál conviene asociar cada uno. |
-| `fidelidad` | Qué tan confiable es lo que el grafo dice de un archivo o una funcionalidad, y qué falta completar. |
-| `conexiones` | Qué llamadas cruzan entre cerebros (solo con varios cerebros). |
+| `packages/core` | Esquema, compilación de páginas a `graph.json`, consultas, impacto y cruces entre cerebros |
+| `packages/parsers` | Parsers (TypeScript, PHP, OpenAPI, esquema, infra), extractores del proyecto e indexador |
+| `packages/indexer` | Borradores de páginas a partir del código |
+| `packages/mcp` | Servidor MCP |
+| `packages/hooks` | Hooks de Claude Code (contexto en cada prompt, notas al cerrar la sesión) |
+| `packages/viewer` | Visor HTML: catálogo, pantallas, trazas, especificaciones, sin asociar, impacto, contratos (deriva y paridad), fidelidad y mapa 3D |
+| `packages/cli` | Comando `flowbrain` y las guías de los comandos para el modelo |
+| `packages/flowbrain` | Paquete npm publicable (un solo archivo armado con esbuild) |
 
-Las mismas consultas están en la CLI: `flowbrain search`, `feature`, `screen`, `flow`, `contract`, `callers`, `impact`, `risk`, `trace`, `drift`, `parity`, `infra`, `specs`, `unassigned`, `fidelity`. Por ejemplo `git diff | flowbrain risk --diff -`. `flowbrain --help` las lista todas.
+Documentación: [docs/GUIA.md](https://github.com/NicoCroce/FlowBrain/blob/main/docs/GUIA.md) (qué entendió la IA y cómo verificarlo), [docs/CONTEXTO.md](https://github.com/NicoCroce/FlowBrain/blob/main/docs/CONTEXTO.md) (cuánto contexto usa y cómo acompaña el desarrollo), [SCHEMA.md](https://github.com/NicoCroce/FlowBrain/blob/main/SCHEMA.md) (contrato del grafo), [docs/PARSERS.md](https://github.com/NicoCroce/FlowBrain/blob/main/docs/PARSERS.md) (cómo sumar un parser), [docs/DECISIONS.md](https://github.com/NicoCroce/FlowBrain/blob/main/docs/DECISIONS.md) (cada decisión, con fecha y motivo), [docs/PRD.es.md](https://github.com/NicoCroce/FlowBrain/blob/main/docs/PRD.es.md).
 
-## Comandos de Claude Code
-
-`install` deja estos comandos en Claude Code. Se corren en orden la primera vez (el menú, con *Analizar el proyecto completo*, los encadena):
-
-| Comando | Qué hace |
-|---|---|
-| `/flowbrain-study` | Estudia cómo está hecho cada repo y escribe los extractores que completan lo que los parsers no vieron. |
-| `/flowbrain-index` | Analiza la comunicación real entre servicios: a qué servicio va cada llamada, con evidencia. |
-| `/flowbrain-features` | Deduce y completa las funcionalidades de producto de cada cerebro. |
-| `/flowbrain-specs` | Deduce las especificaciones de negocio y de producto de cada funcionalidad. |
-| `/flowbrain-tests` | Resuelve cada regla: la verifica con un test, o informa por qué no se puede o si el código no la cumple. |
-
-Con otro agente, las mismas instrucciones salen de `flowbrain coverage --guide`, `evidence --guide`, `feature --guide` y `specs --guide`.
-
-## Pedir tests
-
-En la pantalla Especificaciones del visor se eligen reglas y se piden sus tests en lote: FlowBrain abre tu agente por repo, con el proveedor y el modelo que elijas, y cada regla vuelve verificada por un test, para decidir (la regla puede estar mal) o para desarrollo (el código no la cumple). FlowBrain nunca cambia el código de producción.
-
-## Requisitos
-
-- **Node ≥ 20.**
-- **Claude Code**, opcional: hace falta para el análisis completo (`/flowbrain-*`) y para pedir tests desde el visor. Sin él, el índice, el visor, la CLI y el MCP funcionan igual, y el análisis se puede hacer con otro agente pegando las guías.
-
-## Diagnóstico
+## Desarrollo
 
 ```bash
-flowbrain doctor      # grafo, índice, clones, hooks y MCP registrados (solo lee)
-flowbrain status      # repos al día, conteos y huecos conocidos
+pnpm install
+pnpm typecheck
+pnpm test
+pnpm build          # packages/flowbrain/dist/flowbrain.mjs
+pnpm flowbrain help # la CLI desde el código, sin armar
 ```
 
-El contrato del grafo está en `SCHEMA.md`, dentro del paquete. Código y reportes: [github.com/NicoCroce/FlowBrain](https://github.com/NicoCroce/FlowBrain).
+Las pruebas usan proyectos sintéticos en `fixtures/` y en directorios temporales; ninguna depende de código real ni de la red.
 
-Licencia Apache-2.0.
+## Licencia
+
+[Apache-2.0](https://github.com/NicoCroce/FlowBrain/blob/main/LICENSE)
