@@ -93,7 +93,7 @@ Todo lo que el modelo escribe queda en `.flowbrain/`, legible y versionable junt
 | `packages/cli` | Comando `flowbrain` y las guías de los comandos para el modelo |
 | `packages/flowbrain` | Paquete npm publicable (un solo archivo armado con esbuild) |
 
-Documentación: [SCHEMA.md](SCHEMA.md) (contrato del grafo), [docs/PARSERS.md](docs/PARSERS.md) (cómo sumar un parser), [docs/DECISIONS.md](docs/DECISIONS.md) (cada decisión, con fecha y motivo), [docs/PRD.es.md](docs/PRD.es.md).
+Documentación: [docs/GUIA.md](docs/GUIA.md) (qué entendió la IA y cómo verificarlo), [docs/CONTEXTO.md](docs/CONTEXTO.md) (cuánto contexto usa y cómo acompaña el desarrollo), [SCHEMA.md](SCHEMA.md) (contrato del grafo), [docs/PARSERS.md](docs/PARSERS.md) (cómo sumar un parser), [docs/DECISIONS.md](docs/DECISIONS.md) (cada decisión, con fecha y motivo), [docs/PRD.es.md](docs/PRD.es.md).
 
 ## Desarrollo
 

@@ -93,7 +93,7 @@ Everything the model writes stays in `.flowbrain/`, readable and versionable nex
 | `packages/cli` | The `flowbrain` command and the command guides for the model |
 | `packages/flowbrain` | Publishable npm package (a single file bundled with esbuild) |
 
-Documentation: [docs/GUIDE.md](docs/GUIDE.md) (what the AI understood and how to verify it), [SCHEMA.md](SCHEMA.md) (graph contract), [docs/PARSERS.md](docs/PARSERS.md) (how to add a parser), [docs/DECISIONS.md](docs/DECISIONS.md) (every decision, with date and reason, in Spanish), [docs/PRD.es.md](docs/PRD.es.md) (in Spanish).
+Documentation: [docs/GUIDE.md](docs/GUIDE.md) (what the AI understood and how to verify it), [docs/CONTEXT.md](docs/CONTEXT.md) (how little context it uses and how it keeps up while you develop), [SCHEMA.md](SCHEMA.md) (graph contract), [docs/PARSERS.md](docs/PARSERS.md) (how to add a parser), [docs/DECISIONS.md](docs/DECISIONS.md) (every decision, with date and reason, in Spanish), [docs/PRD.es.md](docs/PRD.es.md) (in Spanish).
 
 ## Development
 

@@ -85,6 +85,7 @@ Cuanto más verificás, menos tiene que adivinar el agente.
 ## Para seguir
 
 - [README](../README.es.md): qué responde FlowBrain y cómo está hecho.
+- [CONTEXTO.md](CONTEXTO.md): cuánto contexto usa y cómo acompaña el desarrollo.
 - [INSTALACION.md](INSTALACION.md): instalación, configuración a mano y CI.
 - [SCHEMA.md](../SCHEMA.md): el contrato del grafo.
 - [PARSERS.md](PARSERS.md): cómo sumar un parser.

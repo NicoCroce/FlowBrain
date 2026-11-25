@@ -85,6 +85,7 @@ The more you verify, the less the agent has to guess.
 ## Learn more
 
 - [README](../README.md): what FlowBrain answers and how it is built.
+- [CONTEXT.md](CONTEXT.md): how little context it uses and how it keeps up while you develop.
 - [INSTALL.md](INSTALL.md): installation, manual setup and CI.
 - [SCHEMA.md](../SCHEMA.md): the graph contract.
 - [PARSERS.md](PARSERS.md): how to add a parser.
