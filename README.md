@@ -21,6 +21,8 @@ Start with the [guide](docs/GUIDE.md).
 
 A knowledge graph of a software system, built so a coding agent understands the product before touching it: which features it has, which screens make them up, which endpoints they call, which methods run, which tables they touch and **what breaks if something changes**, across different repositories and services too.
 
+<p align="center"><img src="docs/images/code-to-graph.svg" alt="Scattered code on one side, an ordered graph on the other: each feature with its screens, endpoints, services and tables." width="100%"></p>
+
 - **Technology-agnostic.** Parsers read TypeScript/JavaScript (React, React Native, Vue, Svelte, Astro, Next, Nest, Express…), PHP, OpenAPI, database schemas and infrastructure. Whatever a parser does not understand (Go, Python, Dart, Ruby, an in-house framework) is completed by a model: it studies the repo and writes project *extractors* that run on every index and that FlowBrain checks fact by fact.
 - **Deterministic.** No query calls an LLM. Every fact cites its evidence (`repo:path#Ln`).
 - **For agents and for people.** MCP server, Claude Code hooks, CLI and an HTML viewer with a 3D map.
@@ -92,6 +94,8 @@ With Claude Code open in the project folder (with another agent, the menu gives 
 3. **`/flowbrain-features`**: deduces the product features, explains them and links them to their screens, endpoints and tables.
 4. **`/flowbrain-specs`**: deduces from tests and code the specifications of each feature (business and product requirements), with the file that implements them and the case that verifies them; they stay as proposals until a person confirms them.
 5. **`flowbrain brains viewer`**: regenerates the viewer. With **`flowbrain viewer --serve`** it opens on `http://127.0.0.1:4780`: the Fidelity screen lets you fix what each file is missing, the Specifications screen lets you confirm each requirement and the Unassigned screen lets you add each loose file to its feature (it only writes inside `.flowbrain/`).
+
+<p align="center"><img src="docs/images/features-map.svg" alt="Map of the product: each feature at the center of its screens, endpoints and tables." width="100%"></p>
 
 Everything the model writes stays in `.flowbrain/`, readable and versionable next to the project; derived output (`_build/`, the viewer) stays out of git.
 

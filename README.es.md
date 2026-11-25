@@ -21,6 +21,8 @@ Empezá por la [guía](docs/GUIA.md).
 
 Grafo de conocimiento de un sistema de software, hecho para que un agente de código entienda el producto antes de tocarlo: qué funcionalidades tiene, qué pantallas las forman, qué endpoints llaman, qué métodos ejecutan, qué tablas tocan y **qué se rompe si algo cambia**, también entre repositorios y servicios distintos.
 
+<p align="center"><img src="docs/images/code-to-graph.svg" alt="Código disperso de un lado y un grafo ordenado del otro: cada funcionalidad con sus pantallas, endpoints, servicios y tablas." width="100%"></p>
+
 - **Agnóstico a la tecnología.** Los parsers leen TypeScript/JavaScript (React, React Native, Vue, Svelte, Astro, Next, Nest, Express…), PHP, OpenAPI, esquemas de base de datos e infraestructura. Lo que un parser no entiende (Go, Python, Dart, Ruby, un framework propio) lo completa un modelo: estudia el repo y escribe *extractores* del proyecto que corren en cada indexación y que FlowBrain verifica dato por dato.
 - **Determinístico.** Ninguna consulta llama a un LLM. Todo dato cita su evidencia (`repo:ruta#Ln`).
 - **Para agentes y para personas.** Servidor MCP, hooks de Claude Code, CLI y un visor HTML con mapa 3D.
@@ -92,6 +94,8 @@ Con Claude Code abierto en la carpeta del proyecto (con otro agente, el menú da
 3. **`/flowbrain-features`**: deduce las funcionalidades de producto, las explica y las une con sus pantallas, endpoints y tablas.
 4. **`/flowbrain-specs`**: deduce de los tests y del código las especificaciones de cada funcionalidad (requisitos de negocio y de producto), con el archivo que las cumple y el caso que las verifica; quedan propuestas hasta que una persona las confirma.
 5. **`flowbrain brains viewer`**: regenera el visor. Con **`flowbrain viewer --serve`** se abre en `http://127.0.0.1:4780` la pantalla Fidelidad deja corregir lo que le falta a cada archivo , la pantalla Especificaciones deja confirmar cada requisito y la pantalla Sin asociar deja sumar cada archivo suelto a su funcionalidad (solo escribe en `.flowbrain/`).
+
+<p align="center"><img src="docs/images/features-map.es.svg" alt="Mapa del producto: cada funcionalidad en el centro de sus pantallas, endpoints y tablas." width="100%"></p>
 
 Todo lo que el modelo escribe queda en `.flowbrain/`, legible y versionable junto al proyecto; lo derivado (`_build/`, el visor) queda fuera de git.
 
