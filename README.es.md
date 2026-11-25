@@ -2,7 +2,22 @@
 
 [English](README.md) · **Español**
 
-> **¿Qué entiende la IA sobre tu proyecto?** FlowBrain lo deja a la vista para que lo verifiques y lo corrijas, y así cada respuesta sea más determinística. Empezá por la [guía](docs/GUIA.md).
+<p align="center"><img src="docs/images/hero-question.es.svg" alt="¿Qué entendió realmente la IA de tu proyecto? FlowBrain te lo muestra: funcionalidades, impacto, reglas y tests, con evidencia." width="100%"></p>
+
+## ¿Alguna vez te preguntaste qué entendió la IA de todo tu proyecto?
+
+Los agentes de código escriben más rápido de lo que cualquiera alcanza a revisar. Se suman funcionalidades, cambian reglas, se multiplican los tests, y al poco tiempo nadie sabe qué casos de uso están cubiertos de verdad. FlowBrain lo convierte en algo que podés **ver, verificar y corregir**:
+
+- **¿Qué entendió la IA?** Cada funcionalidad, pantalla, endpoint, método y tabla, en un visor con mapa 3D. Cada dato apunta a la línea de código de donde salió.
+- **¿Qué se rompe si cambio esto?** El impacto de un cambio entre funcionalidades, repositorios y servicios, antes de tocarlo.
+- **¿Qué funcionalidades tiene de verdad mi producto?** FlowBrain las reúne desde el código y muestra cada una de punta a punta, de la pantalla a la tabla.
+- **¿Qué casos de uso cubren mis tests y qué reglas cumple mi producto?** Para cada funcionalidad: sus reglas de negocio y de producto, el archivo que implementa cada regla y el test que la verifica, y las reglas que todavía ningún test verifica. La IA desarrolla tan rápido que muchas veces ni sabemos qué casos de uso está cubriendo. FlowBrain los deja a la vista.
+
+<p align="center"><img src="docs/images/hero-flow.es.svg" alt="Una funcionalidad de punta a punta: pantallas, endpoints, servicios, tablas y los tests que la verifican." width="100%"></p>
+
+Empezá por la [guía](docs/GUIA.md).
+
+---
 
 Grafo de conocimiento de un sistema de software, hecho para que un agente de código entienda el producto antes de tocarlo: qué funcionalidades tiene, qué pantallas las forman, qué endpoints llaman, qué métodos ejecutan, qué tablas tocan y **qué se rompe si algo cambia**, también entre repositorios y servicios distintos.
 

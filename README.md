@@ -2,7 +2,22 @@
 
 **English** · [Español](README.es.md)
 
-> **What does the AI understand about your project?** FlowBrain puts it in plain sight so you can verify it and correct it, making every answer more deterministic. Start with the [guide](docs/GUIDE.md).
+<p align="center"><img src="docs/images/hero-question.svg" alt="What did the AI really understand about your project? FlowBrain shows you: features, impact, rules and tests, with evidence." width="100%"></p>
+
+## Have you ever wondered what the AI actually understood about your project?
+
+Coding agents write code faster than anyone can review it. Features pile up, rules change, tests multiply, and soon nobody knows which use cases are really covered. FlowBrain turns that into something you can **see, verify and correct**:
+
+- **What did the AI understand?** Every feature, screen, endpoint, method and table, in a visual viewer with a 3D map. Each fact points to the line of code it came from.
+- **What breaks if I change this?** The impact of a change across features, repositories and services, before you touch it.
+- **Which features does my product really have?** FlowBrain gathers them from the code and shows each one end to end, from the screen to the table.
+- **Which use cases do my tests cover, and which rules does my product enforce?** For each feature: its business and product rules, the file that implements each rule and the test that verifies it, and the rules no test verifies yet. The AI builds so fast that we often don't even know which use cases it is covering. FlowBrain makes them visible.
+
+<p align="center"><img src="docs/images/hero-flow.svg" alt="A feature end to end: screens, endpoints, services, tables and the tests that verify it." width="100%"></p>
+
+Start with the [guide](docs/GUIDE.md).
+
+---
 
 A knowledge graph of a software system, built so a coding agent understands the product before touching it: which features it has, which screens make them up, which endpoints they call, which methods run, which tables they touch and **what breaks if something changes**, across different repositories and services too.
 
