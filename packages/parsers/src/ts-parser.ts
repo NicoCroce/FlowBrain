@@ -139,10 +139,10 @@ const sfcReal = (r: string) => (r.endsWith(SUFIJO_SFC) && EXT_SFC.test(r.slice(0
 export const tsParser: Parser = {
   nombre: "ts-parser",
   detect: (repo) => repo.archivos.some(esFuenteTs) || repo.archivos.some((a) => a.endsWith(".prisma")),
-  extract: (repo) => extraer(repo),
+  extract: (repo, avance) => extraer(repo, avance),
 };
 
-function crearPrograma(repo: RepoFuente): ts.Program {
+function crearPrograma(repo: RepoFuente, alLeer?: () => void): ts.Program {
   const opciones: ts.CompilerOptions = {
     noLib: true,
     noEmit: true,
@@ -194,6 +194,7 @@ function crearPrograma(repo: RepoFuente): ts.Program {
   // Los componentes de un solo archivo entran como `X.vue.ts` con solo su `<script>`; los imports de `./X.vue` van ahí.
   const original = host.getSourceFile.bind(host);
   host.getSourceFile = (nombre, idioma, onError, crear) => {
+    if (alLeer && nombre.startsWith(repo.raiz + "/")) alLeer();
     if (nombre.endsWith(SUFIJO_SFC) && EXT_SFC.test(nombre.slice(0, -SUFIJO_SFC.length))) {
       const texto = ts.sys.readFile(nombre.slice(0, -SUFIJO_SFC.length));
       return texto === undefined ? undefined : ts.createSourceFile(nombre, scriptDeSfc(texto), idioma, true, ts.ScriptKind.TS);
@@ -218,12 +219,17 @@ function crearPrograma(repo: RepoFuente): ts.Program {
   return ts.createProgram(archivos, opciones, host);
 }
 
-function extraer(repo: RepoFuente): Extraccion {
+function extraer(repo: RepoFuente, avance?: (fraccion: number) => void): Extraccion {
   const out = extraccionVacia("ts-parser");
+  // Progreso aproximado (medido en repos reales): armar el programa (leer y parsear cada archivo) es ~40% del tiempo y
+  // el recorrido final por archivo ~35%; el resto se reparte entre las pasadas intermedias.
+  const fuentesTs = Math.max(1, repo.archivos.filter(esFuenteTs).length);
+  let leidos = 0;
   // Los CTE pueden declararse en un fragmento y usarse en otro (`${ctes(…)} … ${FROM}`): se filtran con los de todo el repo.
   const ctesRepo = new Set<string>();
   const deSql = new Set<object>();
-  const programa = crearPrograma(repo);
+  const programa = crearPrograma(repo, avance && (() => avance(0.4 * Math.min(1, ++leidos / fuentesTs))));
+  avance?.(0.4);
   const checker = programa.getTypeChecker();
   const rel = (sf: ts.SourceFile) => sfcReal(sf.fileName.slice(repo.raiz.length + 1).split("\\").join("/"));
   const linea = (n: ts.Node) => n.getSourceFile().getLineAndCharacterOfPosition(n.getStart()).line + 1;
@@ -1883,6 +1889,7 @@ function extraer(repo: RepoFuente): Extraccion {
     }
   };
 
+  avance?.(0.5);
   // ---------- Llamadas HTTP salientes: la forma de la llamada y las funciones que la envuelven ----------
   const formaSaliente = (call: ts.CallExpression): FormaSaliente | null => {
     const c = call.expression;
@@ -2155,7 +2162,9 @@ function extraer(repo: RepoFuente): Extraccion {
   // Dos vueltas más para las envolturas de envolturas (`apiGet` que llama a `get`).
   for (let vuelta = 0; vuelta < 3; vuelta++) {
     let nuevas = 0;
+    let vistos = 0;
     for (const sf of fuentes) {
+      avance?.(0.5 + 0.05 * vuelta + (0.05 * vistos++) / Math.max(1, fuentes.length));
       const ver = (n: ts.Node): void => {
         if (ts.isCallExpression(n)) {
           const f = formaSaliente(n);
@@ -2174,6 +2183,7 @@ function extraer(repo: RepoFuente): Extraccion {
     if (!nuevas) break;
   }
 
+  avance?.(0.65);
   // ---------- Rutas por archivo (Next, Nuxt, SvelteKit, Expo Router) ----------
   // La ruta sale del camino del archivo: cada archivo de ruta es una pantalla, un layout o un endpoint (ver rutas-archivo.ts).
   const carpetasRuta = carpetasDeRutas(repo);
@@ -2218,7 +2228,9 @@ function extraer(repo: RepoFuente): Extraccion {
   }
   for (const ctx of proveedores.keys()) exposicionDeContexto(ctx);
 
+  let recorridos = 0;
   for (const sf of fuentes) {
+    avance?.(0.65 + (0.33 * recorridos++) / Math.max(1, fuentes.length));
     const archivo = rel(sf);
     const paquete = paqueteDe(repo, archivo);
     const simbolos: Simbolo[] = [];

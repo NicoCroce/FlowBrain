@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { type PaqueteDelRepo, ES_TEST, aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, endpointId, type Contrato } from "@flowbrain/core";
+import { type PaqueteDelRepo, avisar, type Progreso, ES_TEST, aplicarLlamadasDeclaradas, ARCHIVO_LLAMADAS, httpDeclaradasDe, cmp, cmpTuple, commitDe, ConsultaError, FrontmatterSchema, leerLlamadasDeclaradas, parsePagina, stringifyCanonical, endpointId, type Contrato } from "@flowbrain/core";
 import { correrExtractores, RUTA_INFORME_EXTRACTORES, type InformeExtractor } from "./extractores.js";
 import { leerRepo, podarPaquetes } from "./repo.js";
 import { openapiParser } from "./openapi-parser.js";
@@ -289,7 +289,7 @@ export function endpointsAlcanzables<E extends { ruta: string; metodo: string }>
 export async function indexar(
   rutaRepo: string,
   raizBrain: string,
-  opciones: { repo?: string; permitirRepoNuevo?: boolean } = {},
+  opciones: { repo?: string; permitirRepoNuevo?: boolean; progreso?: Progreso } = {},
 ): Promise<ResultadoIndex> {
   const repo = leerRepo(rutaRepo);
   const commit = await commitDe(repo.raiz);
@@ -309,10 +309,23 @@ export async function indexar(
   const repoNuevo = !porId.has(repoId) && opciones.permitirRepoNuevo === true;
   if (!repoNuevo && porId.get(repoId)?.tipo !== "repo") throw new ConsultaError("nodo_inexistente", `repo inexistente en el brain: ${repoId}`);
 
-  const x = fusionar(await Promise.all(PARSERS.filter((p) => p.detect(repo)).map((p) => p.extract(repo))));
+  const { progreso } = opciones;
+  // Los parsers corren uno tras otro (son sincrónicos salvo cargar tree-sitter); cada uno avisa su fracción.
+  const extraccion = async (p: Parser) => {
+    const aviso = (fraccion: number) => avisar(progreso, { etapa: "parsear", repo: repoId, parser: p.nombre, archivos: repo.archivos.length, fraccion });
+    aviso(0);
+    const r = await p.extract(repo, progreso && aviso);
+    aviso(1);
+    return r;
+  };
+  const extracciones: Extraccion[] = [];
+  for (const p of PARSERS.filter((p) => p.detect(repo))) extracciones.push(await extraccion(p));
+  const x = fusionar(extracciones);
   // Extractores escritos para este repo (`extractors/<repo>/`): completan lo que los parsers no entienden.
+  avisar(progreso, { etapa: "extractores", repo: repoId });
   const extractores = await correrExtractores(raizBrain, repoId, repo, x);
   agregarCasosDeTest(repo, x);
+  avisar(progreso, { etapa: "llamadas", repo: repoId });
   const ev = (archivo: string, linea: number) => `${repoId}:${archivo}#L${linea}`;
   // Lo que alguien resolvió leyendo el código y dejó en `calls.yaml`: llamadas HTTP que el parser no vio o no pudo
   // rutear (acá, antes de unirlas a endpoints) y llamadas entre métodos (más abajo). Sobrevive a reindexar.

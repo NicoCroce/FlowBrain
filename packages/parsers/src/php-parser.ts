@@ -43,7 +43,7 @@ function obtenerParser(): Promise<TSParser> {
 export const phpParser: Parser = {
   nombre: "php-parser",
   detect: (repo) => repo.archivos.some((a) => a.endsWith(".php")),
-  extract: async (repo) => extraer(repo, await obtenerParser()),
+  extract: async (repo, avance) => extraer(repo, await obtenerParser(), avance),
 };
 
 // ---------- helpers de árbol ----------
@@ -150,14 +150,19 @@ function claseCreada(desde: Node, arg: Node | undefined): string | null {
 }
 const snakePlural =(s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase() + "s";
 
-function extraer(repo: RepoFuente, parser: TSParser): Extraccion {
+function extraer(repo: RepoFuente, parser: TSParser, avance?: (fraccion: number) => void): Extraccion {
   const out = extraccionVacia("php-parser");
   const arboles: Array<{ archivo: string; raiz: Node }> = [];
-  for (const archivo of repo.archivos.filter((a) => a.endsWith(".php"))) {
+  const php = repo.archivos.filter((a) => a.endsWith(".php"));
+  // Parsear cada archivo es la parte que crece con el repo: cuenta como la mitad del avance.
+  let parseados = 0;
+  for (const archivo of php) {
+    avance?.((0.5 * parseados++) / php.length);
     const arbol = parser.parse(readFileSync(join(repo.raiz, archivo), "utf8"));
     if (arbol) arboles.push({ archivo, raiz: arbol.rootNode });
   }
 
+  avance?.(0.5);
   // ---------- 1. Clases y símbolos ----------
   const clases = new Map<string, Clase>();
   for (const { archivo, raiz } of arboles) {

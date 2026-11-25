@@ -51,10 +51,11 @@ import {
 import { crearMulti } from "@flowbrain/mcp";
 import { anotar, BUDGET_HOOK, DESTINOS, escribirReglas, generarReglas, hookSessionEnd, hookUserPromptSubmit, nombreRepo, repoDe, type Destino } from "@flowbrain/hooks";
 import { draftDir } from "@flowbrain/indexer";
-import { aplicar, ARCHIVO_VISOR, asegurarGitignore, crearRegistro, encontrarRepos, escribirVisor, listar, proponer } from "./cerebros.js";
+import { aplicar, type ResultadoCerebro, ARCHIVO_VISOR, asegurarGitignore, crearRegistro, encontrarRepos, escribirVisor, listar, proponer } from "./cerebros.js";
 import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { evidencia } from "./evidencia.js";
 import { GUIA_ANALISIS, GUIA_ESPECIFICACIONES, GUIA_ESTUDIO, GUIA_FUNCIONALIDADES, GUIA_TESTS, NOMBRE_COMANDO, NOMBRE_ESPECIFICACIONES, NOMBRE_ESTUDIO, NOMBRE_FUNCIONALIDADES, NOMBRE_TESTS } from "./guia.js";
+import { crearReporte, duracion, type Reporte } from "./progreso.js";
 import { comandoBrain, comillas, init, instalarComando, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
 import { idioma as idiomaDelMenu, L, resolverIdioma } from "./idioma.js";
@@ -314,6 +315,8 @@ export async function ejecutar(
   stdin: () => Promise<string> = async () => "",
   /** Para preguntarle al usuario en una terminal; sin esto, los comandos usan sus valores por defecto. */
   preguntar?: (pregunta: string) => Promise<string>,
+  /** Dónde mostrar el progreso de un reindexado (`brains apply`, `install`, `sync`); sin esto, no se muestra. */
+  reporte?: Reporte,
 ): Promise<Salida> {
   let parsed;
   try {
@@ -385,15 +388,34 @@ export async function ejecutar(
   // Sin --root ni $FLOWBRAIN_ROOT: el `.flowbrain` del proyecto donde se está parado (en esta carpeta o por encima).
   const explicita = o.root ?? env.FLOWBRAIN_ROOT;
   let raiz = resolve(cwd, explicita ?? (await buscarRegistro(cwd)) ?? ".");
-  const resumenAplicar = (rs: Awaited<ReturnType<typeof aplicar>>, visor: string | null) => [...rs.flatMap((r) => [
+  // Con progreso, cada cerebro dice lo que tardó; sin él (tests, otros programas) la salida no cambia entre corridas.
+  const resumenCerebro = (r: ResultadoCerebro) => [
     L(
-      `${r.nombre}${r.curado ? "" : " (not curated)"}: ${r.nodos} nodes, ${r.relaciones} relations; ${r.promovidas} pages created, ${r.borradores} drafts to review`,
-      `${r.nombre}${r.curado ? "" : " (sin curar)"}: ${r.nodos} nodos, ${r.relaciones} relaciones; ${r.promovidas} páginas creadas, ${r.borradores} borradores para revisar`,
+      `${r.nombre}${r.curado ? "" : " (not curated)"}: ${r.nodos} nodes, ${r.relaciones} relations; ${r.promovidas} pages created, ${r.borradores} drafts to review${reporte ? ` (${duracion(r.ms)})` : ""}`,
+      `${r.nombre}${r.curado ? "" : " (sin curar)"}: ${r.nodos} nodos, ${r.relaciones} relaciones; ${r.promovidas} páginas creadas, ${r.borradores} borradores para revisar${reporte ? ` (${duracion(r.ms)})` : ""}`,
     ),
     ...r.repos.map((x) => `  ${x.repo ?? L("(not indexed)", "(sin indexar)")} ← ${x.ruta}${x.error ? `: ${x.error}` : ""}`),
     ...r.errores.slice(0, 10).map((e) => L(`  did not compile and stayed as a draft: ${e}`, `  no compiló y quedó como borrador: ${e}`)),
     ...(r.errores.length > 10 ? [L(`  … and ${r.errores.length - 10} more`, `  … y ${r.errores.length - 10} más`)] : []),
-  ]), ...(visor ? [L(`viewer for all brains: ${visor}`, `visor de todos los cerebros: ${visor}`)] : [])];
+  ];
+  // En una terminal, el resumen de cada cerebro aparece apenas termina; si no, va todo junto por stdout al final.
+  const enVivo = reporte?.resumenEnVivo === true;
+  const aplicarConProgreso = (registro: Awaited<ReturnType<typeof leerRegistro>>, solo?: string) =>
+    aplicar(registro, solo, reporte ? { progreso: reporte.progreso, ...(enVivo ? { alTerminar: (r: ResultadoCerebro) => reporte.linea(resumenCerebro(r).join("\n")) } : {}) } : {});
+  /** Tiempo total y los repos que fallaron (los demás siguieron). Solo con progreso. */
+  const lineaTotal = (inicio: number, fallidos: string[]) =>
+    reporte
+      ? [
+          L(`Done in ${duracion(Date.now() - inicio)}.`, `Listo en ${duracion(Date.now() - inicio)}.`) +
+            (fallidos.length ? L(` ${fallidos.length} repo(s) failed and the rest went on: ${fallidos.join(", ")} (details above).`, ` Fallaron ${fallidos.length} repo(s) y los demás siguieron: ${fallidos.join(", ")} (detalle arriba).`) : ""),
+        ]
+      : [];
+  const fallidosDe = (rs: ResultadoCerebro[]) => rs.flatMap((r) => r.repos.filter((x) => x.error).map((x) => `${r.nombre}/${x.repo ?? basename(x.ruta)}`));
+  const resumenAplicar = (rs: ResultadoCerebro[], visor: string | null, inicio?: number) => [
+    ...(enVivo ? [] : rs.flatMap(resumenCerebro)),
+    ...(visor ? [L(`viewer for all brains: ${visor}`, `visor de todos los cerebros: ${visor}`)] : []),
+    ...(inicio !== undefined ? lineaTotal(inicio, fallidosDe(rs)) : []),
+  ];
   const fallo = (rs: Awaited<ReturnType<typeof aplicar>>) => rs.some((r) => r.repos.some((x) => x.error) || r.nodos === 0);
 
   try {
@@ -455,10 +477,12 @@ export async function ejecutar(
         await asegurarGitignore(reg);
       } else lineas.push(L(`existing registry at ${join(reg, ARCHIVO_REGISTRO)}: updating it`, `registro existente en ${join(reg, ARCHIVO_REGISTRO)}: se actualiza`));
       const registro = await leerRegistro(reg);
-      const rs = await aplicar(registro);
-      const visor = await escribirVisor(registro);
+      const inicio = Date.now();
+      const rs = await aplicarConProgreso(registro);
+      const visor = await escribirVisor(registro, reporte?.progreso);
+      reporte?.terminar();
       lineas.push(
-        ...resumenAplicar(rs, visor),
+        ...resumenAplicar(rs, visor, inicio),
         "",
         L(
           `To regroup the repos or turn off the communication between brains, edit ${join(reg, ARCHIVO_REGISTRO)} and run again: flowbrain install`,
@@ -501,9 +525,11 @@ export async function ejecutar(
         const registro = await leerRegistro(raiz);
         const solo = positionals[2];
         if (solo && !registro.cerebro(solo)) throw new ConsultaError("nodo_inexistente", L(`brain does not exist: ${solo}`, `no existe el cerebro: ${solo}`));
-        const rs = await aplicar(registro, solo);
-        const visor = await escribirVisor(registro);
-        return { codigo: fallo(rs) ? 1 : 0, stdout: resumenAplicar(rs, visor).join("\n") + "\n", stderr: "" };
+        const inicio = Date.now();
+        const rs = await aplicarConProgreso(registro, solo);
+        const visor = await escribirVisor(registro, reporte?.progreso);
+        reporte?.terminar();
+        return { codigo: fallo(rs) ? 1 : 0, stdout: resumenAplicar(rs, visor, inicio).join("\n") + "\n", stderr: "" };
       }
       if (arg === "viewer") {
         const visor = await escribirVisor(await leerRegistro(raiz));
@@ -610,7 +636,9 @@ export async function ejecutar(
     if (comando === "sync" || comando === "status" || comando === "doctor") {
       const carpetas = (o.repos ?? env.FLOWBRAIN_REPOS ?? "").split(":").filter(Boolean).map((d) => resolve(cwd, d));
       if (comando === "sync") {
-        const r = await sync(raiz, { carpetas, forzar: o.force === true });
+        const inicio = Date.now();
+        const r = await sync(raiz, { carpetas, forzar: o.force === true, ...(reporte ? { progreso: reporte.progreso } : {}) });
+        reporte?.terminar();
         const lineas = [
           ...r.repos.map((x) => `${x.repo}: ${x.reindexado ? L("reindexed", "reindexado") : x.estado === "sin clon" ? L("no clone (not reindexed)", "sin clon (no se reindexó)") : L("up to date", "al día")}`),
           r.repos.length
@@ -618,6 +646,7 @@ export async function ejecutar(
               ? L(`compiled: ${r.compilados.length} files changed`, `compilado: ${r.compilados.length} archivos cambiaron`)
               : L("no changes: no need to compile", "sin cambios: no hizo falta compilar")
             : L("no indexed repos (run flowbrain index <repo-path>)", "no hay repos indexados (corré flowbrain index <ruta-repo>)"),
+          ...lineaTotal(inicio, []),
         ];
         return { codigo: r.repos.some((x) => x.estado === "sin clon") ? 1 : 0, stdout: lineas.join("\n") + "\n", stderr: "" };
       }
@@ -970,10 +999,22 @@ if (esMain && process.argv[2] === "serve") {
     await resolverIdioma({ ...opt("flag", lang), env: process.env, cwd: process.cwd() });
     const { menu, terminal } = await import("./menu.js");
     // Cada comando que corre el menú usa el idioma del menú (que se puede cambiar desde ahí).
-    await menu(process.cwd(), terminal((a, cwd) => ejecutar([...a, "--lang", idiomaDelMenu()], process.env, cwd, leerStdin, preguntar)), { forzarMenu: sinLang[0] === "menu" });
+    // El progreso de reindexar va a stderr, en la misma terminal: una línea viva y el resumen de cada cerebro al terminar.
+    const conProgreso = async (a: string[], cwd: string) => {
+      const reporte = crearReporte(process.stderr, { resumenEnVivo: true });
+      try {
+        return await ejecutar([...a, "--lang", idiomaDelMenu()], process.env, cwd, leerStdin, preguntar, reporte);
+      } finally {
+        reporte.terminar();
+      }
+    };
+    await menu(process.cwd(), terminal(conProgreso), { forzarMenu: sinLang[0] === "menu" });
     process.exit(0);
   }
-  const r = await ejecutar(args, process.env, process.cwd(), leerStdin, preguntar);
+  // Progreso a stderr: una línea que se reescribe en una terminal, líneas simples en un log. Solo lo usan los comandos
+  // que reindexan (`brains apply`, `install`, `sync`); el resumen de cada cerebro sale en vivo si stdout es la terminal.
+  const reporte = crearReporte(process.stderr, { resumenEnVivo: !!process.stdout.isTTY });
+  const r = await ejecutar(args, process.env, process.cwd(), leerStdin, preguntar, reporte).finally(() => reporte.terminar());
   process.stdout.write(r.stdout);
   process.stderr.write(r.stderr);
   process.exitCode = r.codigo;

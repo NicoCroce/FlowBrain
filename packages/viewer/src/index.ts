@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { compileDir, contextoDeFuentes, deriva, fidelidadDeArchivos, simbolosDelVisor, type CodigoVisor, type Contrato, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
+import { avisar, compileDir, contextoDeFuentes, type Progreso, deriva, fidelidadDeArchivos, simbolosDelVisor, type CodigoVisor, type Contrato, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
 import { renderViewerCerebros, type CerebroVisor, type PorPaquetes } from "./cerebros.js";
 import { renderViewer, type DerivaVisor, type FidelidadVisor } from "./viewer.js";
 
@@ -23,13 +23,20 @@ export async function visor(s: Salidas, fidelidad?: FidelidadVisor, derivaDelBra
 const jsonDe = async (dir: string) => Promise.all((await readdir(dir).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort().map((n) => readFile(join(dir, n), "utf8")));
 
 /** `flowbrain compile` completo: grafo, índices, páginas y el visor, con la fidelidad de cada archivo indexado. */
-export const compileDirConVisor = (raiz: string) =>
+export const compileDirConVisor = (raiz: string, progreso?: Progreso) =>
   compileDir(raiz, async (s) => {
     const [archivos, extracciones, contratos] = await Promise.all([jsonDe(join(raiz, "_build/files")), jsonDe(join(raiz, "_build/extraction")), jsonDe(join(raiz, "_build/contracts"))]);
-    if (!archivos.length) return visor(s);
+    if (!archivos.length) {
+      avisar(progreso, { etapa: "visor" });
+      return visor(s);
+    }
+    avisar(progreso, { etapa: "fidelidad" });
     const ctx = contextoDeFuentes(s.graph, s.funcionalidades, archivos, extracciones, contratos.map((c) => JSON.parse(c) as Contrato));
-    return visor(s, fidelidadDeArchivos(ctx), deriva(ctx, { budget_tokens: null }) as unknown as DerivaVisor, simbolosDelVisor(ctx));
-  });
+    const fidelidad = fidelidadDeArchivos(ctx);
+    const derivaVisor = deriva(ctx, { budget_tokens: null }) as unknown as DerivaVisor;
+    avisar(progreso, { etapa: "visor" });
+    return visor(s, fidelidad, derivaVisor, simbolosDelVisor(ctx));
+  }, progreso);
 
 /** Página del visor para varios cerebros. */
 export async function visorDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conexiones: ResumenConexion[], trazas?: TrazasCruzadas, paquetes?: PorPaquetes): Promise<string> {

@@ -1,6 +1,6 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { ARCHIVO_REGISTRO, cerebroLiviano, cmp, contextoDeFuentes, contratoDeEndpoint, deriva, derivaCruzadaDe, fidelidadDeArchivos, simbolosDelVisor, CompileError, crucesDelRegistro, usosEntreCerebros, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Contrato, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
+import { ARCHIVO_REGISTRO, avisar, type Progreso, cerebroLiviano, cmp, contextoDeFuentes, contratoDeEndpoint, deriva, derivaCruzadaDe, fidelidadDeArchivos, simbolosDelVisor, CompileError, crucesDelRegistro, usosEntreCerebros, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Contrato, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
 import { draftDir } from "@flowbrain/indexer";
 import { escribirIndex, fusionar, IGNORAR, indexar, leerRepo, PARSERS, slug } from "@flowbrain/parsers";
 import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@flowbrain/viewer";
@@ -216,6 +216,8 @@ export interface ResultadoCerebro {
   /** Borradores que quedaron para revisar (funcionalidades de un cerebro curado, o los que no compilaron). */
   borradores: number;
   errores: string[];
+  /** Cuánto tardó, en milisegundos. */
+  ms: number;
 }
 
 /**
@@ -245,17 +247,22 @@ async function promoverSolos(raiz: string, curado: boolean): Promise<{ promovida
 }
 
 /** Crea e indexa un cerebro: borradores → páginas → índice de cada repo → segunda pasada → compilar. */
-export async function aplicarCerebro(c: Cerebro): Promise<ResultadoCerebro> {
-  const res: ResultadoCerebro = { nombre: c.nombre, raiz: c.raiz, curado: c.curado, repos: [], nodos: 0, relaciones: 0, promovidas: 0, borradores: 0, errores: [] };
+export async function aplicarCerebro(c: Cerebro, progreso?: Progreso): Promise<ResultadoCerebro> {
+  const inicio = Date.now();
+  const res: ResultadoCerebro = { nombre: c.nombre, raiz: c.raiz, curado: c.curado, repos: [], nodos: 0, relaciones: 0, promovidas: 0, borradores: 0, errores: [], ms: 0 };
   await init(c.raiz);
   const indexables: Array<{ ruta: string; repo: string }> = [];
-  for (const r of c.repos) {
+  // Tres vueltas por repo: borradores y dos pasadas de índice.
+  const vuelta = (repo: string, n: number, pasada: number) => avisar(progreso, { etapa: "repo", repo, n, de: c.repos.length, pasada, pasadas: 3 });
+  for (const [i, r] of c.repos.entries()) {
+    vuelta(r.id ?? basename(r.ruta), i + 1, 1);
     if (!(await existe(r.ruta))) {
       res.repos.push({ ruta: r.ruta, repo: null, error: L("the folder does not exist", "la carpeta no existe") });
       continue;
     }
     try {
-      const d = await draftDir(r.ruta, c.raiz, r.id ? { repo: r.id } : {});
+      const d = await draftDir(r.ruta, c.raiz, { ...(r.id ? { repo: r.id } : {}), ...(progreso ? { progreso } : {}) });
+      avisar(progreso, { etapa: "paginas" });
       const p = await promoverSolos(c.raiz, c.curado);
       res.promovidas += p.promovidas;
       res.errores.push(...p.errores);
@@ -268,16 +275,17 @@ export async function aplicarCerebro(c: Cerebro): Promise<ResultadoCerebro> {
   // Dos pasadas: en la primera cada repo deja sus contratos; en la segunda las llamadas se unen a endpoints de
   // cualquier repo del cerebro, sin importar el orden en que se indexaron.
   for (let pasada = 0; pasada < 2; pasada++) {
-    for (const r of indexables) {
+    for (const [i, r] of indexables.entries()) {
+      vuelta(r.repo, i + 1, pasada + 2);
       try {
-        await escribirIndex(c.raiz, await indexar(r.ruta, c.raiz, { repo: r.repo }));
+        await escribirIndex(c.raiz, await indexar(r.ruta, c.raiz, { repo: r.repo, ...(progreso ? { progreso } : {}) }));
       } catch (e) {
         if (pasada === 1) res.repos.find((x) => x.ruta === r.ruta)!.error = (e as Error).message;
       }
     }
   }
   try {
-    const { salidas } = await compileDirConVisor(c.raiz);
+    const { salidas } = await compileDirConVisor(c.raiz, progreso);
     res.nodos = salidas.graph.nodes.length;
     res.relaciones = salidas.graph.edges.length;
   } catch (e) {
@@ -285,13 +293,24 @@ export async function aplicarCerebro(c: Cerebro): Promise<ResultadoCerebro> {
     res.errores.push(e.message);
   }
   res.borradores = (await borradoresPromovibles(c.raiz)).filter((b) => b.estado !== "igual").length;
+  res.ms = Date.now() - inicio;
   return res;
 }
 
-/** `flowbrain brains apply [nombre]`. */
-export async function aplicar(registro: Registro, solo?: string): Promise<ResultadoCerebro[]> {
+/**
+ * `flowbrain brains apply [nombre]`. Un repo que falla queda anotado en su resultado y se sigue con los demás.
+ * `alTerminar` recibe cada cerebro apenas termina (para mostrar su resumen sin esperar al resto).
+ */
+export async function aplicar(registro: Registro, solo?: string, opciones: { progreso?: Progreso; alTerminar?: (r: ResultadoCerebro) => void } = {}): Promise<ResultadoCerebro[]> {
   const out: ResultadoCerebro[] = [];
-  for (const c of registro.cerebros) if (!solo || c.nombre === solo) out.push(await aplicarCerebro(c));
+  const elegidos = registro.cerebros.filter((c) => !solo || c.nombre === solo);
+  for (const [i, c] of elegidos.entries()) {
+    avisar(opciones.progreso, { etapa: "cerebro", cerebro: c.nombre, n: i + 1, de: elegidos.length });
+    const r = await aplicarCerebro(c, opciones.progreso);
+    out.push(r);
+    avisar(opciones.progreso, { etapa: "cerebro_listo", cerebro: c.nombre, n: i + 1, de: elegidos.length, ms: r.ms, fallidos: r.repos.filter((x) => x.error).length });
+    opciones.alTerminar?.(r);
+  }
   return out;
 }
 
@@ -320,7 +339,8 @@ export const ARCHIVO_VISOR = "flowbrain.html";
  * Visor de todo el registro: un cerebro dibujado por cada cerebro compilado, y entre ellos las llamadas que cruzan
  * (solo entre los que tienen la comunicación activa). Devuelve la ruta escrita, o `null` si no hay nada compilado.
  */
-export async function escribirVisor(registro: Registro): Promise<string | null> {
+export async function escribirVisor(registro: Registro, progreso?: Progreso): Promise<string | null> {
+  avisar(progreso, { etapa: "visor", todos: true });
   const html = await htmlDelVisor(registro);
   if (html === null) return null;
   const archivo = join(registro.carpeta, ARCHIVO_VISOR);

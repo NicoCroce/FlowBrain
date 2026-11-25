@@ -288,7 +288,8 @@ export interface Extraccion {
 export interface Parser {
   nombre: string;
   detect(repo: RepoFuente): boolean;
-  extract(repo: RepoFuente): Extraccion | Promise<Extraccion>;
+  /** `avance`, opcional: la fracción hecha (0 a 1), para mostrar progreso. Puede llamarse muchas veces: el que escucha filtra. */
+  extract(repo: RepoFuente, avance?: (fraccion: number) => void): Extraccion | Promise<Extraccion>;
 }
 
 export const extraccionVacia = (parser: string): Extraccion => ({

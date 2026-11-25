@@ -2,7 +2,7 @@ import { compileDirConVisor } from "@flowbrain/viewer";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { cargarContexto, cmp, commitDe, dentroDe, ES_TEST, type Contexto } from "@flowbrain/core";
+import { avisar, cargarContexto, cmp, commitDe, dentroDe, ES_TEST, type Contexto, type Progreso } from "@flowbrain/core";
 import { escribirIndex, indexar } from "@flowbrain/parsers";
 import { L } from "./idioma.js";
 
@@ -55,20 +55,23 @@ export interface ResultadoSync {
 }
 
 /** Reindexa los repos cuyo clon avanzó (o todos con `forzar`) y recompila si algo cambió. */
-export async function sync(raiz: string, opciones: { carpetas?: string[]; forzar?: boolean } = {}): Promise<ResultadoSync> {
+export async function sync(raiz: string, opciones: { carpetas?: string[]; forzar?: boolean; progreso?: Progreso } = {}): Promise<ResultadoSync> {
+  const { progreso } = opciones;
   const repos = await reposIndexados(raiz, opciones.carpetas);
   const out: ResultadoSync["repos"] = [];
   let cambios = false;
+  const tocan = repos.filter((r) => r.clon !== null && (opciones.forzar === true || r.estado === "desactualizado" || r.estado === "sin commit"));
   for (const r of repos) {
     // Sin commit no se puede saber si cambió: se reindexa siempre que haya clon.
-    const toca = r.clon !== null && (opciones.forzar === true || r.estado === "desactualizado" || r.estado === "sin commit");
+    const toca = tocan.includes(r);
     if (toca) {
-      const escritos = await escribirIndex(raiz, await indexar(r.clon!, raiz, { repo: r.repo }));
+      avisar(progreso, { etapa: "repo", repo: r.repo, n: tocan.indexOf(r) + 1, de: tocan.length });
+      const escritos = await escribirIndex(raiz, await indexar(r.clon!, raiz, { repo: r.repo, ...(progreso ? { progreso } : {}) }));
       if (escritos.length) cambios = true;
     }
     out.push({ ...r, reindexado: toca });
   }
-  const compilados = cambios || opciones.forzar ? (await compileDirConVisor(raiz)).escritos : null;
+  const compilados = cambios || opciones.forzar ? (await compileDirConVisor(raiz, progreso)).escritos : null;
   return { repos: out, compilados };
 }
 

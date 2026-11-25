@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { cmp } from "./canonical.js";
 import { compile, type Entradas, type Fuente, type Salidas } from "./compile.js";
+import { avisar, type Progreso } from "./progreso.js";
 import { RUTA_VERIFICACION } from "./schema.js";
 
 async function listar(raiz: string, dir: string, ext: string): Promise<Fuente[]> {
@@ -58,7 +59,8 @@ export async function escribirSalidas(raiz: string, s: Salidas): Promise<string[
  * `flowbrain compile`: lee, compila y escribe. `extra` agrega salidas derivadas que no son del núcleo (el visor, que
  * vive en su propio paquete).
  */
-export async function compileDir(raiz: string, extra?: (s: Salidas) => Promise<Record<string, string>> | Record<string, string>): Promise<{ salidas: Salidas; escritos: string[] }> {
+export async function compileDir(raiz: string, extra?: (s: Salidas) => Promise<Record<string, string>> | Record<string, string>, progreso?: Progreso): Promise<{ salidas: Salidas; escritos: string[] }> {
+  avisar(progreso, { etapa: "compilar" });
   const salidas = compile(await leerEntradas(raiz));
   if (extra) Object.assign(salidas.generados, await extra(salidas));
   return { salidas, escritos: await escribirSalidas(raiz, salidas) };
