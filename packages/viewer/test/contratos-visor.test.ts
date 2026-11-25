@@ -142,6 +142,14 @@ describe("pantalla Contratos: deriva", () => {
     expect(p).not.toContain("another brain");
   });
 
+  it("una llamada ambigua del propio brain se muestra con sus candidatos", () => {
+    const amb = { ...deriva, llamadasAmbiguas: [{ desde: "svc-viejo", llamada: "GET ${api}/turnos/{id}", ev: "repo-a:src/api.ts#L20", candidatos: ["svc-viejo:GET:/turnos", "svc-viejo:GET:/turnos/{id}"] }] };
+    const p = montar(datosDelVisor(graph, [], undefined, amb)).pagina();
+    expect(p).toContain("<code>GET ${api}/turnos/{id}</code>");
+    expect(p).toContain("Candidates: <code>");
+    expect(p).toContain("/turnos/{id}</code>");
+  });
+
   it("con varios cerebros, cada uno su deriva: lo que atiende otro cerebro va aparte y la falta de comunicación se dice", () => {
     const front = { ...deriva, llamadasSinEndpoint: [], comunicadoCon: ["back"], atendidasEnOtrosCerebros: [{ cerebro: "back", llamadas: 7, endpoints: 3 }], internasDelServicio: 2, disputadasEntreCerebros: [{ desde: "svc-viejo", llamada: "GET /x", ev: "repo-a:x.ts#L1", candidatos: ["back/svc-a:GET:/x", "otro/svc-b:GET:/x"] }] };
     const d = datosDeCerebros([{ nombre: "legado", sinRevisar: false, graph: lado("svc-viejo"), funcionalidades: [], deriva: front }, { nombre: "back", sinRevisar: false, graph: lado("svc-nuevo"), funcionalidades: [], deriva: { ...deriva, comunicadoCon: [] } }], [], []);

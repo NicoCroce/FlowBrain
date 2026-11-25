@@ -93,6 +93,14 @@ describe("consultas de código", () => {
     expect(() => deriva(ctx, { nodo: "tabla-pagos" })).toThrow(ConsultaError);
   });
 
+  it("deriva: una llamada ambigua lista los endpoints candidatos, no cuántos son", () => {
+    const j = JSON.parse(extraccionCheckout) as { pendientes: unknown[] };
+    j.pendientes.push({ candidatos: [{ endpoint: "svc-bff:POST:/checkout", hasta: "svc-bff" }, { endpoint: "svc-bff:POST:/checkout/{id}", hasta: "svc-bff" }], desde: "svc-web", evidencia: "repo-tienda:apps/web/src/api/checkout.ts#L50", motivo: "varios endpoints coinciden", objetivo: null, referencia: "POST ${base}/checkout/{id}", verbo: "llama_a" });
+    const c = contextoDeSalidas(salidasCheckout, contratosCheckout, { archivos: archivosCheckout, extracciones: [JSON.stringify(j)] });
+    const r = deriva(c, { budget_tokens: null }) as { llamadasAmbiguas: unknown[] };
+    expect(r.llamadasAmbiguas).toEqual([{ desde: "svc-web", llamada: "POST ${base}/checkout/{id}", ev: "repo-tienda:apps/web/src/api/checkout.ts#L50", candidatos: ["svc-bff:POST:/checkout", "svc-bff:POST:/checkout/{id}"] }]);
+  });
+
   it("deriva entre cerebros: lo que atiende otro cerebro no es deriva, y un endpoint que llama otro cerebro tiene consumidor", () => {
     const L30 = "repo-tienda:apps/web/src/api/checkout.ts#L30";
     type R = { llamadasSinEndpoint: unknown[]; atendidasEnOtrosCerebros: unknown[]; disputadasEntreCerebros?: unknown[]; comunicadoCon: string[]; consumidoresIndexados: Record<string, string[]>; endpointsSinLlamadasDetectadas: Array<{ endpoint: string }>; avisos: string[] };

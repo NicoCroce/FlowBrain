@@ -55,7 +55,7 @@ export interface IndiceCodigo {
   /** Accesos a tablas del índice, y cuántos dicen qué columnas leen o escriben. */
   accesos: { total: number; conColumnas: number };
   /** Llamadas HTTP que el índice no pudo unir a un endpoint (`pendientes` de la extracción). */
-  llamadasPendientes: Array<{ desde: string; referencia: string; motivo: string; evidencia: string; candidatos: number; llamada?: { metodo: string; ruta: string | null; base: string } }>;
+  llamadasPendientes: Array<{ desde: string; referencia: string; motivo: string; evidencia: string; candidatos: string[]; llamada?: { metodo: string; ruta: string | null; base: string } }>;
   /** Archivo (`repo:ruta`) → cuánto de lo que el índice vio ahí quedó unido: lo usa `fidelidad`. */
   porArchivo: Map<string, DatosArchivo>;
   /** Llamadas HTTP unidas a un endpoint de este brain, una por evidencia. */
@@ -181,8 +181,8 @@ export function crearIndiceCodigo(graph: Graph, fichas: Ficha[], archivos: strin
   const sinCampos = new Set<string>();
   for (const c of extracciones) {
     try {
-      const j = JSON.parse(c) as { repo?: string; campos?: Record<string, CamposDeLlamada>; pendientes?: Array<{ verbo: string; desde: string; referencia: string; motivo: string; evidencia: string; candidatos?: unknown[]; llamada?: { metodo: string; ruta: string | null; base: string } }> };
-      for (const p of j.pendientes ?? []) if (p.verbo === "llama_a") llamadasPendientes.push({ desde: p.desde, referencia: p.referencia, motivo: p.motivo, evidencia: p.evidencia, candidatos: p.candidatos?.length ?? 0, ...(p.llamada ? { llamada: p.llamada } : {}) });
+      const j = JSON.parse(c) as { repo?: string; campos?: Record<string, CamposDeLlamada>; pendientes?: Array<{ verbo: string; desde: string; referencia: string; motivo: string; evidencia: string; candidatos?: Array<{ endpoint?: string } | string>; llamada?: { metodo: string; ruta: string | null; base: string } }> };
+      for (const p of j.pendientes ?? []) if (p.verbo === "llama_a") llamadasPendientes.push({ desde: p.desde, referencia: p.referencia, motivo: p.motivo, evidencia: p.evidencia, candidatos: (p.candidatos ?? []).map((k) => (typeof k === "string" ? k : k.endpoint ?? "")).filter(Boolean).sort(cmp), ...(p.llamada ? { llamada: p.llamada } : {}) });
       if (j.campos) for (const [ev, k] of Object.entries(j.campos)) camposDeLlamada.set(ev, k);
       else if (j.repo) sinCampos.add(j.repo);
     } catch {
