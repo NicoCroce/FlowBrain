@@ -91,7 +91,7 @@ export function compile(entradas: Entradas): Salidas {
   const aristas: GraphEdge[] = [];
 
   const agregarNodo = (n: GraphNode, archivo: string, linea: number | null) => {
-    if (nodos.has(n.id)) errores.push({ archivo, linea, mensaje: `id duplicado: ${n.id}` });
+    if (nodos.has(n.id)) errores.push({ archivo, linea, mensaje: `duplicate id: ${n.id}` });
     else nodos.set(n.id, n);
   };
 
@@ -128,33 +128,33 @@ export function compile(entradas: Entradas): Salidas {
     const fm = res.data;
     const L = parsed.lineaDe;
     const [carpeta, nombreArchivo, ...extra] = f.ruta.split("/");
-    if (!ID_PAGINA.test(fm.id)) errores.push({ archivo: f.ruta, linea: L(["id"]), mensaje: `id inválido: "${fm.id}"` });
+    if (!ID_PAGINA.test(fm.id)) errores.push({ archivo: f.ruta, linea: L(["id"]), mensaje: `invalid id: "${fm.id}"` });
     if (extra.length > 0 || nombreArchivo !== `${fm.id}.md`) {
-      errores.push({ archivo: f.ruta, linea: L(["id"]), mensaje: `el id "${fm.id}" no coincide con el nombre del archivo` });
+      errores.push({ archivo: f.ruta, linea: L(["id"]), mensaje: `id "${fm.id}" does not match the file name` });
     }
     if (!fm.id.startsWith(`${fm.tipo}-`)) {
-      errores.push({ archivo: f.ruta, linea: L(["tipo"]), mensaje: `el id "${fm.id}" debe empezar con "${fm.tipo}-"` });
+      errores.push({ archivo: f.ruta, linea: L(["tipo"]), mensaje: `id "${fm.id}" must start with "${fm.tipo}-"` });
     }
     if (!carpetasDeTipo(fm.tipo).includes(carpeta as "product")) {
-      errores.push({ archivo: f.ruta, linea: L(["tipo"]), mensaje: `una página de tipo ${fm.tipo} va en ${carpetasDeTipo(fm.tipo).join("/ o ")}/` });
+      errores.push({ archivo: f.ruta, linea: L(["tipo"]), mensaje: `a page of type ${fm.tipo} goes in ${carpetasDeTipo(fm.tipo).join("/ or ")}/` });
     }
     if (fm.puntos_de_entrada && fm.tipo !== "svc") {
-      errores.push({ archivo: f.ruta, linea: L(["puntos_de_entrada"]), mensaje: "puntos_de_entrada solo aplica a svc" });
+      errores.push({ archivo: f.ruta, linea: L(["puntos_de_entrada"]), mensaje: "puntos_de_entrada only applies to svc" });
     }
     if (fm.codigo && fm.tipo !== "feat" && fm.tipo !== "lib") {
-      errores.push({ archivo: f.ruta, linea: L(["codigo"]), mensaje: "codigo solo aplica a feat y lib" });
+      errores.push({ archivo: f.ruta, linea: L(["codigo"]), mensaje: "codigo only applies to feat and lib" });
     }
     if (fm.especificaciones && fm.tipo !== "feat") {
-      errores.push({ archivo: f.ruta, linea: L(["especificaciones"]), mensaje: "especificaciones solo aplica a feat" });
+      errores.push({ archivo: f.ruta, linea: L(["especificaciones"]), mensaje: "especificaciones only applies to feat" });
     }
     if (fm.casos && fm.tipo !== "feat") {
-      errores.push({ archivo: f.ruta, linea: L(["casos"]), mensaje: "casos solo aplica a feat" });
+      errores.push({ archivo: f.ruta, linea: L(["casos"]), mensaje: "casos only applies to feat" });
     }
     if (fm.puntos_de_entrada && (fm.vive_en?.length ?? 0) !== 1) {
       errores.push({
         archivo: f.ruta,
         linea: L(["puntos_de_entrada"]),
-        mensaje: "con puntos_de_entrada, vive_en debe tener exactamente un repo",
+        mensaje: "with puntos_de_entrada, vive_en must have exactly one repo",
       });
     }
     paginas.push({ ruta: f.ruta, fm, frontmatter: parsed.frontmatter, cuerpo: parsed.cuerpo, lineaDe: L });
@@ -181,11 +181,11 @@ export function compile(entradas: Entradas): Salidas {
   const esRepo = (id: string) => nodos.get(id)?.tipo === "repo";
   const checkEvidencia = (ev: string, archivo: string, linea: number | null, donde: string) => {
     if (!evidenciaValida(ev)) {
-      errores.push({ archivo, linea, mensaje: `${donde}: evidencia con formato inválido: "${ev}"` });
+      errores.push({ archivo, linea, mensaje: `${donde}: evidence with invalid format: "${ev}"` });
       return;
     }
     const repo = ev.slice(0, ev.indexOf(":"));
-    if (!esRepo(repo) && !rotos.has(repo)) errores.push({ archivo, linea, mensaje: `${donde}: la evidencia cita un repo inexistente: ${repo}` });
+    if (!esRepo(repo) && !rotos.has(repo)) errores.push({ archivo, linea, mensaje: `${donde}: the evidence cites a nonexistent repo: ${repo}` });
   };
 
   // ---------- 2. Contratos ----------
@@ -199,10 +199,10 @@ export function compile(entradas: Entradas): Salidas {
     }
     const c = res.data;
     if (f.ruta !== `_build/contracts/${c.svc}.json`) {
-      errores.push({ archivo: f.ruta, linea: null, mensaje: `el archivo debe llamarse _build/contracts/${c.svc}.json` });
+      errores.push({ archivo: f.ruta, linea: null, mensaje: `the file must be named _build/contracts/${c.svc}.json` });
     }
     if (nodos.get(c.svc)?.tipo !== "svc") {
-      if (!rotos.has(c.svc)) errores.push({ archivo: f.ruta, linea: null, mensaje: `svc inexistente: ${c.svc}` });
+      if (!rotos.has(c.svc)) errores.push({ archivo: f.ruta, linea: null, mensaje: `nonexistent svc: ${c.svc}` });
       continue;
     }
     const contratoId = `${c.svc}:contrato`;
@@ -231,7 +231,7 @@ export function compile(entradas: Entradas): Salidas {
     c.eventos.forEach((ev, i) => {
       checkEvidencia(ev.evidencia, f.ruta, null, `eventos[${i}]`);
       if (ev.cola !== null && nodos.get(ev.cola)?.tipo !== "queue") {
-        errores.push({ archivo: f.ruta, linea: null, mensaje: `eventos[${i}]: cola inexistente: ${ev.cola}` });
+        errores.push({ archivo: f.ruta, linea: null, mensaje: `eventos[${i}]: nonexistent queue: ${ev.cola}` });
       }
     });
   }
@@ -251,15 +251,15 @@ export function compile(entradas: Entradas): Salidas {
     }
     const a = res.data;
     if (f.ruta !== `_build/files/${a.repo}.json`) {
-      errores.push({ archivo: f.ruta, linea: null, mensaje: `el archivo debe llamarse _build/files/${a.repo}.json` });
+      errores.push({ archivo: f.ruta, linea: null, mensaje: `the file must be named _build/files/${a.repo}.json` });
     }
     if (!esRepo(a.repo)) {
-      if (!rotos.has(a.repo)) errores.push({ archivo: f.ruta, linea: null, mensaje: `repo inexistente: ${a.repo}` });
+      if (!rotos.has(a.repo)) errores.push({ archivo: f.ruta, linea: null, mensaje: `nonexistent repo: ${a.repo}` });
       continue;
     }
     a.archivos.forEach((arc, i) => {
       if (!evidenciaValida(`${a.repo}:${arc.ruta}`)) {
-        errores.push({ archivo: f.ruta, linea: null, mensaje: `archivos[${i}]: ruta inválida: "${arc.ruta}"` });
+        errores.push({ archivo: f.ruta, linea: null, mensaje: `archivos[${i}]: invalid path: "${arc.ruta}"` });
         return;
       }
       const id = `${a.repo}:${arc.ruta}`;
@@ -271,7 +271,7 @@ export function compile(entradas: Entradas): Salidas {
     for (const [i, t] of (a.esquema ?? []).entries()) {
       const n = nodos.get(t.tabla);
       if (n?.tipo !== "tabla") {
-        if (!rotos.has(t.tabla)) errores.push({ archivo: f.ruta, linea: null, mensaje: `esquema[${i}]: tabla inexistente: ${t.tabla}` });
+        if (!rotos.has(t.tabla)) errores.push({ archivo: f.ruta, linea: null, mensaje: `esquema[${i}]: nonexistent table: ${t.tabla}` });
         continue;
       }
       checkEvidencia(t.evidencia, f.ruta, null, `esquema[${i}]`);
@@ -285,7 +285,7 @@ export function compile(entradas: Entradas): Salidas {
     for (const [i, it] of (a.infra ?? []).entries()) {
       const n = nodos.get(it.de);
       if (!n) {
-        if (!rotos.has(it.de)) errores.push({ archivo: f.ruta, linea: null, mensaje: `infra[${i}]: nodo inexistente: ${it.de}` });
+        if (!rotos.has(it.de)) errores.push({ archivo: f.ruta, linea: null, mensaje: `infra[${i}]: nonexistent node: ${it.de}` });
         continue;
       }
       checkEvidencia(it.evidencia, f.ruta, null, `infra[${i}]`);
@@ -339,9 +339,9 @@ export function compile(entradas: Entradas): Salidas {
       (destinos ?? []).forEach((d, i) => {
         const destino = nodos.get(d);
         if (!destino) {
-          if (!rotos.has(d)) errores.push({ archivo: ruta, linea: L([verbo, i]), mensaje: `${verbo}: destino inexistente: ${d}` });
+          if (!rotos.has(d)) errores.push({ archivo: ruta, linea: L([verbo, i]), mensaje: `${verbo}: nonexistent target: ${d}` });
         } else if (!verboAdmite(verbo, fm.tipo, destino.tipo)) {
-          errores.push({ archivo: ruta, linea: L([verbo, i]), mensaje: `${verbo} no admite ${fm.tipo} → ${destino.tipo}` });
+          errores.push({ archivo: ruta, linea: L([verbo, i]), mensaje: `${verbo} does not allow ${fm.tipo} → ${destino.tipo}` });
         } else {
           aristas.push(arista(fm.id, verbo, d, "curado"));
         }
@@ -354,26 +354,26 @@ export function compile(entradas: Entradas): Salidas {
     // caso sigan en el índice no es un error de compilación (el índice puede estar viejo): queda marcado en la ficha.
     const idsEspec = new Set<string>();
     (fm.tipo === "feat" ? (fm.especificaciones ?? []) : []).forEach((e, i) => {
-      if (idsEspec.has(e.id)) errores.push({ archivo: ruta, linea: L(["especificaciones", i, "id"]), mensaje: `especificaciones: id repetido: ${e.id}` });
+      if (idsEspec.has(e.id)) errores.push({ archivo: ruta, linea: L(["especificaciones", i, "id"]), mensaje: `especificaciones: duplicate id: ${e.id}` });
       idsEspec.add(e.id);
       const ref = (campo: "archivos" | "tests", re: RegExp, forma: string) =>
         (e[campo] ?? []).forEach((r, j) => {
           const m = re.exec(r);
-          if (!m) return void errores.push({ archivo: ruta, linea: L(["especificaciones", i, campo, j]), mensaje: `especificaciones.${e.id}.${campo} con formato inválido: "${r}" (se espera ${forma})` });
-          if (!esRepo(m[1]!) && !rotos.has(m[1]!)) errores.push({ archivo: ruta, linea: L(["especificaciones", i, campo, j]), mensaje: `especificaciones.${e.id}.${campo}: repo inexistente: ${m[1]}` });
+          if (!m) return void errores.push({ archivo: ruta, linea: L(["especificaciones", i, campo, j]), mensaje: `especificaciones.${e.id}.${campo} with invalid format: "${r}" (expected ${forma})` });
+          if (!esRepo(m[1]!) && !rotos.has(m[1]!)) errores.push({ archivo: ruta, linea: L(["especificaciones", i, campo, j]), mensaje: `especificaciones.${e.id}.${campo}: nonexistent repo: ${m[1]}` });
         });
-      ref("archivos", EVIDENCIA, '"repo-x:ruta/al/archivo" o con "#L12"');
-      ref("tests", TEST_REF, '"repo-x:ruta/al/test" o "repo-x:ruta/al/test::nombre del caso"');
+      ref("archivos", EVIDENCIA, '"repo-x:path/to/file" or with "#L12"');
+      ref("tests", TEST_REF, '"repo-x:path/to/test" or "repo-x:path/to/test::test case name"');
     });
     // casos de uso: ids únicos, y cada especificación que nombran existe en la página y está en un solo caso.
     const idsCaso = new Set<string>();
     const enCaso = new Map<string, string>();
     (fm.tipo === "feat" ? (fm.casos ?? []) : []).forEach((c, i) => {
-      if (idsCaso.has(c.id)) errores.push({ archivo: ruta, linea: L(["casos", i, "id"]), mensaje: `casos: id repetido: ${c.id}` });
+      if (idsCaso.has(c.id)) errores.push({ archivo: ruta, linea: L(["casos", i, "id"]), mensaje: `casos: duplicate id: ${c.id}` });
       idsCaso.add(c.id);
       (c.especificaciones ?? []).forEach((e, j) => {
-        if (!idsEspec.has(e)) errores.push({ archivo: ruta, linea: L(["casos", i, "especificaciones", j]), mensaje: `casos.${c.id}: no hay una especificación con id ${e} en esta página` });
-        else if (enCaso.has(e) && enCaso.get(e) !== c.id) errores.push({ archivo: ruta, linea: L(["casos", i, "especificaciones", j]), mensaje: `casos.${c.id}: la especificación ${e} ya está en el caso ${enCaso.get(e)}` });
+        if (!idsEspec.has(e)) errores.push({ archivo: ruta, linea: L(["casos", i, "especificaciones", j]), mensaje: `casos.${c.id}: there is no specification with id ${e} in this page` });
+        else if (enCaso.has(e) && enCaso.get(e) !== c.id) errores.push({ archivo: ruta, linea: L(["casos", i, "especificaciones", j]), mensaje: `casos.${c.id}: specification ${e} is already in use case ${enCaso.get(e)}` });
         else enCaso.set(e, c.id);
       });
     });
@@ -381,9 +381,9 @@ export function compile(entradas: Entradas): Salidas {
     // codigo de una feat: cada servicio que vive en ese repo la implementa (o el repo, si no tiene servicios).
     (fm.tipo === "feat" || fm.tipo === "lib" ? (fm.codigo ?? []) : []).forEach((c, i) => {
       const m = CODIGO.exec(c);
-      if (!m) return void errores.push({ archivo: ruta, linea: L(["codigo", i]), mensaje: `codigo con formato inválido: "${c}" (se espera "repo-x:ruta/a/carpeta")` });
+      if (!m) return void errores.push({ archivo: ruta, linea: L(["codigo", i]), mensaje: `codigo with invalid format: "${c}" (expected "repo-x:path/to/folder")` });
       const repo = m[1]!;
-      if (!esRepo(repo)) return rotos.has(repo) ? undefined : void errores.push({ archivo: ruta, linea: L(["codigo", i]), mensaje: `codigo: repo inexistente: ${repo}` });
+      if (!esRepo(repo)) return rotos.has(repo) ? undefined : void errores.push({ archivo: ruta, linea: L(["codigo", i]), mensaje: `codigo: nonexistent repo: ${repo}` });
       // El `codigo` de una librería solo delimita qué archivos son suyos: nadie la "implementa".
       if (fm.tipo === "lib") return;
       const enRepo = paginas.filter((q) => q.fm.tipo === "svc" && (q.fm.vive_en ?? []).includes(repo));
@@ -399,29 +399,29 @@ export function compile(entradas: Entradas): Salidas {
     (fm.relaciones ?? []).forEach((r, i) => {
       const at = (k?: string) => L(k ? ["relaciones", i, k] : ["relaciones", i]);
       const err = (k: string | undefined, mensaje: string) => errores.push({ archivo: ruta, linea: at(k), mensaje });
-      if (!(VERBOS as readonly string[]).includes(r.verbo)) return err("verbo", `verbo desconocido: "${r.verbo}"`);
+      if (!(VERBOS as readonly string[]).includes(r.verbo)) return err("verbo", `unknown verbo: "${r.verbo}"`);
       const verbo = r.verbo as Verbo;
       if (!(VERBOS_RELACION as readonly string[]).includes(verbo)) {
         return err(
           "verbo",
           verbo === "vive_en" || verbo === "pertenece_a"
-            ? `${verbo} se escribe como campo de primer nivel, no en relaciones`
-            : `${verbo} lo genera el compilador; no se escribe en páginas`,
+            ? `${verbo} is written as a top-level field, not in relaciones`
+            : `${verbo} is generated by the compiler; it is not written in pages`,
         );
       }
       const destino = nodos.get(r.destino);
-      if (!destino) return rotos.has(r.destino) ? undefined : err("destino", `destino inexistente: ${r.destino}`);
-      if (!verboAdmite(verbo, fm.tipo, destino.tipo)) return err("verbo", `${verbo} no admite ${fm.tipo} → ${destino.tipo}`);
+      if (!destino) return rotos.has(r.destino) ? undefined : err("destino", `nonexistent target: ${r.destino}`);
+      if (!verboAdmite(verbo, fm.tipo, destino.tipo)) return err("verbo", `${verbo} does not allow ${fm.tipo} → ${destino.tipo}`);
       const origen: Origen = r.origen ?? "curado";
-      if (origen !== "curado" && r.evidencia === undefined) err("origen", `una arista de origen ${origen} requiere evidencia`);
+      if (origen !== "curado" && r.evidencia === undefined) err("origen", `an edge with origen ${origen} requires evidence`);
       if (r.evidencia !== undefined) checkEvidencia(r.evidencia, ruta, at("evidencia"), `relaciones[${i}]`);
       let endpoint: string | null = null;
       if (r.endpoint !== undefined) {
         const m = ENDPOINT_REF.exec(r.endpoint);
-        if (verbo !== "llama_a" || destino.tipo !== "svc") return err("endpoint", "endpoint solo aplica a llama_a hacia un svc");
-        if (!m) return err("endpoint", `endpoint con formato inválido: "${r.endpoint}" (se espera "MÉTODO /ruta")`);
+        if (verbo !== "llama_a" || destino.tipo !== "svc") return err("endpoint", "endpoint only applies to llama_a towards a svc");
+        if (!m) return err("endpoint", `endpoint with invalid format: "${r.endpoint}" (expected "METHOD /path")`);
         endpoint = endpointId(r.destino, m[1]!, m[2]!);
-        if (nodos.get(endpoint)?.tipo !== "endpoint") return err("endpoint", `endpoint inexistente en el contrato de ${r.destino}: ${r.endpoint}`);
+        if (nodos.get(endpoint)?.tipo !== "endpoint") return err("endpoint", `endpoint not in the contract of ${r.destino}: ${r.endpoint}`);
       }
       aristas.push(
         arista(fm.id, verbo, r.destino, origen, {
@@ -450,7 +450,7 @@ export function compile(entradas: Entradas): Salidas {
   if (entradas.verificacion) {
     const v = VerificacionSchema.safeParse(parseJson(entradas.verificacion, errores));
     if (v.success) for (const d of v.data.dudosas) dudosas.add(claveDudosa(d));
-    else if (entradas.verificacion.contenido.trim() !== "") errores.push({ archivo: entradas.verificacion.ruta, linea: null, mensaje: "verificación con formato inválido; borrala y corré flowbrain verify" });
+    else if (entradas.verificacion.contenido.trim() !== "") errores.push({ archivo: entradas.verificacion.ruta, linea: null, mensaje: "verification with invalid format; delete it and run flowbrain verify" });
   }
 
   if (errores.length > 0) throw new CompileError(ordenarErrores(errores));
@@ -568,13 +568,13 @@ function parseJson(f: Fuente, errores: ErrorCompilacion[]): unknown {
   try {
     return JSON.parse(f.contenido);
   } catch (e) {
-    errores.push({ archivo: f.ruta, linea: null, mensaje: `JSON inválido: ${(e as Error).message}` });
+    errores.push({ archivo: f.ruta, linea: null, mensaje: `invalid JSON: ${(e as Error).message}` });
     return undefined;
   }
 }
 
 function pathTexto(path: ReadonlyArray<string | number>): string {
-  return path.map((p, i) => (typeof p === "number" ? `[${p}]` : i === 0 ? p : `.${p}`)).join("") || "(raíz)";
+  return path.map((p, i) => (typeof p === "number" ? `[${p}]` : i === 0 ? p : `.${p}`)).join("") || "(root)";
 }
 
 /** Traduce un issue de zod a mensajes en castellano con su path. */
@@ -582,19 +582,19 @@ function mensajesZod(issue: ZodIssue): Array<{ path: Array<string | number>; men
   const campo = pathTexto(issue.path);
   switch (issue.code) {
     case "unrecognized_keys":
-      return issue.keys.map((k) => ({ path: [...issue.path, k], mensaje: `campo desconocido: ${pathTexto([...issue.path, k])}` }));
+      return issue.keys.map((k) => ({ path: [...issue.path, k], mensaje: `unknown field: ${pathTexto([...issue.path, k])}` }));
     case "invalid_enum_value":
       return [
         {
           path: issue.path,
-          mensaje: `${campo}: valor inválido "${String(issue.received)}"; se espera uno de: ${issue.options.join(", ")}`,
+          mensaje: `${campo}: invalid value "${String(issue.received)}"; expected one of: ${issue.options.join(", ")}`,
         },
       ];
     case "invalid_type":
       return [
         {
           path: issue.path,
-          mensaje: issue.received === "undefined" ? `${campo}: obligatorio` : `${campo}: se espera ${issue.expected}, llegó ${issue.received}`,
+          mensaje: issue.received === "undefined" ? `${campo}: required` : `${campo}: expected ${issue.expected}, got ${issue.received}`,
         },
       ];
     default:

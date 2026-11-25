@@ -87,7 +87,7 @@ describe("flowbrain viewer --serve", () => {
     const r = await pedir("GET", "/", { token: null });
     expect(r.estado).toBe(200);
     expect(r.cuerpo).toContain(`window.FLOWBRAIN_EDICION={"token":"${s.token}","sinAplicar":[],"agente":{"noDisponible":`);
-    expect(r.cuerpo).not.toMatch(/<script[^>]+src=|<link[^>]+href=/);
+    expect(r.cuerpo).not.toMatch(/<script[^>]+src=|<link[^>]+href="(?!data:)/);
     // El archivo en disco sigue siendo de solo lectura: el token no se escribe nunca.
     expect(await readFile(join(reg, "flowbrain.html"), "utf8")).not.toContain("FLOWBRAIN_EDICION=");
   });
@@ -212,11 +212,11 @@ describe("flowbrain viewer --serve", () => {
 
   it("nunca escribe fuera de la carpeta del cerebro", async () => {
     const base = join(reg, "tienda");
-    await expect(rutaDentro(base, "../flowbrain.yaml")).rejects.toThrow(/se sale/);
-    await expect(rutaDentro(base, "/etc/hosts")).rejects.toThrow(/se sale/);
+    await expect(rutaDentro(base, "../flowbrain.yaml")).rejects.toThrow(/leaves the brain folder/);
+    await expect(rutaDentro(base, "/etc/hosts")).rejects.toThrow(/leaves the brain folder/);
     // Una carpeta del cerebro que en realidad es un enlace hacia afuera tampoco pasa.
     await symlink(dir, join(base, "afuera"));
-    await expect(rutaDentro(base, "afuera/nota.md")).rejects.toThrow(/se sale/);
+    await expect(rutaDentro(base, "afuera/nota.md")).rejects.toThrow(/leaves the brain folder/);
     expect(await rutaDentro(base, "calls.yaml")).toMatch(/tienda\/calls\.yaml$/);
   });
 });

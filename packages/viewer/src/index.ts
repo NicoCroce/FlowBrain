@@ -7,6 +7,7 @@ import { renderViewer, type DerivaVisor, type FidelidadVisor } from "./viewer.js
 export * from "./viewer.js";
 export * from "./mapa3d.js";
 export * from "./cerebros.js";
+export * from "./idioma.js";
 
 /**
  * El visor es para que una persona controle lo que el brain sabe; el motor y las consultas no dependen de él.

@@ -5,201 +5,208 @@
  * La indexación mecánica (endpoints, llamadas, tablas, pantallas) la hace la consola y es determinística. Lo que la
  * consola no puede saber es a qué servidor va cada llamada: eso lo decide el modelo leyendo configuración y código, y
  * lo deja escrito en el registro con su evidencia, para que quede revisable.
+ *
+ * Las guías van siempre en inglés (dec. 214): las lee el modelo. Las claves de YAML/JSON y los valores que FlowBrain
+ * lee (`conexiones`, `origen: modelo`, `tipo: negocio`…) quedan en castellano: son el formato del brain.
  */
 export const NOMBRE_COMANDO = "flowbrain-index";
 
 export const GUIA_ANALISIS = `---
-description: Indexa este proyecto con FlowBrain y analiza la comunicación real entre sus servicios
+description: Index this project with FlowBrain and analyze the real communication between its services
 ---
 
-Vas a indexar (o reindexar) este proyecto con FlowBrain y después analizar vos la comunicación real entre servicios.
-La consola hace lo mecánico; tu trabajo es lo que el código solo no dice: a qué servicio va cada llamada.
+You are going to index (or reindex) this project with FlowBrain and then analyze, yourself, the real communication
+between services. The console does the mechanical part; your job is what the code alone does not say: which service
+each call goes to.
 
 $ARGUMENTS
 
-## Reglas
+## Rules
 
-- **Nunca abras archivos de entorno reales** (\`.env\`, \`.env.local\`, \`.env.production\`, \`env.prod\` y parecidos): tienen
-  credenciales. Usá los de ejemplo (\`.env.example\`, \`.env.sample\`), la configuración en el código, \`docker-compose\`,
-  pipelines y proxies. Si un valor solo está en un archivo real, preguntáselo al usuario.
-- **No modifiques los repositorios del proyecto.** Editás \`.flowbrain/flowbrain.yaml\`, \`.flowbrain/<cerebro>/calls.yaml\`
-  (pasos 7 y 8) y, solo para completar un hueco
-  del índice (paso 6), la extracción de un cerebro en \`.flowbrain/<cerebro>/_build/\`.
-- **No declares nada sin evidencia.** Coincidir en método y ruta no es evidencia: dos APIs pueden exponer las mismas
-  rutas. Si no podés determinar un destino, no lo adivines: va a la lista de dudas.
-- Respondé en el idioma del usuario.
+- **Never open real environment files** (\`.env\`, \`.env.local\`, \`.env.production\`, \`env.prod\` and similar): they hold
+  credentials. Use the example ones (\`.env.example\`, \`.env.sample\`), the configuration in the code, \`docker-compose\`,
+  pipelines and proxies. If a value only lives in a real file, ask the user for it.
+- **Do not modify the project's repositories.** You edit \`.flowbrain/flowbrain.yaml\`, \`.flowbrain/<brain>/calls.yaml\`
+  (steps 7 and 8) and, only to fill a gap
+  in the index (step 6), the extraction of a brain in \`.flowbrain/<brain>/_build/\`.
+- **Do not declare anything without evidence.** Matching on method and path is not evidence: two APIs can expose the
+  same paths. If you cannot determine a destination, do not guess it: it goes on the list of open questions.
+- Reply in the user's language.
 
-## Pasos
+## Steps
 
-0. **¿Está completo el índice?** \`flowbrain coverage --brain <cerebro>\` por cada cerebro. Si un cerebro no tiene
-   \`profile.md\` o su cobertura es baja (pantallas sin llamadas, endpoints que no llegan a una tabla), primero hay que
-   estudiarlo y completarlo con \`/flowbrain-study\`: decidir la comunicación sobre un índice con huecos da un mapa con
-   huecos.
+0. **Is the index complete?** \`flowbrain coverage --brain <brain>\` for each brain. If a brain has no \`profile.md\`
+   or its coverage is low (screens without calls, endpoints that never reach a table), first study it and complete it
+   with \`/flowbrain-study\`: deciding the communication on top of an index with gaps gives a map with gaps.
 
-1. **Indexar.** Parado en la carpeta del proyecto:
-   - Si no existe \`.flowbrain/flowbrain.yaml\`: \`flowbrain install\` (si pregunta, un cerebro por repo).
-   - Si existe: \`flowbrain brains apply\` para reindexar todo.
-   Anotá qué cerebros quedaron y cuántos nodos tiene cada uno.
+1. **Index.** From the project folder:
+   - If \`.flowbrain/flowbrain.yaml\` does not exist: \`flowbrain install\` (if it asks, one brain per repo).
+   - If it exists: \`flowbrain brains apply\` to reindex everything.
+   Note which brains were created and how many nodes each one has.
 
-2. **Juntar la evidencia.** \`flowbrain evidence\` devuelve, por cada servicio que llama y cada base de URL:
-   - \`llamadas\` y \`ejemplos\` con su archivo y línea;
-   - \`coincide\`: con qué servicios de otros cerebros coinciden por método y ruta, y cuántas coinciden **solo** ahí;
-   - \`definiciones\`: dónde se define cada variable o función de la base;
-   - \`declaradas\`: lo que ya dice el registro;
-   y aparte \`disputadas\`: llamadas que hoy no se unen a nada porque coinciden en más de un cerebro.
+2. **Gather the evidence.** \`flowbrain evidence\` returns, for each calling service and each URL base:
+   - \`llamadas\` and \`ejemplos\` with their file and line;
+   - \`coincide\`: which services of other brains they match by method and path, and how many match **only** there;
+   - \`definiciones\`: where each variable or function of the base is defined;
+   - \`declaradas\`: what the registry already says;
+   and separately \`disputadas\`: calls that today join nothing because they match in more than one brain.
 
-3. **Decidir cada base, de mayor a menor cantidad de llamadas.** Para cada una, buscá a qué servicio apunta de verdad:
-   - Abrí las \`definiciones\` y seguí la variable hasta su valor: archivo de ejemplo, configuración por ambiente,
-     \`docker-compose\`, pipeline, proxy. \`flowbrain infra --brain <cerebro>\` lista imágenes, variables y proxies.
-   - Con el host o el puerto, buscá qué servicio escucha ahí: en la infraestructura del otro cerebro (dominio, nombre
-     del servicio en compose, puerto expuesto, reglas del proxy) y en su código (prefijo global de rutas, puerto).
-   - Usá \`coincide\` como pista, no como prueba: muchas llamadas que coinciden **solo** con un servicio lo apoyan; que
-     coincidan con dos por igual no dice nada.
-   - Una misma base puede ir a dos servicios (un proxy que reparte por prefijo): en ese caso declaralo con una conexión
-     por destino y explicalo en \`nota\`.
-   - **Si la configuración del repo y lo desplegado se contradicen** (la documentación dice un host y el comentario del
-     código otro), lo desplegado manda. Dos formas de verlo sin credenciales:
-     - el bundle publicado de un front trae sus variables de build horneadas: bajá el HTML, seguí los \`<script>\` y
-       buscá el nombre de la variable (\`VITE_API_URL\`, \`NEXT_PUBLIC_…\`) en los chunks;
-     - un \`GET\` a un endpoint de salud o a una ruta que no existe identifica el backend por su firma: cabeceras
-       (\`Server\`, \`X-Powered-By\`) y cuerpo del 404, comparados con el código de cada cerebro (el handler de salud, el
-       mensaje de "ruta no encontrada"). Solo lecturas; nunca con datos del usuario ni contra hosts que no salgan del
-       proyecto.
-     Si aun así no cierra, o el valor solo está en un archivo de entorno real, preguntale al usuario.
+3. **Decide each base, from most to fewest calls.** For each one, find which service it really points to:
+   - Open the \`definiciones\` and follow the variable to its value: example file, per-environment configuration,
+     \`docker-compose\`, pipeline, proxy. \`flowbrain infra --brain <brain>\` lists images, variables and proxies.
+   - With the host or the port, find which service listens there: in the other brain's infrastructure (domain, service
+     name in compose, exposed port, proxy rules) and in its code (global route prefix, port).
+   - Use \`coincide\` as a hint, not as proof: many calls that match **only** one service support it; matching two
+     equally says nothing.
+   - One base can go to two services (a proxy that routes by prefix): in that case declare it with one connection per
+     destination and explain it in \`nota\`.
+   - **If the repo's configuration and what is deployed contradict each other** (the docs say one host and a code
+     comment another), what is deployed wins. Two ways to see it without credentials:
+     - a front's published bundle has its build variables baked in: download the HTML, follow the \`<script>\` tags and
+       search for the variable name (\`VITE_API_URL\`, \`NEXT_PUBLIC_…\`) in the chunks;
+     - a \`GET\` to a health endpoint or to a path that does not exist identifies the backend by its signature: headers
+       (\`Server\`, \`X-Powered-By\`) and the 404 body, compared with the code of each brain (the health handler, the
+       "route not found" message). Reads only; never with user data nor against hosts that do not come from the
+       project.
+     If it still does not add up, or the value only lives in a real environment file, ask the user.
 
-4. **Escribir lo que confirmaste** en \`.flowbrain/flowbrain.yaml\`:
-   - \`comunicacion\`: dejá \`activa: true\` solo entre cerebros que se hablan de verdad; poné \`activa: false\` donde
-     comprobaste que no.
-   - \`conexiones\`: una por cada destino confirmado.
+4. **Write what you confirmed** in \`.flowbrain/flowbrain.yaml\`:
+   - \`comunicacion\`: leave \`activa: true\` only between brains that really talk to each other; set \`activa: false\`
+     where you checked they do not.
+   - \`conexiones\`: one for each confirmed destination.
 
    \`\`\`yaml
    conexiones:
-     - desde: web/svc-tienda-web
-       hacia: api/svc-tienda-api
-       por: API_URL                # texto que está en la base de la URL de esas llamadas
+     - desde: web/svc-shop-web
+       hacia: api/svc-shop-api
+       por: API_URL                # text found in the URL base of those calls
        origen: modelo
        evidencia:
-         - "tienda-web/.env.example#L3"
-         - "tienda-api/docker-compose.yml#L12"
-       nota: "API_URL apunta a api.tienda.test, que el compose de tienda-api publica en el puerto 3000"
+         - "shop-web/.env.example#L3"
+         - "shop-api/docker-compose.yml#L12"
+       nota: "API_URL points to api.shop.test, which the shop-api compose publishes on port 3000"
    \`\`\`
 
-   - \`internas\`: cuando el servicio se llama a **su propio servidor** (un \`/version.json\`, las traducciones, la
-     configuración en runtime, rutas relativas del mismo host), no es una conexión: no va a ningún cerebro. Declaralo
-     así y esas llamadas dejan de cruzarse y de figurar en \`drift\` como llamadas sin endpoint. Sin \`por\` vale para
-     todas las de URL relativa; con \`por\`, solo para las que lo llevan en la base o al principio de la ruta.
+   - \`internas\`: when the service calls **its own server** (a \`/version.json\`, translations, runtime configuration,
+     relative paths on the same host), it is not a connection: it goes to no brain. Declare it like this and those
+     calls stop being cross-referenced and stop showing up in \`drift\` as calls without an endpoint. Without \`por\` it
+     applies to every relative-URL call; with \`por\`, only to those that carry it in the base or at the start of the path.
 
    \`\`\`yaml
    internas:
-     - de: web/svc-tienda-web
-       por: /assets                # opcional
+     - de: web/svc-shop-web
+       por: /assets                # optional
        origen: modelo
        evidencia:
-         - "tienda-web/src/version.ts#L8"
-       nota: "fetch('/assets/version.json'): lo sirve el propio front, no la API"
+         - "shop-web/src/version.ts#L8"
+       nota: "fetch('/assets/version.json'): served by the front itself, not the API"
    \`\`\`
 
-   Lo que no pudiste confirmar va a \`preguntas:\` (una frase por duda, con la base y qué falta saber). No borres las
-   conexiones que tengan \`origen: persona\` o no tengan \`origen\`: las escribió alguien; si las contradecís, decilo.
+   What you could not confirm goes to \`preguntas:\` (one sentence per question, with the base and what is missing).
+   Do not delete connections that have \`origen: persona\` or no \`origen\`: someone wrote them; if you contradict them,
+   say so.
 
-5. **Verificar.** \`flowbrain brains viewer\` regenera el mapa. Después, por cada cerebro que llama,
-   \`flowbrain connections --brain <cerebro>\` y de nuevo \`flowbrain evidence\`:
-   - las \`disputadas\` tienen que haber bajado; las que quedan son dudas reales;
-   - una conexión declarada con 0 llamadas está mal declarada o el \`por\` no coincide con la base: corregila.
+5. **Verify.** \`flowbrain brains viewer\` regenerates the map. Then, for each calling brain,
+   \`flowbrain connections --brain <brain>\` and \`flowbrain evidence\` again:
+   - the \`disputadas\` must have gone down; the ones left are real open questions;
+   - a declared connection with 0 calls is declared wrong or its \`por\` does not match the base: fix it.
 
-6. **Buscar oportunidades de mejora** con lo que ya está indexado:
-   - \`flowbrain drift --brain <cerebro>\`: llamadas que ningún endpoint atiende y endpoints que nadie llama (solo dentro
-     del cerebro: para un front que llama a otro cerebro, usá \`sinDestino\` de \`evidence\`);
-   - \`sinDestino\` alto en una base: el front llama a algo que ningún cerebro expone (falta indexar un repo, o la
-     llamada está rota). **Antes de reportarlo, mirá una muestra:** puede ser un falso positivo del parser (un \`fetch\`
-     con \`method\` en las opciones leído como GET, la query pegada a la ruta, una ruta comodín como \`/{token}\` que
-     atrapa un archivo estático del propio front);
-   - dos servicios con las mismas rutas: \`flowbrain parity <svc-viejo> <svc-nuevo> --brain <cerebro>\` si están en el
-     mismo cerebro, o comparalos con \`coincide\`;
-   - hosts escritos a mano en el código, variables de URL sin definición, bases armadas con funciones que impiden saber
-     el destino;
-   - \`flowbrain status --brain <cerebro>\`: huecos conocidos del índice (pantallas no detectadas, llamadas sin resolver).
-   - **Huecos del índice: completalos, no solo los reportes.** Si un front tiene 0 pantallas (\`connections\` muestra
-     \`pantallas: 0\` y todas sus llamadas salen del servicio), o el parser no entiende cómo se declaran rutas o llamadas:
-     1. mirá en el código cómo están declaradas (router, navegador, cliente HTTP propio);
-     2. escribí un extractor del proyecto en \`.flowbrain/<cerebro>/extractors/<repo-id>/\` que complete
-        \`pantallas\`, \`navegaciones\` o lo que falte (el contrato y las reglas están en la guía \`/flowbrain-study\`);
-        corre solo en cada indexación, así que sobrevive a \`brains apply\` y a \`sync\`;
-     3. corré \`flowbrain brains apply <cerebro>\` y \`flowbrain brains viewer\`, y verificá con \`connections\` que el
-        hueco se cerró;
-     4. reportá el patrón como mejora del parser de FlowBrain (para que el próximo proyecto no necesite el extractor).
+6. **Look for improvement opportunities** with what is already indexed:
+   - \`flowbrain drift --brain <brain>\`: calls no endpoint serves and endpoints nobody calls (only within the brain:
+     for a front that calls another brain, use \`sinDestino\` from \`evidence\`);
+   - high \`sinDestino\` on a base: the front calls something no brain exposes (a repo is missing from the index, or
+     the call is broken). **Before reporting it, look at a sample:** it may be a parser false positive (a \`fetch\`
+     with \`method\` in its options read as GET, the query glued to the path, a catch-all route like \`/{token}\` that
+     catches a static file of the front itself);
+   - two services with the same routes: \`flowbrain parity <old-svc> <new-svc> --brain <brain>\` if they are in the
+     same brain, or compare them with \`coincide\`;
+   - hosts hard-coded in the code, URL variables without a definition, bases built with functions that make the
+     destination impossible to know;
+   - \`flowbrain status --brain <brain>\`: known gaps in the index (undetected screens, unresolved calls).
+   - **Gaps in the index: fill them, do not just report them.** If a front has 0 screens (\`connections\` shows
+     \`pantallas: 0\` and all its calls come out of the service), or the parser does not understand how routes or calls
+     are declared:
+     1. look in the code at how they are declared (router, navigator, custom HTTP client);
+     2. write a project extractor in \`.flowbrain/<brain>/extractors/<repo-id>/\` that fills in
+        \`pantallas\`, \`navegaciones\` or whatever is missing (the contract and the rules are in the \`/flowbrain-study\`
+        guide); it runs on its own on every indexing, so it survives \`brains apply\` and \`sync\`;
+     3. run \`flowbrain brains apply <brain>\` and \`flowbrain brains viewer\`, and check with \`connections\` that the
+        gap closed;
+     4. report the pattern as an improvement to FlowBrain's parser (so the next project does not need the extractor).
 
-7. **Completar las trazas que se cortan.** Por cada cerebro con endpoints, \`flowbrain calls --brain <cerebro>\`
-   devuelve los endpoints cuyo recorrido no llega a ninguna tabla y, en su camino, las llamadas que el parser no pudo
-   atribuir porque el receptor no tiene tipo declarado (una variable sin tipo, un servicio pedido al contenedor por
-   nombre, una llamada dinámica). Cada una trae \`candidatos\`: los métodos del repo que se llaman así.
-   - Abrí el archivo en la línea de la llamada y determiná de qué clase es el receptor: seguí la asignación de la
-     variable, el tipo que devuelve el método que la crea, la configuración del contenedor de servicios
-     (\`services.yaml\`, un \`ServiceProvider\`, un módulo), la clase base.
-   - Si lo confirmás, declaralo en \`.flowbrain/<cerebro>/calls.yaml\` (creá el archivo si no existe):
+7. **Complete the traces that break off.** For each brain with endpoints, \`flowbrain calls --brain <brain>\`
+   returns the endpoints whose flow never reaches a table and, along their path, the calls the parser could not
+   attribute because the receiver has no declared type (an untyped variable, a service fetched from the container by
+   name, a dynamic call). Each one comes with \`candidatos\`: the repo's methods with that name.
+   - Open the file at the line of the call and determine the receiver's class: follow the variable's assignment, the
+     type returned by the method that creates it, the service container configuration (\`services.yaml\`, a
+     \`ServiceProvider\`, a module), the base class.
+   - If you confirm it, declare it in \`.flowbrain/<brain>/calls.yaml\` (create the file if it does not exist):
 
      \`\`\`yaml
      llamadas:
-       - desde: "repo-tienda-api:src/Controller/PedidoController.php#PedidoController.crear"
-         linea: 42                    # la línea de la llamada, dentro del método que llama
-         hacia: "repo-tienda-api:src/Service/Facturador.php#Facturador.emitir"
+       - desde: "repo-shop-api:src/Controller/OrderController.php#OrderController.create"
+         linea: 42                    # the line of the call, inside the calling method
+         hacia: "repo-shop-api:src/Service/Invoicer.php#Invoicer.issue"
          origen: modelo
-         nota: "services.yaml#L12 registra 'facturador' como App\\Service\\Facturador"
+         nota: "services.yaml#L12 registers 'invoicer' as App\\Service\\Invoicer"
      \`\`\`
 
-     \`desde\` es el valor de \`desde\` que te dio \`calls\`; \`hacia\` es uno de sus \`candidatos\`, o el símbolo que
-     encontraste (\`flowbrain search <Clase.metodo> --brain <cerebro>\` da su clave \`repo:ruta#Simbolo\`).
-   - Si no podés determinarlo leyendo el código, no lo declares: va a la lista de dudas.
-   - Empezá por \`masRepetidas\`: una sola llamada (un helper de autenticación, un serializador) puede estar cortando
-     decenas de recorridos. Después seguí con los endpoints que más se usan, de a tandas. Después de cada tanda:
-     \`flowbrain brains apply <cerebro>\` (reindexa y aplica \`calls.yaml\`) y de nuevo \`flowbrain calls\`:
-     \`sinLlegarATabla\` tiene que bajar, y \`declaradas.faltan\` lista las que no entraron (símbolo o línea que no
-     coinciden: corregilas). Seguí hasta que no queden endpoints con llamadas por resolver o hasta que lo que queda
-     no se pueda determinar.
-   - \`sinMetodo\` son endpoints para los que no se encontró el método que los atiende: ahí el hueco es de cómo se
-     declaran las rutas; tratalo como un hueco del índice (paso 6).
-   - Un endpoint que no llega a una tabla y no tiene llamadas por resolver probablemente no toca datos: no es un error.
-   Al terminar, \`flowbrain brains viewer\`.
+     \`desde\` is the \`desde\` value \`calls\` gave you; \`hacia\` is one of its \`candidatos\`, or the symbol you
+     found (\`flowbrain search <Class.method> --brain <brain>\` gives its key \`repo:path#Symbol\`).
+   - If you cannot determine it by reading the code, do not declare it: it goes on the list of open questions.
+   - Start with \`masRepetidas\`: a single call (an authentication helper, a serializer) can be cutting off dozens
+     of flows. Then go on with the most used endpoints, in batches. After each batch:
+     \`flowbrain brains apply <brain>\` (reindexes and applies \`calls.yaml\`) and \`flowbrain calls\` again:
+     \`sinLlegarATabla\` must go down, and \`declaradas.faltan\` lists the ones that did not get in (symbol or line that
+     do not match: fix them). Keep going until no endpoints are left with calls to resolve or until what is left
+     cannot be determined.
+   - \`sinMetodo\` are endpoints for which the method that serves them was not found: there the gap is in how routes
+     are declared; treat it as a gap in the index (step 6).
+   - An endpoint that does not reach a table and has no calls to resolve probably does not touch data: it is not an
+     error.
+   When done, \`flowbrain brains viewer\`.
 
-8. **Auditar lo que el parser no vio.** La consola solo conoce las llamadas que detectó: si un módulo llama al back de
-   una forma que el parser no entiende, no aparece en ningún lado. Buscalo vos. Por cada cerebro con pantallas,
-   en la sección \`delLadoQueLlama\` de \`flowbrain calls --brain <cerebro>\`:
-   - \`funcionalidadesSinLlamadas\`: funcionalidades con pantallas y ninguna llamada HTTP en ninguna. **Abrí su código**
-     (\`codigo\`): si llama al back (un cliente propio, una función que arma la URL, un SDK, un store), es un hueco.
-   - \`httpSinRuta\`: llamadas HTTP que el parser vio sin poder determinar la ruta. Abrí cada una y seguí cómo se arma.
-   - \`pantallasSinLlamadas\`: tomá una muestra de las que no estén en lo anterior y verificá que de verdad no llamen.
-   - Además, por tu cuenta: buscá en el repo los nombres del cliente HTTP y de sus envolturas (\`axios\`, \`fetch\`, \`HttpClient\`, \`ky\`, \`$fetch\`, el
-     cliente propio) y compará los módulos donde aparecen contra los que tienen llamadas en el índice
-     (\`flowbrain connections --brain <cerebro>\`, \`flowbrain feature <id>\`). Un módulo que usa el cliente y no tiene
-     llamadas es un hueco.
-   Lo que confirmes leyendo el código, declaralo en \`.flowbrain/<cerebro>/calls.yaml\`:
+8. **Audit what the parser did not see.** The console only knows the calls it detected: if a module calls the back
+   in a way the parser does not understand, it shows up nowhere. Look for it yourself. For each brain with screens,
+   in the \`delLadoQueLlama\` section of \`flowbrain calls --brain <brain>\`:
+   - \`funcionalidadesSinLlamadas\`: features with screens and no HTTP call in any of them. **Open their code**
+     (\`codigo\`): if it calls the back (a custom client, a function that builds the URL, an SDK, a store), it is a gap.
+   - \`httpSinRuta\`: HTTP calls the parser saw without being able to determine the path. Open each one and follow how
+     it is built.
+   - \`pantallasSinLlamadas\`: take a sample of those not covered above and check that they really make no calls.
+   - Also, on your own: search the repo for the names of the HTTP client and its wrappers (\`axios\`, \`fetch\`,
+     \`HttpClient\`, \`ky\`, \`$fetch\`, the custom client) and compare the modules where they appear against the ones
+     that have calls in the index (\`flowbrain connections --brain <brain>\`, \`flowbrain feature <id>\`). A module that
+     uses the client and has no calls is a gap.
+   What you confirm by reading the code, declare it in \`.flowbrain/<brain>/calls.yaml\`:
 
    \`\`\`yaml
-   http:                              # una llamada HTTP saliente que el parser no vio o no pudo rutear
-     - desde: "repo-tienda-web:src/premios/api.ts#premiosApi.estado"
-       linea: 30                      # la línea de la llamada, dentro de ese símbolo
+   http:                              # an outgoing HTTP call the parser did not see or could not route
+     - desde: "repo-shop-web:src/rewards/api.ts#rewardsApi.status"
+       linea: 30                      # the line of the call, inside that symbol
        metodo: GET
-       ruta: "/premios/estado"        # con {param} en los segmentos variables
-       base: "API_URL"                # opcional: la variable o el host de donde sale la URL
+       ruta: "/rewards/status"        # with {param} in the variable segments
+       base: "API_URL"                # optional: the variable or host the URL comes from
        origen: modelo
-       nota: "request() arma la URL con la tabla de rutas de rutas.ts#L4"
+       nota: "request() builds the URL with the route table in routes.ts#L4"
    \`\`\`
 
-   Si la llamada existe pero la pantalla no llega a ella (una función pasada por referencia, un store, un evento),
-   declarala en \`llamadas:\` (paso 7) desde el hook o componente que la dispara. Después \`flowbrain brains apply <cerebro>\`
-   y de nuevo \`calls\`: la funcionalidad tiene que salir de \`funcionalidadesSinLlamadas\`. Cada patrón que el parser no
-   entendió, reportalo como mejora de FlowBrain con un ejemplo mínimo. No escatimes en esta revisión: una funcionalidad
-   sin relaciones en el mapa es peor que gastar más en leer su código.
+   If the call exists but the screen does not reach it (a function passed by reference, a store, an event), declare it
+   in \`llamadas:\` (step 7) from the hook or component that triggers it. Then \`flowbrain brains apply <brain>\`
+   and \`calls\` again: the feature must drop out of \`funcionalidadesSinLlamadas\`. Report every pattern the parser did
+   not understand as a FlowBrain improvement, with a minimal example. Do not skimp on this review: a feature with no
+   relations on the map is worse than spending more on reading its code.
 
-9. **Informar al usuario**, corto y en este orden:
-   - **Confirmado:** cada conexión declarada, con la evidencia en una línea.
-   - **Trazas:** cuántos endpoints pasaron a llegar a sus tablas y cuántas llamadas declaraste en \`calls.yaml\`.
-   - **Huecos del parser:** qué funcionalidades no tenían llamadas y ahora sí, y qué patrón no entendió el parser.
-   - **Dudas:** lo que no pudiste determinar y qué necesitás que te responda. Si no hay, decilo.
-   - **Oportunidades de mejora:** las que encontraste, de mayor a menor impacto, cada una con su archivo.
-   - Qué cambió en \`flowbrain.yaml\` y cómo abrir el mapa: \`open .flowbrain/flowbrain.html\`.
-   - Si algún cerebro tiene pantallas o endpoints pero ninguna funcionalidad en \`product/\` (\`flowbrain status\` lo
-     muestra como "pantallas sin funcionalidad" o "borradores sin promover"), sugerí correr \`/flowbrain-features\`.
+9. **Report to the user**, briefly and in this order:
+   - **Confirmed:** each declared connection, with its evidence in one line.
+   - **Traces:** how many endpoints now reach their tables and how many calls you declared in \`calls.yaml\`.
+   - **Parser gaps:** which features had no calls and now do, and which pattern the parser did not understand.
+   - **Open questions:** what you could not determine and what you need the user to answer. If there are none, say so.
+   - **Improvement opportunities:** the ones you found, from highest to lowest impact, each with its file.
+   - What changed in \`flowbrain.yaml\` and how to open the map: \`open .flowbrain/flowbrain.html\`.
+   - If any brain has screens or endpoints but no feature in \`product/\` (\`flowbrain status\` shows it as screens
+     without a feature or unpromoted drafts), suggest running \`/flowbrain-features\`.
 `;
 
 export const NOMBRE_FUNCIONALIDADES = "flowbrain-features";
@@ -214,63 +221,64 @@ export const NOMBRE_FUNCIONALIDADES = "flowbrain-features";
  * organizado por capas (`Controller/`, `Service/`): eso lo deduce el modelo leyendo pantallas, textos y llamadas.
  */
 export const GUIA_FUNCIONALIDADES = `---
-description: Deduce y completa las funcionalidades de producto de cada cerebro de FlowBrain
+description: Deduce and complete the product features of each FlowBrain brain
 ---
 
-Vas a completar el catálogo de funcionalidades de este proyecto en FlowBrain: qué puede hacer quien usa el producto,
-con qué pantallas, endpoints y tablas. La consola propone borradores por estructura de carpetas; tu trabajo es
-convertirlos en funcionalidades de producto con nombre de negocio, descripción y todo su código.
+You are going to complete this project's feature catalog in FlowBrain: what the people who use the product can do,
+with which screens, endpoints and tables. The console proposes drafts based on the folder structure; your job is to
+turn them into product features with a business name, a description and all of their code.
 
 $ARGUMENTS
 
-## Reglas
+## Rules
 
-- **No modifiques los repositorios del proyecto.** Solo escribís en \`.flowbrain/<cerebro>/_drafts/product/\` y
-  \`.flowbrain/<cerebro>/product/\`.
-- **No abras archivos de entorno reales** (\`.env\` y parecidos).
-- **Todo sale del código.** El nombre y la descripción salen de lo que ve quien usa la pantalla (títulos, textos de
-  i18n, menús, rutas), de los endpoints que llama y de las tablas que toca; nunca de suponer por el nombre de una
-  carpeta. Lo que no puedas deducir queda en "Preguntas abiertas" de la página.
-- No borres páginas de \`product/\` que ya estaban (las escribió alguien): si las contradecís, decilo.
-- Respondé en el idioma del usuario. Nombres y descripciones, en el idioma del producto (el de sus textos de i18n).
+- **Do not modify the project's repositories.** You only write in \`.flowbrain/<brain>/_drafts/product/\` and
+  \`.flowbrain/<brain>/product/\`.
+- **Do not open real environment files** (\`.env\` and similar).
+- **Everything comes from the code.** The name and the description come from what the person using the screen sees
+  (titles, i18n texts, menus, routes), from the endpoints it calls and from the tables it touches; never from guessing
+  based on a folder name. What you cannot deduce stays in the page's open questions section.
+- Do not delete pages in \`product/\` that were already there (someone wrote them): if you contradict them, say so.
+- Reply in the user's language. Names and descriptions go in the product's language (the language of its i18n texts).
 
-## Pasos
+## Steps
 
-1. **Ver el estado.** Parado en el proyecto, por cada cerebro (\`flowbrain brains\` los lista):
-   \`flowbrain status --brain <cerebro>\` muestra pantallas y endpoints sin funcionalidad y borradores sin promover.
-   Si no hay borradores ni páginas, corré \`flowbrain brains apply\` (reindexa y propone borradores).
-   Buscá además un glosario del producto en el proyecto (docs de dominio, README, textos de i18n): da los nombres de negocio.
+1. **Check the status.** From the project, for each brain (\`flowbrain brains\` lists them):
+   \`flowbrain status --brain <brain>\` shows screens and endpoints without a feature and unpromoted drafts.
+   If there are no drafts and no pages, run \`flowbrain brains apply\` (reindexes and proposes drafts).
+   Also look for a product glossary in the project (domain docs, README, i18n texts): it gives the business names.
 
-2. **Promover los borradores tal cual, para poder consultarlos:** \`flowbrain promote <id...> --write --brain <cerebro>\`
-   con los ids \`feat-*\` (solo los de \`_drafts/product/\`; los de \`technology/\` son otro trabajo). Desde ahí
-   \`flowbrain feature <id> --brain <cerebro>\` da sus pantallas, endpoints, tablas y dependencias, y
-   \`flowbrain screen <ruta> --brain <cerebro>\` cada pantalla de punta a punta.
+2. **Promote the drafts as they are, so you can query them:** \`flowbrain promote <id...> --write --brain <brain>\`
+   with the \`feat-*\` ids (only those in \`_drafts/product/\`; the ones in \`technology/\` are a different job). From
+   there \`flowbrain feature <id> --brain <brain>\` gives its screens, endpoints, tables and dependencies, and
+   \`flowbrain screen <route> --brain <brain>\` each screen end to end.
 
-3. **Armar el catálogo de cada cerebro**, editando \`.flowbrain/<cerebro>/product/feat-*.md\`:
-   - **Unir duplicados:** dos páginas que son la misma funcionalidad (\`game\` y \`games\`, el listado y el detalle de lo
-     mismo) quedan en una: sumá las rutas de \`codigo\`, dejá el id más claro y borrá la otra.
-   - **Agrupar pantallas sueltas:** si los borradores salieron uno por pantalla (\`pages/Login\`, \`pages/Recover\`,
-     \`pages/Register\`), agrupalos en la funcionalidad que el usuario reconoce (acceso a la cuenta).
-   - **Separar lo que no es producto:** contenedores de navegación (drawer, splash, layout) y herramientas internas no
-     son funcionalidades: borrá la página o sumá su código a la funcionalidad a la que sirven. Lo exclusivo de
-     administración sí lo es, con su nombre ("Backoffice: …").
-   - **Back organizado por capas** (sin borradores, o con muy pocos): creá las funcionalidades con \`codigo\` apuntando a
-     los archivos de controller (\`repo-x:src/Controller/PlayerController.php\`), agrupados por la funcionalidad del
-     front que llama a sus endpoints (\`flowbrain connections\`, \`evidence\` y \`feature\` del front lo muestran). Usá el
-     mismo id que esa funcionalidad tiene en el cerebro del front: así se encuentran entre cerebros.
-   - Cada página: \`nombre\` de negocio (el técnico va a \`aliases\`), \`resumen\` de una línea (máximo 140
-     caracteres) y "## Qué es" en lenguaje de producto: qué le permite hacer a quien la usa, quién la usa y el flujo
-     principal, sin nombres de archivos ni de clases. Sacá el aviso de borrador y las preguntas que resolviste.
+3. **Build the catalog of each brain**, editing \`.flowbrain/<brain>/product/feat-*.md\`:
+   - **Merge duplicates:** two pages that are the same feature (\`game\` and \`games\`, the list and the detail of the
+     same thing) become one: add up the paths in \`codigo\`, keep the clearest id and delete the other one.
+   - **Group loose screens:** if the drafts came out one per screen (\`pages/Login\`, \`pages/Recover\`,
+     \`pages/Register\`), group them into the feature the user recognizes (account access).
+   - **Separate what is not product:** navigation containers (drawer, splash, layout) and internal tools are not
+     features: delete the page or add its code to the feature they serve. What is exclusive to administration is a
+     feature, with its name ("Backoffice: …").
+   - **Back organized by layers** (no drafts, or very few): create the features with \`codigo\` pointing to the
+     controller files (\`repo-x:src/Controller/PlayerController.php\`), grouped by the front feature that calls their
+     endpoints (\`flowbrain connections\`, \`evidence\` and the front's \`feature\` show it). Use the same id that
+     feature has in the front's brain: that is how they find each other across brains.
+   - Each page: a business \`nombre\` (the technical one goes to \`aliases\`), a one-line \`resumen\` (at most 140
+     characters) and the "what it is" section (keep the heading the page already has) in product language: what it
+     lets its users do, who uses it and the main flow, with no file or class names. Remove the draft notice and the
+     questions you resolved.
 
-4. **Compilar y verificar.** \`flowbrain compile\` dentro de \`.flowbrain/<cerebro>/\` después de cada tanda (si no
-   compila, el error dice qué página corregir). Al final, \`flowbrain status --brain <cerebro>\`: las pantallas y
-   endpoints sin funcionalidad tienen que haber bajado; los que quedan, revisalos uno por uno (¿falta sumar su carpeta
-   a un \`codigo\`?). \`flowbrain unassigned --brain <cerebro>\` lista los archivos que no quedaron en ninguna
-   funcionalidad, por carpeta, con la que se les recomienda y el motivo: asociá los que correspondan (lo marcado
-   como compartido va a una página \`lib\`, no a una funcionalidad). Después \`flowbrain brains viewer\` regenera el mapa.
+4. **Compile and verify.** \`flowbrain compile\` inside \`.flowbrain/<brain>/\` after each batch (if it does not
+   compile, the error says which page to fix). At the end, \`flowbrain status --brain <brain>\`: screens and endpoints
+   without a feature must have gone down; review the ones left one by one (is its folder missing from some
+   \`codigo\`?). \`flowbrain unassigned --brain <brain>\` lists the files that ended up in no feature, by folder, with
+   the recommended feature and the reason: assign the ones that fit (what is marked as shared goes to a \`lib\` page,
+   not to a feature). Then \`flowbrain brains viewer\` regenerates the map.
 
-5. **Informar al usuario**, corto: cuántas funcionalidades quedaron por cerebro, qué uniste o descartaste y por qué,
-   las preguntas abiertas que necesitan respuesta de una persona, y cómo verlas:
+5. **Report to the user**, briefly: how many features each brain ended up with, what you merged or discarded and why,
+   the open questions that need an answer from a person, and how to see them:
    \`open .flowbrain/flowbrain.html#/funcionalidades\`.
 `;
 
@@ -284,198 +292,202 @@ $ARGUMENTS
 export const NOMBRE_ESTUDIO = "flowbrain-study";
 
 export const GUIA_ESTUDIO = `---
-description: Estudia cómo está hecho cada repo y escribe los extractores que completan el índice de FlowBrain
+description: Study how each repo is built and write the extractors that complete the FlowBrain index
 ---
 
-Vas a estudiar cómo está hecho cada repo de este proyecto y a escribir, para cada uno, los extractores que hagan falta
-para que FlowBrain lo entienda entero: de la pantalla a la tabla, con las columnas que se leen y se escriben. No importa
-el lenguaje ni el framework: si los parsers de FlowBrain no lo entienden, lo enseñás vos con un extractor.
+You are going to study how each repo of this project is built and write, for each one, the extractors needed for
+FlowBrain to understand it fully: from the screen to the table, with the columns that are read and written. The
+language and the framework do not matter: if FlowBrain's parsers do not understand it, you teach it with an extractor.
 
 $ARGUMENTS
 
-## Reglas
+## Rules
 
-- **Entender antes de extraer.** No escribas un extractor hasta haber leído cómo lo hace este repo y haberlo anotado en
-  el perfil. Un extractor escrito por analogía con otro proyecto devuelve basura convincente.
-- **Nunca abras archivos de entorno reales** (\`.env\`, \`.env.local\`, \`.env.production\`, \`env.prod\`). Los extractores
-  tampoco pueden leerlos.
-- **No modifiques los repositorios.** Todo lo que escribís va en \`.flowbrain/<cerebro>/\`.
-- **Un extractor no adivina.** Cada dato cita un archivo y una línea reales. Si para un caso no podés determinar el
-  destino con una regla, dejalo afuera y resolvelo a mano en \`calls.yaml\`; no lo inventes.
-- **Determinístico.** Mismo repo, misma salida: sin red, sin fechas, sin azar, con la salida ordenada.
-- **No escatimes en la lectura.** Un índice incompleto es peor que gastar más en entender el código.
-- Respondé en el idioma del usuario.
+- **Understand before extracting.** Do not write an extractor until you have read how this repo does it and written
+  it down in the profile. An extractor written by analogy with another project returns convincing garbage.
+- **Never open real environment files** (\`.env\`, \`.env.local\`, \`.env.production\`, \`env.prod\`). Extractors
+  cannot read them either.
+- **Do not modify the repositories.** Everything you write goes in \`.flowbrain/<brain>/\`.
+- **An extractor does not guess.** Every piece of data cites a real file and line. If for some case you cannot
+  determine the destination with a rule, leave it out and resolve it by hand in \`calls.yaml\`; do not make it up.
+- **Deterministic.** Same repo, same output: no network, no dates, no randomness, with sorted output.
+- **Do not skimp on reading.** An incomplete index is worse than spending more on understanding the code.
+- Reply in the user's language.
 
-## Pasos
+## Steps
 
-1. **Punto de partida.** Si no existe \`.flowbrain/flowbrain.yaml\`, \`flowbrain install\`. Después, por cada cerebro,
-   \`flowbrain coverage --brain <cerebro>\`: ese es el número a subir. Anotá de dónde parte cada uno.
+1. **Starting point.** If \`.flowbrain/flowbrain.yaml\` does not exist, \`flowbrain install\`. Then, for each brain,
+   \`flowbrain coverage --brain <brain>\`: that is the number to raise. Note where each one starts.
 
-2. **Estudiar cada repo y escribir su perfil** en \`.flowbrain/<cerebro>/profile.md\`. Leé el código de verdad:
-   manifiestos, el punto de entrada, dos o tres módulos completos de punta a punta. El perfil responde, con archivo y
-   línea de ejemplo para cada respuesta:
+2. **Study each repo and write its profile** in \`.flowbrain/<brain>/profile.md\`. Really read the code:
+   manifests, the entry point, two or three complete modules end to end. The profile answers, with an example file and
+   line for each answer:
 
-   **Si es un front (web o móvil):**
-   - Lenguaje, framework y librerías que definen la arquitectura (router, estado, datos remotos).
-   - **Cómo enruta:** dónde se declaran las rutas, con qué forma (objeto, JSX, archivos por convención, navegadores
-     anidados), cómo se anidan layouts y guardas, y cómo se arma la ruta final de una pantalla.
-   - **Pantallas:** qué es una pantalla acá, cómo se llega del registro de rutas al componente (import directo, lazy,
-     un mapa de nombres), y cómo se navega entre ellas.
-   - **Llamadas a servicios:** el cliente HTTP y todas sus envolturas; dónde se definen las rutas (constantes, una
-     tabla, funciones que las arman); cómo se elige la base (una variable por backend, un proxy); cómo llega una
-     pantalla a la llamada (hooks, stores, sagas, queries por referencia, eventos).
+   **If it is a front (web or mobile):**
+   - Language, framework and the libraries that define the architecture (router, state, remote data).
+   - **How it routes:** where routes are declared, in what shape (object, JSX, files by convention, nested
+     navigators), how layouts and guards are nested, and how a screen's final route is built.
+   - **Screens:** what a screen is here, how you get from the route registry to the component (direct import, lazy,
+     a map of names), and how navigation between them works.
+   - **Calls to services:** the HTTP client and all its wrappers; where the paths are defined (constants, a table,
+     functions that build them); how the base is chosen (one variable per backend, a proxy); how a screen reaches the
+     call (hooks, stores, sagas, queries by reference, events).
 
-   **Si es un back:**
-   - Lenguaje, framework y arquitectura: qué capas hay y cómo se llaman acá (controlador, caso de uso, servicio,
-     repositorio, modelo), y cómo se conectan (inyección de dependencias, contenedor, fábricas, llamadas estáticas).
-   - **Endpoints:** dónde se declaran (decoradores, archivo de rutas, convención de nombres), cómo se arma la ruta
-     final (prefijos globales, grupos, versiones) y cómo se llega al método que la atiende.
-   - **Servicios y repositorios:** cómo llama una capa a la otra y por qué el tipo del receptor puede no estar
-     declarado.
-   - **Tablas:** el ORM o el acceso a datos (entidades, query builder, SQL a mano, procedimientos); cómo se sabe qué
-     tabla toca cada acceso, si lee o escribe, y **qué columnas**: las del \`select\`, las que se asignan antes de
-     guardar, las de un \`update\`, las de un \`where\`.
-   - **Esquema:** dónde está la definición vigente de cada tabla (migraciones SQL o como código, modelos del ORM,
-     tipos generados desde la base, un \`schema.*\`) y qué columnas tiene. FlowBrain ya lee DDL, Prisma, Drizzle,
-     Kysely, Knex, Laravel, Rails, TypeORM, MikroORM, Sequelize, Mongoose, Doctrine, JPA, GORM, Django y SQLAlchemy;
-     \`flowbrain coverage\` muestra en \`tablas.sinColumnas\` las que quedaron sin definición.
+   **If it is a back:**
+   - Language, framework and architecture: which layers exist and what they are called here (controller, use case,
+     service, repository, model), and how they are wired (dependency injection, container, factories, static calls).
+   - **Endpoints:** where they are declared (decorators, routes file, naming convention), how the final route is
+     built (global prefixes, groups, versions) and how you get to the method that serves it.
+   - **Services and repositories:** how one layer calls the next and why the receiver's type may not be declared.
+   - **Tables:** the ORM or data access (entities, query builder, hand-written SQL, procedures); how to tell which
+     table each access touches, whether it reads or writes, and **which columns**: those in the \`select\`, those
+     assigned before saving, those in an \`update\`, those in a \`where\`.
+   - **Schema:** where the current definition of each table lives (SQL or code migrations, ORM models, types generated
+     from the database, a \`schema.*\`) and which columns it has. FlowBrain already reads DDL, Prisma, Drizzle,
+     Kysely, Knex, Laravel, Rails, TypeORM, MikroORM, Sequelize, Mongoose, Doctrine, JPA, GORM, Django and SQLAlchemy;
+     \`flowbrain coverage\` shows in \`tablas.sinColumnas\` the tables left without a definition.
 
-   Cerrá el perfil con **"Lo que FlowBrain ya entiende"** y **"Lo que falta"**, comparando lo que leíste con
-   \`flowbrain coverage\`, \`flowbrain calls --brain <cerebro>\` y una muestra: elegí cinco pantallas (o endpoints) al azar,
-   seguilas a mano en el código y compará con \`flowbrain screen <ruta>\` o \`flowbrain flow "<MÉTODO /ruta>"\`.
+   Close the profile with **"What FlowBrain already understands"** and **"What is missing"**, comparing what you read
+   with \`flowbrain coverage\`, \`flowbrain calls --brain <brain>\` and a sample: pick five screens (or endpoints) at
+   random, follow them by hand in the code and compare with \`flowbrain screen <route>\` or
+   \`flowbrain flow "<METHOD /route>"\`.
 
-3. **Escribir un extractor por cada cosa que falta**, en \`.flowbrain/<cerebro>/extractors/<repo-id>/\` (el id del repo
-   es el que muestra \`flowbrain status\`). Uno por tema, con nombre que lo diga: \`10-rutas.mjs\`, \`20-pantallas.mjs\`,
-   \`30-llamadas.mjs\`, \`40-endpoints.mjs\`, \`50-capas.mjs\`, \`60-tablas.mjs\`. Corren en orden alfabético, después de los
-   parsers de FlowBrain, y cada uno puede usar los símbolos que declaró el anterior.
+3. **Write one extractor for each missing thing**, in \`.flowbrain/<brain>/extractors/<repo-id>/\` (the repo id is
+   the one \`flowbrain status\` shows). One per topic, with a name that says so: \`10-routes.mjs\`, \`20-screens.mjs\`,
+   \`30-calls.mjs\`, \`40-endpoints.mjs\`, \`50-layers.mjs\`, \`60-tables.mjs\`. They run in alphabetical order, after
+   FlowBrain's parsers, and each one can use the symbols the previous one declared.
 
-   **Contrato.** El programa recibe la ruta del repo como primer argumento, corre parado en ella e imprime **un JSON**
-   por la salida estándar. Puede ser \`.mjs\`/\`.js\` (Node), \`.py\`, \`.sh\`, \`.rb\` o \`.php\`: usá lo que mejor lea ese
-   código. Corre sin red, sin poder escribir en el disco y con tope de tiempo. Todas las secciones son opcionales:
+   **Contract.** The program receives the repo path as its first argument, runs from inside it and prints **one JSON**
+   to standard output. It can be \`.mjs\`/\`.js\` (Node), \`.py\`, \`.sh\`, \`.rb\` or \`.php\`: use whatever reads that
+   code best. It runs without network, without being able to write to disk and with a time limit. Every section is
+   optional:
 
    \`\`\`json
    {
-     "simbolos":     [{ "archivo": "src/pedidos/handler.go", "nombre": "PedidosHandler.Crear", "tipo": "metodo", "linea": 20, "fin": 41 }],
-     "invocaciones": [{ "desde": { "archivo": "src/pedidos/handler.go", "simbolo": "PedidosHandler.Crear" },
-                        "hacia": { "archivo": "src/pedidos/repo.go", "simbolo": "PedidosRepo.Guardar" }, "linea": 27 }],
-     "referencias":  [{ "desde": { "archivo": "src/pedidos/handler.go", "simbolo": "PedidosHandler.Crear" },
-                        "hacia": { "archivo": "src/pedidos/tipos.go", "simbolo": "EstadoPedido" }, "linea": 30 }],
-     "endpoints":    [{ "metodo": "POST", "ruta": "/api/pedidos", "archivo": "src/rutas.go", "linea": 12,
-                        "handler": { "archivo": "src/pedidos/handler.go", "simbolo": "PedidosHandler.Crear" } }],
-     "llamadas":     [{ "archivo": "src/api/pedidos.ts", "linea": 30, "metodo": "GET", "ruta": "/pedidos/{id}", "base": "API_URL" },
-                      { "archivo": "src/pagos/stripe.go", "linea": 18, "metodo": "POST", "ruta": "/v1/charges", "host": "api.stripe.com",
-                        "envia": { "monto": "number", "moneda": "string", "nota?": "string" }, "espera": { "id": "string" } }],
-     "pantallas":    [{ "ruta": "/pedidos", "archivo": "src/rutas.tsx", "linea": 8,
-                        "componente": { "archivo": "src/pedidos/Pedidos.tsx", "simbolo": "Pedidos" } }],
-     "navegaciones": [{ "archivo": "src/pedidos/Pedidos.tsx", "linea": 14, "desde": "Pedidos", "ruta": "/pedidos/{id}", "tipo": "navega" }],
-     "eventos":      [{ "archivo": "src/pagos/servicio.go", "linea": 50, "nombre": "pago.confirmado", "direccion": "publica" }],
-     "importa":      [{ "archivo": "lib/pedidos_page.dart", "importa": ["lib/api/pedidos_api.dart"] }],
-     "componentes":  [{ "archivo": "lib/src/boton.dart", "nombre": "BotonPrimario", "linea": 12 }],
-     "usos":         [{ "archivo": "lib/pedidos_page.dart", "linea": 40, "paquete": "empresa_ui", "simbolo": "BotonPrimario", "desde": "PedidosPage.build" }],
-     "accesos":      [{ "archivo": "src/pedidos/repo.go", "linea": 33, "tabla": "pedidos", "verbo": "escribe", "columnas": ["estado", "total"] }],
-     "esquema":      [{ "tabla": "pedidos", "archivo": "src/pedidos/modelo.go", "linea": 5,
-                        "columnas": [{ "nombre": "id", "tipo": "int", "pk": true }, { "nombre": "nota", "tipo": "text", "nulo": true }] }]
+     "simbolos":     [{ "archivo": "src/orders/handler.go", "nombre": "OrdersHandler.Create", "tipo": "metodo", "linea": 20, "fin": 41 }],
+     "invocaciones": [{ "desde": { "archivo": "src/orders/handler.go", "simbolo": "OrdersHandler.Create" },
+                        "hacia": { "archivo": "src/orders/repo.go", "simbolo": "OrdersRepo.Save" }, "linea": 27 }],
+     "referencias":  [{ "desde": { "archivo": "src/orders/handler.go", "simbolo": "OrdersHandler.Create" },
+                        "hacia": { "archivo": "src/orders/types.go", "simbolo": "OrderStatus" }, "linea": 30 }],
+     "endpoints":    [{ "metodo": "POST", "ruta": "/api/orders", "archivo": "src/routes.go", "linea": 12,
+                        "handler": { "archivo": "src/orders/handler.go", "simbolo": "OrdersHandler.Create" } }],
+     "llamadas":     [{ "archivo": "src/api/orders.ts", "linea": 30, "metodo": "GET", "ruta": "/orders/{id}", "base": "API_URL" },
+                      { "archivo": "src/payments/stripe.go", "linea": 18, "metodo": "POST", "ruta": "/v1/charges", "host": "api.stripe.com",
+                        "envia": { "amount": "number", "currency": "string", "note?": "string" }, "espera": { "id": "string" } }],
+     "pantallas":    [{ "ruta": "/orders", "archivo": "src/routes.tsx", "linea": 8,
+                        "componente": { "archivo": "src/orders/Orders.tsx", "simbolo": "Orders" } }],
+     "navegaciones": [{ "archivo": "src/orders/Orders.tsx", "linea": 14, "desde": "Orders", "ruta": "/orders/{id}", "tipo": "navega" }],
+     "eventos":      [{ "archivo": "src/payments/service.go", "linea": 50, "nombre": "payment.confirmed", "direccion": "publica" }],
+     "importa":      [{ "archivo": "lib/orders_page.dart", "importa": ["lib/api/orders_api.dart"] }],
+     "componentes":  [{ "archivo": "lib/src/button.dart", "nombre": "PrimaryButton", "linea": 12 }],
+     "usos":         [{ "archivo": "lib/orders_page.dart", "linea": 40, "paquete": "company_ui", "simbolo": "PrimaryButton", "desde": "OrdersPage.build" }],
+     "accesos":      [{ "archivo": "src/orders/repo.go", "linea": 33, "tabla": "orders", "verbo": "escribe", "columnas": ["status", "total"] }],
+     "esquema":      [{ "tabla": "orders", "archivo": "src/orders/model.go", "linea": 5,
+                        "columnas": [{ "nombre": "id", "tipo": "int", "pk": true }, { "nombre": "note", "tipo": "text", "nulo": true }] }]
    }
    \`\`\`
 
-   - Rutas de archivo relativas a la raíz del repo; líneas desde 1; segmentos variables de una ruta como \`{param}\`.
-   - Un **símbolo** es una función, método o componente con su rango (\`linea\`–\`fin\`): es lo que permite saber que una
-     llamada o un acceso ocurre *dentro* de ese método. Declará los que los parsers no tengan.
-   - Una **invocación** une dos símbolos que ya existen; la \`linea\` cae dentro del que llama.
-   - Una **referencia** une un símbolo con un tipo, interfaz, enum, clase o constante que nombra sin llamarlo (declarado
-     en \`simbolos\` con \`tipo\` \`tipo\`, \`interfaz\`, \`enum\`, \`clase\` o \`constante\`): con eso \`riesgo\` sigue un cambio
-     en un tipo hasta quienes lo usan.
-   - El **endpoint** cita la línea donde se declara la ruta. Si la ruta se declara en un archivo de rutas y la atiende
-     un método de otro lado (\`r.POST("/x", h.Crear)\`, \`path("x/", views.crear)\`, \`get "/x", to: "x#crear"\`), decí cuál con
-     \`handler\` (un símbolo que exista): de ahí arrancan el recorrido y la traza. Sin \`handler\`, el método es el que
-     contiene la línea o el que empieza hasta 40 líneas después.
-   - Una **llamada** con \`host\` va a ese sistema (un tercero, como una pasarela de pagos, o un servicio propio por su
-     nombre de host); sin \`host\`, se resuelve por la ruta contra los endpoints conocidos.
-     Con \`envia\`, \`query\` y \`espera\` (campo → tipo, \`?\` al final del campo si es opcional) dice lo que la llamada
-     manda en el cuerpo, en la query y lo que lee de la respuesta; opcional \`enviaTipo\`, \`queryTipo\`, \`esperaTipo\` con el
-     nombre del tipo. Con eso \`deriva\` compara los campos contra el tipo que declara el back. Si corregís una llamada que
-     el parser ya tipaba, sus campos se conservan.
-   - Una **navegación** dice qué símbolo navega en \`desde\` (la función o el componente, el mismo nombre que en
-     \`simbolos\`); si es más fácil, la ruta de la pantalla desde la que se navega (\`"/pedidos"\`). Sin \`desde\`, cuenta
-     para cualquier pantalla que alcance ese archivo.
-   - Un **evento** es un mensaje que el código publica o consume, por su clave (el tópico, la cola, el nombre del
-     evento): \`direccion\` \`publica\` o \`consume\`. Quien publica y quien consume se unen por la cola, y el impacto de
-     cambiar quien publica llega a quien consume. Si la cola no tiene página, el borrador la propone.
-   - **Importa** declara qué archivos del repo usa un archivo, cuando el lenguaje no lo dice de una forma que FlowBrain
-     lea: sirve para que una pantalla alcance los menús y datos que importa.
-   - **Componentes y usos** unen un sistema de diseño (o cualquier librería de interfaz) con las pantallas que lo
-     dibujan, también entre repos y entre cerebros. \`componentes\`: lo que exporta la librería, en la línea donde se
-     declara. \`usos\`: lo que un archivo toma de otro paquete, en la línea donde lo usa, con \`paquete\` igual al nombre
-     del manifiesto de la librería (\`package.json\`, \`pubspec.yaml\`, \`go.mod\`…) y \`desde\` el símbolo que lo dibuja.
-     En TypeScript, Vue, Svelte y Astro ya lo hace el parser (librería = paquete con \`main\`, \`exports\` o \`types\`);
-     escribilo para lo demás (Flutter, Kotlin, SwiftUI) o si la librería no se reconoce sola.
-   - Un **acceso** va en la línea donde ocurre, dentro del método que lo hace; \`columnas\` solo las que se ven en el
-     código. Si el parser ya detectó ese acceso (mismo archivo, línea, tabla y verbo), el tuyo le suma las columnas.
-     Si tu extractor solo busca columnas y no puede asegurar que cada nombre sea una tabla real (una CTE, una
-     subconsulta con nombre), agregá \`"soloColumnas": true\`: completa los accesos que ya existen y no crea tablas
-     nuevas. Mirá primero en qué línea cita el parser cada acceso (\`_build/extraction/<repo>.json\`) y citá la misma.
-   - El **esquema** de una tabla cita la línea donde se define (la migración, el modelo, el tipo generado), con el
-     nombre físico de la tabla y todas sus columnas vigentes. Reemplaza lo que un parser haya leído para esa tabla:
-     usalo para un ORM o una convención que FlowBrain no conozca, o para corregir un esquema mal leído.
-   - **Corregir al parser.** Una \`llamada\` tuya en una línea reemplaza a las que el parser dejó en esa línea (con
-     la ruta, el método o la base mal leídos). Una \`pantalla\` con una ruta que ya existe le reemplaza el componente
-     y las \`envuelta\` (un layout tomado por la página). Para borrar lo que el parser inventó, \`quitar\`:
+   - File paths relative to the repo root; lines start at 1; variable segments of a route as \`{param}\`.
+   - A **symbol** is a function, method or component with its range (\`linea\`–\`fin\`): that is what lets FlowBrain
+     know that a call or an access happens *inside* that method. Declare the ones the parsers do not have.
+   - An **invocation** joins two symbols that already exist; the \`linea\` falls inside the caller.
+   - A **reference** joins a symbol with a type, interface, enum, class or constant it names without calling it
+     (declared in \`simbolos\` with \`tipo\` \`tipo\`, \`interfaz\`, \`enum\`, \`clase\` or \`constante\`): with that,
+     \`riesgo\` follows a change in a type to whoever uses it.
+   - The **endpoint** cites the line where the route is declared. If the route is declared in a routes file and served
+     by a method somewhere else (\`r.POST("/x", h.Create)\`, \`path("x/", views.create)\`, \`get "/x", to: "x#create"\`),
+     say which one with \`handler\` (a symbol that exists): the flow and the trace start from there. Without
+     \`handler\`, the method is the one that contains the line or the one that starts up to 40 lines after it.
+   - A **call** with \`host\` goes to that system (a third party, like a payment gateway, or one of your own services by
+     its host name); without \`host\`, it is resolved by its path against the known endpoints.
+     With \`envia\`, \`query\` and \`espera\` (field → type, \`?\` at the end of the field if it is optional) it says what
+     the call sends in the body, in the query and what it reads from the response; optionally \`enviaTipo\`,
+     \`queryTipo\`, \`esperaTipo\` with the type name. With that, \`deriva\` compares the fields against the type the back
+     declares. If you correct a call the parser had already typed, its fields are kept.
+   - A **navigation** says which symbol navigates in \`desde\` (the function or component, the same name as in
+     \`simbolos\`); if that is easier, the route of the screen you navigate from (\`"/orders"\`). Without \`desde\`, it
+     counts for any screen that reaches that file.
+   - An **event** is a message the code publishes or consumes, by its key (the topic, the queue, the event name):
+     \`direccion\` \`publica\` or \`consume\`. Publisher and consumer are joined through the queue, and the impact of
+     changing the publisher reaches the consumer. If the queue has no page, the draft proposes it.
+   - **Importa** declares which repo files a file uses, when the language does not say it in a way FlowBrain reads:
+     it lets a screen reach the menus and data it imports.
+   - **Components and usages** join a design system (or any UI library) with the screens that draw it, also across
+     repos and across brains. \`componentes\`: what the library exports, at the line where it is declared. \`usos\`: what
+     a file takes from another package, at the line where it uses it, with \`paquete\` equal to the name in the
+     library's manifest (\`package.json\`, \`pubspec.yaml\`, \`go.mod\`…) and \`desde\` the symbol that draws it.
+     In TypeScript, Vue, Svelte and Astro the parser already does it (library = package with \`main\`, \`exports\` or
+     \`types\`); write it for the rest (Flutter, Kotlin, SwiftUI) or if the library is not recognized on its own.
+   - An **access** goes at the line where it happens, inside the method that does it; \`columnas\` only those visible in
+     the code. If the parser already detected that access (same file, line, table and verb), yours adds its columns.
+     If your extractor only looks for columns and cannot ensure each name is a real table (a CTE, a named subquery),
+     add \`"soloColumnas": true\`: it completes the accesses that already exist and creates no new tables. First check
+     which line the parser cites for each access (\`_build/extraction/<repo>.json\`) and cite the same one.
+   - The **schema** of a table cites the line where it is defined (the migration, the model, the generated type), with
+     the table's physical name and all its current columns. It replaces whatever a parser read for that table: use it
+     for an ORM or a convention FlowBrain does not know, or to correct a misread schema.
+   - **Correcting the parser.** A \`llamada\` of yours on a line replaces the ones the parser left on that line (with the
+     path, method or base misread). A \`pantalla\` with a route that already exists replaces its component and its
+     \`envuelta\` (a layout taken for the page). To delete what the parser made up, \`quitar\`:
      \`[{ "tipo": "llamada", "archivo": "src/api.ts", "linea": 30 }, { "tipo": "pantalla", "ruta": "/{path}/config" }]\`
-     (también \`navegacion\`, \`endpoint\` con \`metodo\` y \`ruta\`, \`acceso\` con \`tabla\` y \`evento\` con \`nombre\`). Solo se corrige lo que leyó un parser, nunca lo que sumó otro extractor; un \`quitar\`
-     que no coincide con nada se rechaza. Lo mismo vale para \`http\` en \`calls.yaml\`.
-   - FlowBrain verifica cada dato: el archivo existe, la línea existe, los símbolos existen. Lo que no pasa se descarta.
+     (also \`navegacion\`, \`endpoint\` with \`metodo\` and \`ruta\`, \`acceso\` with \`tabla\` and \`evento\` with
+     \`nombre\`). Only what a parser read can be corrected, never what another extractor added; a \`quitar\` that matches
+     nothing is rejected. The same applies to \`http\` in \`calls.yaml\`.
+   - FlowBrain verifies every piece of data: the file exists, the line exists, the symbols exist. Whatever does not pass
+     is discarded.
 
-   Probá cada extractor suelto antes de indexar:
-   \`node .flowbrain/<cerebro>/extractors/<repo-id>/30-llamadas.mjs /ruta/al/repo | head -c 2000\`.
+   Test each extractor on its own before indexing:
+   \`node .flowbrain/<brain>/extractors/<repo-id>/30-calls.mjs /path/to/the/repo | head -c 2000\`.
 
-4. **Indexar y medir.** \`flowbrain brains apply <cerebro>\` y \`flowbrain coverage --brain <cerebro>\`:
-   - \`extractores\` dice cuánto aceptó de cada uno y cuánto rechazó, con el motivo: corregí el extractor hasta que no
-     rechace nada.
-   - Los porcentajes tienen que subir. Si uno no se mueve, el extractor no está encontrando lo que creés: volvé a leer.
-   - \`flowbrain calls --brain <cerebro>\` muestra lo que sigue cortado: endpoints que no llegan a una tabla,
-     funcionalidades sin llamadas, llamadas sin ruta. Cada patrón repetido es un extractor que falta; un caso suelto
-     que no entra en una regla va a \`.flowbrain/<cerebro>/calls.yaml\`.
-   Repetí los pasos 3 y 4 hasta que la cobertura deje de subir o lo que quede no se pueda determinar leyendo código.
+4. **Index and measure.** \`flowbrain brains apply <brain>\` and \`flowbrain coverage --brain <brain>\`:
+   - \`extractores\` says how much it accepted from each one and how much it rejected, with the reason: fix the
+     extractor until it rejects nothing.
+   - The percentages must go up. If one does not move, the extractor is not finding what you think: read again.
+   - \`flowbrain calls --brain <brain>\` shows what is still cut off: endpoints that do not reach a table, features
+     without calls, calls without a path. Each repeated pattern is a missing extractor; a one-off case that does not
+     fit a rule goes to \`.flowbrain/<brain>/calls.yaml\`.
+   Repeat steps 3 and 4 until coverage stops going up or what is left cannot be determined by reading code.
 
-5. **Verificar que lo extraído es cierto, no solo que es mucho.** Por cada extractor, elegí al azar diez datos de su
-   salida y comprobá cada uno abriendo el archivo en esa línea. Si alguno está mal, la regla está mal: corregila.
-   Después dejá **controles** en \`.flowbrain/<cerebro>/checks.yaml\`: hechos que verificaste a mano y que tienen que
-   seguir saliendo en cada indexación. \`coverage\` avisa cuando uno deja de cumplirse.
+5. **Verify that what was extracted is true, not just that it is a lot.** For each extractor, pick ten pieces of its
+   output at random and check each one by opening the file at that line. If any is wrong, the rule is wrong: fix it.
+   Then leave **checks** in \`.flowbrain/<brain>/checks.yaml\`: facts you verified by hand that must keep showing up
+   on every indexing. \`coverage\` warns when one stops holding.
 
    \`\`\`yaml
    controles:
      - { tipo: endpoint, metodo: POST, ruta: "/api/login" }
      - { tipo: pantalla, ruta: "/login" }
      - { tipo: llamada, archivo: "src/features/auth/api.ts", metodo: POST, ruta: "/login" }
-     - { tipo: traza, endpoint: "POST /api/login", tabla: "user", nota: "el login actualiza el token del usuario" }
-     - { tipo: alcanza, pantalla: "/login", metodo: POST, ruta: "/login", nota: "la pantalla llega a la llamada" }
+     - { tipo: traza, endpoint: "POST /api/login", tabla: "user", nota: "login updates the user's token" }
+     - { tipo: alcanza, pantalla: "/login", metodo: POST, ruta: "/login", nota: "the screen reaches the call" }
    \`\`\`
 
-   Dejá al menos cinco por cerebro, y que incluyan trazas completas: son las que prueban que todo el camino existe.
-   En un back, \`traza\` (endpoint → tabla); en un front, \`alcanza\` (pantalla → llamada).
+   Leave at least five per brain, and include complete traces: they are the ones that prove the whole path exists.
+   In a back, \`traza\` (endpoint → table); in a front, \`alcanza\` (screen → call).
 
-   **Piezas que no son de ningún tipo conocido.** Si el sistema tiene algo que no es pantalla, endpoint, servicio, tabla
-   ni cola (un job programado, un worker, un webhook entrante, un bucket), escribí su página a mano en
-   \`.flowbrain/<cerebro>/technology/<tipo>-<nombre>.md\` con un \`tipo\` propio en minúsculas (\`job\`, \`worker\`,
-   \`bucket\`) y sus relaciones (\`escribe_en\`, \`lee_de\`, \`llama_a\`, \`publica_en\`, \`consume_de\`). Compila como cualquier
-   otro nodo: aparece en el índice, en el mapa 3D con un color propio y en el impacto en las dos direcciones. No uses
-   un tipo propio para algo que ya tiene tipo: lo que es un endpoint o una tabla va con el suyo.
+   **Pieces of no known type.** If the system has something that is not a screen, endpoint, service, table or queue
+   (a scheduled job, a worker, an incoming webhook, a bucket), write its page by hand in
+   \`.flowbrain/<brain>/technology/<type>-<name>.md\` with a custom lowercase \`tipo\` (\`job\`, \`worker\`,
+   \`bucket\`) and its relations (\`escribe_en\`, \`lee_de\`, \`llama_a\`, \`publica_en\`, \`consume_de\`). It compiles like
+   any other node: it appears in the index, on the 3D map with its own color and in the impact in both directions. Do
+   not use a custom type for something that already has one: what is an endpoint or a table goes with its own.
 
-6. **Unir los cerebros.** Lo que se importa por nombre de paquete ya queda unido solo: FlowBrain lee los manifiestos de
-   cada repo (\`package.json\`, \`go.mod\`, \`pubspec.yaml\`, \`composer.json\`…), sabe qué paquete publica cada uno y quién
-   lo declara como dependencia, y une las pantallas con los componentes del sistema de diseño que dibujan
-   (\`flowbrain connections\`, en \`porPaquetes\`). Si un repo usa una librería de otro y no aparece ahí, mirá por qué (un
-   alias, un paquete sin nombre, un lenguaje que el parser no lee) y completalo con \`componentes\` y \`usos\`. Con los
-   índices completos, seguí con \`/${NOMBRE_COMANDO}\` (a qué servicio va cada llamada) y
-   \`/${NOMBRE_FUNCIONALIDADES}\` (las funcionalidades de producto). Al final, \`flowbrain brains viewer\`.
+6. **Join the brains.** What is imported by package name is already joined on its own: FlowBrain reads each repo's
+   manifests (\`package.json\`, \`go.mod\`, \`pubspec.yaml\`, \`composer.json\`…), knows which package each one publishes
+   and who declares it as a dependency, and joins screens with the design-system components they draw
+   (\`flowbrain connections\`, under \`porPaquetes\`). If a repo uses a library from another one and it does not show up
+   there, find out why (an alias, a package without a name, a language the parser does not read) and complete it with
+   \`componentes\` and \`usos\`. With complete indexes, continue with \`/${NOMBRE_COMANDO}\` (which service each call
+   goes to) and \`/${NOMBRE_FUNCIONALIDADES}\` (the product features). At the end, \`flowbrain brains viewer\`.
 
-7. **Informar al usuario**, corto:
-   - Por cerebro: la cobertura antes y después, en una tabla.
-   - Qué entendiste de cada repo que FlowBrain no sabía, en dos o tres líneas, y qué extractores escribiste.
-   - Lo que quedó sin determinar y por qué.
-   - Los patrones que valdría la pena sumar a los parsers de FlowBrain, cada uno con un ejemplo mínimo.
-   - Que los extractores, el perfil y los controles quedaron en \`.flowbrain/<cerebro>/\`, se pueden leer y versionar, y
-     corren solos en cada indexación; \`coverage\` avisa si alguno queda viejo.
+7. **Report to the user**, briefly:
+   - Per brain: coverage before and after, in a table.
+   - What you understood about each repo that FlowBrain did not know, in two or three lines, and which extractors you
+     wrote.
+   - What was left undetermined and why.
+   - The patterns worth adding to FlowBrain's parsers, each with a minimal example.
+   - That the extractors, the profile and the checks are in \`.flowbrain/<brain>/\`, can be read and versioned, and
+     run on their own on every indexing; \`coverage\` warns if any goes stale.
 `;
 
 export const NOMBRE_ESPECIFICACIONES = "flowbrain-specs";
@@ -489,108 +501,112 @@ export const NOMBRE_ESPECIFICACIONES = "flowbrain-specs";
  * hay detrás de un caso ni qué reglas viven en el código sin test. Eso lo lee el modelo y lo confirma una persona.
  */
 export const GUIA_ESPECIFICACIONES = `---
-description: Deduce las especificaciones de negocio y de producto de cada funcionalidad de FlowBrain
+description: Deduce the business and product specifications of each FlowBrain feature
 ---
 
-Vas a escribir los casos de uso y las especificaciones de las funcionalidades de este proyecto en FlowBrain. Un caso de
-uso es algo que alguien puede hacer con el producto ("Votar al mejor jugador del partido"); cada especificación es un
-requisito que tiene que cumplirse para que ese caso pase, dicho como lo diría alguien de negocio o de producto, con el
-archivo que lo cumple y el caso de test que lo verifica. Una persona los lee en el visor y marca lo que está mal.
+You are going to write the use cases and the specifications of this project's features in FlowBrain. A use case is
+something someone can do with the product ("Vote for the player of the match"); each specification is a requirement
+that must hold for that use case to pass, stated the way someone from business or product would say it, with the file
+that fulfills it and the test case that verifies it. A person reads them in the viewer and flags what is wrong.
 
 $ARGUMENTS
 
-## Reglas
+## Rules
 
-- **No modifiques los repositorios del proyecto.** Solo editás \`.flowbrain/<cerebro>/product/feat-*.md\`.
-- **No abras archivos de entorno reales** (\`.env\` y parecidos).
-- **Todo sale del código y de los tests.** Una especificación que no podés señalar en un archivo no va. Lo que parezca
-  una regla pero no encuentres dónde se cumple, va a "Preguntas abiertas" de la página.
-- **En llano.** Una oración que entienda quien no programa, afirmativa y comprobable: "No se puede pagar con una
-  tarjeta vencida", "El listado muestra primero los pedidos más nuevos". Sin nombres de clases, archivos ni endpoints
-  en el texto: eso va en \`archivos\`.
-- **Una regla por especificación.** Si un caso de test comprueba dos cosas, son dos especificaciones con el mismo test.
-- **No cambies una especificación \`confirmada\`**: la revisó una persona. Si el código la contradice, decilo.
-- **Toda especificación va en un caso de uso**, y en uno solo. Un caso agrupa las reglas de una misma acción.
-- **El mismo caso en otro cerebro lleva el mismo \`id\`**: si la pantalla de votar está en \`web\` y la API que guarda el
-  voto en \`newapi\`, las dos páginas tienen \`casos: - id: votar-mvp\` con sus propias especificaciones. Antes de crear
-  un caso, mirá si la misma funcionalidad de otro cerebro ya lo tiene (\`flowbrain specs <feat> --brain <otro>\`) y
-  usá su \`id\` y su \`nombre\`.
-- **Un caso con \`problema\`** lo marcó una persona como mal: corregí lo que dice (el caso, sus especificaciones, sus
-  archivos o tests) y borrá \`problema\`. Si no estás de acuerdo, dejalo y explicale por qué en el informe.
-- **Una regla con \`hallazgo\`** la dejó un agente que intentó testearla (\`flowbrain specs --findings\`). Si su
-  \`decision\` es \`regla_mal\`, una persona dijo que el código está bien y la regla no: corregí el \`texto\` de la regla
-  (o borrala, si ya no vale) según lo que dice \`hoy\` y borrá el \`hallazgo\`; después se vuelve a pedir su test. Con
-  \`codigo_mal\` o sin decisión no la toques: es de desarrollo o la decide una persona. El código del producto no se
-  cambia desde acá.
-- No inventes tests: \`tests\` solo nombra casos que existen. Una especificación sin test es un dato útil, no un error.
-- **\`manual\`** lo escribe una persona cuando decide probar una regla a mano: no lo toques. Para escribir los tests que
-  faltan está \`/flowbrain-tests\` (\`flowbrain specs --guide-tests\`).
-- Respondé en el idioma del usuario. El texto de cada especificación, en el idioma del producto.
+- **Do not modify the project's repositories.** You only edit \`.flowbrain/<brain>/product/feat-*.md\`.
+- **Do not open real environment files** (\`.env\` and similar).
+- **Everything comes from the code and the tests.** A specification you cannot point to in a file does not go in.
+  Whatever looks like a rule but you cannot find where it is fulfilled goes to the page's open questions section.
+- **In plain language.** One sentence someone who does not program understands, affirmative and checkable: "You cannot
+  pay with an expired card", "The list shows the newest orders first". No class, file or endpoint names in the text:
+  those go in \`archivos\`.
+- **One rule per specification.** If a test case checks two things, they are two specifications with the same test.
+- **Do not change a \`confirmada\` specification**: a person reviewed it. If the code contradicts it, say so.
+- **Every specification goes in a use case**, and in only one. A use case groups the rules of a single action.
+- **The same use case in another brain carries the same \`id\`**: if the voting screen is in \`web\` and the API that
+  stores the vote in \`newapi\`, both pages have \`casos: - id: vote-mvp\` with their own specifications. Before
+  creating a use case, check whether the same feature in another brain already has it
+  (\`flowbrain specs <feat> --brain <other>\`) and use its \`id\` and its \`nombre\`.
+- **A use case with \`problema\`** was flagged as wrong by a person: fix what it says (the use case, its
+  specifications, its files or tests) and delete \`problema\`. If you disagree, leave it and explain why in the report.
+- **A rule with \`hallazgo\`** was left by an agent that tried to test it (\`flowbrain specs --findings\`). If its
+  \`decision\` is \`regla_mal\`, a person said the code is right and the rule is not: fix the rule's \`texto\` (or delete
+  it, if it no longer applies) according to what \`hoy\` says and delete the \`hallazgo\`; its test is then requested
+  again. With \`codigo_mal\` or no decision, do not touch it: it belongs to development or a person decides it. The
+  product's code is not changed from here.
+- Do not make up tests: \`tests\` only names test cases that exist. A specification without a test is useful data, not
+  an error.
+- **\`manual\`** is written by a person who decides to test a rule by hand: do not touch it. To write the missing tests
+  there is \`/flowbrain-tests\` (\`flowbrain specs --guide-tests\`).
+- Reply in the user's language. The text of each specification goes in the product's language.
 
-## Qué es cada tipo
+## What each type means
 
-- \`negocio\`: una regla que vale aunque cambie la pantalla. Límites, permisos, cálculos, estados válidos, qué se
-  guarda y cuándo ("Un pedido cancelado no se puede volver a pagar").
-- \`producto\`: cómo se comporta el producto para quien lo usa. Qué ve, qué puede hacer, qué pasa cuando algo falla
-  ("Si el pago falla, el carrito queda como estaba y se muestra el motivo").
+- \`negocio\` (business): a rule that holds even if the screen changes. Limits, permissions, calculations, valid
+  states, what is stored and when ("A cancelled order cannot be paid again").
+- \`producto\` (product): how the product behaves for the person using it. What they see, what they can do, what
+  happens when something fails ("If the payment fails, the cart stays as it was and the reason is shown").
 
-## Pasos
+## Steps
 
-1. **Ver el estado.** Primero lo marcado como mal: \`flowbrain specs --problems --brain <cerebro>\` en cada cerebro.
-   Eso va antes que todo lo demás. Después, parado en el proyecto, por cada cerebro (\`flowbrain brains\` los lista):
-   \`flowbrain specs --brain <cerebro>\` lista cada funcionalidad con cuántas especificaciones tiene, cuántos casos de
-   test y cuántos de esos casos todavía no verifican ninguna. Si no hay funcionalidades, primero \`/flowbrain-features\`.
-   Empezá por las que tienen más casos de test sin especificación. Si el usuario nombró funcionalidades, solo esas.
+1. **Check the status.** First what was flagged as wrong: \`flowbrain specs --problems --brain <brain>\` in each brain.
+   That comes before everything else. Then, from the project, for each brain (\`flowbrain brains\` lists them):
+   \`flowbrain specs --brain <brain>\` lists each feature with how many specifications it has, how many test cases
+   and how many of those test cases still verify none. If there are no features, first \`/flowbrain-features\`.
+   Start with the ones with the most test cases without a specification. If the user named features, only those.
 
-2. **Por cada funcionalidad**, juntar de dónde salen las reglas:
-   - \`flowbrain specs <feat> --brain <cerebro>\`: las que ya tiene y los casos de test sueltos, cada uno con su
-     archivo y su línea.
-   - \`flowbrain feature <feat> --brain <cerebro>\`: pantallas, endpoints, tablas y archivos de test.
-   - **Leé los tests**: el nombre del caso y sus \`expect\`/\`assert\` dicen la regla. Varios casos que comprueban lo mismo
-     con distintos datos son una sola especificación con varios tests.
-   - **Leé el código que no tiene test**: validaciones, guardas y condiciones en el recorrido de cada endpoint
-     (\`flowbrain flow "<MÉTODO /ruta>"\`) y en cada pantalla (\`flowbrain screen <ruta>\`): permisos, límites, estados,
-     mensajes de error. Esas son las especificaciones sin test.
+2. **For each feature**, gather where the rules come from:
+   - \`flowbrain specs <feat> --brain <brain>\`: the ones it already has and the loose test cases, each with its
+     file and line.
+   - \`flowbrain feature <feat> --brain <brain>\`: screens, endpoints, tables and test files.
+   - **Read the tests**: the name of the test case and its \`expect\`/\`assert\` state the rule. Several test cases that
+     check the same thing with different data are a single specification with several tests.
+   - **Read the code that has no test**: validations, guards and conditions along the flow of each endpoint
+     (\`flowbrain flow "<METHOD /route>"\`) and on each screen (\`flowbrain screen <route>\`): permissions, limits,
+     states, error messages. Those are the specifications without a test.
 
-3. **Escribirlas** en el frontmatter de \`.flowbrain/<cerebro>/product/<feat>.md\`:
+3. **Write them** in the frontmatter of \`.flowbrain/<brain>/product/<feat>.md\`:
 
    \`\`\`yaml
    especificaciones:
-     - id: tarjeta-vencida            # corto, único en la funcionalidad; no lo cambies después
-       texto: No se puede pagar con una tarjeta vencida.
+     - id: expired-card               # short, unique within the feature; do not change it afterwards
+       texto: You cannot pay with an expired card.
        tipo: negocio                  # negocio | producto
-       archivos:                      # dónde se cumple; con #Ln si sabés la línea
-         - repo-tienda:src/pagos/validar-tarjeta.ts#L18
-       tests:                         # "repo:ruta::nombre del caso", o "repo:ruta" si es el archivo entero
-         - repo-tienda:tests/pagos/validar-tarjeta.test.ts::rechaza una tarjeta vencida
+       archivos:                      # where it is fulfilled; with #Ln if you know the line
+         - repo-shop:src/payments/validate-card.ts#L18
+       tests:                         # "repo:path::test case name", or "repo:path" for the whole file
+         - repo-shop:tests/payments/validate-card.test.ts::rejects an expired card
        estado: propuesta
    \`\`\`
 
-   El nombre del caso va tal como lo lista \`flowbrain specs <feat>\` (sin el \`(L12)\`). Entre 3 y 15 por funcionalidad
-   suele alcanzar: las reglas que alguien de producto reconocería, no una por cada \`if\`.
+   The test case name goes exactly as \`flowbrain specs <feat>\` lists it (without the \`(L12)\`). Between 3 and 15
+   per feature is usually enough: the rules someone from product would recognize, not one per \`if\`.
 
-   Y los casos de uso, en la misma página:
+   And the use cases, on the same page:
 
    \`\`\`yaml
    casos:
-     - id: pagar-pedido               # el mismo id en el front y en la API que lo atiende
-       nombre: Pagar un pedido con tarjeta
-       quien: Cliente con un pedido abierto
-       especificaciones: [tarjeta-vencida, carrito-intacto-si-falla]
+     - id: pay-order                  # the same id in the front and in the API that serves it
+       nombre: Pay for an order by card
+       quien: Customer with an open order
+       especificaciones: [expired-card, cart-intact-on-failure]
    \`\`\`
 
-   El nombre empieza con un verbo y dice lo que la persona logra. Si ya hay especificaciones sin caso
-   (\`especificacionesSinCaso\` en \`flowbrain specs <feat>\`), agrupalas en casos sin cambiarles el texto.
+   The name starts with a verb and says what the person achieves. If there already are specifications without a use
+   case (\`especificacionesSinCaso\` in \`flowbrain specs <feat>\`), group them into use cases without changing their
+   text.
 
-4. **Compilar y revisar.** \`flowbrain compile\` dentro de \`.flowbrain/<cerebro>/\` (si no compila, el error dice qué
-   línea corregir). Después \`flowbrain specs <feat> --brain <cerebro>\`: cada caso trae su \`estado\` (\`cumplido\`,
-   \`sin_test\`, \`sin_codigo\`) y no tiene que quedar \`especificacionesSinCaso\`. \`rotos\` son referencias que el índice no
-   encontró (ruta mal escrita, caso con otro nombre): corregilas. Los \`casosSinEspecificacion\` que queden, revisalos:
-   ¿falta una especificación o el caso prueba un detalle técnico que no es un requisito?
+4. **Compile and review.** \`flowbrain compile\` inside \`.flowbrain/<brain>/\` (if it does not compile, the error says
+   which line to fix). Then \`flowbrain specs <feat> --brain <brain>\`: each use case comes with its \`estado\`
+   (\`cumplido\`, \`sin_test\`, \`sin_codigo\`) and no \`especificacionesSinCaso\` must be left. \`rotos\` are references the
+   index did not find (misspelled path, test case with another name): fix them. Review the \`casosSinEspecificacion\`
+   that are left: is a specification missing, or does the test case check a technical detail that is not a
+   requirement?
 
-5. **Informar al usuario**, corto: por funcionalidad, cuántos casos de uso quedaron cumplidos y cuáles sin test (y
-   cuáles son los más riesgosos de dejar así), qué corregiste de lo marcado como mal, y las preguntas abiertas. Lo
-   revisa en el visor, pantalla Especificaciones, y marca con "Esto está mal" lo que no le cierre.
+5. **Report to the user**, briefly: per feature, how many use cases ended up fulfilled and which ones have no test
+   (and which are the riskiest to leave that way), what you fixed of what was flagged as wrong, and the open
+   questions. They review it in the viewer, on the Specifications screen, and flag with the "this is wrong" button
+   whatever does not add up for them.
 `;
 
 export const NOMBRE_TESTS = "flowbrain-tests";

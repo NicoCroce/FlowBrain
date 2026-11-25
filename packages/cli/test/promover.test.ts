@@ -34,7 +34,7 @@ describe("notas ancladas a un nodo", () => {
     await brain("note", "tabla-pagos", "la columna estado ahora admite reembolsado");
     const imp = JSON.parse((await brain("impact", "tabla-pagos")).stdout) as { notas: Array<{ de: string; nota: string }> };
     expect(imp.notas).toEqual([{ de: "tabla-pagos", nota: "la columna estado ahora admite reembolsado (manual)" }]);
-    expect((await brain("status")).stdout).toContain("nodos con notas sin revisar: 1 — tabla-pagos");
+    expect((await brain("status")).stdout).toContain("nodes with unreviewed notes: 1 — tabla-pagos");
   });
 });
 
@@ -42,11 +42,11 @@ describe("flowbrain promote", () => {
   it("sin --write lista los borradores y su estado, sin tocar nada", async () => {
     const r = await brain("promote");
     expect(r.stdout.split("\n").slice(0, 5)).toEqual([
-      "borradores (4):",
-      "  _drafts/product/feat-avisos.md → product/feat-avisos.md (nuevo)",
-      "  _drafts/repo-tienda/technology/ext-correo.md → technology/ext-correo.md (nuevo)",
-      "  _drafts/repo-tienda/technology/svc-bff.md → technology/svc-bff.md (distinto)",
-      "  _drafts/repo-tienda/technology/svc-roto.md → technology/svc-roto.md (nuevo)",
+      "drafts (4):",
+      "  _drafts/product/feat-avisos.md → product/feat-avisos.md (new)",
+      "  _drafts/repo-tienda/technology/ext-correo.md → technology/ext-correo.md (new)",
+      "  _drafts/repo-tienda/technology/svc-bff.md → technology/svc-bff.md (different)",
+      "  _drafts/repo-tienda/technology/svc-roto.md → technology/svc-roto.md (new)",
     ]);
     expect(await existe("technology/ext-correo.md")).toBe(false);
   });
@@ -54,7 +54,7 @@ describe("flowbrain promote", () => {
   it("un borrador que rompe la compilación no se promueve y se deshace todo", async () => {
     const r = await brain("promote", "svc-roto", "ext-correo", "--write");
     expect(r.codigo).toBe(1);
-    expect(r.stdout).toContain("no se promovió nada; errores:");
+    expect(r.stdout).toContain("nothing was promoted; errors:");
     expect(r.stdout).toContain("repo-que-no-existe");
     expect(await existe("technology/ext-correo.md")).toBe(false);
     expect(await existe("_drafts/repo-tienda/technology/ext-correo.md")).toBe(true);
@@ -64,14 +64,14 @@ describe("flowbrain promote", () => {
     const antes = await readFile(join(raiz, "technology/svc-bff.md"), "utf8");
     const r = await brain("promote", "ext-correo", "feat-avisos", "svc-bff", "--write");
     expect(r.codigo).toBe(0);
-    expect(r.stdout).toContain("promovidos 2:");
-    expect(r.stdout).toContain("svc-bff.md (distinto): ya existe una página distinta");
+    expect(r.stdout).toContain("promoted 2:");
+    expect(r.stdout).toContain("a different page already exists");
     expect(await existe("_drafts/repo-tienda/technology/ext-correo.md")).toBe(false);
     // Ya no es borrador: sin el aviso de `flowbrain draft`.
-    expect(await readFile(join(raiz, "technology/ext-correo.md"), "utf8")).not.toContain("Borrador generado");
+    expect(await readFile(join(raiz, "technology/ext-correo.md"), "utf8")).not.toContain("Draft generated");
     // La página curada sigue ahí (compile solo le agrega sus backlinks).
     expect(await readFile(join(raiz, "technology/svc-bff.md"), "utf8")).toContain(antes.slice(0, antes.indexOf("\n---\n", 4)));
     expect((await brain("search", "ext-correo")).stdout).toContain('"id": "ext-correo"');
-    expect((await brain("promote", "no-existe", "--write")).stdout).toContain("no hay un borrador con ese id: no-existe");
+    expect((await brain("promote", "no-existe", "--write")).stdout).toContain("no draft with that id: no-existe");
   });
 });

@@ -55,6 +55,11 @@ describe("visor de varios cerebros", () => {
     expect(() => new Function(GRAFO3D_JS)).not.toThrow();
   });
 
+  it("el mapa 3D habla inglés por defecto y castellano con el switch, y rehace sus paneles al cambiar de idioma", () => {
+    for (const par of [['"Turn all on"', '"Prender todo"'], ['"What travels between brains"', '"Qué viaja entre cerebros"'], ['["Features", "Feature", "Funcionalidades", "Funcionalidad"]'], ['llama_a: "calls"']]) for (const t of par) expect(GRAFO3D_JS).toContain(t);
+    expect(GRAFO3D_JS).toContain("window.brainI18n.alCambiar(function () { rotular(); ui(); resultados(); })");
+  });
+
   it("fidelidad: cada fila dice de qué cerebro es, con sus ids prefijados; un cerebro sin índice no aporta filas", () => {
     const frontConArchivo: Graph = { ...front, nodes: [...front.nodes, nodo("repo-tienda:src/api.ts", "archivo"), nodo("feat-pedidos", "feat")] };
     const fila = { archivo: "repo-tienda:src/api.ts", puntaje: 50, lenguaje: "ts", capa: "otros", funcionalidades: ["feat-pedidos"], signals: { http: { ok: 1, total: 2 } }, faltas: ["1 llamada HTTP sin ruta (L9)"], tareas: [{ signal: "http" as const, que: "1 llamada HTTP cuya ruta no se pudo leer", hacer: "Escribir la ruta.", resuelve: "persona" as const, lineas: [9] }] };

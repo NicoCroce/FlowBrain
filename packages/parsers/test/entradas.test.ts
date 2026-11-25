@@ -71,7 +71,7 @@ describe("tareas programadas en Node (fixtures/entradas/cron-node)", () => {
   it("deriva no cuenta una tarea programada como endpoint sin llamadas, y lo dice", () => {
     const d = deriva(ctx, { budget_tokens: null }) as unknown as { endpointsSinLlamadasDetectadas: unknown[]; avisos: string[] };
     expect(d.endpointsSinLlamadasDetectadas).toEqual([]);
-    expect(d.avisos).toContain("10 tareas programadas (CRON) no se cuentan entre los endpoints sin llamadas: las dispara un horario, no una llamada");
+    expect(d.avisos).toContain("10 scheduled tasks (CRON) are not counted among the uncalled endpoints: a schedule triggers them, not a call");
   });
 });
 
@@ -126,7 +126,7 @@ describe("gRPC (fixtures/entradas/grpc)", () => {
     const d = deriva(ctx, { budget_tokens: null }) as unknown as { llamadasSinEndpoint: Array<{ llamada: string }>; endpointsSinLlamadasDetectadas: unknown[]; avisos: string[] };
     expect(d.llamadasSinEndpoint.map((l) => l.llamada)).toEqual(["GRPC /pedidos.v1.Pedidos/Cancelar"]);
     expect(d.endpointsSinLlamadasDetectadas).toEqual([]);
-    expect(d.avisos).toContain("3 llamadas gRPC unidas no se comparan por campos: los mensajes están en el `.proto` y el índice no lee lo que arma el cliente");
+    expect(d.avisos).toContain("3 linked gRPC calls are not compared by fields: messages live in the `.proto` and the index does not read what the client builds");
   });
 
   it("el recorrido cruza del cliente al servidor por el rpc, como por HTTP", () => {
@@ -135,7 +135,7 @@ describe("gRPC (fixtures/entradas/grpc)", () => {
       "PedidosCliente.crear",
       // La interfaz con que el cliente tipa el servicio.
       "PedidosGrpc.crear",
-      "PedidosController.crear (por HTTP: svc-api:GRPC:/pedidos.v1.Pedidos/Crear)",
+      "PedidosController.crear (over HTTP: svc-api:GRPC:/pedidos.v1.Pedidos/Crear)",
     ]);
     expect(toca(a)).toContain("escribe_en tabla-pedido");
     const b = recorrido(ctx, { desde: "GRPC /pedidos.v1.Stock/Reservar", budget_tokens: null }) as unknown as Rec;

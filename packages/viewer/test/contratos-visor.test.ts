@@ -8,7 +8,7 @@ import { FILTROS_JS } from "../src/viewer-filtros.js";
 /** La pantalla Contratos con un DOM mínimo. La paridad se calcula en la página: acá se comprueba que dé lo mismo que el motor. */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
 interface ParidadJs { entre: boolean; endpoints: { viejo: number; nuevo: number; migrados: number; faltan: string[]; soloEnNuevo: string[]; difieren: unknown[] }; tablasSinMigrar: string[] }
-function montar(datos: Record<string, unknown>) {
+function montar(datos: Record<string, unknown>, lang?: "es") {
   const guardado = new Map<string, string>();
   const sessionStorage = { getItem: (k: string) => guardado.get(k) ?? null, setItem: (k: string, v: string) => void guardado.set(k, v) };
   const oyentes: Record<string, Oyente[]> = {};
@@ -16,7 +16,7 @@ function montar(datos: Record<string, unknown>) {
   const porId: Record<string, { n: string }> = {};
   for (const n of (datos["nodes"] as Array<{ id: string; n: string }> | undefined) ?? []) porId[n.id] = n;
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const window = { brainVisor: { D: datos, porId, esc }, brainFiltros: null as unknown, brainContratos: null as null | { mostrar(): void; paridad(v: string, n: string): ParidadJs } };
+  const window = { brainVisor: { D: datos, porId, esc }, brainFiltros: null as unknown, brainContratos: null as null | { mostrar(): void; paridad(v: string, n: string): ParidadJs }, brainI18n: lang ? { lang } : undefined };
   const document = { getElementById: (id: string) => (id === "contratos" ? raiz : null) };
   new Function("window", "document", "sessionStorage", FILTROS_JS)(window, document, sessionStorage);
   new Function("window", "document", "sessionStorage", CONTRATOS_JS)(window, document, sessionStorage);
@@ -89,45 +89,57 @@ describe("pantalla Contratos: paridad", () => {
   it("se eligen los dos servicios y muestra qué falta, qué sobra y dónde cambian las tablas", () => {
     const v = montar(datosDelVisor(graph));
     v.tocar({ "data-tab": "paridad" });
-    expect(v.pagina()).toContain("Elegí los dos servicios");
+    expect(v.pagina()).toContain("Choose both services");
     expect(v.pagina()).toContain('<option value="svc-viejo">svc-viejo (4 endpoints)</option>');
     v.cambiar("ct-viejo", "svc-viejo");
     v.cambiar("ct-nuevo", "svc-viejo");
-    expect(v.pagina()).toContain("Elegiste el mismo servicio de los dos lados");
+    expect(v.pagina()).toContain("You chose the same service on both sides");
     v.cambiar("ct-nuevo", "svc-nuevo");
-    expect(v.cifras()).toEqual(["3 de 4 endpoints ya están del otro lado (75 %)", "1 faltan migrar", "1 solo en el nuevo", "1 migrados que tocan tablas distintas"]);
+    expect(v.cifras()).toEqual(["3 of 4 endpoints already on the other side (75 %)", "1 not migrated yet", "1 only in the new one", "1 migrated but touching different tables"]);
     expect(v.pagina()).toContain("<code>DELETE /turnos/{id}</code>");
-    expect(v.pagina()).toContain("Solo el viejo escribe en <code>tabla-auditoria</code>");
-    expect(v.pagina()).toContain("Tablas que el nuevo todavía no toca <small>1</small>");
+    expect(v.pagina()).toContain("Only the old one writes to <code>tabla-auditoria</code>");
+    expect(v.pagina()).toContain("Tables the new one doesn't touch yet <small>1</small>");
     // Sin pantallas de ningún lado, no se muestra ese bloque.
     expect(v.pagina()).not.toContain("<h2>Pantallas</h2>");
     v.tocar({ "data-acc": "invertir" });
-    expect(v.cifras()[0]).toBe("3 de 4 endpoints ya están del otro lado (75 %)");
+    expect(v.cifras()[0]).toBe("3 of 4 endpoints already on the other side (75 %)");
     expect(v.pagina()).toContain("<code>GET /api/salud</code>");
     v.escribir("nada-que-coincida");
+    expect(v.pagina()).toContain("Nothing matches text “nada-que-coincida”.");
+  });
+
+  it("en castellano: los textos de siempre", () => {
+    const v = montar(datosDelVisor(graph), "es");
+    v.tocar({ "data-tab": "paridad" });
+    expect(v.pagina()).toContain("Elegí los dos servicios");
+    v.cambiar("ct-viejo", "svc-viejo");
+    v.cambiar("ct-nuevo", "svc-nuevo");
+    expect(v.cifras()).toEqual(["3 de 4 endpoints ya están del otro lado (75 %)", "1 faltan migrar", "1 solo en el nuevo", "1 migrados que tocan tablas distintas"]);
+    v.escribir("nada-que-coincida");
     expect(v.pagina()).toContain("Ninguno coincide con texto «nada-que-coincida».");
+    expect(montar(datosDelVisor(graph, [], undefined, deriva), "es").cifras()).toEqual(["1 llamadas que nadie atiende", "1 endpoints que nadie llama"]);
   });
 
   it("con un solo servicio dice que no hay con qué comparar", () => {
     const v = montar(datosDelVisor(lado("svc-viejo")));
     v.tocar({ "data-tab": "paridad" });
-    expect(v.pagina()).toContain("solo hay uno (svc-viejo)");
+    expect(v.pagina()).toContain("there's only one (svc-viejo)");
   });
 });
 
 describe("pantalla Contratos: deriva", () => {
   it("muestra las llamadas que nadie atiende y los endpoints que nadie llama, y lo que no se pudo medir", () => {
     const v = montar(datosDelVisor(graph, [], undefined, deriva));
-    expect(v.cifras()).toEqual(["1 llamadas que nadie atiende", "1 endpoints que nadie llama"]);
+    expect(v.cifras()).toEqual(["1 calls nobody handles", "1 endpoints nobody calls"]);
     const p = v.pagina();
-    expect(p).toContain("<code>GET ${api}/stock</code> <small>desde svc-viejo · <code>repo-a:src/api.ts#L9</code></small>");
-    expect(p).toContain("Existe con otro método: <code>POST /api/turnos</code>");
-    expect(p).toContain("svc-nuevo <small>lo llaman svc-viejo</small>");
+    expect(p).toContain("<code>GET ${api}/stock</code> <small>from svc-viejo · <code>repo-a:src/api.ts#L9</code></small>");
+    expect(p).toContain("Exists with another method: <code>POST /api/turnos</code>");
+    expect(p).toContain("svc-nuevo <small>called by svc-viejo</small>");
     expect(p).toContain("<code>GET /api/salud</code>");
-    expect(p).toContain("Nadie indexado llama a este servicio");
-    expect(p).toContain("Lo que no se pudo medir <small>1</small>");
+    expect(p).toContain("Nothing indexed calls this service");
+    expect(p).toContain("What couldn't be measured <small>1</small>");
     // Un brain solo no se cruzó con nadie: no se habla de otros cerebros.
-    expect(p).not.toContain("otro cerebro");
+    expect(p).not.toContain("another brain");
   });
 
   it("con varios cerebros, cada uno su deriva: lo que atiende otro cerebro va aparte y la falta de comunicación se dice", () => {
@@ -136,19 +148,19 @@ describe("pantalla Contratos: deriva", () => {
     expect((d.deriva as Array<{ c: number }>).map((x) => x.c)).toEqual([0, 1]);
     const v = montar(d);
     // Sin elegir cerebro, suma los dos; la estadística los compara.
-    expect(v.cifras()).toEqual(["1 llamadas que nadie atiende", "7 llamadas que atiende otro cerebro", "1 en disputa entre cerebros", "2 endpoints que nadie llama"]);
-    expect(v.pagina()).toContain("<h2>Por cerebro</h2>");
+    expect(v.cifras()).toEqual(["1 calls nobody handles", "7 calls handled by another brain", "1 disputed between brains", "2 endpoints nobody calls"]);
+    expect(v.pagina()).toContain("<h2>By brain</h2>");
     v.cambiar("ct-cerebro", "0");
-    expect(v.cifras()).toEqual(["0 llamadas que nadie atiende", "7 llamadas que atiende otro cerebro", "1 en disputa entre cerebros", "1 endpoints que nadie llama"]);
-    expect(v.pagina()).toContain("Cruzado con back");
+    expect(v.cifras()).toEqual(["0 calls nobody handles", "7 calls handled by another brain", "1 disputed between brains", "1 endpoints nobody calls"]);
+    expect(v.pagina()).toContain("Cross-referenced with back");
     // Las internas declaradas no son deriva, y se dice cuántas quedaron afuera.
-    expect(v.pagina()).toContain("Tampoco las 2 llamadas al propio servidor que <code>flowbrain.yaml</code> declara internas (<code>internas</code>).");
-    expect(v.pagina()).toContain("Todas las llamadas con ruta tienen quién las atienda.");
-    expect(v.pagina()).toContain("back <small>7 llamadas a 3 endpoints</small>");
-    expect(v.pagina()).toContain("Candidatos: <code>back/svc-a:GET:/x</code>, <code>otro/svc-b:GET:/x</code>");
+    expect(v.pagina()).toContain("Neither do the 2 calls to the service's own server that <code>flowbrain.yaml</code> declares internal (<code>internas</code>).");
+    expect(v.pagina()).toContain("Every call with a route has something that handles it.");
+    expect(v.pagina()).toContain("back <small>7 calls to 3 endpoints</small>");
+    expect(v.pagina()).toContain("Candidates: <code>back/svc-a:GET:/x</code>, <code>otro/svc-b:GET:/x</code>");
     v.cambiar("ct-cerebro", "1");
-    expect(v.pagina()).toContain("no tiene la comunicación activa con ningún otro");
-    expect(v.cifras()[0]).toBe("1 llamadas que nadie atiende");
+    expect(v.pagina()).toContain("has no active communication with any other");
+    expect(v.cifras()[0]).toBe("1 calls nobody handles");
   });
 
   it("muestra los campos que no coinciden, con evidencia de los dos lados, y lo que no se pudo comparar", () => {
@@ -158,22 +170,22 @@ describe("pantalla Contratos: deriva", () => {
       camposQueNoCoinciden: [{ llamada: "POST ${api}/turnos", ev: "repo-a:src/api.ts#L20", endpoint: "svc-nuevo:POST:/api/turnos", cerebro: "back", evEndpoint: "repo-b:src/turnos.ts#L8", cuerpo: { front: "NuevoTurno", back: "CrearTurno", requeridosQueNoManda: ["fecha"] }, respuesta: { front: "Turno", back: "TurnoDto", distintoNombre: ["horaInicio ↔ hora_inicio"] } }],
     };
     const v = montar(datosDelVisor(graph, [], undefined, conCampos));
-    expect(v.cifras()).toContain("1 con campos que no coinciden");
+    expect(v.cifras()).toContain("1 with mismatched fields");
     const p = v.pagina();
-    expect(p).toContain("Campos que no coinciden <small>1</small>");
-    expect(p).toContain("<code>POST ${api}/turnos</code> <small>→ <code>back/POST /api/turnos</code> · llama <code>repo-a:src/api.ts#L20</code> · atiende <code>repo-b:src/turnos.ts#L8</code></small>");
-    expect(p).toContain("Cuerpo (<code>NuevoTurno</code> → <code>CrearTurno</code>): requeridos que no manda: <code>fecha</code>");
-    expect(p).toContain("distinto nombre: <code>horaInicio ↔ hora_inicio</code>");
-    expect(p).toContain("Cuerpo: la llamada manda un tipo sin campos que comparar <small>1 llamada · <code>FormData</code></small>");
+    expect(p).toContain("Mismatched fields <small>1</small>");
+    expect(p).toContain("<code>POST ${api}/turnos</code> <small>→ <code>back/POST /api/turnos</code> · call <code>repo-a:src/api.ts#L20</code> · handler <code>repo-b:src/turnos.ts#L8</code></small>");
+    expect(p).toContain("Body (<code>NuevoTurno</code> → <code>CrearTurno</code>): required but not sent: <code>fecha</code>");
+    expect(p).toContain("different name: <code>horaInicio ↔ hora_inicio</code>");
+    expect(p).toContain("Body: la llamada manda un tipo sin campos que comparar <small>1 call · <code>FormData</code></small>");
     // Una deriva sin la comparación (calculada antes) lo dice en vez de mostrar una lista vacía.
-    expect(montar(datosDelVisor(graph, [], undefined, deriva)).pagina()).toContain("no trae la comparación de campos");
+    expect(montar(datosDelVisor(graph, [], undefined, deriva)).pagina()).toContain("doesn't include the field comparison");
     // Un índice anterior: el motivo se lee en la sección, no solo en los avisos.
     const viejo = { ...conCampos, camposQueNoCoinciden: [], avisos: ["el índice de repo-a no trae los campos de las llamadas (se indexó antes de registrarlos): corré `flowbrain index`"] };
-    expect(montar(datosDelVisor(graph, [], undefined, viejo)).pagina()).toMatch(/Campos que no coinciden <small>0<\/small><\/h3><\/summary><p class="aviso">el índice de repo-a no trae los campos/);
+    expect(montar(datosDelVisor(graph, [], undefined, viejo)).pagina()).toMatch(/Mismatched fields <small>0<\/small><\/h3><\/summary><p class="aviso">el índice de repo-a no trae los campos/);
   });
 
   it("sin índice de código explica qué hace falta", () => {
     expect(derivaDelVisor(undefined)).toBeNull();
-    expect(montar(datosDelVisor(graph)).pagina()).toContain("No hay índice de código");
+    expect(montar(datosDelVisor(graph)).pagina()).toContain("There's no code index");
   });
 });

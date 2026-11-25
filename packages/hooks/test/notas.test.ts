@@ -53,10 +53,10 @@ describe("hook SessionEnd", () => {
     await writeFile(t, transcript);
     const brain = join(dir, "brain");
     expect(await hookSessionEnd({ session_id: "abc", transcript_path: t }, brain)).toEqual(["_drafts/notes/svc-payments.md", "_drafts/notes/tabla-pagos.md"]);
-    expect(await readFile(join(brain, "_drafts/notes/svc-payments.md"), "utf8")).toBe("# Notas sobre `svc-payments`\n\n- usa una cola (sesión abc)\n");
+    expect(await readFile(join(brain, "_drafts/notes/svc-payments.md"), "utf8")).toBe("# Notes on `svc-payments`\n\n- usa una cola (session abc)\n");
     expect(await hookSessionEnd({ session_id: "abc", transcript_path: t }, brain)).toEqual([]);
     await anotar(brain, [{ id: "svc-payments", texto: "otra cosa" }], "manual");
-    expect(await readFile(join(brain, "_drafts/notes/svc-payments.md"), "utf8")).toBe("# Notas sobre `svc-payments`\n\n- usa una cola (sesión abc)\n- otra cosa (manual)\n");
+    expect(await readFile(join(brain, "_drafts/notes/svc-payments.md"), "utf8")).toBe("# Notes on `svc-payments`\n\n- usa una cola (session abc)\n- otra cosa (manual)\n");
   });
 
   it("los ids generados se guardan con un nombre de archivo seguro", async () => {
@@ -64,6 +64,6 @@ describe("hook SessionEnd", () => {
   });
 
   it("el bloque de reglas enseña la marca", () => {
-    expect(bloqueReglas()).toContain("flowbrain-nota <id-del-nodo>: <qué cambió>");
+    expect(bloqueReglas()).toContain("flowbrain-nota <node-id>: <what changed>");
   });
 });

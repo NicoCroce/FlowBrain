@@ -28,7 +28,10 @@ export const CONTRATOS_JS = String.raw`
     S.ver = {};
   } catch (e) { /* sin almacenamiento */ }
 
-  var plural = function (n, uno, varios) { return n.toLocaleString("es") + " " + (n === 1 ? uno : varios); };
+  // Idioma (dec. 214): todo texto visible se arma al pintar con L(inglés, castellano).
+  var L = function (en, es) { return window.brainI18n && window.brainI18n.lang === "es" ? es : en; };
+  var num = function (n) { return Number(n).toLocaleString(window.brainI18n && window.brainI18n.lang === "es" ? "es" : "en"); };
+  var plural = function (n, uno, varios) { return num(n) + " " + (n === 1 ? uno : varios); };
   var elem = function (id) { return document.getElementById(id); };
   var nombre = function (id) { return porId[id] ? porId[id].n : id; };
   var cerebroDe = function (id) { var n = porId[id]; return n && n.c !== undefined && CEREBROS[n.c] ? CEREBROS[n.c].nombre : ""; };
@@ -43,22 +46,24 @@ export const CONTRATOS_JS = String.raw`
     m = /:pantalla:(.*)$/.exec(id);
     return m ? m[1] : local(id);
   };
-  var cifra = function (valor, texto, color) { return '<div class="fd-cifra"><b' + (color ? ' style="color:' + color + '"' : "") + ">" + (typeof valor === "number" ? valor.toLocaleString("es") : valor) + "</b><span>" + texto + "</span></div>"; };
+  var cifra = function (valor, texto, color) { return '<div class="fd-cifra"><b' + (color ? ' style="color:' + color + '"' : "") + ">" + (typeof valor === "number" ? num(valor) : valor) + "</b><span>" + texto + "</span></div>"; };
   // Una lista larga se corta y ofrece seguir: clave identifica la lista.
   function listaCortada(clave, items, fila) {
     if (!items.length) return "";
     var n = S.ver[clave] || PASO, visibles = items.slice(0, n);
     return '<ul class="lista">' + visibles.map(fila).join("") + "</ul>" +
-      (items.length > visibles.length ? '<p class="fd-mas"><button type="button" class="boton" data-acc="mas" data-k="' + esc(clave) + '">Mostrar ' + Math.min(PASO, items.length - visibles.length) + " más</button> <small>" + visibles.length + " de " + items.length.toLocaleString("es") + "</small></p>" : "");
+      (items.length > visibles.length ? '<p class="fd-mas"><button type="button" class="boton" data-acc="mas" data-k="' + esc(clave) + '">' + L("Show " + num(Math.min(PASO, items.length - visibles.length)) + " more", "Mostrar " + Math.min(PASO, items.length - visibles.length) + " más") + "</button> <small>" + num(visibles.length) + L(" of ", " de ") + num(items.length) + "</small></p>" : "");
   }
   function seccion(titulo, n, cuerpo, abierta) {
-    return '<details class="es-feat ct-sec"' + (abierta ? " open" : "") + "><summary><h3>" + titulo + ' <small>' + n.toLocaleString("es") + "</small></h3></summary>" + cuerpo + "</details>";
+    return '<details class="es-feat ct-sec"' + (abierta ? " open" : "") + "><summary><h3>" + titulo + ' <small>' + num(n) + "</small></h3></summary>" + cuerpo + "</details>";
   }
 
   // ---------- Deriva ----------
   // Una sola lista con los problemas de todos los cerebros: llamadas que nadie atiende, endpoints que nadie llama,
   // llamadas con varios candidatos y campos que no coinciden. El filtro y la estadística son el componente compartido.
-  var TIPOS_D = [["sinEndpoint", "Nadie las atiende"], ["sinLlamadas", "Nadie los llama"], ["disputada", "Varios candidatos"], ["campos", "Campos distintos"]];
+  // Se lee al pintar: las etiquetas siguen el idioma.
+  var TIPOS_D = function () { return [["sinEndpoint", L("Nobody handles them", "Nadie las atiende")], ["sinLlamadas", L("Nobody calls them", "Nadie los llama")], ["disputada", L("Several candidates", "Varios candidatos")], ["campos", L("Mismatched fields", "Campos distintos")]]; };
+  var tipoD = function (id) { var t = TIPOS_D().filter(function (x) { return x[0] === id; })[0]; return t ? t[1] : id; };
   var svcDeId = function (id) { var s = String(id || ""), i = s.indexOf(":"); return i < 0 ? s : s.slice(0, i); };
   var metodoDe = function (texto) { var m = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CRON|GRPC)\b/.exec(String(texto || "")); return m ? m[1] : ""; };
   var cerebroD = function (d, i) { return d.c !== undefined ? d.c : i; };
@@ -78,31 +83,32 @@ export const CONTRATOS_JS = String.raw`
   var nombreCerebro = function (v) { return CEREBROS[Number(v)] ? CEREBROS[Number(v)].nombre : String(v); };
   var nombreSvc = function (s) { return porId[s] ? nombre(s) : local(s); };
   var flD = DERIVA ? window.brainFiltros.crear({
-    pre: "ct", clave: "flowbrain.contratos.deriva", unidad: ["problema", "problemas"], todos: "todo lo que no cierra",
+    // Las etiquetas son funciones: brainFiltros las evalúa al pintar, así siguen el cambio de idioma.
+    pre: "ct", clave: "flowbrain.contratos.deriva", unidad: function () { return L(["problem", "problems"], ["problema", "problemas"]); }, todos: function () { return L("everything that doesn't add up", "todo lo que no cierra"); },
     items: function () { return ITEMS_D; },
-    grupos: [{ id: "", etiqueta: "Todo" }].concat(TIPOS_D.map(function (t) { return { id: t[0], etiqueta: t[1], palabra: t[1].toLowerCase(), es: function (x) { return x.t === t[0]; }, ocultarVacio: t[0] === "disputada" }; })),
-    buscar: { ph: "Buscar una ruta, un servicio o un archivo…", texto: function (x) { return x.texto; } },
+    grupos: [{ id: "", etiqueta: function () { return L("All", "Todo"); } }].concat(TIPOS_D().map(function (t) { return { id: t[0], etiqueta: function () { return tipoD(t[0]); }, palabra: function () { return tipoD(t[0]).toLowerCase(); }, es: function (x) { return x.t === t[0]; }, ocultarVacio: t[0] === "disputada" }; })),
+    buscar: { ph: function () { return L("Search a route, a service or a file…", "Buscar una ruta, un servicio o un archivo…"); }, texto: function (x) { return x.texto; } },
     campos: [
-      { id: "cerebro", etiqueta: "Cerebro", propio: "el cerebro elegido", solo: function () { return DERIVA.length > 1; }, de: function (x) { return x.c; },
+      { id: "cerebro", etiqueta: function () { return L("Brain", "Cerebro"); }, propio: function () { return L("the chosen brain", "el cerebro elegido"); }, solo: function () { return DERIVA.length > 1; }, de: function (x) { return x.c; },
         valores: function () { return DERIVA.map(function (d, i) { var c = cerebroD(d, i); return [c, nombreCerebro(c), ITEMS_D.filter(function (x) { return x.c === c; }).length]; }); },
-        etiquetaDe: nombreCerebro, palabra: function (v) { return "cerebro " + nombreCerebro(v); } },
-      { id: "servicio", etiqueta: "Servicio", propio: "el servicio elegido", ordenPorCantidad: true, de: function (x) { return x.svc; }, etiquetaDe: nombreSvc, palabra: function (v) { return "servicio " + nombreSvc(v); } },
-      { id: "metodo", etiqueta: "Método", propio: "el método elegido", ordenPorCantidad: true, de: function (x) { return x.m; }, palabra: function (v) { return "método " + v; } }
+        etiquetaDe: nombreCerebro, palabra: function (v) { return L("brain ", "cerebro ") + nombreCerebro(v); } },
+      { id: "servicio", etiqueta: function () { return L("Service", "Servicio"); }, propio: function () { return L("the chosen service", "el servicio elegido"); }, ordenPorCantidad: true, de: function (x) { return x.svc; }, etiquetaDe: nombreSvc, palabra: function (v) { return L("service ", "servicio ") + nombreSvc(v); } },
+      { id: "metodo", etiqueta: function () { return L("Method", "Método"); }, propio: function () { return L("the chosen method", "el método elegido"); }, ordenPorCantidad: true, de: function (x) { return x.m; }, palabra: function (v) { return L("method ", "método ") + v; } }
     ],
     paneles: [
-      { titulo: "Por cerebro", campo: "cerebro" },
-      { titulo: "Por servicio", campo: "servicio", max: 8 },
-      { titulo: "Por método", campo: "metodo", sinValor: "sin método HTTP (rutas que no se pudieron leer o colas)" }
+      { titulo: function () { return L("By brain", "Por cerebro"); }, campo: "cerebro" },
+      { titulo: function () { return L("By service", "Por servicio"); }, campo: "servicio", max: 8 },
+      { titulo: function () { return L("By method", "Por método"); }, campo: "metodo", sinValor: function () { return L("no HTTP method (routes that couldn't be read, or queues)", "sin método HTTP (rutas que no se pudieron leer o colas)"); } }
     ],
     cifras: function () {
       var ds = alcance(), n = function (f) { var s = 0; ds.forEach(function (d) { s += f(d); }); return s; };
       var sinEp = n(function (d) { return d.sinEndpoint.length; }), atendidas = n(function (d) { var s = 0; d.atendidas.forEach(function (a) { s += a.llamadas; }); return s; });
       var disp = n(function (d) { return d.disputadas.length; }), sinLl = n(function (d) { return d.sinLlamadas.length; }), conDif = n(function (d) { return d.campos ? d.campos.conDiferencias : 0; });
-      var out = [[sinEp, "llamadas que nadie atiende", sinEp ? "var(--mal)" : "var(--bien)", "sinEndpoint"]];
-      if (ds.some(function (d) { return d.comunicadoCon; })) out.push([atendidas, "llamadas que atiende otro cerebro"]);
-      if (disp) out.push([disp, "en disputa entre cerebros", "var(--atencion)", "disputada"]);
-      out.push([sinLl, "endpoints que nadie llama", sinLl ? "var(--atencion)" : "", "sinLlamadas"]);
-      if (ds.some(function (d) { return d.campos && d.campos.llamadasUnidas; })) out.push([conDif, "con campos que no coinciden", conDif ? "var(--mal)" : "var(--bien)", "campos"]);
+      var out = [[sinEp, L("calls nobody handles", "llamadas que nadie atiende"), sinEp ? "var(--mal)" : "var(--bien)", "sinEndpoint"]];
+      if (ds.some(function (d) { return d.comunicadoCon; })) out.push([atendidas, L("calls handled by another brain", "llamadas que atiende otro cerebro")]);
+      if (disp) out.push([disp, L("disputed between brains", "en disputa entre cerebros"), "var(--atencion)", "disputada"]);
+      out.push([sinLl, L("endpoints nobody calls", "endpoints que nadie llama"), sinLl ? "var(--atencion)" : "", "sinLlamadas"]);
+      if (ds.some(function (d) { return d.campos && d.campos.llamadasUnidas; })) out.push([conDif, L("with mismatched fields", "con campos que no coinciden"), conDif ? "var(--mal)" : "var(--bien)", "campos"]);
       return out;
     },
     alCambiar: function (todo) { refrescar(todo); }
@@ -114,18 +120,19 @@ export const CONTRATOS_JS = String.raw`
   }
   var conCerebro = function (x) { return DERIVA.length > 1 ? ' <span class="chip">' + esc(nombreCerebro(x.c)) + "</span>" : ""; };
   function llamada(x, extra, it) {
-    return "<li><code>" + esc(x.l) + "</code> <small>desde " + esc(nombre(x.d)) + " · <code>" + esc(x.ev) + "</code></small>" + (it ? conCerebro(it) : "") + (extra || "") + "</li>";
+    return "<li><code>" + esc(x.l) + "</code> <small>" + L("from ", "desde ") + esc(nombre(x.d)) + " · <code>" + esc(x.ev) + "</code></small>" + (it ? conCerebro(it) : "") + (extra || "") + "</li>";
   }
-  var ninguno = function () { return '<p class="aviso">Ninguno coincide con ' + esc(flD.activos().join(", ")) + ".</p>"; };
+  var ninguno = function () { return '<p class="aviso">' + L("Nothing matches ", "Ninguno coincide con ") + esc(flD.activos().join(", ")) + ".</p>"; };
   // Lo de cada cerebro que no es una lista: con quién se cruza, lo que atiende otro, lo que no se pudo medir.
   function contexto(ds) {
     var varios = ds.length > 1, quien = function (d, i) { return varios ? "<strong>" + esc(nombreCerebro(cerebroD(d, i))) + "</strong>: " : ""; };
     var cruces = ds.map(function (d, i) {
       if (d.comunicadoCon === null || d.comunicadoCon === undefined) return "";
       return d.comunicadoCon.length
-        ? '<p class="explica">' + quien(d, i) + "Cruzado con " + d.comunicadoCon.map(esc).join(", ") + ": lo que atiende o llama uno de esos cerebros no cuenta como deriva." +
-          (d.internas ? " Tampoco " + (d.internas === 1 ? "la llamada" : "las " + d.internas.toLocaleString("es") + " llamadas") + " al propio servidor que <code>flowbrain.yaml</code> declara " + (d.internas === 1 ? "interna" : "internas") + " (<code>internas</code>)." : "") + "</p>"
-        : '<p class="aviso">' + quien(d, i) + (varios ? "no tiene" : "Este cerebro no tiene") + " la comunicación activa con ningún otro: todo lo que llame afuera figura como sin endpoint. Se activa en <code>flowbrain.yaml</code> (<code>comunicacion</code>).</p>";
+        ? '<p class="explica">' + quien(d, i) + L("Cross-referenced with ", "Cruzado con ") + d.comunicadoCon.map(esc).join(", ") + L(": whatever one of those brains handles or calls doesn't count as drift.", ": lo que atiende o llama uno de esos cerebros no cuenta como deriva.") +
+          (d.internas ? L(" Neither " + (d.internas === 1 ? "does the call" : "do the " + num(d.internas) + " calls") + " to the service's own server that <code>flowbrain.yaml</code> declares internal (<code>internas</code>).",
+            " Tampoco " + (d.internas === 1 ? "la llamada" : "las " + num(d.internas) + " llamadas") + " al propio servidor que <code>flowbrain.yaml</code> declara " + (d.internas === 1 ? "interna" : "internas") + " (<code>internas</code>).") : "") + "</p>"
+        : '<p class="aviso">' + quien(d, i) + (varios ? L("has", "no tiene") : L("This brain has", "Este cerebro no tiene")) + L(" no active communication with any other: every outside call shows up as having no endpoint. Turn it on in <code>flowbrain.yaml</code> (<code>comunicacion</code>).", " la comunicación activa con ningún otro: todo lo que llame afuera figura como sin endpoint. Se activa en <code>flowbrain.yaml</code> (<code>comunicacion</code>).") + "</p>";
     }).join("");
     // Con varios cerebros, una línea por cerebro repetía la misma explicación: va una sola vez, con quién se cruza cada uno.
     if (varios) {
@@ -133,24 +140,26 @@ export const CONTRATOS_JS = String.raw`
       ds.forEach(function (d, i) {
         if (d.comunicadoCon === null || d.comunicadoCon === undefined) return;
         var n = esc(nombreCerebro(cerebroD(d, i)));
-        if (d.comunicadoCon.length) con.push("<strong>" + n + "</strong> con " + d.comunicadoCon.map(esc).join(", ")); else sin.push("<strong>" + n + "</strong>");
+        if (d.comunicadoCon.length) con.push("<strong>" + n + "</strong>" + L(" with ", " con ") + d.comunicadoCon.map(esc).join(", ")); else sin.push("<strong>" + n + "</strong>");
         internas += d.internas || 0;
       });
-      cruces = (con.length ? '<p class="aviso">Cada cerebro se cruza con los que se comunica: ' + con.join(" · ") + ". Lo que atiende o llama uno de esos cerebros no cuenta como deriva." +
-          (internas ? " Tampoco " + plural(internas, "llamada", "llamadas") + " al propio servidor que <code>flowbrain.yaml</code> declara internas (<code>internas</code>)." : "") + "</p>" : "") +
-        (sin.length ? '<p class="aviso">' + sin.join(", ") + (sin.length === 1 ? " no tiene" : " no tienen") + " la comunicación activa con ningún otro: todo lo que " + (sin.length === 1 ? "llame" : "llamen") + " afuera figura como sin endpoint. Se activa en <code>flowbrain.yaml</code> (<code>comunicacion</code>).</p>" : "");
+      cruces = (con.length ? '<p class="aviso">' + L("Each brain is cross-referenced with the ones it communicates with: ", "Cada cerebro se cruza con los que se comunica: ") + con.join(" · ") + L(". Whatever one of those brains handles or calls doesn't count as drift.", ". Lo que atiende o llama uno de esos cerebros no cuenta como deriva.") +
+          (internas ? L(" Neither do " + plural(internas, "call", "calls") + " to the service's own server that <code>flowbrain.yaml</code> declares internal (<code>internas</code>).", " Tampoco " + plural(internas, "llamada", "llamadas") + " al propio servidor que <code>flowbrain.yaml</code> declara internas (<code>internas</code>).") : "") + "</p>" : "") +
+        (sin.length ? '<p class="aviso">' + sin.join(", ") + L((sin.length === 1 ? " has" : " have") + " no active communication with any other: every outside call shows up as having no endpoint. Turn it on in <code>flowbrain.yaml</code> (<code>comunicacion</code>).",
+          (sin.length === 1 ? " no tiene" : " no tienen") + " la comunicación activa con ningún otro: todo lo que " + (sin.length === 1 ? "llame" : "llamen") + " afuera figura como sin endpoint. Se activa en <code>flowbrain.yaml</code> (<code>comunicacion</code>).") + "</p>" : "");
     }
     var at = [], total = 0;
     ds.forEach(function (d) { d.atendidas.forEach(function (a) { at.push(a); total += a.llamadas; }); });
-    var atHtml = at.length ? seccion("Las atiende otro cerebro", total, "<p><small>No son deriva: están unidas a un endpoint de un cerebro comunicado.</small></p>" +
-      '<ul class="lista">' + at.map(function (a) { return "<li>" + esc(a.cerebro) + " <small>" + plural(a.llamadas, "llamada", "llamadas") + " a " + plural(a.endpoints, "endpoint", "endpoints") + "</small></li>"; }).join("") + "</ul>", false) : "";
+    var atHtml = at.length ? seccion(L("Handled by another brain", "Las atiende otro cerebro"), total, "<p><small>" + L("Not drift: they're linked to an endpoint of a connected brain.", "No son deriva: están unidas a un endpoint de un cerebro comunicado.") + "</small></p>" +
+      '<ul class="lista">' + at.map(function (a) { return "<li>" + esc(a.cerebro) + " <small>" + plural(a.llamadas, L("call", "llamada"), L("calls", "llamadas")) + L(" to ", " a ") + plural(a.endpoints, "endpoint", "endpoints") + "</small></li>"; }).join("") + "</ul>", false) : "";
     var avisos = [];
     ds.forEach(function (d, i) { d.avisos.forEach(function (a) { avisos.push((varios ? nombreCerebro(cerebroD(d, i)) + ": " : "") + a); }); });
-    var avHtml = avisos.length ? seccion("Lo que no se pudo medir", avisos.length, '<ul class="lista">' + avisos.map(function (a) { return "<li><small>" + esc(a) + "</small></li>"; }).join("") + "</ul>", false) : "";
+    var avHtml = avisos.length ? seccion(L("What couldn't be measured", "Lo que no se pudo medir"), avisos.length, '<ul class="lista">' + avisos.map(function (a) { return "<li><small>" + esc(a) + "</small></li>"; }).join("") + "</ul>", false) : "";
     return { cruces: cruces, atendidas: atHtml, avisos: avHtml };
   }
   function vistaDeriva() {
-    if (!DERIVA) return '<p class="aviso">No hay índice de código, así que no se sabe qué llama cada servicio ni a quién. Corré <code>flowbrain index</code> sobre cada repo y después <code>flowbrain compile</code> (o <code>flowbrain brains apply</code>).</p>';
+    if (!DERIVA) return '<p class="aviso">' + L("There's no code index, so it's unknown what each service calls or whom. Run <code>flowbrain index</code> on each repo and then <code>flowbrain compile</code> (or <code>flowbrain brains apply</code>).",
+      "No hay índice de código, así que no se sabe qué llama cada servicio ni a quién. Corré <code>flowbrain index</code> sobre cada repo y después <code>flowbrain compile</code> (o <code>flowbrain brains apply</code>).") + "</p>";
     var ds = alcance(), ctx = contexto(ds);
     return ctx.cruces + flD.html() + '<div id="ct-lista">' + listaDeriva() + "</div>" + ctx.atendidas + ctx.avisos;
   }
@@ -161,18 +170,18 @@ export const CONTRATOS_JS = String.raw`
     var out = flD.resultado(xs);
     if (ve("sinEndpoint")) {
       var sinEp = de("sinEndpoint"), n = total(function (d) { return d.sinEndpoint.length; });
-      out += seccion("Llamadas que nadie atiende", sinEp.length, n
-        ? "<p><small>La ruta ya no existe, cambió de método, o el servicio que la atiende no está indexado" + (ds.some(function (d) { return d.comunicadoCon; }) ? " ni comunicado" : "") + ".</small></p>" +
+      out += seccion(L("Calls nobody handles", "Llamadas que nadie atiende"), sinEp.length, n
+        ? "<p><small>" + L("The route no longer exists, changed method, or the service that handles it isn't indexed", "La ruta ya no existe, cambió de método, o el servicio que la atiende no está indexado") + (ds.some(function (d) { return d.comunicadoCon; }) ? L(" or connected", " ni comunicado") : "") + ".</small></p>" +
           (sinEp.length ? listaCortada("sinEndpoint", sinEp, function (it) {
             var x = it.x;
-            return llamada(x, x.o ? '<div class="fd-nota">Existe con otro método: ' + x.o.map(function (id) { return "<code>" + esc(pieza(id)) + "</code>"; }).join(", ") + "</div>" : "", it);
+            return llamada(x, x.o ? '<div class="fd-nota">' + L("Exists with another method: ", "Existe con otro método: ") + x.o.map(function (id) { return "<code>" + esc(pieza(id)) + "</code>"; }).join(", ") + "</div>" : "", it);
           }) : ninguno())
-        : '<p class="fd-ok">Todas las llamadas con ruta tienen quién las atienda.</p>', true);
+        : '<p class="fd-ok">' + L("Every call with a route has something that handles it.", "Todas las llamadas con ruta tienen quién las atienda.") + "</p>", true);
     }
     if (ve("disputada")) {
       var disp = de("disputada");
-      if (disp.length) out += seccion("Coinciden con varios endpoints", disp.length, "<p><small>Coinciden con más de un endpoint y no se unieron a ninguno. Entre cerebros se resuelve declarando a qué servicio va cada base de URL (<code>flowbrain evidence</code>).</small></p>" +
-        listaCortada("disputadas", disp, function (it) { return llamada(it.x, '<div class="fd-nota">Candidatos: ' + it.x.k.map(function (k) { return "<code>" + esc(k) + "</code>"; }).join(", ") + "</div>", it); }), true);
+      if (disp.length) out += seccion(L("Match several endpoints", "Coinciden con varios endpoints"), disp.length, "<p><small>" + L("They match more than one endpoint and weren't linked to any. Between brains, fix it by declaring which service each base URL goes to (<code>flowbrain evidence</code>).", "Coinciden con más de un endpoint y no se unieron a ninguno. Entre cerebros se resuelve declarando a qué servicio va cada base de URL (<code>flowbrain evidence</code>).") + "</small></p>" +
+        listaCortada("disputadas", disp, function (it) { return llamada(it.x, '<div class="fd-nota">' + L("Candidates: ", "Candidatos: ") + it.x.k.map(function (k) { return "<code>" + esc(k) + "</code>"; }).join(", ") + "</div>", it); }), true);
     }
     if (ve("sinLlamadas")) {
       // Endpoints sin llamadas, por servicio, con quién lo llama.
@@ -183,44 +192,47 @@ export const CONTRATOS_JS = String.raw`
           if (S2.servicio && S2.servicio !== s) return "";
           var todos = d.sinLlamadas.filter(function (x) { return x.e.indexOf(s + ":") === 0; }), suyos = sinLl.filter(function (x) { return x.c === c && x.svc === s; }), cons = d.consumidores[s];
           if (filtrado && !suyos.length && cons.length) return "";
-          var cab = "<h4>" + esc(nombre(s)) + " <small>" + (cons.length ? "lo llaman " + cons.map(function (k) { return esc(porId[k] ? nombre(k) : k); }).join(", ") : "sin consumidores indexados") + "</small>" + (ds.length > 1 ? ' <span class="chip">' + esc(nombreCerebro(c)) + "</span>" : "") + "</h4>";
-          if (!cons.length) return cab + '<p class="aviso">Nadie indexado llama a este servicio, así que no se puede decir qué endpoints suyos no se usan. Falta indexar a quien lo consume, o activar la comunicación con su cerebro.</p>';
-          if (!todos.length) return cab + '<p class="fd-ok">Todos sus endpoints tienen al menos una llamada.</p>';
+          var cab = "<h4>" + esc(nombre(s)) + " <small>" + (cons.length ? L("called by ", "lo llaman ") + cons.map(function (k) { return esc(porId[k] ? nombre(k) : k); }).join(", ") : L("no indexed consumers", "sin consumidores indexados")) + "</small>" + (ds.length > 1 ? ' <span class="chip">' + esc(nombreCerebro(c)) + "</span>" : "") + "</h4>";
+          if (!cons.length) return cab + '<p class="aviso">' + L("Nothing indexed calls this service, so it's impossible to tell which of its endpoints are unused. Index whoever consumes it, or turn on communication with its brain.", "Nadie indexado llama a este servicio, así que no se puede decir qué endpoints suyos no se usan. Falta indexar a quien lo consume, o activar la comunicación con su cerebro.") + "</p>";
+          if (!todos.length) return cab + '<p class="fd-ok">' + L("All its endpoints have at least one call.", "Todos sus endpoints tienen al menos una llamada.") + "</p>";
           return cab + (suyos.length ? listaCortada("sinLlamadas:" + c + ":" + s, suyos, function (it) { return "<li><code>" + esc(pieza(it.x.e)) + "</code>" + (it.x.ev ? " <small><code>" + esc(it.x.ev) + "</code></small>" : "") + "</li>"; }) : ninguno());
         }).join("");
       }).join("");
       var hay = ds.some(function (d) { return Object.keys(d.consumidores).length; });
-      out += seccion("Endpoints que nadie llama", sinLl.length, hay ? "<p><small>Candidatos a borrar, o llamados por algo que no está indexado. Antes de borrar uno, revisá su impacto.</small></p>" + (porSvc || ninguno())
-        : '<p class="aviso">' + (ds.length > 1 ? "Estos cerebros no tienen" : "Este cerebro no tiene") + " servicios con endpoints: no hay nada que alguien pueda dejar de llamar.</p>", true);
+      out += seccion(L("Endpoints nobody calls", "Endpoints que nadie llama"), sinLl.length, hay ? "<p><small>" + L("Candidates for deletion, or called by something that isn't indexed. Before deleting one, check its impact.", "Candidatos a borrar, o llamados por algo que no está indexado. Antes de borrar uno, revisá su impacto.") + "</small></p>" + (porSvc || ninguno())
+        : '<p class="aviso">' + L((ds.length > 1 ? "These brains have" : "This brain has") + " no services with endpoints: there's nothing anyone could stop calling.", (ds.length > 1 ? "Estos cerebros no tienen" : "Este cerebro no tiene") + " servicios con endpoints: no hay nada que alguien pueda dejar de llamar.") + "</p>", true);
     }
-    if (ve("campos")) out += seccion("Campos que no coinciden", de("campos").length, camposHtml(ds, de("campos")), true);
+    if (ve("campos")) out += seccion(L("Mismatched fields", "Campos que no coinciden"), de("campos").length, camposHtml(ds, de("campos")), true);
     return out;
   }
   // Campos: lo que cada llamada unida manda y espera contra lo que declara el endpoint.
-  var ETIQUETAS = { mandaYElBackNoDeclara: "manda y el back no declara", requeridosQueNoManda: "requeridos que no manda", opcionalesQueElBackRequiere: "manda como opcionales y el back los requiere", esperaYNoViene: "espera y no vienen", opcionalesQueNoVienen: "opcionales que no vienen", distintoNombre: "distinto nombre" };
-  var LADOS = { cuerpo: "Cuerpo", query: "Query", respuesta: "Respuesta" };
+  // Tablas de etiquetas como funciones: se leen al pintar, en el idioma del momento.
+  var ETIQUETAS = function () { return { mandaYElBackNoDeclara: L("sent but not declared by the back end", "manda y el back no declara"), requeridosQueNoManda: L("required but not sent", "requeridos que no manda"), opcionalesQueElBackRequiere: L("sent as optional but required by the back end", "manda como opcionales y el back los requiere"), esperaYNoViene: L("expected but missing", "espera y no vienen"), opcionalesQueNoVienen: L("optional and missing", "opcionales que no vienen"), distintoNombre: L("different name", "distinto nombre") }; };
+  var LADOS = function () { return { cuerpo: L("Body", "Cuerpo"), query: "Query", respuesta: L("Response", "Respuesta") }; };
   function camposHtml(ds, dif) {
-    if (ds.every(function (d) { return !d.campos; })) return '<p class="aviso">Esta deriva no trae la comparación de campos: recompilá con una versión nueva de FlowBrain.</p>';
+    if (ds.every(function (d) { return !d.campos; })) return '<p class="aviso">' + L("This drift doesn't include the field comparison: recompile with a newer version of FlowBrain.", "Esta deriva no trae la comparación de campos: recompilá con una versión nueva de FlowBrain.") + "</p>";
     var unidas = 0, comparadas = 0, sinDif = 0, total = 0, noComp = [], viejo = [];
     ds.forEach(function (d) {
       if (!d.campos) return;
       unidas += d.campos.llamadasUnidas; comparadas += d.campos.comparadas; sinDif += d.campos.sinDiferencias; total += d.difieren.length;
       noComp = noComp.concat(d.campos.noComparables);
-      viejo = viejo.concat(d.avisos.filter(function (a) { return a.indexOf("no trae los campos") >= 0; }));
+      // El aviso viene del motor: se reconoce en los dos idiomas.
+      viejo = viejo.concat(d.avisos.filter(function (a) { return a.indexOf("no trae los campos") >= 0 || /\bfields of (the |its )?calls\b|\bcall fields\b/i.test(a); }));
     });
-    if (!unidas) return '<p class="aviso">Ninguna llamada ' + (ds.length > 1 ? "de estos cerebros" : "de este cerebro") + " está unida a un endpoint, así que no hay campos que comparar.</p>";
-    var resumen = "<p><small>" + plural(unidas, "llamada unida", "llamadas unidas") + " a un endpoint; " + plural(comparadas, "se comparó", "se compararon") + " (" + sinDif.toLocaleString("es") + " sin diferencias). Se compara el primer nivel del objeto, por nombre.</small></p>";
+    if (!unidas) return '<p class="aviso">' + L("No call " + (ds.length > 1 ? "from these brains" : "from this brain") + " is linked to an endpoint, so there are no fields to compare.", "Ninguna llamada " + (ds.length > 1 ? "de estos cerebros" : "de este cerebro") + " está unida a un endpoint, así que no hay campos que comparar.") + "</p>";
+    var resumen = "<p><small>" + L(plural(unidas, "call", "calls") + " linked to an endpoint; " + num(comparadas) + " compared (" + num(sinDif) + " with no differences). The object's first level is compared, by name.",
+      plural(unidas, "llamada unida", "llamadas unidas") + " a un endpoint; " + plural(comparadas, "se comparó", "se compararon") + " (" + num(sinDif) + " sin diferencias). Se compara el primer nivel del objeto, por nombre.") + "</small></p>";
     var filas = dif.length ? listaCortada("campos", dif, function (it) {
       var x = it.x;
       var notas = ["cuerpo", "query", "respuesta"].filter(function (k) { return x[k]; }).map(function (k) {
         var o = x[k];
-        var partes = Object.keys(ETIQUETAS).filter(function (e) { return o[e]; }).map(function (e) { return ETIQUETAS[e] + ": " + o[e].map(function (c) { return "<code>" + esc(c) + "</code>"; }).join(", "); });
-        return '<div class="fd-nota">' + LADOS[k] + " (<code>" + esc(o.front) + "</code> → <code>" + esc(o.back) + "</code>): " + partes.join(" · ") + "</div>";
+        var et = ETIQUETAS(), partes = Object.keys(et).filter(function (e) { return o[e]; }).map(function (e) { return et[e] + ": " + o[e].map(function (c) { return "<code>" + esc(c) + "</code>"; }).join(", "); });
+        return '<div class="fd-nota">' + LADOS()[k] + " (<code>" + esc(o.front) + "</code> → <code>" + esc(o.back) + "</code>): " + partes.join(" · ") + "</div>";
       }).join("");
-      return "<li><code>" + esc(x.l) + "</code> <small>→ <code>" + esc(x.c ? x.c + "/" + pieza(x.e) : pieza(x.e)) + "</code> · llama <code>" + esc(x.ev) + "</code> · atiende <code>" + esc(x.eb) + "</code></small>" + conCerebro(it) + notas + "</li>";
-    }) : total ? ninguno() : comparadas ? '<p class="fd-ok">En lo que se pudo comparar, lo que se manda y se espera coincide con lo que declara el back.</p>' : "";
+      return "<li><code>" + esc(x.l) + "</code> <small>→ <code>" + esc(x.c ? x.c + "/" + pieza(x.e) : pieza(x.e)) + "</code> · " + L("call", "llama") + " <code>" + esc(x.ev) + "</code> · " + L("handler", "atiende") + " <code>" + esc(x.eb) + "</code></small>" + conCerebro(it) + notas + "</li>";
+    }) : total ? ninguno() : comparadas ? '<p class="fd-ok">' + L("In what could be compared, what's sent and expected matches what the back end declares.", "En lo que se pudo comparar, lo que se manda y se espera coincide con lo que declara el back.") + "</p>" : "";
     var nc = noComp.length
-      ? '<h4>No se pudieron comparar <small>no cuentan como coincidencia</small></h4><ul class="lista">' + noComp.map(function (n) { return "<li>" + LADOS[n.lado] + ": " + esc(n.motivo) + " <small>" + plural(n.llamadas, "llamada", "llamadas") + (n.tipos ? " · " + n.tipos.map(function (t) { return "<code>" + esc(t) + "</code>"; }).join(", ") : "") + "</small></li>"; }).join("") + "</ul>"
+      ? "<h4>" + L("Couldn't be compared <small>they don't count as a match</small>", "No se pudieron comparar <small>no cuentan como coincidencia</small>") + '</h4><ul class="lista">' + noComp.map(function (n) { return "<li>" + LADOS()[n.lado] + ": " + esc(n.motivo) + " <small>" + plural(n.llamadas, L("call", "llamada"), L("calls", "llamadas")) + (n.tipos ? " · " + n.tipos.map(function (t) { return "<code>" + esc(t) + "</code>"; }).join(", ") : "") + "</small></li>"; }).join("") + "</ul>"
       : "";
     // Un índice anterior no trae lo que manda cada llamada: que se lea acá, no solo en los avisos.
     return (viejo.length ? '<p class="aviso">' + esc(viejo[0]) + "</p>" : "") + resumen + filas + nc;
@@ -284,12 +296,13 @@ export const CONTRATOS_JS = String.raw`
     return { entre: entre, endpoints: comparar("endpoint"), pantallas: comparar("pantalla"), tablasSinMigrar: sinPar(tablasSvc(viejo), tablasSvc(nuevo), tabla) };
   }
   // Para los tests: la misma cuenta que hace la pantalla.
-  var rotulo = function (n) { var c = cerebroDe(n.id); return (c && CEREBROS.length > 1 ? c + " · " : "") + n.n + " (" + plural(piezas(n.id, "endpoint").length, "endpoint", "endpoints") + (piezas(n.id, "pantalla").length ? ", " + plural(piezas(n.id, "pantalla").length, "pantalla", "pantallas") : "") + ")"; };
+  var rotulo = function (n) { var c = cerebroDe(n.id); return (c && CEREBROS.length > 1 ? c + " · " : "") + n.n + " (" + plural(piezas(n.id, "endpoint").length, "endpoint", "endpoints") + (piezas(n.id, "pantalla").length ? ", " + plural(piezas(n.id, "pantalla").length, L("screen", "pantalla"), L("screens", "pantallas")) : "") + ")"; };
   // ---------- Paridad con filtro y estadística ----------
   // Cada pieza de la comparación es un ítem: lo que falta migrar, lo migrado que toca otras tablas, lo que solo está en el
   // nuevo y las tablas que el nuevo todavía no toca.
-  var TIPOS_P = [["falta", "Faltan migrar"], ["difiere", "Tocan tablas distintas"], ["solo", "Solo en el nuevo"], ["tabla", "Tablas sin migrar"]];
-  var CLASE = { endpoint: "Endpoint", pantalla: "Pantalla", tabla: "Tabla" };
+  var TIPOS_P = function () { return [["falta", L("Not migrated yet", "Faltan migrar")], ["difiere", L("Touch different tables", "Tocan tablas distintas")], ["solo", L("Only in the new one", "Solo en el nuevo")], ["tabla", L("Tables not migrated", "Tablas sin migrar")]]; };
+  var tipoP = function (id) { var t = TIPOS_P().filter(function (x) { return x[0] === id; })[0]; return t ? t[1] : id; };
+  var CLASE = function () { return { endpoint: "Endpoint", pantalla: L("Screen", "Pantalla"), tabla: L("Table", "Tabla") }; };
   var prefijoDe = function (texto) { var r = String(texto).replace(/^[A-Z]+ /, ""), m = /^\/([^/]*)/.exec(r); return m ? "/" + m[1] : ""; };
   var PAR = { k: "", r: null, items: [] };
   function comparacion() {
@@ -308,66 +321,69 @@ export const CONTRATOS_JS = String.raw`
     return PAR;
   }
   var flP = window.brainFiltros.crear({
-    pre: "ct", clave: "flowbrain.contratos.paridad", unidad: ["pieza", "piezas", "f"], todos: "todo lo que difiere entre los dos",
+    pre: "ct", clave: "flowbrain.contratos.paridad", unidad: function () { return L(["piece", "pieces"], ["pieza", "piezas", "f"]); }, todos: function () { return L("everything that differs between the two", "todo lo que difiere entre los dos"); },
     items: function () { return comparacion().items; },
-    grupos: [{ id: "", etiqueta: "Todo" }].concat(TIPOS_P.map(function (t) { return { id: t[0], etiqueta: t[1], palabra: t[1].toLowerCase(), es: function (x) { return x.t === t[0]; } }; })),
-    buscar: { ph: "Buscar una ruta o una tabla…", texto: function (x) { return x.texto; } },
+    grupos: [{ id: "", etiqueta: function () { return L("All", "Todo"); } }].concat(TIPOS_P().map(function (t) { return { id: t[0], etiqueta: function () { return tipoP(t[0]); }, palabra: function () { return tipoP(t[0]).toLowerCase(); }, es: function (x) { return x.t === t[0]; } }; })),
+    buscar: { ph: function () { return L("Search a route or a table…", "Buscar una ruta o una tabla…"); }, texto: function (x) { return x.texto; } },
     campos: [
-      { id: "clase", etiqueta: "Tipo", propio: "el tipo elegido", de: function (x) { return x.clase; }, etiquetaDe: function (v) { return CLASE[v] || v; }, palabra: function (v) { return "solo " + (CLASE[v] || v).toLowerCase() + "s"; } },
-      { id: "metodo", etiqueta: "Método", propio: "el método elegido", ordenPorCantidad: true, de: function (x) { return x.m; }, palabra: function (v) { return "método " + v; } },
-      { id: "prefijo", etiqueta: "Ruta que empieza con", todos: "Cualquiera", propio: "el prefijo elegido", ordenPorCantidad: true, de: function (x) { return x.pre; }, palabra: function (v) { return "ruta " + v; } }
+      { id: "clase", etiqueta: function () { return L("Type", "Tipo"); }, propio: function () { return L("the chosen type", "el tipo elegido"); }, de: function (x) { return x.clase; }, etiquetaDe: function (v) { return CLASE()[v] || v; }, palabra: function (v) { return L("only ", "solo ") + (CLASE()[v] || v).toLowerCase() + "s"; } },
+      { id: "metodo", etiqueta: function () { return L("Method", "Método"); }, propio: function () { return L("the chosen method", "el método elegido"); }, ordenPorCantidad: true, de: function (x) { return x.m; }, palabra: function (v) { return L("method ", "método ") + v; } },
+      { id: "prefijo", etiqueta: function () { return L("Route starting with", "Ruta que empieza con"); }, todos: function () { return L("Any", "Cualquiera"); }, propio: function () { return L("the chosen prefix", "el prefijo elegido"); }, ordenPorCantidad: true, de: function (x) { return x.pre; }, palabra: function (v) { return L("route ", "ruta ") + v; } }
     ],
     paneles: [
-      { titulo: "Por tipo", campo: "clase" },
-      { titulo: "Por método", campo: "metodo", sinValor: "pantallas y tablas no tienen método" },
-      { titulo: "Por comienzo de la ruta", campo: "prefijo", max: 8 }
+      { titulo: function () { return L("By type", "Por tipo"); }, campo: "clase" },
+      { titulo: function () { return L("By method", "Por método"); }, campo: "metodo", sinValor: function () { return L("screens and tables have no method", "pantallas y tablas no tienen método"); } },
+      { titulo: function () { return L("By route prefix", "Por comienzo de la ruta"); }, campo: "prefijo", max: 8 }
     ],
     alCambiar: function (todo) { refrescar(todo); }
   });
-  var accesos = function (xs) { return xs.map(function (a) { var i = a.indexOf(" "); return (a.slice(0, i) === "lee_de" ? "lee " : "escribe en ") + "<code>" + esc(nombre(a.slice(i + 1))) + "</code>"; }).join(", "); };
+  var accesos = function (xs) { return xs.map(function (a) { var i = a.indexOf(" "); return (a.slice(0, i) === "lee_de" ? L("reads ", "lee ") : L("writes to ", "escribe en ")) + "<code>" + esc(nombre(a.slice(i + 1))) + "</code>"; }).join(", "); };
+  // que, uno y varios llegan ya en el idioma del momento (se arman al pintar).
   function bloque(que, clase, uno, varios, r, xs) {
+    var k = clase === "endpoint" ? "Endpoints" : "Pantallas"; // clave fija de las listas, en cualquier idioma
     if (!r.viejo && !r.nuevo) return "";
     var pct = r.viejo ? Math.round((100 * r.migrados) / r.viejo) : 0, S2 = flP.S(), ve = function (t) { return !S2.grupo || S2.grupo === t; };
     var de = function (t) { return xs.filter(function (x) { return x.clase === clase && x.t === t; }); };
     var faltan = de("falta"), solo = de("solo"), dif = de("difiere");
     var item = function (x) { return "<li><code>" + esc(pieza(x.id)) + "</code></li>"; };
-    var vacio = function (n, texto) { return n ? '<p class="aviso">Ninguno coincide con ' + esc(flP.activos().join(", ")) + ".</p>" : '<p class="fd-ok">' + texto + "</p>"; };
+    var vacio = function (n, texto) { return n ? '<p class="aviso">' + L("Nothing matches ", "Ninguno coincide con ") + esc(flP.activos().join(", ")) + ".</p>" : '<p class="fd-ok">' + texto + "</p>"; };
     return "<h2>" + que + "</h2>" +
-      '<div class="fd-cifras">' + cifra(r.migrados + " de " + r.viejo.toLocaleString("es"), varios + " ya están del otro lado (" + pct + " %)", pct === 100 ? "var(--bien)" : "") +
-      cifra(r.faltan.length, "faltan migrar", r.faltan.length ? "var(--atencion)" : "var(--bien)") + cifra(r.soloEnNuevo.length, "solo en el nuevo") +
-      (clase === "endpoint" ? cifra(r.difieren.length, "migrados que tocan tablas distintas", r.difieren.length ? "var(--atencion)" : "") : "") + "</div>" +
-      '<div class="fd-pista ct-barra" role="img" aria-label="' + pct + ' % migrado"><span class="fd-relleno" style="width:' + pct + '%;background:var(--bien)"></span></div>' +
-      (ve("falta") ? seccion("Faltan migrar", faltan.length, faltan.length ? listaCortada(que + ":faltan", faltan, item) : vacio(r.faltan.length, "No falta ninguno: todos los " + varios + " del viejo están en el nuevo."), faltan.length > 0 && faltan.length <= 40) : "") +
-      (ve("difiere") && r.difieren.length ? seccion("Migrados que tocan tablas distintas", dif.length,
-        "<p><small>El mismo " + uno + " de cada lado no lee o escribe las mismas tablas: puede ser un cambio buscado o algo que quedó sin migrar.</small></p>" +
-        (dif.length ? listaCortada(que + ":difieren", dif, function (it) {
+      '<div class="fd-cifras">' + cifra(num(r.migrados) + L(" of ", " de ") + num(r.viejo), L(varios + " already on the other side (" + pct + " %)", varios + " ya están del otro lado (" + pct + " %)"), pct === 100 ? "var(--bien)" : "") +
+      cifra(r.faltan.length, L("not migrated yet", "faltan migrar"), r.faltan.length ? "var(--atencion)" : "var(--bien)") + cifra(r.soloEnNuevo.length, L("only in the new one", "solo en el nuevo")) +
+      (clase === "endpoint" ? cifra(r.difieren.length, L("migrated but touching different tables", "migrados que tocan tablas distintas"), r.difieren.length ? "var(--atencion)" : "") : "") + "</div>" +
+      '<div class="fd-pista ct-barra" role="img" aria-label="' + pct + L(' % migrated', ' % migrado') + '"><span class="fd-relleno" style="width:' + pct + '%;background:var(--bien)"></span></div>' +
+      (ve("falta") ? seccion(L("Not migrated yet", "Faltan migrar"), faltan.length, faltan.length ? listaCortada(k + ":faltan", faltan, item) : vacio(r.faltan.length, L("Nothing missing: all the old one's " + varios + " are in the new one.", "No falta ninguno: todos los " + varios + " del viejo están en el nuevo.")), faltan.length > 0 && faltan.length <= 40) : "") +
+      (ve("difiere") && r.difieren.length ? seccion(L("Migrated but touching different tables", "Migrados que tocan tablas distintas"), dif.length,
+        "<p><small>" + L("The same " + uno + " on each side doesn't read or write the same tables: it may be an intended change or something left unmigrated.", "El mismo " + uno + " de cada lado no lee o escribe las mismas tablas: puede ser un cambio buscado o algo que quedó sin migrar.") + "</small></p>" +
+        (dif.length ? listaCortada(k + ":difieren", dif, function (it) {
           var x = it.x;
           return "<li><code>" + esc(pieza(x.viejo)) + "</code>" +
-            (x.soloViejo.length ? '<div class="fd-nota">Solo el viejo ' + accesos(x.soloViejo) + "</div>" : "") +
-            (x.soloNuevo.length ? '<div class="fd-nota">Solo el nuevo ' + accesos(x.soloNuevo) + "</div>" : "") + "</li>";
+            (x.soloViejo.length ? '<div class="fd-nota">' + L("Only the old one ", "Solo el viejo ") + accesos(x.soloViejo) + "</div>" : "") +
+            (x.soloNuevo.length ? '<div class="fd-nota">' + L("Only the new one ", "Solo el nuevo ") + accesos(x.soloNuevo) + "</div>" : "") + "</li>";
         }) : vacio(1, "")), false) : "") +
-      (ve("solo") ? seccion("Solo en el nuevo", solo.length, solo.length ? listaCortada(que + ":solo", solo, item) : vacio(r.soloEnNuevo.length, "El nuevo no tiene " + varios + " que el viejo no tenga."), false) : "");
+      (ve("solo") ? seccion(L("Only in the new one", "Solo en el nuevo"), solo.length, solo.length ? listaCortada(k + ":solo", solo, item) : vacio(r.soloEnNuevo.length, L("The new one has no " + varios + " the old one lacks.", "El nuevo no tiene " + varios + " que el viejo no tenga.")), false) : "");
   }
   function listaParidad() {
     var P2 = comparacion(), r = P2.r, xs = flP.filtrar(), S2 = flP.S();
     var tsm = xs.filter(function (x) { return x.t === "tabla"; });
-    return flP.resultado(xs) + bloque("Endpoints", "endpoint", "endpoint", "endpoints", r.endpoints, xs) + bloque("Pantallas", "pantalla", "pantalla", "pantallas", r.pantallas, xs) +
-      (!S2.grupo || S2.grupo === "tabla" ? "<h2>Tablas</h2>" + seccion("Tablas que el nuevo todavía no toca", tsm.length,
+    return flP.resultado(xs) + bloque("Endpoints", "endpoint", "endpoint", "endpoints", r.endpoints, xs) + bloque(L("Screens", "Pantallas"), "pantalla", L("screen", "pantalla"), L("screens", "pantallas"), r.pantallas, xs) +
+      (!S2.grupo || S2.grupo === "tabla" ? "<h2>" + L("Tables", "Tablas") + "</h2>" + seccion(L("Tables the new one doesn't touch yet", "Tablas que el nuevo todavía no toca"), tsm.length,
         tsm.length ? listaCortada("tablas", tsm, function (x) { return "<li><code>" + esc(nombre(x.id)) + "</code></li>"; })
-          : r.tablasSinMigrar.length ? '<p class="aviso">Ninguna coincide con ' + esc(flP.activos().join(", ")) + ".</p>" : '<p class="fd-ok">El nuevo ya toca todas las tablas que toca el viejo.</p>', tsm.length > 0 && tsm.length <= 40) : "") +
-      '<p class="aviso">Se empareja por método y ruta, sin importar el nombre de los parámetros: algo renombrado figura como faltante de un lado y nuevo del otro. No compara comportamiento.' +
-      (r.entre ? " Los dos servicios están en cerebros distintos: las tablas se comparan por nombre, sin guiones ni mayúsculas." : "") + "</p>";
+          : r.tablasSinMigrar.length ? '<p class="aviso">' + L("Nothing matches ", "Ninguna coincide con ") + esc(flP.activos().join(", ")) + ".</p>" : '<p class="fd-ok">' + L("The new one already touches every table the old one touches.", "El nuevo ya toca todas las tablas que toca el viejo.") + "</p>", tsm.length > 0 && tsm.length <= 40) : "") +
+      '<p class="aviso">' + L("Matched by method and route, regardless of parameter names: something renamed shows up as missing on one side and new on the other. Behavior isn't compared.", "Se empareja por método y ruta, sin importar el nombre de los parámetros: algo renombrado figura como faltante de un lado y nuevo del otro. No compara comportamiento.") +
+      (r.entre ? L(" The two services are in different brains: tables are compared by name, ignoring dashes and case.", " Los dos servicios están en cerebros distintos: las tablas se comparan por nombre, sin guiones ni mayúsculas.") : "") + "</p>";
   }
   function vistaParidad() {
     if (SERVICIOS.length < 2) {
-      return '<p class="aviso">Para comparar hacen falta dos servicios con endpoints o pantallas, y ' + (SERVICIOS.length ? "solo hay uno (" + esc(SERVICIOS[0].n) + ")" : "no hay ninguno") + ". La paridad compara el servicio que se reemplaza con el que lo reemplaza.</p>";
+      return '<p class="aviso">' + L("Comparing needs two services with endpoints or screens, and " + (SERVICIOS.length ? "there's only one (" + esc(SERVICIOS[0].n) + ")" : "there are none") + ". Parity compares the service being replaced with the one replacing it.",
+        "Para comparar hacen falta dos servicios con endpoints o pantallas, y " + (SERVICIOS.length ? "solo hay uno (" + esc(SERVICIOS[0].n) + ")" : "no hay ninguno") + ". La paridad compara el servicio que se reemplaza con el que lo reemplaza.") + "</p>";
     }
-    var ops = function (actual) { return '<option value="">Elegí un servicio…</option>' + SERVICIOS.map(function (n) { return '<option value="' + esc(n.id) + '"' + (n.id === actual ? " selected" : "") + ">" + esc(rotulo(n)) + "</option>"; }).join(""); };
-    var elegir = '<div class="ct-par"><label class="fd-campo" for="ct-viejo"><span class="lbl">El que se reemplaza</span><select id="ct-viejo">' + ops(S.viejo) + "</select></label>" +
-      '<button type="button" class="boton" data-acc="invertir" title="Dar vuelta la comparación"' + (S.viejo && S.nuevo ? "" : " disabled") + ">⇄ Invertir</button>" +
-      '<label class="fd-campo" for="ct-nuevo"><span class="lbl">El que lo reemplaza</span><select id="ct-nuevo">' + ops(S.nuevo) + "</select></label></div>";
-    if (!porId[S.viejo] || !porId[S.nuevo]) return elegir + '<p class="aviso">Elegí los dos servicios: el que se está reemplazando y el que lo reemplaza. Se comparan por método y ruta, y por las tablas que toca cada endpoint.</p>';
-    if (S.viejo === S.nuevo) return elegir + '<p class="aviso">Elegiste el mismo servicio de los dos lados: no hay nada que comparar.</p>';
+    var ops = function (actual) { return '<option value="">' + L("Choose a service…", "Elegí un servicio…") + "</option>" + SERVICIOS.map(function (n) { return '<option value="' + esc(n.id) + '"' + (n.id === actual ? " selected" : "") + ">" + esc(rotulo(n)) + "</option>"; }).join(""); };
+    var elegir = '<div class="ct-par"><label class="fd-campo" for="ct-viejo"><span class="lbl">' + L("The one being replaced", "El que se reemplaza") + '</span><select id="ct-viejo">' + ops(S.viejo) + "</select></label>" +
+      '<button type="button" class="boton" data-acc="invertir" title="' + L("Swap the comparison", "Dar vuelta la comparación") + '"' + (S.viejo && S.nuevo ? "" : " disabled") + ">⇄ " + L("Swap", "Invertir") + "</button>" +
+      '<label class="fd-campo" for="ct-nuevo"><span class="lbl">' + L("The one replacing it", "El que lo reemplaza") + '</span><select id="ct-nuevo">' + ops(S.nuevo) + "</select></label></div>";
+    if (!porId[S.viejo] || !porId[S.nuevo]) return elegir + '<p class="aviso">' + L("Choose both services: the one being replaced and the one replacing it. They're compared by method and route, and by the tables each endpoint touches.", "Elegí los dos servicios: el que se está reemplazando y el que lo reemplaza. Se comparan por método y ruta, y por las tablas que toca cada endpoint.") + "</p>";
+    if (S.viejo === S.nuevo) return elegir + '<p class="aviso">' + L("You chose the same service on both sides: there's nothing to compare.", "Elegiste el mismo servicio de los dos lados: no hay nada que comparar.") + "</p>";
     return elegir + flP.html() + '<div id="ct-lista">' + listaParidad() + "</div>";
   }
 
@@ -375,12 +391,12 @@ export const CONTRATOS_JS = String.raw`
   var actual = function () { return S.tab === "deriva" ? flD : flP; };
   function pintar() {
     // Igual que en Impacto: título, para qué sirve la pantalla, y las sub-vistas como pestañas subrayadas (los chips filtran).
-    var tabs = '<nav class="pestanas" role="tablist" aria-label="Qué ver">' +
-      [["deriva", "Deriva: llamadas rotas y endpoints sin uso"], ["paridad", "Paridad de una migración"]].map(function (t) { return '<button type="button" role="tab" class="pestana' + (S.tab === t[0] ? " on" : "") + '" data-tab="' + t[0] + '" aria-selected="' + (S.tab === t[0]) + '">' + t[1] + "</button>"; }).join("") + "</nav>";
+    var tabs = '<nav class="pestanas" role="tablist" aria-label="' + L("What to show", "Qué ver") + '">' +
+      [["deriva", L("Drift: broken calls and unused endpoints", "Deriva: llamadas rotas y endpoints sin uso")], ["paridad", L("Migration parity", "Paridad de una migración")]].map(function (t) { return '<button type="button" role="tab" class="pestana' + (S.tab === t[0] ? " on" : "") + '" data-tab="' + t[0] + '" aria-selected="' + (S.tab === t[0]) + '">' + t[1] + "</button>"; }).join("") + "</nav>";
     var que = S.tab === "deriva"
-      ? '<p class="explica">Lo que se llama y nadie atiende, y lo que se atiende y nadie llama. Sirve para encontrar integraciones rotas y endpoints que se pueden borrar.</p>'
-      : '<p class="explica">Qué falta para que un servicio reemplace a otro: qué endpoints y pantallas ya están del otro lado, cuáles no, y en cuáles cambian las tablas.</p>';
-    raiz.innerHTML = "<h1>Contratos</h1>" + '<p class="subtitulo">Cómo se hablan los servicios: qué llama cada front o back y quién lo atiende, comparando método, ruta y campos.</p>' + tabs + que + (S.tab === "deriva" ? vistaDeriva() : vistaParidad());
+      ? '<p class="explica">' + L("What gets called and nobody handles, and what gets handled and nobody calls. Use it to find broken integrations and endpoints you can delete.", "Lo que se llama y nadie atiende, y lo que se atiende y nadie llama. Sirve para encontrar integraciones rotas y endpoints que se pueden borrar.") + "</p>"
+      : '<p class="explica">' + L("What's missing for one service to replace another: which endpoints and screens are already on the other side, which aren't, and which change tables.", "Qué falta para que un servicio reemplace a otro: qué endpoints y pantallas ya están del otro lado, cuáles no, y en cuáles cambian las tablas.") + "</p>";
+    raiz.innerHTML = "<h1>" + L("Contracts", "Contratos") + "</h1>" + '<p class="subtitulo">' + L("How services talk to each other: what each front end or back end calls and who handles it, comparing method, route and fields.", "Cómo se hablan los servicios: qué llama cada front o back y quién lo atiende, comparando método, ruta y campos.") + "</p>" + tabs + que + (S.tab === "deriva" ? vistaDeriva() : vistaParidad());
   }
   // Al buscar se repinta solo la lista (el buscador no pierde el foco); si no está, la vista entera.
   function refrescar(todo) {

@@ -65,14 +65,14 @@ const HERRAMIENTAS: Record<string, (ctx: Contexto, a: never) => unknown> = {
 export function leerPreguntas(texto: string): Pregunta[] {
   const j = JSON.parse(texto) as { preguntas?: unknown } | unknown[];
   const lista = Array.isArray(j) ? j : (j as { preguntas?: unknown }).preguntas;
-  if (!Array.isArray(lista)) throw new ConsultaError("parametro_invalido", "el archivo de preguntas debe ser una lista o { preguntas: [...] }");
+  if (!Array.isArray(lista)) throw new ConsultaError("parametro_invalido", "the questions file must be a list or { preguntas: [...] }");
   const ids = new Set<string>();
   return lista.map((p, i) => {
     const q = p as Partial<Pregunta>;
     if (typeof q.id !== "string" || typeof q.herramienta !== "string" || typeof q.args !== "object" || q.args === null) {
-      throw new ConsultaError("parametro_invalido", `pregunta ${i + 1}: requiere id, herramienta y args`);
+      throw new ConsultaError("parametro_invalido", `question ${i + 1}: requires id, herramienta and args`);
     }
-    if (!(q.herramienta in HERRAMIENTAS)) throw new ConsultaError("parametro_invalido", `pregunta ${q.id}: herramienta desconocida ${q.herramienta}`);
+    if (!(q.herramienta in HERRAMIENTAS)) throw new ConsultaError("parametro_invalido", `question ${q.id}: unknown herramienta ${q.herramienta}`);
     if (ids.has(q.id)) throw new ConsultaError("parametro_invalido", `pregunta repetida: ${q.id}`);
     ids.add(q.id);
     return { pregunta: q.id, espera: [], noEspera: [], ...q } as Pregunta;

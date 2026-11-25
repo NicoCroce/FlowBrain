@@ -48,7 +48,7 @@ export async function hookUserPromptSubmit(
 
 import { PREFIJO_NOTA } from "./reglas.js";
 export * from "./reglas.js";
-export const INSTRUCCION_NOTA = `Si algo de esto contradice el código, escribí en tu respuesta una línea \`${PREFIJO_NOTA} <id-del-nodo>: <qué cambió>\`.`;
+export const INSTRUCCION_NOTA = `If any of this contradicts the code, write a line \`${PREFIJO_NOTA} <node-id>: <what changed>\` in your answer.`;
 
 export interface Nota {
   id: string;
@@ -99,7 +99,7 @@ export async function anotar(raizBrain: string, notas: Nota[], fuente: string): 
   for (const [id, lineas] of [...porId].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
     const ruta = archivoNota(id);
     const destino = join(raizBrain, ruta);
-    const previo = await readFile(destino, "utf8").catch(() => `# Notas sobre \`${id}\`\n\n`);
+    const previo = await readFile(destino, "utf8").catch(() => `# Notes on \`${id}\`\n\n`);
     const existentes = new Set(previo.split("\n"));
     const nuevas = [...new Set(lineas)].filter((l) => !existentes.has(l));
     if (nuevas.length === 0) continue;
@@ -119,5 +119,5 @@ export interface EntradaSessionEnd {
 export async function hookSessionEnd(entrada: EntradaSessionEnd, raizBrain: string): Promise<string[]> {
   if (!entrada.transcript_path) return [];
   const notas = notasDeTranscript(await readFile(entrada.transcript_path, "utf8"));
-  return anotar(raizBrain, notas, `sesión ${entrada.session_id ?? basename(entrada.transcript_path, ".jsonl")}`);
+  return anotar(raizBrain, notas, `session ${entrada.session_id ?? basename(entrada.transcript_path, ".jsonl")}`);
 }

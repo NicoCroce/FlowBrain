@@ -59,7 +59,7 @@ describe("infra: Kubernetes", () => {
     expect(items(ctx, { nodo: "svc-api:POST:/api/pedidos" }).map((i) => i.nombre)).toEqual(["Ingress tienda tienda.example.com/api"]);
     // La raíz deriva a `web`, que no tiene página: queda en el repo del manifiesto (su único servicio) y lo dice.
     expect(items(ctx, { texto: "web no tiene" }).map((i) => i.detalle)).toEqual([["web no tiene página en el brain: sus rutas no se unen a endpoints"]]);
-    expect((infra(ctx, { nodo: "svc-api:GET:/salud", texto: "/api" }) as { avisos: string[] }).avisos).toEqual(["ninguna ruta de Ingress, evento http ni route_key declarados en los repos llega a este endpoint"]);
+    expect((infra(ctx, { nodo: "svc-api:GET:/salud", texto: "/api" }) as { avisos: string[] }).avisos).toEqual(["no Ingress route, http event or route_key declared in the repos reaches this endpoint"]);
   });
 });
 

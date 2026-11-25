@@ -382,7 +382,7 @@ export function simboloDeLinea(e: EstructuraArchivo, linea: number): EstructuraA
 }
 
 const PARECE_REPOSITORIO = /repositor|[/.-]dao[/.]|[.-]sql\.|Repository\.php$/i;
-export const AVISO_SIN_TABLA = "no se detectó a qué tabla accede (posible SQL armado a mano o tabla dinámica)";
+export const AVISO_SIN_TABLA = "could not detect which table it accesses (possibly hand-built SQL or a dynamic table)";
 
 /** Marca los pasos de repositorio que no tocan ninguna tabla, ni ellos ni lo que llaman: el silencio no es "no toca nada". */
 function marcarHuecos(pasos: Paso[]): Paso[] {

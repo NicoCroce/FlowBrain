@@ -117,15 +117,15 @@ export function tamanioDeTanda(n: number): number {
 /** El texto que recibe el agente: la guía del tipo de pedido, con el pedido en lugar de `$ARGUMENTS`. */
 export function indicacionesDelPedido(tipo: TipoDePedido, pedido: string): string {
   const guia = (tipo === "test" ? GUIA_TESTS : GUIA_ESPECIFICACIONES).replace(/^---\n[\s\S]*?\n---\n/, "");
-  return guia.replace("$ARGUMENTS", `Lo que pide la persona, desde el visor de FlowBrain:\n\n${pedido.trim()}\n`);
+  return guia.replace("$ARGUMENTS", `What the person asks for, from the FlowBrain viewer:\n\n${pedido.trim()}\n`);
 }
 
 /** El pedido de una tanda: las reglas y cómo tiene que responder (el servidor anota; el agente no toca las páginas). */
 export function pedidoDeTanda(reglas: ReglaDePedido[], repo: string, n: number, de: number): string {
   return [
-    `Resolvé ${reglas.length === 1 ? "esta regla" : `estas ${reglas.length} reglas`} de FlowBrain (repo ${repo}${de > 1 ? `, tanda ${n} de ${de}` : ""}), siguiendo la guía.`,
-    "Es un pedido del visor: NO edites las páginas de las funcionalidades ni compiles; el servidor anota los tests y los hallazgos a partir de lo que respondas. NUNCA cambies el código del producto, ni dejes un test que falla en el repo.",
-    "Cada regla termina en uno de los cuatro resultados (a, b, c, d) de la guía. Al final respondé con el bloque `flowbrain-resultados` de la guía, con una entrada por regla (cerebro, funcionalidad y regla tal cual figuran abajo).",
+    `Resolve ${reglas.length === 1 ? "this FlowBrain rule" : `these ${reglas.length} FlowBrain rules`} (repo ${repo}${de > 1 ? `, batch ${n} of ${de}` : ""}), following the guide.`,
+    "This is a request from the viewer: do NOT edit the feature pages or compile; the server records the tests and findings from your answer. NEVER change the product code, and never leave a failing test in the repo.",
+    "Each rule ends in one of the four outcomes (a, b, c, d) from the guide. At the end, answer with the guide's `flowbrain-resultados` block, with one entry per rule (cerebro, funcionalidad and regla exactly as they appear below).",
     "",
     ...reglas.map((r) => r.linea),
   ].join("\n");
@@ -135,14 +135,14 @@ export function pedidoDeTanda(reglas: ReglaDePedido[], repo: string, n: number, 
 export function extraerResultados(texto: string): { resultados: ResultadoDeRegla[]; errores: string[] } {
   const bloques = [...texto.matchAll(/```flowbrain-resultados\s*\n([\s\S]*?)```/g)];
   const ultimo = bloques[bloques.length - 1];
-  if (!ultimo) return { resultados: [], errores: ["la respuesta no trae el bloque flowbrain-resultados"] };
+  if (!ultimo) return { resultados: [], errores: ["the answer has no flowbrain-resultados block"] };
   let lista: unknown;
   try {
     lista = JSON.parse(ultimo[1]!);
   } catch (e) {
-    return { resultados: [], errores: [`el bloque flowbrain-resultados no es JSON válido: ${(e as Error).message}`] };
+    return { resultados: [], errores: [`the flowbrain-resultados block is not valid JSON: ${(e as Error).message}`] };
   }
-  if (!Array.isArray(lista)) return { resultados: [], errores: ["el bloque flowbrain-resultados tiene que ser una lista"] };
+  if (!Array.isArray(lista)) return { resultados: [], errores: ["the flowbrain-resultados block must be a list"] };
   const texto1 = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
   const resultados: ResultadoDeRegla[] = [];
   const errores: string[] = [];
@@ -150,18 +150,18 @@ export function extraerResultados(texto: string): { resultados: ResultadoDeRegla
     const cerebro = texto1(x?.["cerebro"], 200), funcionalidad = texto1(x?.["funcionalidad"], 200), regla = texto1(x?.["regla"], 200);
     const r = typeof x?.["resultado"] === "string" ? x["resultado"].trim().toLowerCase() : "";
     if (!cerebro || !funcionalidad || !regla || !["a", "b", "c", "d"].includes(r)) {
-      errores.push(`entrada inválida: ${JSON.stringify(x).slice(0, 120)}`);
+      errores.push(`invalid entry: ${JSON.stringify(x).slice(0, 120)}`);
       continue;
     }
     const id = `${cerebro}/${funcionalidad}/${regla}`;
     const tests = Array.isArray(x["tests"]) ? (x["tests"] as unknown[]).filter((t): t is string => typeof t === "string").map((t) => t.trim()) : [];
     const cambio = texto1(x["cambio"], 1200) ?? texto1(x["ajuste"], 1200);
     if ((r === "a" || r === "b") && (!tests.length || tests.some((t) => !TEST_REF.test(t)))) {
-      errores.push(`${id}: el resultado ${r} necesita los tests como repo-x:ruta::nombre del caso`);
+      errores.push(`${id}: outcome ${r} needs the tests as repo-x:path::test case name`);
       continue;
     }
     if ((r === "c" || r === "d") && !cambio) {
-      errores.push(`${id}: el resultado ${r} necesita decir qué habría que cambiar`);
+      errores.push(`${id}: outcome ${r} needs to say what would have to change`);
       continue;
     }
     resultados.push({ cerebro, funcionalidad, regla, resultado: r as ResultadoDeTest, ...(tests.length ? { tests } : {}), ...(texto1(x["hoy"], 1200) ? { hoy: texto1(x["hoy"], 1200)! } : {}), ...(cambio ? { cambio } : {}), ...(texto1(x["test"], 4000) ? { test: texto1(x["test"], 4000)! } : {}) });
@@ -206,15 +206,15 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
   const instalados = () => adaptadores.filter((a) => a.detectar().instalado);
   const noDisponible = () => {
     if (instalados().length) return null;
-    return adaptadores.map((a) => a.detectar().motivo).filter(Boolean)[0] ?? "no hay ningún agente instalado en esta máquina: instalá Claude Code, o copiá el pedido y pegáselo a tu agente";
+    return adaptadores.map((a) => a.detectar().motivo).filter(Boolean)[0] ?? "no agent is installed on this machine: install Claude Code, or copy the request and paste it into your agent";
   };
   const elegir = (proveedor?: string, modelo?: string) => {
     const a = proveedor ? adaptadores.find((x) => x.id === proveedor) : instalados()[0];
-    if (!a) throw new ConsultaError("parametro_invalido", proveedor ? `no existe el proveedor ${proveedor}` : "no hay ningún agente instalado");
+    if (!a) throw new ConsultaError("parametro_invalido", proveedor ? `no such provider: ${proveedor}` : "no agent is installed");
     const det = a.detectar();
-    if (!det.instalado) throw new ConsultaError("parametro_invalido", det.motivo ?? `${a.nombre} no está instalado`);
+    if (!det.instalado) throw new ConsultaError("parametro_invalido", det.motivo ?? `${a.nombre} is not installed`);
     const modelos = a.modelos();
-    if (modelo && !modelos.some((m) => m.id === modelo)) throw new ConsultaError("parametro_invalido", `${a.nombre} no ofrece el modelo ${modelo}`);
+    if (modelo && !modelos.some((m) => m.id === modelo)) throw new ConsultaError("parametro_invalido", `${a.nombre} does not offer the model ${modelo}`);
     return { a, modelo: modelo ?? modelos.find((m) => m.porDefecto)?.id };
   };
 
@@ -286,13 +286,13 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
         errores = (errores + d).slice(-2000);
       });
       p.on("error", (e) => {
-        t.error = `no se pudo lanzar ${a.nombre}: ${e.message}`;
+        t.error = `could not launch ${a.nombre}: ${e.message}`;
         listo();
       });
       p.on("close", (codigo) => {
         procesos.delete(t.id);
         if (t.estado === "cancelado") return listo();
-        if (codigo !== 0 && !t.error) t.error = errores.trim().split("\n").slice(-3).join(" ") || `${a.nombre} terminó con código ${codigo}`;
+        if (codigo !== 0 && !t.error) t.error = errores.trim().split("\n").slice(-3).join(" ") || `${a.nombre} exited with code ${codigo}`;
         listo();
       });
     });
@@ -314,7 +314,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
       try {
         await compileDirConVisor(c.raiz);
       } catch (e) {
-        t.error = `${t.error ? `${t.error}. ` : ""}No compila ${nombre}: ${(e as Error).message.split("\n")[0]}`;
+        t.error = `${t.error ? `${t.error}. ` : ""}${nombre} does not compile: ${(e as Error).message.split("\n")[0]}`;
       }
     }
     t.terminado = Date.now();
@@ -326,7 +326,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     try {
       await lanzar(t, repoRuta);
       if (t.estado !== "cancelado" && !t.error && t.resultado !== undefined) await anotarTanda(t);
-      else if (t.estado !== "cancelado" && !t.error) t.error = "el agente terminó sin responder";
+      else if (t.estado !== "cancelado" && !t.error) t.error = "the agent finished without answering";
     } catch (e) {
       t.error = `${t.error ? `${t.error}. ` : ""}${(e as Error).message}`;
     }
@@ -341,8 +341,8 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     const vistos = new Set<string>();
     for (const r of resultados) {
       const k = `${r.cerebro}|${r.funcionalidad}|${r.regla}`;
-      if (!pedidas.has(k)) errores.push(`${r.cerebro}/${r.funcionalidad}/${r.regla}: no estaba entre las pedidas`);
-      else if (vistos.has(k)) errores.push(`${r.cerebro}/${r.funcionalidad}/${r.regla}: repetida`);
+      if (!pedidas.has(k)) errores.push(`${r.cerebro}/${r.funcionalidad}/${r.regla}: it was not among the requested rules`);
+      else if (vistos.has(k)) errores.push(`${r.cerebro}/${r.funcionalidad}/${r.regla}: repeated`);
       else {
         vistos.add(k);
         buenos.push(r);
@@ -362,17 +362,17 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
         ...(r.resultado === "d" ? { hallazgo: { resultado: "no_testeable" as const, cambio: r.cambio! } } : {}),
       }));
       try {
-        if (!opciones.aplicar) throw new Error("el servidor no puede escribir las páginas");
+        if (!opciones.aplicar) throw new Error("the server cannot write the pages");
         await opciones.aplicar({ tipo: "resultados", cerebro, funcionalidad, items });
         t.resultados.push(...rs);
       } catch (e) {
-        for (const r of rs) t.sinResultado.push({ cerebro: r.cerebro, funcionalidad: r.funcionalidad, regla: r.regla, motivo: `no se pudo anotar: ${(e as Error).message}` });
+        for (const r of rs) t.sinResultado.push({ cerebro: r.cerebro, funcionalidad: r.funcionalidad, regla: r.regla, motivo: `could not record it: ${(e as Error).message}` });
       }
     }
     for (const r of t.reglas ?? []) {
-      if (!vistos.has(`${r.cerebro}|${r.funcionalidad}|${r.regla}`)) t.sinResultado.push({ ...r, motivo: "el agente no devolvió un resultado válido para esta regla" });
+      if (!vistos.has(`${r.cerebro}|${r.funcionalidad}|${r.regla}`)) t.sinResultado.push({ ...r, motivo: "the agent did not return a valid outcome for this rule" });
     }
-    if (errores.length && !t.resultados.length) t.error = errores[0] ?? "respuesta inválida";
+    if (errores.length && !t.resultados.length) t.error = errores[0] ?? "invalid answer";
   }
 
   async function terminarLote(l: Lote) {
@@ -385,7 +385,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
           if (cer) await compileDirConVisor(cer.raiz);
         }
       } catch (e) {
-        l.error = `${l.error ? `${l.error}. ` : ""}No se pudo actualizar ${c}: ${(e as Error).message.split("\n")[0]}`;
+        l.error = `${l.error ? `${l.error}. ` : ""}Could not update ${c}: ${(e as Error).message.split("\n")[0]}`;
       }
     }
     l.estado = "terminado";
@@ -408,13 +408,13 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     encolarLote(p) {
       const no = noDisponible();
       if (no) throw new Error(no);
-      if (!p.reglas.length) throw new ConsultaError("parametro_invalido", "no hay reglas para pedir");
+      if (!p.reglas.length) throw new ConsultaError("parametro_invalido", "there are no rules to request");
       const { a, modelo } = elegir(p.proveedor, p.modelo);
       const cerebros = [...new Set(p.reglas.map((r) => r.cerebro))];
       const lote: Lote = { id: randomBytes(6).toString("hex"), creado: Date.now(), cerebros, estado: "corriendo" };
       lotes.push(lote);
       const porRepo = new Map<string, ReglaDePedido[]>();
-      for (const r of p.reglas) porRepo.set(r.repo ?? `cerebro ${r.cerebro}`, [...(porRepo.get(r.repo ?? `cerebro ${r.cerebro}`) ?? []), r]);
+      for (const r of p.reglas) porRepo.set(r.repo ?? `brain ${r.cerebro}`, [...(porRepo.get(r.repo ?? `brain ${r.cerebro}`) ?? []), r]);
       const hechos: Trabajo[] = [];
       const cadenas: Array<{ repo: string; ts: Trabajo[] }> = [];
       for (const [repo, reglas] of porRepo) {
@@ -424,7 +424,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
         for (let n = 1; n <= de; n++) {
           const parte = reglas.slice((n - 1) * tam, n * tam);
           const t = nuevo({
-            tipo: "test", etiqueta: `${repo}${de > 1 ? ` · tanda ${n} de ${de}` : ""} · ${parte.length} ${parte.length === 1 ? "regla" : "reglas"}`,
+            tipo: "test", etiqueta: `${repo}${de > 1 ? ` · batch ${n} of ${de}` : ""} · ${parte.length} ${parte.length === 1 ? "rule" : "rules"}`,
             pedido: pedidoDeTanda(parte, repo, n, de), cerebros: [...new Set(parte.map((r) => r.cerebro))], proveedor: a.id, ...(modelo ? { modelo } : {}),
             lote: lote.id, repo, tanda: { n, de }, reglas: parte.map((r) => ({ cerebro: r.cerebro, funcionalidad: r.funcionalidad, regla: r.regla })),
           });

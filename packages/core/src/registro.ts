@@ -19,7 +19,7 @@ const REF_SERVICIO = /^([a-z0-9][a-z0-9-]*)\/([a-z]+-[a-z0-9-]+)$/;
 
 const CerebroSchema = z
   .object({
-    nombre: z.string().regex(NOMBRE, "solo minúsculas, números y guiones"),
+    nombre: z.string().regex(NOMBRE, "lowercase letters, numbers and hyphens only"),
     descripcion: z.string().optional(),
     /** Carpeta del brain, relativa al registro; por defecto, el nombre. */
     carpeta: z.string().min(1).optional(),
@@ -32,14 +32,16 @@ const CerebroSchema = z
 export const RegistroSchema = z
   .object({
     version: z.literal(1),
-    cerebros: z.array(CerebroSchema).min(1).max(MAX_CEREBROS, `como máximo ${MAX_CEREBROS} cerebros`),
+    /** Idioma de la CLI y el menú para quien no eligió otro (`--lang`, `FLOWBRAIN_LANG` o el menú): `en` o `es` (dec. 214). */
+    lang: z.enum(["en", "es"]).optional(),
+    cerebros: z.array(CerebroSchema).min(1).max(MAX_CEREBROS, `at most ${MAX_CEREBROS} brains`),
     comunicacion: z.array(z.object({ entre: z.tuple([z.string(), z.string()]), activa: z.boolean() }).strict()).optional(),
     conexiones: z
       .array(
         z
           .object({
-            desde: z.string().regex(REF_SERVICIO, "se espera cerebro/svc-id"),
-            hacia: z.string().regex(REF_SERVICIO, "se espera cerebro/svc-id"),
+            desde: z.string().regex(REF_SERVICIO, "expected brain/svc-id"),
+            hacia: z.string().regex(REF_SERVICIO, "expected brain/svc-id"),
             /** Cómo se distingue este destino en el código que llama: una variable de la URL base o un host. */
             por: z.string().min(1).optional(),
             /** Quién lo decidió: una persona (por defecto) o un modelo que analizó el código. */
@@ -60,7 +62,7 @@ export const RegistroSchema = z
       .array(
         z
           .object({
-            de: z.string().regex(REF_SERVICIO, "se espera cerebro/svc-id"),
+            de: z.string().regex(REF_SERVICIO, "expected brain/svc-id"),
             por: z.string().min(1).optional(),
             origen: z.enum(["persona", "modelo"]).optional(),
             evidencia: z.array(z.string().min(1)).optional(),
@@ -107,6 +109,8 @@ export interface Interna {
 export interface Registro {
   /** Carpeta donde está `flowbrain.yaml`. */
   carpeta: string;
+  /** Idioma declarado en `flowbrain.yaml` (`lang`), si lo hay. */
+  lang: "en" | "es" | null;
   cerebros: Cerebro[];
   conexiones: Conexion[];
   internas: Interna[];
@@ -128,10 +132,10 @@ export function interpretarRegistro(texto: string, carpeta: string): Registro {
   try {
     crudo = parse(texto);
   } catch (e) {
-    throw new RegistroError(`${ARCHIVO_REGISTRO}: YAML inválido: ${(e as Error).message}`);
+    throw new RegistroError(`${ARCHIVO_REGISTRO}: invalid YAML: ${(e as Error).message}`);
   }
   const r = RegistroSchema.safeParse(crudo);
-  if (!r.success) throw new RegistroError(`${ARCHIVO_REGISTRO}: ${r.error.issues.map((i) => `${i.path.join(".") || "(raíz)"}: ${i.message}`).join("; ")}`);
+  if (!r.success) throw new RegistroError(`${ARCHIVO_REGISTRO}: ${r.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ")}`);
   const base = resolve(carpeta);
   const abs = (p: string) => (isAbsolute(p) ? resolve(p) : resolve(base, p));
   const cerebros: Cerebro[] = r.data.cerebros.map((c) => ({
@@ -143,19 +147,19 @@ export function interpretarRegistro(texto: string, carpeta: string): Registro {
   }));
   const nombres = new Set<string>();
   for (const c of cerebros) {
-    if (nombres.has(c.nombre)) throw new RegistroError(`${ARCHIVO_REGISTRO}: cerebro repetido: ${c.nombre}`);
+    if (nombres.has(c.nombre)) throw new RegistroError(`${ARCHIVO_REGISTRO}: duplicate brain: ${c.nombre}`);
     nombres.add(c.nombre);
   }
   const pares = new Map<string, boolean>();
   const clave = (a: string, b: string) => [a, b].sort(cmp).join("\u0000");
   for (const c of r.data.comunicacion ?? []) {
-    for (const n of c.entre) if (!nombres.has(n)) throw new RegistroError(`${ARCHIVO_REGISTRO}: comunicacion nombra un cerebro inexistente: ${n}`);
-    if (c.entre[0] === c.entre[1]) throw new RegistroError(`${ARCHIVO_REGISTRO}: comunicacion de ${c.entre[0]} consigo mismo`);
+    for (const n of c.entre) if (!nombres.has(n)) throw new RegistroError(`${ARCHIVO_REGISTRO}: comunicacion names a nonexistent brain: ${n}`);
+    if (c.entre[0] === c.entre[1]) throw new RegistroError(`${ARCHIVO_REGISTRO}: comunicacion of ${c.entre[0]} with itself`);
     pares.set(clave(c.entre[0], c.entre[1]), c.activa);
   }
   const ref = (s: string) => {
     const m = REF_SERVICIO.exec(s)!;
-    if (!nombres.has(m[1]!)) throw new RegistroError(`${ARCHIVO_REGISTRO}: conexiones nombra un cerebro inexistente: ${m[1]}`);
+    if (!nombres.has(m[1]!)) throw new RegistroError(`${ARCHIVO_REGISTRO}: conexiones names a nonexistent brain: ${m[1]}`);
     return { cerebro: m[1]!, svc: m[2]! };
   };
   const conexiones = (r.data.conexiones ?? []).map((c) => ({ desde: ref(c.desde), hacia: ref(c.hacia), por: c.por ?? null, origen: c.origen ?? ("persona" as const), evidencia: c.evidencia ?? [], nota: c.nota ?? null }));
@@ -163,6 +167,7 @@ export function interpretarRegistro(texto: string, carpeta: string): Registro {
   const comunicados = (a: string, b: string) => a !== b && pares.get(clave(a, b)) === true;
   return {
     carpeta: base,
+    lang: r.data.lang ?? null,
     cerebros,
     conexiones,
     internas,

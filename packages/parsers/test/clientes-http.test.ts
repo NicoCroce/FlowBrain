@@ -109,6 +109,6 @@ describe("las llamadas de los tres clientes se unen a sus endpoints", () => {
     const r = await derivaDe(c);
     expect(r.campos).toMatchObject({ llamadasUnidas: unidas, comparadas: 2 });
     expect(r.llamadasSinEndpoint.map((l) => l.llamada)).toEqual(sinEndpoint);
-    expect(r.avisos[0]).toMatch(/^1 llamadas con URL armada en tiempo de ejecución/);
+    expect(r.avisos[0]).toMatch(/^1 calls with a URL built at runtime/);
   });
 });

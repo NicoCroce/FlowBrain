@@ -9,6 +9,7 @@ import { MAPA_JS } from "./viewer-mapa.js";
 import { PANTALLAS_JS } from "./viewer-pantallas.js";
 import { PRODUCTO_JS } from "./viewer-producto.js";
 import { SIN_ASOCIAR_JS } from "./viewer-sin-asociar.js";
+import { attr, dos, IDIOMA_JS, SWITCH_IDIOMA } from "./idioma.js";
 
 /**
  * Visor estático (`_build/viewer.html`): un único HTML con el grafo embebido, sin servidor ni red. Vistas:
@@ -154,11 +155,11 @@ export function renderViewer(graph: Graph, funcionalidades: Ficha[] = [], fideli
 /** La página autocontenida, a partir de los datos (de un brain, o de varios cerebros ya unidos). */
 export function paginaDelVisor(datos: unknown): string {
   return `<!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FlowBrain · visor</title>
+<title>FlowBrain · viewer</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHZpZXdCb3g9JzAgMCAyNCAyNCc+PHJlY3Qgd2lkdGg9JzI0JyBoZWlnaHQ9JzI0JyByeD0nNicgZmlsbD0nIzBBMEMxMScvPjxnIGZpbGw9J25vbmUnIHN0cm9rZT0nIzlEQjRGRicgc3Ryb2tlLXdpZHRoPScxLjgnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCc+PGNpcmNsZSBjeD0nNicgY3k9JzcnIHI9JzIuMicvPjxjaXJjbGUgY3g9JzE4JyBjeT0nNicgcj0nMS42Jy8+PGNpcmNsZSBjeD0nMTInIGN5PScxNycgcj0nMycvPjxwYXRoIGQ9J003LjggOC40bDIuNiA2TTE2LjggNy4ybC0zLjQgNy40TTguMiA3bDguMi0uOCcvPjwvZz48L3N2Zz4=">
 <style>
 :root {
@@ -192,6 +193,7 @@ code { font: 12px var(--mono); color: var(--suave); overflow-wrap: anywhere; }
 #cabecera nav a.activa { background: var(--hover); color: #FFFFFF; }
 #presets { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #presets .lbl { margin-right: 4px; }
+.idioma { display: flex; gap: 4px; margin-left: 8px; } #presets.oculto + .idioma { margin-left: auto; } .idioma .chip { min-height: 26px; padding: 0 9px; font-size: 11px; letter-spacing: .04em; }
 
 .lbl { font: 600 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--suave); margin: 0; }
 .sw, .punto { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; box-shadow: inset 0 -2px 3px rgba(0,0,0,.35); }
@@ -552,8 +554,9 @@ a.nb { text-decoration: none; }
 <body>
 <header id="cabecera">
   <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>FlowBrain</div>
-  <nav aria-label="Secciones"><a href="#/funcionalidades" data-vista="producto">Funcionalidades</a><a href="#/pantallas" data-vista="pantallas">Pantallas</a><a href="#/grafo" data-vista="grafo">Mapa 3D</a><a href="#/especificaciones" data-vista="especificaciones">Especificaciones</a><a href="#/sin-asociar" data-vista="sinasociar">Sin asociar</a><a href="#/impacto" data-vista="impacto">Impacto</a><a href="#/contratos" data-vista="contratos">Contratos</a><a href="#/fidelidad" data-vista="fidelidad">Fidelidad</a></nav>
+  <nav ${attr("aria-label", "Sections", "Secciones")}><a href="#/funcionalidades" data-vista="producto" ${dos("Features", "Funcionalidades")}</a><a href="#/pantallas" data-vista="pantallas" ${dos("Screens", "Pantallas")}</a><a href="#/grafo" data-vista="grafo" ${dos("3D map", "Mapa 3D")}</a><a href="#/especificaciones" data-vista="especificaciones" ${dos("Specifications", "Especificaciones")}</a><a href="#/sin-asociar" data-vista="sinasociar" ${dos("Unassigned", "Sin asociar")}</a><a href="#/impacto" data-vista="impacto" ${dos("Impact", "Impacto")}</a><a href="#/contratos" data-vista="contratos" ${dos("Contracts", "Contratos")}</a><a href="#/fidelidad" data-vista="fidelidad" ${dos("Fidelity", "Fidelidad")}</a></nav>
   <div id="presets" class="oculto"></div>
+  ${SWITCH_IDIOMA}
 </header>
 <div id="producto" class="pagina"></div>
 <div id="impacto" class="pagina oculto"></div>
@@ -565,66 +568,67 @@ a.nb { text-decoration: none; }
   <aside class="m3-panel m3-izq">
     <div class="m3-busca">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8A93A6" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-3.5-3.5"></path></svg>
-      <input id="m3-buscar" type="search" placeholder="Buscar tabla, endpoint, funcionalidad…" aria-label="Buscar nodo" autocomplete="off">
+      <input id="m3-buscar" type="search" ${attr("placeholder", "Search table, endpoint, feature…", "Buscar tabla, endpoint, funcionalidad…")} ${attr("aria-label", "Search node", "Buscar nodo")} autocomplete="off">
       <div id="m3-res" class="oculto"></div>
     </div>
     <section>
-      <div class="m3-titulo"><h2 class="lbl">Qué se ve</h2><span id="m3-vis"></span></div>
+      <div class="m3-titulo"><h2 class="lbl" ${dos("What is shown", "Qué se ve")}</h2><span id="m3-vis"></span></div>
       <div id="m3-cerebros"></div>
       <div id="m3-todo"></div>
       <div id="m3-tipos"></div>
       <div id="m3-ocultos"></div>
     </section>
     <section>
-      <h2 class="lbl m3-lbl">Relaciones</h2>
+      <h2 class="lbl m3-lbl" ${dos("Relations", "Relaciones")}</h2>
       <div id="m3-verbos"></div>
     </section>
     <section>
-      <h2 class="lbl m3-lbl">Tamaño del punto según</h2>
-      <div id="m3-tam" class="seg" role="group" aria-label="Tamaño según"></div>
-      <label for="m3-escala" class="m3-escala">Escala <span id="m3-escala-txt">0.6×</span></label>
+      <h2 class="lbl m3-lbl" ${dos("Dot size by", "Tamaño del punto según")}</h2>
+      <div id="m3-tam" class="seg" role="group" ${attr("aria-label", "Size by", "Tamaño según")}></div>
+      <label for="m3-escala" class="m3-escala"><span ${dos("Scale", "Escala")}</span> <span id="m3-escala-txt">0.6×</span></label>
       <input id="m3-escala" type="range" min="0.4" max="2.4" step="0.1" value="0.6">
     </section>
     <section>
-      <h2 class="lbl m3-lbl">Impulsos</h2>
-      <label for="m3-int" class="m3-escala">Intensidad <span id="m3-int-txt">40%</span></label>
+      <h2 class="lbl m3-lbl" ${dos("Pulses", "Impulsos")}</h2>
+      <label for="m3-int" class="m3-escala"><span ${dos("Intensity", "Intensidad")}</span> <span id="m3-int-txt">40%</span></label>
       <input id="m3-int" type="range" min="0" max="100" step="5" value="40">
     </section>
     <section id="m3-lin-sec">
-      <h2 class="lbl m3-lbl">Líneas entre cerebros</h2>
-      <label for="m3-lin" class="m3-escala">Opacidad <span id="m3-lin-txt">60%</span></label>
+      <h2 class="lbl m3-lbl" ${dos("Lines between brains", "Líneas entre cerebros")}</h2>
+      <label for="m3-lin" class="m3-escala"><span ${dos("Opacity", "Opacidad")}</span> <span id="m3-lin-txt">60%</span></label>
       <input id="m3-lin" type="range" min="0" max="100" step="5" value="60">
     </section>
     <section>
-      <h2 class="lbl m3-lbl">Agrupar por</h2>
-      <div id="m3-grupo" class="seg" role="group" aria-label="Agrupar por"></div>
-      <p class="m3-ayuda">Define qué nodos son “hijos” de cuál. Al arrastrar o separar un nodo, se lleva a todos sus hijos.</p>
+      <h2 class="lbl m3-lbl" ${dos("Group by", "Agrupar por")}</h2>
+      <div id="m3-grupo" class="seg" role="group" ${attr("aria-label", "Group by", "Agrupar por")}></div>
+      <p class="m3-ayuda" ${dos("Defines which nodes are “children” of which. Dragging or separating a node takes all its children along.", "Define qué nodos son “hijos” de cuál. Al arrastrar o separar un nodo, se lleva a todos sus hijos.")}</p>
     </section>
     <section>
-      <h2 class="lbl m3-lbl">Etiquetas</h2>
-      <div id="m3-etq" class="seg" role="group" aria-label="Etiquetas"></div>
+      <h2 class="lbl m3-lbl" ${dos("Labels", "Etiquetas")}</h2>
+      <div id="m3-etq" class="seg" role="group" ${attr("aria-label", "Labels", "Etiquetas")}></div>
     </section>
   </aside>
   <main class="m3-centro">
-    <canvas id="m3-canvas" role="img" aria-label="Mapa 3D de los cerebros: arrastrá para rotar, rueda para acercar, arrastrá un nodo para moverlo con sus hijos"></canvas>
+    <canvas id="m3-canvas" role="img" ${attr("aria-label", "3D map of the brains: drag to rotate, scroll to zoom, drag a node to move it with its children", "Mapa 3D de los cerebros: arrastrá para rotar, rueda para acercar, arrastrá un nodo para moverlo con sus hijos")}></canvas>
     <div class="m3-barra">
       <div>
-        <button type="button" class="ov" data-acc="explode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v5M12 16v5M3 12h5M16 12h5M5.6 5.6l3 3M15.4 15.4l3 3M5.6 18.4l3-3M15.4 8.6l3-3"></path></svg>Separar grupos</button>
-        <button type="button" class="ov" data-acc="relayout"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"></path></svg>Reorganizar</button>
-        <button type="button" class="ov" data-acc="recenter"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path></svg>Centrar</button>
+        <button type="button" class="ov" data-acc="explode"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 3v5M12 16v5M3 12h5M16 12h5M5.6 5.6l3 3M15.4 15.4l3 3M5.6 18.4l3-3M15.4 8.6l3-3"></path></svg><span ${dos("Separate groups", "Separar grupos")}</span></button>
+        <button type="button" class="ov" data-acc="relayout"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"></path></svg><span ${dos("Rearrange", "Reorganizar")}</span></button>
+        <button type="button" class="ov" data-acc="recenter"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v4M12 18v4M2 12h4M18 12h4"></path></svg><span ${dos("Center", "Centrar")}</span></button>
       </div>
       <div>
-        <button type="button" class="ov on" id="m3-drag" aria-pressed="true" data-acc="drag"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="3"></circle><circle cx="17" cy="15" r="2"></circle><circle cx="10" cy="18" r="1.6"></circle><path d="M9 9.5l6.5 4M8 10l1.6 6.2"></path></svg>Arrastrar con hijos</button>
-        <button type="button" class="ov on" id="m3-rot" aria-pressed="true" data-acc="rot"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="4"></ellipse><path d="M17 6.5l2.5 1.5-1.2 2.6"></path></svg>Girar</button>
-        <button type="button" class="ov on" id="m3-imp" aria-pressed="true" data-acc="imp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"></path></svg>Impulsos</button>
+        <button type="button" class="ov on" id="m3-drag" aria-pressed="true" data-acc="drag"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="3"></circle><circle cx="17" cy="15" r="2"></circle><circle cx="10" cy="18" r="1.6"></circle><path d="M9 9.5l6.5 4M8 10l1.6 6.2"></path></svg><span ${dos("Drag with children", "Arrastrar con hijos")}</span></button>
+        <button type="button" class="ov on" id="m3-rot" aria-pressed="true" data-acc="rot"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="4"></ellipse><path d="M17 6.5l2.5 1.5-1.2 2.6"></path></svg><span ${dos("Spin", "Girar")}</span></button>
+        <button type="button" class="ov on" id="m3-imp" aria-pressed="true" data-acc="imp"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"></path></svg><span ${dos("Pulses", "Impulsos")}</span></button>
       </div>
     </div>
-    <div class="m3-guia"><span><b>Arrastrar fondo</b> rota</span><span><b>Rueda</b> acerca</span><span><b>Arrastrar nodo</b> lo mueve con sus hijos</span><span class="solo-multi"><b>Arrastrar el nombre</b> mueve el cerebro entero</span><span><b>Shift</b> mueve solo el nodo</span><span><b>Doble clic</b> enfoca</span></div>
-    <div id="m3-asa" role="separator" aria-orientation="vertical" title="Arrastrá para cambiar el ancho del detalle (doble clic: ancho original)"></div>
+    <div class="m3-guia"><span><b ${dos("Drag background", "Arrastrar fondo")}</b> <span ${dos("rotates", "rota")}</span></span><span><b ${dos("Wheel", "Rueda")}</b> <span ${dos("zooms", "acerca")}</span></span><span><b ${dos("Drag node", "Arrastrar nodo")}</b> <span ${dos("moves it with its children", "lo mueve con sus hijos")}</span></span><span class="solo-multi"><b ${dos("Drag the name", "Arrastrar el nombre")}</b> <span ${dos("moves the whole brain", "mueve el cerebro entero")}</span></span><span><b>Shift</b> <span ${dos("moves only the node", "mueve solo el nodo")}</span></span><span><b ${dos("Double click", "Doble clic")}</b> <span ${dos("focuses", "enfoca")}</span></span></div>
+    <div id="m3-asa" role="separator" aria-orientation="vertical" ${attr("title", "Drag to change the width of the detail (double click: original width)", "Arrastrá para cambiar el ancho del detalle (doble clic: ancho original)")}></div>
   </main>
   <aside class="m3-panel m3-der"><div id="m3-detalle"></div></aside>
 </div>
 <script type="application/json" id="datos">${seguroEnScript(JSON.stringify(datos))}</script>
+<script>${seguroEnScript(IDIOMA_JS)}</script>
 <script>${seguroEnScript(GRAFO3D_JS)}</script>
 <script>${seguroEnScript(FILTROS_JS)}</script>
 <script>${seguroEnScript(PRODUCTO_JS)}</script>

@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { cargarContexto, cmp, commitDe, dentroDe, ES_TEST, type Contexto } from "@flowbrain/core";
 import { escribirIndex, indexar } from "@flowbrain/parsers";
+import { L } from "./idioma.js";
 
 /**
  * `sync`, `estado` y `doctor`: mantener el brain al día y saber qué le falta. El manifiesto de repos es lo que ya
@@ -111,31 +112,35 @@ export async function estado(raiz: string, carpetas: string[] = [], ctx?: Contex
   const tocan = new Set(g.edges.filter((e) => e.verbo === "lee_de" || e.verbo === "escribe_en").map((e) => e.hasta));
   const drafts = await borradores(raiz);
   const huecos = [
-    hueco("endpoints sin tipo de respuesta", endpoints.filter((n) => n.atributos["response"] == null).map((n) => n.id), endpoints.length),
-    hueco("endpoints sin funcionalidad", endpoints.filter((n) => !implementa.has(n.id)).map((n) => n.id), endpoints.length),
-    hueco("pantallas sin funcionalidad", pantallas.filter((n) => !implementa.has(n.id)).map((n) => n.id), pantallas.length),
-    hueco("tablas sin base de datos (vive_en)", tablas.filter((n) => !viveEn.has(n.id)).map((n) => n.id), tablas.length),
-    hueco("tablas que nadie lee ni escribe", tablas.filter((n) => !tocan.has(n.id)).map((n) => n.id), tablas.length),
-    hueco("funcionalidades sin código que las implemente", feats.filter((n) => !implementada.has(n.id)).map((n) => n.id), feats.length),
-    hueco("archivos fuera de toda funcionalidad o librería", feats.length ? archivos.filter((n) => !codigos.some((k) => dentroDe(n.id, k))).map((n) => n.id) : [], archivos.length),
-    hueco("relaciones dudosas", g.edges.filter((e) => e.estado === "dudoso").map((e) => `${e.desde} ${e.verbo} ${e.hasta}`), g.edges.length),
-    hueco("borradores sin promover", drafts, drafts.length),
-    hueco("nodos con notas sin revisar", [...c.notas.keys()].sort(cmp), c.notas.size),
+    hueco(L("endpoints without a response type", "endpoints sin tipo de respuesta"), endpoints.filter((n) => n.atributos["response"] == null).map((n) => n.id), endpoints.length),
+    hueco(L("endpoints without a feature", "endpoints sin funcionalidad"), endpoints.filter((n) => !implementa.has(n.id)).map((n) => n.id), endpoints.length),
+    hueco(L("screens without a feature", "pantallas sin funcionalidad"), pantallas.filter((n) => !implementa.has(n.id)).map((n) => n.id), pantallas.length),
+    hueco(L("tables without a database (vive_en)", "tablas sin base de datos (vive_en)"), tablas.filter((n) => !viveEn.has(n.id)).map((n) => n.id), tablas.length),
+    hueco(L("tables nobody reads or writes", "tablas que nadie lee ni escribe"), tablas.filter((n) => !tocan.has(n.id)).map((n) => n.id), tablas.length),
+    hueco(L("features without code that implements them", "funcionalidades sin código que las implemente"), feats.filter((n) => !implementada.has(n.id)).map((n) => n.id), feats.length),
+    hueco(L("files outside every feature or library", "archivos fuera de toda funcionalidad o librería"), feats.length ? archivos.filter((n) => !codigos.some((k) => dentroDe(n.id, k))).map((n) => n.id) : [], archivos.length),
+    hueco(L("doubtful relations", "relaciones dudosas"), g.edges.filter((e) => e.estado === "dudoso").map((e) => `${e.desde} ${e.verbo} ${e.hasta}`), g.edges.length),
+    hueco(L("drafts not promoted", "borradores sin promover"), drafts, drafts.length),
+    hueco(L("nodes with unreviewed notes", "nodos con notas sin revisar"), [...c.notas.keys()].sort(cmp), c.notas.size),
   ].filter((h) => h.cuantos > 0);
   return { repos, nodos: contar(g.nodes.map((n) => n.tipo)), aristas: contar(g.edges.map((e) => e.verbo)), huecos, desactualizado: repos.some((r) => r.estado === "desactualizado") };
 }
 
 const corto = (c: string | null) => (c ? c.slice(0, 12) : "—");
 
+/** El estado de un repo en el idioma de la persona (el valor guardado sigue en castellano). */
+export const textoDeEstadoRepo = (e: RepoIndexado["estado"]): string =>
+  e === "al día" ? L("up to date", "al día") : e === "desactualizado" ? L("outdated", "desactualizado") : e === "sin clon" ? L("no clone", "sin clon") : L("no commit", "sin commit");
+
 export function textoEstado(e: Estado): string {
   const total = (m: Record<string, number>) => Object.values(m).reduce((a, b) => a + b, 0);
   const lista = (m: Record<string, number>) => Object.entries(m).map(([k, v]) => `${k} ${v}`).join(", ");
   return [
-    "Repos indexados:",
-    ...(e.repos.length ? e.repos.map((r) => `  ${r.repo}: ${r.estado} (indexado ${corto(r.indexado)}, clon ${corto(r.actual)})`) : ["  ninguno (corré flowbrain index <ruta-repo>)"]),
-    `Nodos: ${total(e.nodos)} (${lista(e.nodos)})`,
-    `Relaciones: ${total(e.aristas)} (${lista(e.aristas)})`,
-    ...(e.huecos.length ? ["Huecos:", ...e.huecos.map((h) => `  ${h.que}: ${h.cuantos}${h.de !== h.cuantos ? ` de ${h.de}` : ""} — ${h.ejemplos.join(", ")}${h.cuantos > h.ejemplos.length ? ", …" : ""}`)] : ["Huecos: ninguno"]),
+    L("Indexed repos:", "Repos indexados:"),
+    ...(e.repos.length ? e.repos.map((r) => L(`  ${r.repo}: ${textoDeEstadoRepo(r.estado)} (indexed ${corto(r.indexado)}, clone ${corto(r.actual)})`, `  ${r.repo}: ${r.estado} (indexado ${corto(r.indexado)}, clon ${corto(r.actual)})`)) : [L("  none (run flowbrain index <repo-path>)", "  ninguno (corré flowbrain index <ruta-repo>)")]),
+    L(`Nodes: ${total(e.nodos)} (${lista(e.nodos)})`, `Nodos: ${total(e.nodos)} (${lista(e.nodos)})`),
+    L(`Relations: ${total(e.aristas)} (${lista(e.aristas)})`, `Relaciones: ${total(e.aristas)} (${lista(e.aristas)})`),
+    ...(e.huecos.length ? [L("Gaps:", "Huecos:"), ...e.huecos.map((h) => `  ${h.que}: ${h.cuantos}${h.de !== h.cuantos ? L(` of ${h.de}`, ` de ${h.de}`) : ""} — ${h.ejemplos.join(", ")}${h.cuantos > h.ejemplos.length ? ", …" : ""}`)] : [L("Gaps: none", "Huecos: ninguno")]),
   ].join("\n") + "\n";
 }
 
@@ -151,13 +156,13 @@ export async function doctor(raiz: string, opciones: { carpetas?: string[]; sett
   let ctx: Contexto | null = null;
   try {
     ctx = await cargarContexto(raiz);
-    out.push({ que: "el grafo carga", ok: true, detalle: `${ctx.graph.nodes.length} nodos, ${ctx.graph.edges.length} relaciones` });
+    out.push({ que: L("the graph loads", "el grafo carga"), ok: true, detalle: L(`${ctx.graph.nodes.length} nodes, ${ctx.graph.edges.length} relations`, `${ctx.graph.nodes.length} nodos, ${ctx.graph.edges.length} relaciones`) });
   } catch (e) {
-    out.push({ que: "el grafo carga", ok: false, detalle: `${(e as Error).message}; corré flowbrain compile` });
+    out.push({ que: L("the graph loads", "el grafo carga"), ok: false, detalle: L(`${(e as Error).message}; run flowbrain compile`, `${(e as Error).message}; corré flowbrain compile`) });
   }
-  out.push({ que: "hay índice de código", ok: !!ctx?.codigo, detalle: ctx?.codigo ? `${ctx.codigo.estructura.size} archivos` : "corré flowbrain index <ruta-repo> y flowbrain compile" });
+  out.push({ que: L("there is a code index", "hay índice de código"), ok: !!ctx?.codigo, detalle: ctx?.codigo ? L(`${ctx.codigo.estructura.size} files`, `${ctx.codigo.estructura.size} archivos`) : L("run flowbrain index <repo-path> and flowbrain compile", "corré flowbrain index <ruta-repo> y flowbrain compile") });
   const repos = await reposIndexados(raiz, opciones.carpetas);
-  for (const r of repos) out.push({ que: `clon de ${r.repo}`, ok: r.estado === "al día", detalle: r.estado === "sin clon" ? "no se encontró; pasá --repos <carpeta de clones>" : r.estado === "desactualizado" ? "el clon avanzó; corré flowbrain sync" : r.estado });
+  for (const r of repos) out.push({ que: L(`clone of ${r.repo}`, `clon de ${r.repo}`), ok: r.estado === "al día", detalle: r.estado === "sin clon" ? L("not found; pass --repos <clones folder>", "no se encontró; pasá --repos <carpeta de clones>") : r.estado === "desactualizado" ? L("the clone moved ahead; run flowbrain sync", "el clon avanzó; corré flowbrain sync") : textoDeEstadoRepo(r.estado) });
 
   const leerJson = async (p: string) => {
     try {
@@ -170,9 +175,9 @@ export async function doctor(raiz: string, opciones: { carpetas?: string[]; sett
   const s = await leerJson(settings);
   const comandos = Object.values((s?.["hooks"] ?? {}) as Record<string, Array<{ hooks?: Array<{ command?: string }> }>>).flatMap((es) => es.flatMap((e) => (e.hooks ?? []).map((h) => h.command ?? "")));
   const hook = comandos.find((c) => / hook claude-code( |$)/.test(c));
-  out.push({ que: "hooks de Claude Code", ok: !!hook, detalle: hook ? `registrados en ${settings}` : `no están en ${settings}; flowbrain init --claude-code los registra` });
+  out.push({ que: L("Claude Code hooks", "hooks de Claude Code"), ok: !!hook, detalle: hook ? L(`registered in ${settings}`, `registrados en ${settings}`) : L(`not in ${settings}; flowbrain init --claude-code registers them`, `no están en ${settings}; flowbrain init --claude-code los registra`) });
   const mcp = await mcpRegistrado(opciones.mcpConfig);
-  out.push({ que: "servidor MCP", ok: !!mcp, detalle: mcp ? `registrado en ${mcp}` : "no está registrado; flowbrain init imprime la línea de claude mcp add" });
+  out.push({ que: L("MCP server", "servidor MCP"), ok: !!mcp, detalle: mcp ? L(`registered in ${mcp}`, `registrado en ${mcp}`) : L("not registered; flowbrain init prints the claude mcp add line", "no está registrado; flowbrain init imprime la línea de claude mcp add") });
   return out;
 }
 

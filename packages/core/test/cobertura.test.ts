@@ -17,6 +17,6 @@ describe("controles (checks.yaml)", () => {
     expect(r.controles.map((c) => c.tipo)).toEqual(["endpoint", "pantalla", "llamada", "traza"]);
     expect(r.controles[0]).toEqual({ tipo: "endpoint", metodo: "POST", ruta: "/api/login" });
     expect(r.malFormados).toHaveLength(2);
-    expect(leerControles("controles: [").malFormados[0]).toContain("YAML inválido");
+    expect(leerControles("controles: [").malFormados[0]).toContain("invalid YAML");
   });
 });

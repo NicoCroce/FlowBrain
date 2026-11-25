@@ -5,6 +5,7 @@ import { draftDir } from "@flowbrain/indexer";
 import { escribirIndex, fusionar, IGNORAR, indexar, leerRepo, PARSERS, slug } from "@flowbrain/parsers";
 import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@flowbrain/viewer";
 import { init } from "./init.js";
+import { L } from "./idioma.js";
 import { borradoresPromovibles, promover } from "./promover.js";
 
 /**
@@ -128,34 +129,34 @@ export function textoPropuesta(carpetaRegistro: string, nombre: string, repos: R
   const preguntable = (b: { base: string; llamadas: number }) => b.llamadas >= 3 && /^\$\{[\w.:$>-]+\}$/.test(b.base);
   const preguntas = [
     grupos.length > 1
-      ? `Hay un cerebro por repo (${grupos.length}). ¿Conviene juntar algunos? Un cerebro puede tener varios repos (hasta ${MAX_CEREBROS} cerebros).`
-      : `¿Cómo se agrupan estos ${repos.length} repos en cerebros (hasta ${MAX_CEREBROS}) y cómo se llama cada uno? Hoy están todos en "${nombre}".`,
-    "¿Algún cerebro tiene información obsoleta o que no vas a curar? Ponele `curado: false`: se indexa sin revisión y cada respuesta lo avisa.",
-    ...repos.flatMap((r) => r.bases.filter(preguntable).map((b) => `${r.nombre} llama por ${b.base} (${b.llamadas} llamadas): ¿a qué servicio apunta? Si está en otro cerebro, agregá una conexión con \`por: ${b.base.replace(/^\$\{|\}$/g, "")}\`.`)),
-    grupos.length > 1 ? "La comunicación quedó activa entre todos los cerebros. Poné `activa: false` en los pares que no se hablan." : "¿Entre qué cerebros se activa la comunicación? Agregá un par en `comunicacion` por cada uno.",
+      ? `There is one brain per repo (${grupos.length}). Should some be merged? A brain can hold several repos (up to ${MAX_CEREBROS} brains).`
+      : `How should these ${repos.length} repos be grouped into brains (up to ${MAX_CEREBROS}), and what is each one called? Today they are all in "${nombre}".`,
+    "Does any brain hold outdated information, or one you won't curate? Set `curado: false`: it is indexed without review and every answer warns about it.",
+    ...repos.flatMap((r) => r.bases.filter(preguntable).map((b) => `${r.nombre} calls through ${b.base} (${b.llamadas} calls): which service does it point to? If it is in another brain, add a connection with \`por: ${b.base.replace(/^\$\{|\}$/g, "")}\`.`)),
+    grupos.length > 1 ? "Communication is active between all brains. Set `activa: false` on the pairs that don't talk to each other." : "Between which brains should communication be active? Add a pair under `comunicacion` for each one.",
   ];
   const pares = grupos.flatMap((a, i) => grupos.slice(i + 1).map((b) => `  - { entre: [${a.nombre}, ${b.nombre}], activa: true }`));
   return [
-    "# Registro de cerebros. Lo escribió `flowbrain brains propose`; revisalo y corré `flowbrain brains apply`.",
-    "# Rutas relativas a esta carpeta. Cada cerebro queda en una subcarpeta con su nombre.",
+    "# Brain registry. Written by `flowbrain brains propose`; review it and run `flowbrain brains apply`.",
+    "# Paths are relative to this folder. Each brain lives in a subfolder named after it.",
     "version: 1",
     "cerebros:",
     ...grupos.flatMap((g) => [`  - nombre: ${g.nombre}`, "    curado: true", "    repos:", ...g.repos.map((r) => `      - ruta: ${y(rel(r.ruta))}`)]),
     "",
-    "# Comunicación entre cerebros: sin un par activo, cada cerebro no sabe nada de los otros.",
+    "# Communication between brains: without an active pair, a brain knows nothing about the others.",
     ...(pares.length ? ["comunicacion:", ...pares] : ["# comunicacion:", "#   - entre: [uno, otro]", "#     activa: true"]),
     "",
-    "# Conexiones declaradas: qué servicio de un cerebro llama a qué servicio de otro, y cómo se distingue en el código.",
+    "# Declared connections: which service of one brain calls which service of another, and how to tell it apart in the code.",
     "# conexiones:",
     "#   - desde: uno/svc-web",
     "#     hacia: otro/svc-api",
-    "#     por: API_URL          # variable de la URL base o host; opcional",
+    "#     por: API_URL          # base URL variable or host; optional",
     "",
-    "# Preguntas que la herramienta no puede responder sola. Borralas a medida que las respondas.",
+    "# Questions the tool can't answer on its own. Delete them as you answer them.",
     "preguntas:",
     ...preguntas.map((p) => `  - ${y(p)}`),
     "",
-    "# Lo que se detectó en cada repo. Informativo: `aplicar` no lo usa.",
+    "# What was detected in each repo. Informational: `brains apply` doesn't use it.",
     "detectado:",
     ...repos.flatMap((r) => [
       `  - repo: ${y(rel(r.ruta))}`,
@@ -250,7 +251,7 @@ export async function aplicarCerebro(c: Cerebro): Promise<ResultadoCerebro> {
   const indexables: Array<{ ruta: string; repo: string }> = [];
   for (const r of c.repos) {
     if (!(await existe(r.ruta))) {
-      res.repos.push({ ruta: r.ruta, repo: null, error: "la carpeta no existe" });
+      res.repos.push({ ruta: r.ruta, repo: null, error: L("the folder does not exist", "la carpeta no existe") });
       continue;
     }
     try {
@@ -299,17 +300,17 @@ export async function listar(carpeta: string): Promise<string> {
   const r = await leerRegistro(carpeta);
   const lineas: string[] = [];
   for (const c of r.cerebros) {
-    let grafo = "sin indexar (corré flowbrain brains apply)";
+    let grafo = L("not indexed (run flowbrain brains apply)", "sin indexar (corré flowbrain brains apply)");
     try {
       const g = JSON.parse(await readFile(join(c.raiz, "_build/graph.json"), "utf8")) as { nodes: unknown[]; edges: unknown[] };
-      grafo = `${g.nodes.length} nodos, ${g.edges.length} relaciones`;
+      grafo = L(`${g.nodes.length} nodes, ${g.edges.length} relations`, `${g.nodes.length} nodos, ${g.edges.length} relaciones`);
     } catch {
       /* sin compilar */
     }
     const vecinos = r.vecinos(c.nombre).map((v) => v.nombre);
-    lineas.push(`${c.nombre}${c.curado ? "" : " (sin curar)"}: ${grafo}`, `  carpeta: ${c.raiz}`, ...c.repos.map((x) => `  repo: ${x.ruta}`), `  comunicado con: ${vecinos.length ? vecinos.join(", ") : "ninguno"}`);
+    lineas.push(`${c.nombre}${c.curado ? "" : L(" (not curated)", " (sin curar)")}: ${grafo}`, `  ${L("folder", "carpeta")}: ${c.raiz}`, ...c.repos.map((x) => `  repo: ${x.ruta}`), `  ${L("talks to", "comunicado con")}: ${vecinos.length ? vecinos.join(", ") : L("none", "ninguno")}`);
   }
-  if (r.conexiones.length) lineas.push("conexiones declaradas:", ...r.conexiones.map((x) => `  ${x.desde.cerebro}/${x.desde.svc} → ${x.hacia.cerebro}/${x.hacia.svc}${x.por ? ` (por ${x.por})` : ""}`));
+  if (r.conexiones.length) lineas.push(L("declared connections:", "conexiones declaradas:"), ...r.conexiones.map((x) => `  ${x.desde.cerebro}/${x.desde.svc} → ${x.hacia.cerebro}/${x.hacia.svc}${x.por ? L(` (through ${x.por})`, ` (por ${x.por})`) : ""}`));
   return lineas.join("\n") + "\n";
 }
 

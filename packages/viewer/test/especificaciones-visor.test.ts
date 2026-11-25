@@ -6,7 +6,7 @@ import { FILTROS_JS } from "../src/viewer-filtros.js";
 
 /** La pantalla Especificaciones, corrida con un DOM mínimo: casos de uso unidos entre cerebros, filtros, lo que falta y "Esto está mal". */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
-function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; fetch?: (url: string, init: { method: string; body: string; headers: Record<string, string> }) => Promise<unknown>; local?: Map<string, string> } = {}) {
+function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; fetch?: (url: string, init: { method: string; body: string; headers: Record<string, string> }) => Promise<unknown>; local?: Map<string, string>; lang?: "es" } = {}) {
   const guardado = new Map<string, string>();
   const sessionStorage = { getItem: (k: string) => guardado.get(k) ?? null, setItem: (k: string, v: string) => void guardado.set(k, v) };
   const local = opciones.local ?? new Map<string, string>();
@@ -23,7 +23,7 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
   for (const n of (datos["nodes"] as Array<{ id: string; n: string }> | undefined) ?? []) porId[n.id] = n;
   let borrador = "";
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const window = { brainVisor: { D: datos, porId, esc }, brainEspecificaciones: null as null | { mostrar(f?: string | null): void }, FLOWBRAIN_EDICION: opciones.edicion, FLOWBRAIN_GUIA_TESTS: GUIA_TESTS, scrollTo() {} };
+  const window = { brainVisor: { D: datos, porId, esc }, brainEspecificaciones: null as null | { mostrar(f?: string | null): void }, FLOWBRAIN_EDICION: opciones.edicion, FLOWBRAIN_GUIA_TESTS: GUIA_TESTS, scrollTo() {}, brainI18n: opciones.lang ? { lang: opciones.lang } : undefined };
   const descargas: Array<{ archivo: string; texto: () => Promise<string> }> = [];
   const documento = {
     getElementById: el,
@@ -98,21 +98,21 @@ describe("pantalla Especificaciones", () => {
     // Plegada: el nombre y los números, sin el detalle; una sola "Pagos" con los dos cerebros.
     expect(v.casos()).toEqual([]);
     expect(v.lista().match(/<h3>Pagos<\/h3>/g)).toHaveLength(1);
-    expect(v.lista()).toContain('<span class="chip">2 casos de uso</span>');
+    expect(v.lista()).toContain('<span class="chip">2 use cases</span>');
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
     // Lo marcado como mal y lo que falta, primero.
     expect(v.casos()).toEqual(["Pagar el carrito", "Ver el recibo"]);
     const l = v.lista();
-    expect(l).toContain("Quién: Cliente");
+    expect(l).toContain("Who: Cliente");
     expect(l).toContain('<tr><th scope="row">front</th>');
-    expect(l).toContain("1 de 2 reglas sin test");
+    expect(l).toContain("1 of 2 rules untested");
     expect(l).toContain('<tr><th scope="row">back</th><td><code title="repo-api:src/Cobro.php">Cobro.php</code></td><td><div class="es-verifica"><span><span class="es-bien">✔ 1 test</span></span></div></td></tr>');
     expect(l).toContain("«falta el reintento» <small>(back)</small>");
-    expect(l).toContain("✘ Sin reglas");
+    expect(l).toContain("✘ No rules");
     // La regla que ningún caso agrupa se dice, con el pedido para el agente.
-    expect(l).toContain("1 regla sin caso de uso");
+    expect(l).toContain("1 rule without a use case");
     expect(v.reglas()).toContain("El botón de pagar se ve abajo.");
-    expect(p).toContain("Sin casos de uso ni reglas (1)");
+    expect(p).toContain("No use cases or rules (1)");
     // Sin servidor es de solo lectura: lo dice y no ofrece marcar.
     expect(p).toContain("flowbrain viewer --serve");
     expect(l).not.toContain('data-acc="marcar"');
@@ -123,17 +123,20 @@ describe("pantalla Especificaciones", () => {
     v.tocar({ "data-acc": "todas" });
     v.tocar({ "data-acc": "grupo", "data-k": "problema" });
     expect(v.casos()).toEqual(["Pagar el carrito"]);
-    expect(v.lista()).toContain("Copiar pedido para el agente");
+    expect(v.lista()).toContain("Copy request for the agent");
     v.tocar({ "data-acc": "grupo", "data-k": "sintest" });
     expect(v.casos()).toEqual(["Pagar el carrito"]);
     expect(v.reglas()).toContain("El botón de pagar se ve abajo.");
     v.tocar({ "data-acc": "grupo", "data-k": "cumplido" });
-    expect(v.lista()).toContain("Ningún caso de uso coincide con cumplidos. Hay 2 casos de uso y 1 regla sin caso en total.");
+    // La frase la arma el filtro compartido; lo de esta pantalla es la unidad, el grupo y la cuenta.
+    expect(v.lista()).toContain("use case");
+    expect(v.lista()).toContain("fulfilled");
+    expect(v.lista()).toContain("2 use cases and 1 rule without a use case");
     v.tocar({ "data-fl": "es", "data-fl-limpiar": "1" });
     v.tocar({ "data-acc": "cerebro", "data-k": "back" });
     v.tocar({ "data-acc": "todas" });
     expect(v.casos()).toEqual(["Pagar el carrito"]);
-    expect(v.pagina()).not.toContain("Sin casos de uso ni reglas (");
+    expect(v.pagina()).not.toContain("No use cases or rules (");
     v.tocar({ "data-acc": "cerebro", "data-k": "" });
     v.escribir("recibo");
     expect(v.casos()).toEqual(["Ver el recibo"]);
@@ -142,14 +145,14 @@ describe("pantalla Especificaciones", () => {
   it("elige varios cerebros: los casos cuentan solo lo elegido, lo demás se nombra y la elección queda guardada", () => {
     const local = new Map<string, string>();
     const v = montar(datos(), { local });
-    expect(v.pagina()).toContain('data-acc="cerebro" data-k="" aria-pressed="true">Todos</button>');
+    expect(v.pagina()).toContain('data-acc="cerebro" data-k="" aria-pressed="true">All</button>');
     v.tocar({ "data-acc": "cerebro", "data-k": "back" });
     // Solo back: "pagar" pasa a cumplido (su regla de back tiene test) y "Ver el recibo" (solo en front) no está.
     expect([...v.pagina().matchAll(/<div class="fd-cifra[^"]*"[^>]*><b[^>]*>(\d+)<\/b>/g)].map((m) => m[1]).slice(0, 4)).toEqual(["1", "1", "0", "1"]);
-    expect(v.pagina()).toContain("Ves back: los casos cuentan solo lo de ese cerebro.");
+    expect(v.pagina()).toContain("You see back: use cases only count what's in that brain.");
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
     expect(v.casos()).toEqual(["Pagar el carrito"]);
-    expect(v.lista()).toContain("1 cerebro más fuera de los elegidos: front.");
+    expect(v.lista()).toContain("1 more brain outside the chosen ones: front.");
     expect(v.lista()).not.toContain('<tr><th scope="row">front</th>');
     expect(v.lista()).toContain('<span class="chip es-cerebro fuera"');
     expect(JSON.parse(local.get("flowbrain.especificaciones.cerebros")!)).toEqual(["back"]);
@@ -157,52 +160,52 @@ describe("pantalla Especificaciones", () => {
     const otra = montar(datos(), { local });
     expect(otra.pagina()).toContain('data-k="back" aria-pressed="true">✔ back</button>');
     otra.tocar({ "data-acc": "cerebro", "data-k": "front" });
-    expect(otra.pagina()).toContain('data-k="" aria-pressed="true">Todos</button>');
+    expect(otra.pagina()).toContain('data-k="" aria-pressed="true">All</button>');
     expect(JSON.parse(local.get("flowbrain.especificaciones.cerebros")!)).toEqual([]);
   });
 
   it("arma los pedidos para el agente: agrupar, escribir y corregir", () => {
     const v = montar(datos());
     v.tocar({ "data-acc": "pedido", "data-k": "agrupar|" });
-    expect(v.pagina()).toContain("Agrupá en casos de uso");
-    expect(v.pagina()).toContain("- feat-pagos (Pagos): 1 especificación en front.");
-    expect(v.pagina()).toContain("No se pudo copiar solo");
+    expect(v.pagina()).toContain("Group into use cases the specifications");
+    expect(v.pagina()).toContain("- feat-pagos (Pagos): 1 specification in front.");
+    expect(v.pagina()).toContain("It couldn't be copied automatically");
     v.tocar({ "data-acc": "pedido", "data-k": "escribir|" });
-    expect(v.lista()).toContain("- feat-envios (Envíos), cerebro front: 1 caso de test.");
+    expect(v.lista()).toContain("- feat-envios (Envíos), brain front: 1 test case.");
     v.tocar({ "data-acc": "grupo", "data-k": "problema" });
     v.tocar({ "data-acc": "pedido", "data-k": "corregir|" });
-    expect(v.lista()).toContain("- feat-pagos / pagar (Pagar el carrito), cerebro back: falta el reintento");
+    expect(v.lista()).toContain("- feat-pagos / pagar (Pagar el carrito), brain back: falta el reintento");
   });
 
   it("dice qué te toca hacer y arma el pedido de tests, de una regla, de un cerebro o del caso entero", () => {
     const v = montar(datos());
     const p = v.pagina();
-    expect(p).toContain("Qué te toca hacer");
-    expect(p).toContain("Pedir que agrupe 1 regla suelta en casos de uso");
-    expect(p).toContain("Pasarle al agente 1 caso marcado como mal");
+    expect(p).toContain("What you need to do");
+    expect(p).toContain("Ask it to group 1 loose rule into use cases");
+    expect(p).toContain("Pass 1 use case marked as wrong to the agent");
     // Cuenta las reglas de los casos (la suelta va en "agrupar"): "motivo", de negocio, no tiene test.
-    expect(p).toContain("Pedir los tests que faltan</b><small>1 regla de negocio sin test.");
+    expect(p).toContain("Request the missing tests</b><small>1 business rule untested.");
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
     expect(v.lista()).toContain('class="boton es-pedir" data-acc="sumar" data-k="test|feat-pagos|pagar"');
-    expect(v.lista()).toContain("Pedir el test que falta</button>");
-    expect(v.lista()).toContain("Ningún test la verifica: si alguien la rompe, nada avisa.");
+    expect(v.lista()).toContain("Request the missing test</button>");
+    expect(v.lista()).toContain("No test verifies it: if someone breaks it, nothing warns you.");
     // Pedir el test no manda nada: suma la regla a la lista y abre el panel.
-    expect(v.panel()).toContain("La lista está vacía");
+    expect(v.panel()).toContain("The list is empty");
     v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
     const l = v.lista(), pn = v.panel();
-    expect(l).toContain("✔ En tests pedidos");
-    expect(l).not.toContain("Mandar al agente");
+    expect(l).toContain("✔ In requested tests");
+    expect(l).not.toContain("Send to the agent");
     expect(pn).toContain("Si el pago falla se muestra el motivo.");
-    expect(pn).toContain("De negocio");
+    expect(pn).toContain(">Business<");
     expect(pn).toContain("Pagar el carrito");
     expect(pn).toContain("Pagos");
     expect(pn).toContain(">front<");
     expect(pn).toContain("<code>repo-web:src/pagos/Error.tsx</code>");
-    expect(pn).toContain("<b>1 regla</b>");
+    expect(pn).toContain("<b>1 rule</b>");
     // Sin servidor no se ofrece "No necesita test": no hay dónde guardarlo.
     expect(l).not.toContain('data-acc="manual"');
     v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
-    expect(v.panel()).toContain("La lista está vacía");
+    expect(v.panel()).toContain("The list is empty");
   });
 
   it("con el servidor, No necesita test guarda el motivo, deja de contar y se puede deshacer", async () => {
@@ -216,22 +219,22 @@ describe("pantalla Especificaciones", () => {
     v.tocar({ "data-acc": "manual", "data-k": "front/feat-pagos|motivo" });
     expect(v.lista()).toContain('<input id="es-motivo"');
     v.tocar({ "data-acc": "guardar-manual", "data-k": "front/feat-pagos|motivo" });
-    expect(v.lista()).toContain("Escribí por qué se prueba a mano");
+    expect(v.lista()).toContain("Write why it&#39;s tested by hand");
     expect(pedidos).toEqual([]);
     v.escribir("se ve a mano en cada versión", "es-motivo");
     v.tocar({ "data-acc": "guardar-manual", "data-k": "front/feat-pagos|motivo" });
     await new Promise((r) => setTimeout(r, 0));
     expect(pedidos).toEqual([{ tipo: "manual", cerebro: "front", funcionalidad: "feat-pagos", id: "motivo", motivo: "se ve a mano en cada versión" }]);
     const l = v.lista();
-    expect(l).toContain("Se prueba a mano: se ve a mano en cada versión");
-    expect(l).toContain("Queda como probada a mano");
+    expect(l).toContain("Tested by hand: se ve a mano en cada versión");
+    expect(l).toContain("Marked as tested by hand");
     // "pagar" ya no tiene reglas sin verificar: queda cumplido.
-    expect(v.pagina()).toContain("✔ Cada regla tiene su test o se prueba a mano");
-    expect(l).toContain("✔ Cumplido");
+    expect(v.pagina()).toContain("✔ Every rule has its test or is tested by hand");
+    expect(l).toContain("✔ Fulfilled");
     v.tocar({ "data-acc": "automatico", "data-k": "front/feat-pagos|motivo" });
     await new Promise((r) => setTimeout(r, 0));
     expect(pedidos[1]).toEqual({ tipo: "manual", cerebro: "front", funcionalidad: "feat-pagos", id: "motivo", motivo: null });
-    expect(v.lista()).toContain("Vuelve a contar como sin test");
+    expect(v.lista()).toContain("It counts as untested again");
   });
 
   const PROVEEDORES = [{ id: "claude-code", nombre: "Claude Code", version: "9.9.9", modelos: [
@@ -243,8 +246,8 @@ describe("pantalla Especificaciones", () => {
     const v = montar(datos(), { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: "no se encontró Claude Code (claude) en esta máquina" } }, fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }) });
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
     v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
-    expect(v.panel()).toContain("No hay ningún agente instalado en esta máquina: no se encontró Claude Code");
-    expect(v.panel()).toContain("Descargá el .md");
+    expect(v.panel()).toContain("There's no agent installed on this machine: no se encontró Claude Code");
+    expect(v.panel()).toContain("Download the .md");
     expect(v.panel()).not.toContain('id="es-prov"');
     expect(v.panel()).toMatch(/data-acc="pedir-todos" disabled/);
   });
@@ -256,32 +259,34 @@ describe("pantalla Especificaciones", () => {
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
     v.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|motivo" });
     v.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|suelta" });
-    expect(v.panel()).toContain("<b>2 reglas</b>");
+    expect(v.panel()).toContain("<b>2 rules</b>");
     // Recargar la página: la lista vuelve igual, con el panel abierto.
     const w = montar(d, { local });
-    expect(w.panel()).toContain("<b>2 reglas</b>");
+    expect(w.panel()).toContain("<b>2 rules</b>");
     expect(w.panel()).toContain("El botón de pagar se ve abajo.");
     w.tocar({ "data-acc": "quitar", "data-k": "front/feat-pagos|suelta" });
-    expect(w.panel()).toContain("<b>1 regla</b>");
+    expect(w.panel()).toContain("<b>1 rule</b>");
     expect(JSON.parse(local.get("flowbrain.especificaciones.pedidos")!)).toHaveLength(1);
     w.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
     w.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|suelta" });
     w.tocar({ "data-acc": "descargar-lista" });
     expect(w.descargas[0]!.archivo).toBe("tests-pedidos.md");
     const md = await w.descargas[0]!.texto();
-    expect(md).toContain("# Tests pedidos desde FlowBrain");
-    expect(md).toContain("Hace falta un agente con acceso al repo");
-    expect(md).toContain("Un chat web no sirve");
-    expect(md).toContain("Nunca modificás el código del producto.");
-    expect(md).toContain("## Los cuatro resultados");
+    expect(md).toContain("# Tests requested from FlowBrain");
+    expect(md).toContain("You need an agent with access to the repo");
+    expect(md).toContain("A web chat won't do");
+    // La guía viene entera de @flowbrain/core (sin su frontmatter), sea cual sea su texto.
+    const titulos = GUIA_TESTS.split("\n").filter((x) => x.startsWith("## "));
+    expect(titulos.length).toBeGreaterThan(0);
+    for (const t of titulos) expect(md).toContain(t);
     expect(md).not.toContain("$ARGUMENTS");
     expect(md).toContain("### repo-web (2)");
-    expect(md).toContain("regla motivo [negocio]: Si el pago falla se muestra el motivo.");
-    expect(md).toContain("## Al terminar");
+    expect(md).toContain("rule motivo [negocio]: Si el pago falla se muestra el motivo.");
+    expect(md).toContain("## When done");
     expect(md).toContain("`flowbrain compile`");
-    expect(md).toContain("flowbrain specs <funcionalidad> --brain <cerebro>");
+    expect(md).toContain("flowbrain specs <feature> --brain <brain>");
     w.tocar({ "data-acc": "vaciar" });
-    expect(w.panel()).toContain("La lista está vacía");
+    expect(w.panel()).toContain("The list is empty");
     expect(JSON.parse(local.get("flowbrain.especificaciones.pedidos")!)).toEqual([]);
   });
 
@@ -303,18 +308,18 @@ describe("pantalla Especificaciones", () => {
     let p = v.panel();
     // El selector muestra los proveedores instalados; el modelo por defecto va marcado.
     expect(p).toContain('<option value="claude-code" selected>Claude Code</option>');
-    expect(p).toContain('<option value="claude-opus-5-5" selected>Opus 5.5 (por defecto)</option>');
+    expect(p).toContain('<option value="claude-opus-5-5" selected>Opus 5.5 (default)</option>');
     for (const m of ["Fable 5.2", "Sonnet 5.5", "Haiku 5.5"]) expect(p).toContain(">" + m + "</option>");
-    expect(p).toContain("<b>2 reglas</b>");
-    expect(p).toContain("1 de negocio (van primero) · 1 de pantalla");
+    expect(p).toContain("<b>2 rules</b>");
+    expect(p).toContain("1 business (they go first) · 1 screen");
     expect(p.indexOf("Si el pago falla")).toBeLessThan(p.indexOf("El botón de pagar"));
-    expect(p).toContain("Costo estimado: ≈ US$ 0.80");
+    expect(p).toContain("Estimated cost: ≈ US$ 0.80");
     v.cambiar("es-modelo", "claude-haiku-5-5");
     p = v.panel();
-    expect(p).toContain("Costo estimado: ≈ US$ 0.080");
+    expect(p).toContain("Estimated cost: ≈ US$ 0.080");
     expect(p).toContain('<option value="claude-haiku-5-5" selected>Haiku 5.5</option>');
-    expect(p).toContain("Pedir todos (2)");
-    expect(p).toContain("Descargar .md");
+    expect(p).toContain("Request all (2)");
+    expect(p).toContain("Download .md");
     // Nada se mandó hasta ahora, salvo mirar cómo está el agente.
     expect(llamadas.filter((x) => x.cuerpo)).toEqual([]);
 
@@ -326,13 +331,13 @@ describe("pantalla Especificaciones", () => {
     expect(post.cuerpo).toMatchObject({ proveedor: "claude-code", modelo: "claude-haiku-5-5" });
     expect((post.cuerpo!["reglas"] as Array<Record<string, unknown>>).map((r) => r["regla"])).toEqual(["motivo", "suelta"]);
     expect(post.cuerpo!["reglas"][0]).toMatchObject({ cerebro: "front", funcionalidad: "feat-pagos", repo: "repo-web" });
-    expect(String(post.cuerpo!["reglas"][0].linea)).toContain("regla motivo [negocio]: Si el pago falla se muestra el motivo.");
+    expect(String(post.cuerpo!["reglas"][0].linea)).toContain("rule motivo [negocio]: Si el pago falla se muestra el motivo.");
     p = v.panel();
-    expect(p).toContain("Pidiendo 2 reglas en 1 repo a la vez");
-    expect(p).toContain("0 de 1 tandas");
+    expect(p).toContain("Requesting 2 rules in 1 repo at once");
+    expect(p).toContain("0 of 1 batches");
     expect(p).toContain("repo-web");
     expect(p).toContain("Corre: npx vitest run");
-    expect(p).toContain("Pidiéndose…");
+    expect(p).toContain("Requesting…");
     expect(p).toContain('data-acc="cancelar-lote"');
     expect(p).toMatch(/data-acc="pedir-todos" disabled/);
 
@@ -346,19 +351,19 @@ describe("pantalla Especificaciones", () => {
     v.tocar({ "data-acc": "panel", "data-k": "" }); v.tocar({ "data-acc": "panel", "data-k": "" });
     await new Promise((r) => setTimeout(r, 2100));
     p = v.panel();
-    expect(p).toContain("Terminó");
-    expect(p).toContain("Costo real: US$ 0.12");
-    expect(p).toContain("1 verificadas con un test nuevo · 0 ya cubiertas · 1 con el código que no la cumple · 0 que no se pueden testear sin tocar código");
-    expect(p).toContain("Verificadas");
+    expect(p).toContain("Finished");
+    expect(p).toContain("Actual cost: US$ 0.12");
+    expect(p).toContain("1 verified with a new test · 0 already covered · 1 with code that doesn't fulfill it · 0 that can't be tested without touching code");
+    expect(p).toContain("Verified");
     expect(p).toContain("repo-web:src/pagos/Error.test.tsx::muestra el motivo");
-    expect(p).toContain("Para decidir");
+    expect(p).toContain("To decide");
     expect(p).toContain("src/pagos/Boton.tsx#L9: el botón se ve arriba");
     expect(p).toContain("Mover el botón abajo.");
-    expect(p).toContain("El test que lo demuestra");
+    expect(p).toContain("The test that proves it");
     expect(p).toContain('data-acc="regla-mal"');
     expect(p).toContain('data-acc="codigo-mal"');
     // Lo que ya tiene resultado sale de la lista.
-    expect(p).toContain("La lista está vacía");
+    expect(p).toContain("The list is empty");
 
     // «El código está mal» lo pasa a desarrollo y queda guardado en la página.
     v.tocar({ "data-acc": "codigo-mal", "data-k": "front/feat-pagos|suelta" });
@@ -366,15 +371,15 @@ describe("pantalla Especificaciones", () => {
     const dec = llamadas.filter((x) => x.url === "/api/editar").pop()!;
     expect(dec.cuerpo).toEqual({ tipo: "decision", cerebro: "front", funcionalidad: "feat-pagos", id: "suelta", decision: "codigo_mal" });
     p = v.panel();
-    expect(p).toContain("Para desarrollo");
-    expect(p).toContain("Nada por decidir.");
-    expect(p).toContain("Descargar .md para tickets");
+    expect(p).toContain("For development");
+    expect(p).toContain("Nothing to decide.");
+    expect(p).toContain("Download .md for tickets");
     v.tocar({ "data-acc": "descargar-desarrollo" });
     const md = await v.descargas.pop()!.texto();
-    expect(md).toContain("# Para desarrollo");
+    expect(md).toContain("# For development");
     expect(md).toContain("## 1. El botón de pagar se ve abajo.");
-    expect(md).toContain("**Qué hace hoy el código:** src/pagos/Boton.tsx#L9: el botón se ve arriba");
-    expect(md).toContain("**Qué habría que cambiar:** Mover el botón abajo.");
+    expect(md).toContain("**What the code does today:** src/pagos/Boton.tsx#L9: el botón se ve arriba");
+    expect(md).toContain("**What should change:** Mover el botón abajo.");
     expect(md).toContain("it('abajo', () => {})");
 
     // «La regla está mal»: la corrige el agente.
@@ -383,27 +388,46 @@ describe("pantalla Especificaciones", () => {
     v.tocar({ "data-acc": "regla-mal", "data-k": "front/feat-pagos|suelta" });
     await tick();
     p = v.panel();
-    expect(p).toContain("La regla se corrige");
-    expect(p).toContain("Pedir la corrección");
+    expect(p).toContain("The rule gets fixed");
+    expect(p).toContain("Request the fix");
     v.tocar({ "data-acc": "corregir-reglas" });
     await tick();
     const corr = llamadas.find((x) => x.cuerpo?.["tipo"] === "corregir")!;
     expect(corr.cuerpo).toMatchObject({ cerebros: ["front"], proveedor: "claude-code", modelo: "claude-haiku-5-5" });
-    expect(String(corr.cuerpo!["pedido"])).toContain("regla suelta");
+    expect(String(corr.cuerpo!["pedido"])).toContain("rule suelta");
   }, 15_000);
+
+  it("en castellano (brainI18n.lang = es) dice lo mismo en castellano; los pedidos al agente siguen en inglés", () => {
+    const v = montar(datos(), { lang: "es" });
+    const p = v.pagina();
+    expect(p).toContain("<h1>Especificaciones</h1>");
+    expect(p).toContain("Qué te toca hacer");
+    expect(p).toContain("Pedir que agrupe 1 regla suelta en casos de uso");
+    expect(p).toContain("Pedir los tests que faltan</b><small>1 regla de negocio sin test.");
+    expect(v.lista()).toContain('<span class="chip">2 casos de uso</span>');
+    v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
+    expect(v.lista()).toContain("1 de 2 reglas sin test");
+    expect(v.lista()).toContain("Pedir el test que falta</button>");
+    v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
+    expect(v.panel()).toContain("<b>1 regla</b>");
+    expect(v.panel()).toContain("Tests pedidos");
+    v.tocar({ "data-acc": "pedido", "data-k": "agrupar|" });
+    expect(v.pagina()).toContain("Pedido para el agente");
+    expect(v.pagina()).toContain("Group into use cases the specifications");
+  });
 
   it("sin nada escrito o sin funcionalidades explica qué hacer", () => {
     const d = datos();
     const sin = montar({ ...d, funcionalidades: d.funcionalidades.map((f) => ({ ...f, especificaciones: [], casos: [] })) }).pagina();
-    expect(sin).toContain("Todavía no hay casos de uso ni reglas escritas");
-    expect(sin).toContain("Sin casos de uso ni reglas (2)");
-    expect(montar({ ...d, funcionalidades: [] }).pagina()).toContain("No hay funcionalidades");
+    expect(sin).toContain("There are no use cases or written rules yet");
+    expect(sin).toContain("No use cases or rules (2)");
+    expect(montar({ ...d, funcionalidades: [] }).pagina()).toContain("There are no features");
     // Un visor generado antes de esta versión no trae los campos: se lee como "ninguna", no rompe.
-    expect(montar({ ...d, funcionalidades: [{ id: "front/feat-pagos" }] }).pagina()).toContain("Sin casos de uso ni reglas (1)");
+    expect(montar({ ...d, funcionalidades: [{ id: "front/feat-pagos" }] }).pagina()).toContain("No use cases or rules (1)");
     // Solo reglas, sin casos: lo dice y los números cuentan reglas.
     const solo = montar({ ...d, funcionalidades: d.funcionalidades.map((f) => ({ ...f, casos: [] })) }).pagina();
-    expect(solo).toContain("Todavía no hay casos de uso: hay 4 reglas escritas");
-    expect(solo).toContain("Todavía no hay casos de uso: los números cuentan reglas.");
+    expect(solo).toContain("There are no use cases yet: there are 4 written rules");
+    expect(solo).toContain("There are no use cases yet: the numbers count rules.");
   });
 
   it("con el servidor, Esto está mal guarda el comentario en cada cerebro del caso y se refleja sin recargar", async () => {
@@ -413,19 +437,19 @@ describe("pantalla Especificaciones", () => {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ mensaje: "ok", escrito: "x", cambio: true }) });
     };
     const v = montar(datos(), { edicion: { token: "secreto", sinAplicar: [] }, fetch });
-    expect(v.pagina()).not.toContain("solo lectura");
+    expect(v.pagina()).not.toContain("read-only");
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
     v.tocar({ "data-acc": "marcar", "data-k": "feat-pagos|ver-recibo" });
     expect(v.lista()).toContain('<textarea id="es-nota"');
     // Sin texto no guarda: el comentario es lo que lee el agente.
     v.tocar({ "data-acc": "guardar", "data-k": "feat-pagos|ver-recibo" });
-    expect(v.lista()).toContain("Escribí qué está mal");
+    expect(v.lista()).toContain("Write what&#39;s wrong");
     expect(pedidos).toEqual([]);
     v.escribir("no existe el recibo", "es-nota");
     v.tocar({ "data-acc": "guardar", "data-k": "feat-pagos|ver-recibo" });
     await new Promise((r) => setTimeout(r, 0));
     expect(pedidos).toEqual([{ url: "/api/editar", cuerpo: { tipo: "caso", cerebro: "front", funcionalidad: "feat-pagos", id: "ver-recibo", problema: "no existe el recibo" }, token: "secreto" }]);
-    expect(v.lista()).toContain("Quedó marcado como mal en front.");
+    expect(v.lista()).toContain("Marked as wrong in front.");
     expect(v.lista()).toContain("«no existe el recibo»");
     // "pagar" está en los dos cerebros: sacarle la marca va a los dos.
     pedidos.length = 0;

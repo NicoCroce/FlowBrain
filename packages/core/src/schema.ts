@@ -167,7 +167,7 @@ export const endpointId = (svc: string, metodo: string, ruta: string) => `${svc}
 
 // ---------- Frontmatter ----------
 
-const fecha = z.string().regex(FECHA, "fecha inválida, se espera YYYY-MM-DD");
+const fecha = z.string().regex(FECHA, "invalid date, expected YYYY-MM-DD");
 
 export const RelacionSchema = z
   .object({
@@ -212,8 +212,8 @@ export type Hallazgo = z.infer<typeof HallazgoSchema>;
  */
 export const EspecificacionSchema = z
   .object({
-    id: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "id de especificación: minúsculas, números y guiones"),
-    texto: z.string().min(1).max(400, "texto: máximo 400 caracteres"),
+    id: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "specification id: lowercase letters, numbers and hyphens"),
+    texto: z.string().min(1).max(400, "texto: 400 characters max"),
     tipo: z.enum(TIPOS_ESPECIFICACION),
     /** Archivos que la cumplen: `repo:ruta`, con `#Ln` si se sabe la línea. */
     archivos: z.array(z.string()).optional(),
@@ -225,7 +225,7 @@ export const EspecificacionSchema = z
      * Por qué no necesita un test automático: una persona decidió probarla a mano ("se ve en el celular"). Cuenta como
      * verificada; la escribe la persona desde el visor y el agente no la toca.
      */
-    manual: z.string().min(1).max(300, "manual: máximo 300 caracteres").optional(),
+    manual: z.string().min(1).max(300, "manual: 300 characters max").optional(),
     /**
      * Lo que el agente encontró al intentar testearla y que no se resuelve con un test: el código no la cumple o no se
      * puede testear sin tocarlo. El agente nunca cambia el código del producto: deja el informe acá.
@@ -242,8 +242,8 @@ export const EspecificacionSchema = z
  */
 export const CasoDeUsoSchema = z
   .object({
-    id: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "id de caso de uso: minúsculas, números y guiones"),
-    nombre: z.string().min(1).max(160, "nombre: máximo 160 caracteres"),
+    id: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "use case id: lowercase letters, numbers and hyphens"),
+    nombre: z.string().min(1).max(160, "nombre: 160 characters max"),
     /** Quién lo hace: "Jugador que participó del partido", "Administrador del club". */
     quien: z.string().min(1).max(160).optional(),
     /** ids de las especificaciones de esta página que lo componen. */
@@ -255,13 +255,13 @@ export const CasoDeUsoSchema = z
 export const FrontmatterSchema = z
   .object({
     id: z.string(),
-    tipo: z.union([z.enum(TIPOS_PAGINA), z.string().regex(TIPO_PROPIO, "tipo: uno conocido o uno propio en minúsculas (job, topic, componente…)").refine((t) => !(TIPOS_GENERADOS as readonly string[]).includes(t), "tipo: ese tipo lo genera FlowBrain, no se escribe en una página")]),
+    tipo: z.union([z.enum(TIPOS_PAGINA), z.string().regex(TIPO_PROPIO, "tipo: a known one or a custom one in lowercase (job, topic, componente…)").refine((t) => !(TIPOS_GENERADOS as readonly string[]).includes(t), "tipo: FlowBrain generates that type, it is not written in a page")]),
     nombre: z.string().min(1),
     resumen: z
       .string()
       .min(1)
-      .max(140, "resumen: máximo 140 caracteres")
-      .refine((s) => !s.includes("\n"), "resumen: una sola línea"),
+      .max(140, "resumen: 140 characters max")
+      .refine((s) => !s.includes("\n"), "resumen: a single line"),
     aliases: z.array(z.string().min(1)).optional(),
     estado: z.enum(ESTADOS).optional(),
     origen: z.enum(ORIGENES).optional(),

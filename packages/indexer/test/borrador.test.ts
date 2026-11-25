@@ -52,8 +52,8 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
   it("el borrador de una tabla dice qué métodos la leen o escriben", async () => {
     await draftDir(clon, brain);
     const t = await readFile(join(brain, "_drafts/repo-envios/technology/tabla-envios.md"), "utf8");
-    expect(t).toContain("## Quién la usa");
-    expect(t).toContain("- `EnvioController.store @ repo-envios:app/Http/Controllers/EnvioController.php#L17` (escribe)");
+    expect(t).toContain("## Who uses it");
+    expect(t).toContain("- `EnvioController.store @ repo-envios:app/Http/Controllers/EnvioController.php#L17` (writes)");
   });
 
   it("las relaciones del borrador son las aristas etiquetadas a mano, con evidencia", async () => {
@@ -70,7 +70,7 @@ describe("flowbrain draft sobre un brain casi vacío", () => {
   it("lo no resuelto queda en Preguntas abiertas, con evidencia", async () => {
     await draftDir(clon, brain);
     const svc = await readFile(join(brain, "_drafts/repo-envios/technology/svc-envios.md"), "utf8");
-    expect(svc).toContain("## Preguntas abiertas\n\n- `llama_a` `GET ${env:TRACKING_URL}/track`: base dinámica");
+    expect(svc).toContain("## Open questions\n\n- `llama_a` `GET ${env:TRACKING_URL}/track`: base dinámica");
     expect(svc).toContain("`repo-envios:app/Services/Correo.php#L21`");
     expect(svc).toContain(`resumen: "${RESUMEN_PENDIENTE}"`);
   });
@@ -140,7 +140,9 @@ describe("flowbrain draft sobre páginas existentes", () => {
     expect(t).toContain("vive_en: [repo-envios] # comentario");
     expect(t.match(/destino: ext-correo/g)).toHaveLength(1);
     expect(t).not.toContain("- vieja");
-    expect(t.match(/## Preguntas abiertas/g)).toHaveLength(1);
+    // La sección vieja, con el título en castellano, se reemplaza: no queda duplicada.
+    expect(t.match(/## Open questions/g)).toHaveLength(1);
+    expect(t).not.toContain("## Preguntas abiertas");
     expect(t).toContain("## Notas\n\ntexto");
   });
 });

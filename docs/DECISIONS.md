@@ -951,3 +951,33 @@ Decisiones que el PRD deja abiertas. Formato: fecha · decisión · motivo.
 213. **2026-11-24 · Nombres de cerebro sutiles en el mapa 3D y favicon.** El nombre de cada cerebro competía con el grafo: pasa de 600 y 12–22 px al 85 % a 500 y 11–15 px al 50 % (95 % mientras se lo agarra); la zona para arrastrarlo no cambia. El visor suma un favicon con el logo de la cabecera, embebido en base64 (`data:`), así sigue autocontenido: el test admite `<link href="data:…">` y sigue rechazando cualquier recurso externo.
 
 214. **2026-11-24 · Documentación en inglés primero, con guía «What does the AI understand about my project?».** La documentación para usuarios pasa a tener el inglés como idioma principal y el castellano como segunda opción, con un enlace de idioma arriba de cada archivo: `README.md` (inglés) y `README.es.md`, lo mismo en `packages/flowbrain` (el paquete npm publica los dos), `docs/INSTALL.md` (traducción de `docs/INSTALACION.md`) y la guía nueva `docs/GUIDE.md` / `docs/GUIA.md`. La guía explica el sentido de la herramienta: ver qué entendió la IA del proyecto, verificar si es correcto y corregirlo, para que cada respuesta sea más determinística; presenta el menú (`flowbrain`), las preguntas que se pueden hacer (visor, MCP y CLI) y cómo verificar pantalla por pantalla. Quedan solo en castellano los documentos internos de desarrollo (`DECISIONS.md`, `PRD.es.md`, `PLAN.md`). La traducción de la aplicación (visor, CLI, menú, archivos que se crean) va aparte, en su propia rama.
+
+215. **2026-11-24 · Inglés por defecto y castellano como segunda opción, en el visor, la CLI y lo que FlowBrain escribe.** Todo estaba en castellano rioplatense. Ahora predomina el inglés, y el castellano se elige con un switch o una opción.
+   - **Textos en par, inglés primero, en vez de un diccionario con claves:** `L("Features", "Funcionalidades")` en el visor y `` L(`brain ready at ${r}`, `brain listo en ${r}`) `` en la CLI. El castellano que ya había queda tal cual como el lado `es`, sin claves que mantener ni textos que se pierdan entre archivos. `L` corre cuando se pinta o se imprime, nunca en una constante de módulo.
+   - **Visor** (`packages/viewer/src/idioma.ts`): `window.brainI18n` (`lang`, `L`, `num`, `alCambiar`, `repintar`, `cambiar`) corre antes que cualquier pantalla. El switch EN/ES de la cabecera (`#idioma`) cambia todo sin recargar los datos:
+     - lo estático lleva `data-en`/`data-es` (y `data-placeholder-*`, `data-title-*`, `data-aria-label-*`);
+     - cada pantalla rehace en `alCambiar` lo que arma una sola vez (tablas de etiquetas, filtros, paneles del mapa 3D);
+     - el router (`repintar`) vuelve a dibujar la pantalla abierta.
+     El idioma se guarda en `localStorage` (`flowbrain.idioma`). Por defecto, inglés. Los números siguen el idioma. Sin `brainI18n` (tests de una pantalla sola) sale inglés. El filtro compartido acepta etiquetas como funciones, que lee al pintar.
+   - **CLI y menú** (`packages/cli/src/idioma.ts`). El idioma se decide por comando, en este orden:
+     1. `--lang en|es`;
+     2. `FLOWBRAIN_LANG`;
+     3. la preferencia que guarda el menú (`~/.config/flowbrain/config.json`);
+     4. `lang: en|es` en `flowbrain.yaml` (clave nueva del registro);
+     5. inglés.
+     La preferencia es de la persona y le gana al proyecto, que es del equipo. El menú tiene una opción para cambiar el idioma y corre sus comandos con el idioma elegido. Hay ayuda completa en los dos idiomas.
+   - **Solo en inglés**, porque lo lee el modelo o lo comparte el equipo:
+     - lo que se escribe en disco: README del brain, las guías `/flowbrain-*`, las reglas de CLAUDE.md/AGENTS.md, los borradores de `_drafts/` y el `flowbrain.yaml` que propone `brains propose`;
+     - los textos para el modelo: `REGLAS_DEL_PLAN`, `GUIA_TESTS`, el plan de Fidelidad, los pedidos al agente y el `tests-pedidos.md`;
+     - lo que devuelve el motor: avisos, motivos, tareas de fidelidad y errores de consulta;
+     - las descripciones e instrucciones del MCP;
+     - los mensajes de la API del visor servido.
+   - **Nada cambia de nombre:** carpetas, claves de frontmatter y de JSON, valores (`persona`, `codigo_no_cumple`, `al día` interno), tipos, verbos, nombres de las herramientas del MCP y de los comandos. Los brains existentes (Gloouds) siguen funcionando sin migrar. `promote` reconoce el aviso de borrador viejo («Borrador generado…») y el nuevo («Draft generated…»). El catálogo reconoce «Borrador:» y «Draft:».
+   - **Queda en inglés también con el visor o la CLI en castellano:** los textos del motor que se ven en pantalla (motivos de Sin asociar, tareas de Fidelidad, avisos de Contratos y de consultas, errores de core). Para tenerlos en castellano, el motor tendría que devolver los dos idiomas.
+   - **Arreglos en el camino:**
+     - el test del servidor del visor rechazaba el favicon `data:` de la 213;
+     - el vacío de los paneles del filtro decía «Ningún funcionalidad» (ahora concuerda en género, como la lista);
+     - el corte front/back de una pantalla buscaba «por HTTP» y ahora busca el texto nuevo.
+   - **Verificado:**
+     - Typecheck y tests en verde (447). Hay tests nuevos del switch: arranca en inglés, guarda el idioma, rehace lo registrado y repinta. También del orden de `--lang`/`FLOWBRAIN_LANG`/preferencia/`flowbrain.yaml`, de la ayuda y de la opción del menú.
+     - En el visor servido sobre Gloouds: las ocho pantallas, fichas, Impacto, ficha técnica y mapa 3D salen sin textos de la interfaz en castellano. El switch pasa a castellano en vivo, incluido el panel abierto del mapa 3D.

@@ -48,13 +48,13 @@ describe("elegir el visor en localhost", () => {
   it("cae al estático y dice por qué: todos ocupados, otro error, o la página que no carga (y cierra el servidor)", async () => {
     expect(await prepararVisor("/p", deps({ servir: async () => Promise.reject(ocupado()) }), { intentos: 3 })).toEqual({
       modo: "estatico",
-      motivo: "los puertos 4780 a 4782 están ocupados por otros programas",
+      motivo: "ports 4780 to 4782 are taken by other programs",
     });
     const e = await prepararVisor("/p", deps({ servir: async () => Promise.reject(Object.assign(new Error("permiso denegado"), { code: "EACCES" })) }));
-    expect(e).toEqual({ modo: "estatico", motivo: "el servidor no pudo escuchar en el puerto 4780: permiso denegado" });
+    expect(e).toEqual({ modo: "estatico", motivo: "the server could not listen on port 4780: permiso denegado" });
     const cerrados: number[] = [];
     const p = await prepararVisor("/p", deps({ servir: async (x) => falsoServidor(x, cerrados), pagina: async () => ({ estado: 409, error: "ningún cerebro está compilado" }) }));
-    expect(p).toEqual({ modo: "estatico", motivo: "el servidor arrancó pero la página no cargó (409: ningún cerebro está compilado)" });
+    expect(p).toEqual({ modo: "estatico", motivo: "the server started but the page did not load (409: ningún cerebro está compilado)" });
     expect(cerrados).toEqual([4780]);
   });
 });
@@ -84,7 +84,7 @@ describe("contra servidores de verdad", () => {
     const otroReg = join(dir, "otro");
     const r = await prepararVisor(otroReg, depsReales(otroReg), { base, intentos: 3 });
     expect(r.modo).toBe("estatico");
-    expect(r.modo === "estatico" && r.motivo).toMatch(/^el servidor arrancó pero la página no cargó \((400|409|500)/);
+    expect(r.modo === "estatico" && r.motivo).toMatch(/^the server started but the page did not load \((400|409|500)/);
   });
 });
 
@@ -111,8 +111,8 @@ describe("la opción Abrir el visor del menú", () => {
     const f = entorno(async () => ({ modo: "nuevo", url: "http://127.0.0.1:4781/", servidor: falsoServidor(4781, cerrados) }));
     await abrirVisor(c, f.e);
     expect(f.corridas).toEqual([expect.stringMatching(/ http:\/\/127\.0\.0\.1:4781\/$/)]);
-    expect(f.texto()).toContain("Visor con edición en http://127.0.0.1:4781/");
-    expect(f.texto()).toContain("Ctrl+C lo corta y volvés al menú");
+    expect(f.texto()).toContain("Editable viewer at http://127.0.0.1:4781/");
+    expect(f.texto()).toContain("Ctrl+C stops it and you go back to the menu");
     expect(f.cortes()).toBe(1);
     expect(cerrados).toEqual([4781]);
   });
@@ -121,20 +121,20 @@ describe("la opción Abrir el visor del menú", () => {
     const f = entorno(async () => ({ modo: "reusa", url: "http://127.0.0.1:4780/" }));
     await abrirVisor(c, f.e);
     expect(f.corridas).toEqual([expect.stringMatching(/ http:\/\/127\.0\.0\.1:4780\/$/)]);
-    expect(f.texto()).toContain("Ya había un visor de FlowBrain corriendo");
+    expect(f.texto()).toContain("A FlowBrain viewer was already running");
     expect(f.cortes()).toBe(0);
   });
 
   it("sin servidor abre el estático y dice el motivo; sin estático, cómo generarlo", async () => {
-    const f = entorno(async () => ({ modo: "estatico", motivo: "los puertos 4780 a 4789 están ocupados por otros programas" }));
+    const f = entorno(async () => ({ modo: "estatico", motivo: "ports 4780 to 4789 are taken by other programs" }));
     await abrirVisor(c, f.e);
     expect(f.corridas).toEqual([expect.stringMatching(/flowbrain\.html$/)]);
-    expect(f.texto()).toContain("No pude abrir el visor en localhost: los puertos 4780 a 4789 están ocupados");
-    expect(f.texto()).toContain("no guarda correcciones");
+    expect(f.texto()).toContain("Could not open the viewer on localhost: ports 4780 to 4789 are taken");
+    expect(f.texto()).toContain("does not save fixes");
     const g = entorno(async () => Promise.reject(new Error("se rompió")));
     await abrirVisor({ ...c, visor: null }, g.e);
     expect(g.corridas).toEqual([]);
-    expect(g.texto()).toContain("No pude abrir el visor en localhost: se rompió");
-    expect(g.texto()).toContain("elegí Reindexar");
+    expect(g.texto()).toContain("Could not open the viewer on localhost: se rompió");
+    expect(g.texto()).toContain("pick Re-index");
   });
 });

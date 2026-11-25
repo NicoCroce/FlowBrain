@@ -65,7 +65,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
   const elegir = async (nombre?: string) => {
     const r = await registro();
     const c = nombre ? r.cerebro(nombre) : (r.deDirectorio(opciones.cwd ?? process.cwd()) ?? r.cerebros[0]!);
-    if (!c) throw new ConsultaError("nodo_inexistente", `no existe el cerebro: ${nombre}; hay ${r.cerebros.map((x) => x.nombre).join(", ")}`);
+    if (!c) throw new ConsultaError("nodo_inexistente", `no such brain: ${nombre}; available: ${r.cerebros.map((x) => x.nombre).join(", ")}`);
     return { r, c };
   };
   /** El cerebro y sus vecinos en versión liviana; los vecinos sin compilar se saltean. */
@@ -176,7 +176,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
           out.push({
             salto,
             cerebro: x.cerebro,
-            ...(f.via ? { porQue: `llama a endpoints de ${f.cerebro} alcanzados desde ${f.via}` } : {}),
+            ...(f.via ? { porQue: `calls endpoints of ${f.cerebro} reached from ${f.via}` } : {}),
             funcionalidades: x.funcionalidades.slice(0, 30),
             ...(x.funcionalidades.length > 30 ? { masFuncionalidades: x.funcionalidades.length - 30 } : {}),
             pantallas: { total: x.pantallas.length, primeras: x.pantallas.slice(0, 10).map((p) => ({ id: p.id, endpoints: p.endpoints.slice(0, 2), ...(p.endpoints.length > 2 ? { masEndpoints: p.endpoints.length - 2 } : {}), ev: p.ev })) },
@@ -219,7 +219,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
         const ctx = await cargador(c.raiz)();
         if (partido && !partido.svc) {
           const svcs = ctx.graph.nodes.filter((n) => n.tipo === "svc" && (ctx.salientes.get(n.id) ?? []).some((e) => e.verbo === "contiene")).map((n) => n.id).sort(cmp);
-          if (svcs.length !== 1) throw new ConsultaError("parametro_invalido", `el cerebro ${c.nombre} tiene ${svcs.length} servicios con endpoints o pantallas${svcs.length ? ` (${svcs.join(", ")})` : ""}: decí cuál, como ${c.nombre}/svc-…`);
+          if (svcs.length !== 1) throw new ConsultaError("parametro_invalido", `brain ${c.nombre} has ${svcs.length} services with endpoints or screens${svcs.length ? ` (${svcs.join(", ")})` : ""}: say which one, as ${c.nombre}/svc-…`);
           return { ctx, svc: svcs[0]!, cerebro: c.nombre };
         }
         return { ctx, svc: partido ? partido.svc : ref, cerebro: c.nombre };
@@ -231,15 +231,15 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
       return cruzadasDe(r, c.nombre);
     },
     descripcion: [
-      "Este servidor tiene varios cerebros, cada uno con sus repos. Por defecto se consulta el del repo donde estás; pasá `cerebro` para consultar otro. Cada respuesta dice de qué `cerebro` salió.",
-      "Si la respuesta trae `otrosCerebros`, hay algo con el mismo nombre en otro cerebro: decíselo al usuario en una línea (qué cerebro y qué encontraste) y consultalo solo si la tarea lo necesita o si te lo pide.",
-      "`llamadoDesdeOtrosCerebros` son llamadas HTTP reales desde otro cerebro a un endpoint de la respuesta: contalas como afectadas por un cambio; si traen `pantallas`, son las pantallas del otro cerebro que dependen de ese endpoint. `sinRevisar: true` marca un cerebro indexado sin revisión humana: decilo al citar sus datos.",
-      "En `impacto`, `enOtrosCerebros` sigue el cambio a los cerebros que llaman a los endpoints alcanzados: sus funcionalidades y pantallas también quedan afectadas. `servicios` son llamadas que no salen de una pantalla (un job, otro back); `alcanceDeLosServicios` es lo que, en ese cerebro, llega a esas llamadas, y desde ahí el impacto sigue al salto siguiente (`salto` 2, 3…).",
-      "`llamaAOtrosCerebros` son los endpoints de otro cerebro que llaman las pantallas de la respuesta: la otra mitad de la pantalla o de la funcionalidad; para ver qué ejecutan, `recorrido` con ese endpoint y `cerebro`.",
-      "`conexiones` resume qué servicios de un cerebro llaman a servicios de otro.",
-      "`paridad` compara servicios de cerebros distintos: nombrá cada lado como `cerebro/svc-x`, o solo `cerebro` si tiene un único servicio. Es el caso de una migración con el sistema viejo en un cerebro y el nuevo en otro.",
-      "`deriva` cruza cerebros: `atendidasEnOtrosCerebros` son llamadas de este cerebro que atiende un endpoint de otro (no son deriva); `llamadasSinEndpoint` quedan solo las que no atiende ni este cerebro ni los comunicados; un endpoint que llama otro cerebro no figura como sin llamadas, y `consumidoresIndexados` incluye a los de otros cerebros como `cerebro/servicio`. Los campos de una llamada que atiende otro cerebro se comparan con el contrato del endpoint en ese cerebro (`camposQueNoCoinciden` trae `cerebro`).",
-      "`usadoEnOtrosCerebros` son componentes de este cerebro (un sistema de diseño, una librería) que dibujan pantallas de otro cerebro: un cambio en ellos las afecta, y con ellas a sus funcionalidades. `usaDeOtrosCerebros` son los componentes de otro cerebro que dibujan las pantallas de la respuesta. `dependenDesdeOtrosCerebros`: repos de otro cerebro que declaran en su manifiesto depender de un paquete de este. Salen de los imports y los manifiestos, sin depender de la comunicación entre cerebros.",
+      "This server has several brains, each with its own repos. By default it queries the brain of the repo you are in; pass `cerebro` to query another one. Every response says which `cerebro` (brain) it came from.",
+      "If the response includes `otrosCerebros`, there is something with the same name in another brain: tell the user in one line (which brain and what you found) and query it only if the task needs it or the user asks.",
+      "`llamadoDesdeOtrosCerebros` are real HTTP calls from another brain to an endpoint in the response: count them as affected by a change; if they include `pantallas`, those are the screens of the other brain that depend on that endpoint. `sinRevisar: true` marks a brain indexed without human review: say so when citing its data.",
+      "In `impacto`, `enOtrosCerebros` follows the change into the brains that call the reached endpoints: their features and screens are affected too. `servicios` are calls that do not come from a screen (a job, another back end); `alcanceDeLosServicios` is what, in that brain, reaches those calls, and from there the impact continues to the next hop (`salto` 2, 3…).",
+      "`llamaAOtrosCerebros` are the endpoints of another brain called by the screens in the response: the other half of the screen or feature; to see what they execute, use `recorrido` with that endpoint and `cerebro`.",
+      "`conexiones` summarizes which services of one brain call services of another.",
+      "`paridad` compares services of different brains: name each side as `brain/svc-x`, or just `brain` if it has a single service. This is the case of a migration with the old system in one brain and the new one in another.",
+      "`deriva` cross-references brains: `atendidasEnOtrosCerebros` are calls of this brain served by an endpoint of another (they are not drift); `llamadasSinEndpoint` keeps only those served neither by this brain nor by the connected ones; an endpoint called from another brain is not listed as uncalled, and `consumidoresIndexados` includes those of other brains as `brain/service`. The fields of a call served by another brain are compared with the endpoint contract in that brain (`camposQueNoCoinciden` includes `cerebro`).",
+      "`usadoEnOtrosCerebros` are components of this brain (a design system, a library) that render screens of another brain: a change in them affects those screens, and with them their features. `usaDeOtrosCerebros` are the components of another brain that render the screens in the response. `dependenDesdeOtrosCerebros`: repos of another brain whose manifest declares a dependency on a package of this one. They come from imports and manifests, regardless of the communication between brains.",
     ].join("\n"),
     async resolver(nombre?: string): Promise<CerebroResuelto> {
       const { r, c } = await elegir(nombre);
@@ -304,7 +304,7 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
     async conexiones(nombre?: string) {
       const { r, c } = await elegir(nombre);
       const { propio, vecinos } = await vecindario(r, c.nombre, c.raiz);
-      if (!propio) throw new ConsultaError("parametro_invalido", `el cerebro ${c.nombre} no está compilado: corré flowbrain brains apply`);
+      if (!propio) throw new ConsultaError("parametro_invalido", `brain ${c.nombre} is not compiled: run flowbrain brains apply`);
       const mios = (x: { desde: { cerebro: string }; hacia: { cerebro: string } }) => x.desde.cerebro === c.nombre || x.hacia.cerebro === c.nombre;
       const global = await crucesDe(r);
       const todos = global.cruces.filter(mios);
@@ -332,11 +332,11 @@ export function crearMulti(carpeta: string, opciones: { cwd?: string; sincroniza
         conexiones: resumen,
         ...(porPaquete.length ? { porPaquetes: porPaquete } : {}),
         avisos: [
-          ...resumen.filter((x) => x.declarada && x.llamadas === 0).map((x) => `conexión declarada sin llamadas que la respalden: ${x.desde} → ${x.hacia}`),
-          ...resumen.filter((x) => !x.declarada).map((x) => `llamadas detectadas sin conexión declarada: ${x.desde} → ${x.hacia} (${x.llamadas})`),
-          ...(ambiguas ? [`${ambiguas} llamadas coinciden con varios endpoints de un mismo cerebro: no se unen a ninguno`] : []),
-          ...(disputadas.length ? [`${disputadas.length} llamadas coinciden con endpoints de más de un cerebro y no se unieron a ninguno: falta declarar a qué servicio va cada base de URL (flowbrain evidence las lista)`] : []),
-          ...(apagados.length ? [`comunicación desactivada con: ${apagados.join(", ")}`] : []),
+          ...resumen.filter((x) => x.declarada && x.llamadas === 0).map((x) => `declared connection with no calls backing it: ${x.desde} → ${x.hacia}`),
+          ...resumen.filter((x) => !x.declarada).map((x) => `calls detected without a declared connection: ${x.desde} → ${x.hacia} (${x.llamadas})`),
+          ...(ambiguas ? [`${ambiguas} calls match several endpoints of the same brain: they are not linked to any`] : []),
+          ...(disputadas.length ? [`${disputadas.length} calls match endpoints of more than one brain and were not linked to any: declare which service each URL base goes to (flowbrain evidence lists them)`] : []),
+          ...(apagados.length ? [`communication disabled with: ${apagados.join(", ")}`] : []),
         ],
       };
     },

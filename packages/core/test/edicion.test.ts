@@ -25,7 +25,7 @@ describe("sumar código a una funcionalidad", () => {
     expect(agregarCodigoAPagina("p.md", PAGINA, "repo-tienda:apps/web/src/pedidos/Lista.tsx")).toEqual({ contenido: PAGINA, cambio: false });
     const sin = PAGINA.replace("codigo:\n  - repo-tienda:apps/web/src/pedidos\n", "");
     expect(agregarCodigoAPagina("p.md", sin, "repo-tienda:apps/api").contenido).toContain('aliases: ["orders"]\ncodigo:\n  - repo-tienda:apps/api\n---\n# Pedidos');
-    expect(() => agregarCodigoAPagina("p.md", PAGINA, "../fuera")).toThrow(/inválida/);
+    expect(() => agregarCodigoAPagina("p.md", PAGINA, "../fuera")).toThrow(/invalid code entry/);
   });
 });
 
@@ -36,7 +36,7 @@ describe("declarar en calls.yaml", () => {
   it("crea el archivo, suma a cada sección y lo que escribe se vuelve a leer igual", () => {
     const a = agregarDeclaracion(null, "llamadas", llamada);
     const b = agregarDeclaracion(a.contenido, "http", http);
-    expect(b.contenido.startsWith("# Llamadas que el código no declara")).toBe(true);
+    expect(b.contenido.startsWith("# Calls the code does not declare")).toBe(true);
     expect(leerLlamadasDeclaradas(b.contenido)).toEqual({ llamadas: [llamada], http: [http], rechazadas: [] });
   });
 
@@ -46,7 +46,7 @@ describe("declarar en calls.yaml", () => {
     const r = agregarDeclaracion(previo, "llamadas", { ...llamada, linea: 50 });
     expect(r.contenido.startsWith(previo)).toBe(true);
     expect(leerLlamadasDeclaradas(r.contenido).llamadas.map((x) => x.linea)).toEqual([42, 50]);
-    expect(() => agregarDeclaracion("llamadas: [", "http", http)).toThrow(/YAML inválido/);
+    expect(() => agregarDeclaracion("llamadas: [", "http", http)).toThrow(/invalid YAML/);
   });
 });
 
@@ -67,8 +67,8 @@ describe("confirmar una especificación", () => {
   it("no escribe lo que ya está dicho, ni una especificación o un estado que no existen", () => {
     expect(cambiarEstadoDeEspecificacion("p.md", CON, "orden", "confirmada")).toEqual({ contenido: CON, cambio: false });
     expect(cambiarEstadoDeEspecificacion("p.md", CON, "sin-stock", "propuesta")).toEqual({ contenido: CON, cambio: false });
-    expect(() => cambiarEstadoDeEspecificacion("p.md", CON, "otra", "confirmada")).toThrow(/no tiene una especificación con id otra/);
-    expect(() => cambiarEstadoDeEspecificacion("p.md", PAGINA, "sin-stock", "confirmada")).toThrow(/no tiene una especificación/);
-    expect(() => cambiarEstadoDeEspecificacion("p.md", CON, "sin-stock", "lista")).toThrow(/estado desconocido/);
+    expect(() => cambiarEstadoDeEspecificacion("p.md", CON, "otra", "confirmada")).toThrow(/has no specification with id otra/);
+    expect(() => cambiarEstadoDeEspecificacion("p.md", PAGINA, "sin-stock", "confirmada")).toThrow(/has no specification/);
+    expect(() => cambiarEstadoDeEspecificacion("p.md", CON, "sin-stock", "lista")).toThrow(/unknown estado/);
   });
 });

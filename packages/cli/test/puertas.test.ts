@@ -124,7 +124,7 @@ describe("CLI, MCP y hook devuelven el mismo JSON", () => {
 
 describe("hook de Claude Code", () => {
   it("reconoce el repo actual por el directorio git", async () => {
-    expect(await hook("hola, revisá la pasarela")).toContain("Repo actual: repo-tienda");
+    expect(await hook("hola, revisá la pasarela")).toContain("Current repo: repo-tienda");
   });
 
   it("sin menciones ni repo conocido no inyecta nada", async () => {

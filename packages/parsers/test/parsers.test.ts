@@ -150,11 +150,11 @@ describe("deriva compara campos (fixtures/repos/campos: axios tipado contra Expr
     // Lo que no se compara se dice con su motivo, y no cuenta como coincidencia.
     const motivos = r.campos.noComparables.map((n) => `${n.lado}: ${n.motivo}${n.tipos ? ` (${n.tipos.join(", ")})` : ""}`);
     expect(motivos).toEqual([
-      "respuesta: la llamada no tipa la respuesta",
-      "cuerpo: la llamada manda un tipo sin campos que comparar (FormData)",
-      "query: el back no declara el tipo de la query",
+      "respuesta: the call does not type the response",
+      "cuerpo: the call sends a type with no fields to compare (FormData)",
+      "query: the back end does not declare the query type",
     ]);
-    expect(r.avisos.some((a) => a.includes("primer nivel"))).toBe(true);
+    expect(r.avisos.some((a) => a.includes("top level"))).toBe(true);
   });
 });
 
@@ -1241,7 +1241,7 @@ describe("infra-parser: imágenes, compose, pipelines, variables y proxy", () =>
       "svc-agenda pipeline desplegar: despliega en staging",
       "svc-agenda pipeline branches main: despliega en production",
     ]);
-    expect((infra(ctx, { texto: "kubernetes" }) as { avisos: string[] }).avisos).toEqual(["nada coincide: no hay infraestructura declarada para eso en los repos indexados"]);
+    expect((infra(ctx, { texto: "kubernetes" }) as { avisos: string[] }).avisos).toEqual(["nothing matches: no infrastructure is declared for that in the indexed repos"]);
   });
 });
 

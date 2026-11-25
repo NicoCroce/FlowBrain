@@ -112,8 +112,8 @@ describe("errores de consulta", () => {
   it("nodo inexistente y parámetros inválidos", () => {
     expect(() => recorrerGrafo(ctx, { nodo: "svc-nada" })).toThrow(ConsultaError);
     expect(() => recorrerGrafo(ctx, { nodo: "svc-bff", profundidad: 6 })).toThrow(/profundidad/);
-    expect(() => recorrerGrafo(ctx, { nodo: "svc-bff", verbos: ["invoca_a"] })).toThrow(/verbo desconocido/);
-    expect(() => contratoDe(ctx, { nodo: "tabla-pagos" })).toThrow(/requiere un svc/);
-    expect(() => trazar(ctx, { desde: "/no-existe" })).toThrow(/ningún endpoint/);
+    expect(() => recorrerGrafo(ctx, { nodo: "svc-bff", verbos: ["invoca_a"] })).toThrow(/unknown verbo/);
+    expect(() => contratoDe(ctx, { nodo: "tabla-pagos" })).toThrow(/requires a svc/);
+    expect(() => trazar(ctx, { desde: "/no-existe" })).toThrow(/no endpoint matches/);
   });
 });

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { mcpRegistrado } from "./estado.js";
+import { L } from "./idioma.js";
 import { comandoBrain } from "./init.js";
 import { si, type ContextoMenu, type Entorno } from "./menu.js";
 
@@ -91,10 +92,18 @@ export const instalados = (c: ContextoMenu) => AGENTES.filter((a) => c.agentes.i
 export async function elegirAgente(c: ContextoMenu, e: Entorno, para: "analizar" | "mcp"): Promise<Agente | null> {
   const hay = instalados(c);
   if (!hay.length) return null;
-  e.escribir(`\n¿Con qué agente ${para === "mcp" ? "lo conecto" : "hago el análisis"}?\n`);
-  hay.forEach((a, i) => e.escribir(`  ${i + 1}. ${a.nombre}${para === "mcp" && c.mcpEn.includes(a.id) ? " (ya conectado)" : ""}\n`));
-  e.escribir(`  ${hay.length + 1}. Otro: ${para === "mcp" ? "te muestro cómo se registra" : "te muestro las instrucciones para pegarlas en el que uses"}\n`);
-  const n = Number((await e.preguntar("Número (Enter: 1) ")).trim() || "1");
+  e.escribir(
+    para === "mcp"
+      ? L("\nWhich agent should I connect it to?\n", "\n¿Con qué agente lo conecto?\n")
+      : L("\nWhich agent should run the analysis?\n", "\n¿Con qué agente hago el análisis?\n"),
+  );
+  hay.forEach((a, i) => e.escribir(`  ${i + 1}. ${a.nombre}${para === "mcp" && c.mcpEn.includes(a.id) ? L(" (already connected)", " (ya conectado)") : ""}\n`));
+  e.escribir(
+    para === "mcp"
+      ? L(`  ${hay.length + 1}. Other: I'll show you how to register it\n`, `  ${hay.length + 1}. Otro: te muestro cómo se registra\n`)
+      : L(`  ${hay.length + 1}. Other: I'll show you the instructions to paste into the one you use\n`, `  ${hay.length + 1}. Otro: te muestro las instrucciones para pegarlas en el que uses\n`),
+  );
+  const n = Number((await e.preguntar(L("Number (Enter: 1) ", "Número (Enter: 1) "))).trim() || "1");
   return Number.isInteger(n) && n >= 1 && n <= hay.length ? hay[n - 1]! : null;
 }
 
@@ -104,19 +113,27 @@ export async function analizarCon(a: Agente | null, pedido: string, c: ContextoM
     e.escribir(
       [
         "",
-        "Abrí tu agente de código (uno que pueda correr comandos en la terminal) en esta carpeta:",
+        L("Open your coding agent (one that can run commands in the terminal) in this folder:", "Abrí tu agente de código (uno que pueda correr comandos en la terminal) en esta carpeta:"),
         `  ${c.proyecto}`,
-        "y pedile esto:",
+        L("and ask it this:", "y pedile esto:"),
         "",
         pedido,
         "",
-        "Lo que el agente escribe queda en .flowbrain/ y FlowBrain lo verifica al indexar; la próxima vez el menú ve el análisis hecho.",
+        L(
+          "What the agent writes stays in .flowbrain/ and FlowBrain verifies it when indexing; next time the menu sees the analysis as done.",
+          "Lo que el agente escribe queda en .flowbrain/ y FlowBrain lo verifica al indexar; la próxima vez el menú ve el análisis hecho.",
+        ),
         "",
       ].join("\n"),
     );
     return;
   }
-  e.escribir(`Abriendo ${a.nombre} con el análisis completo. Va a tardar: estudia cada repo de punta a punta.\n`);
+  e.escribir(
+    L(
+      `Opening ${a.nombre} with the full analysis. It will take a while: it studies each repo end to end.\n`,
+      `Abriendo ${a.nombre} con el análisis completo. Va a tardar: estudia cada repo de punta a punta.\n`,
+    ),
+  );
   const { programa, args } = a.analizar(pedido);
   await e.correr(programa, args, c.proyecto);
 }
@@ -126,21 +143,41 @@ export async function conectarMcp(c: ContextoMenu, e: Entorno, confirmar = true)
   const cmd = comandoBrain();
   const a = await elegirAgente(c, e, "mcp");
   if (!a) {
-    e.escribir("\nEl servidor MCP de FlowBrain se registra así en cada agente (para todos tus proyectos):\n");
+    e.escribir(L("\nThis is how FlowBrain's MCP server is registered in each agent (for all your projects):\n", "\nEl servidor MCP de FlowBrain se registra así en cada agente (para todos tus proyectos):\n"));
     for (const x of AGENTES) {
       const m = x.mcp(cmd);
-      e.escribir("correr" in m ? `  ${x.nombre}:\n    ${m.correr}\n` : `  ${x.nombre}, en ${m.archivo}:\n${m.pegar.replace(/^/gm, "    ")}\n`);
+      e.escribir("correr" in m ? `  ${x.nombre}:\n    ${m.correr}\n` : `  ${x.nombre}, ${L("in", "en")} ${m.archivo}:\n${m.pegar.replace(/^/gm, "    ")}\n`);
     }
-    e.escribir(`  Cualquier otro cliente MCP: el comando es  ${cmd} serve --sync  (stdio).\n`);
+    e.escribir(L(`  Any other MCP client: the command is  ${cmd} serve --sync  (stdio).\n`, `  Cualquier otro cliente MCP: el comando es  ${cmd} serve --sync  (stdio).\n`));
     return;
   }
   const m = a.mcp(cmd);
   if (!("correr" in m)) {
-    e.escribir(`\n${a.nombre} se configura a mano: agregá esto en ${m.archivo} (si ya tiene "mcp", sumá solo la entrada flowbrain):\n\n${m.pegar}\n\nDespués abrí ${a.nombre} de nuevo.\n`);
+    e.escribir(
+      L(
+        `\n${a.nombre} is configured by hand: add this to ${m.archivo} (if it already has "mcp", add only the flowbrain entry):\n\n${m.pegar}\n\nThen open ${a.nombre} again.\n`,
+        `\n${a.nombre} se configura a mano: agregá esto en ${m.archivo} (si ya tiene "mcp", sumá solo la entrada flowbrain):\n\n${m.pegar}\n\nDespués abrí ${a.nombre} de nuevo.\n`,
+      ),
+    );
     return;
   }
-  if (confirmar && !si(await e.preguntar(`Voy a registrar el servidor MCP de FlowBrain en ${a.nombre} (para todos tus proyectos):\n  ${m.correr}\n¿Sigo? (s/N) `))) return;
+  if (
+    confirmar &&
+    !si(
+      await e.preguntar(
+        L(
+          `I'm going to register FlowBrain's MCP server in ${a.nombre} (for all your projects):\n  ${m.correr}\nContinue? (y/N) `,
+          `Voy a registrar el servidor MCP de FlowBrain en ${a.nombre} (para todos tus proyectos):\n  ${m.correr}\n¿Sigo? (s/N) `,
+        ),
+      ),
+    )
+  )
+    return;
   if (c.mcpEn.includes(a.id)) await e.correr(m.quitar.programa, m.quitar.args, c.proyecto);
   const codigo = await e.correr("sh", ["-c", m.correr], c.proyecto);
-  e.escribir(codigo === 0 ? `Listo: abrí ${a.nombre} de nuevo para que lo tome.\n` : "No se pudo registrar: revisá el mensaje de arriba.\n");
+  e.escribir(
+    codigo === 0
+      ? L(`Done: open ${a.nombre} again so it picks it up.\n`, `Listo: abrí ${a.nombre} de nuevo para que lo tome.\n`)
+      : L("Could not register it: check the message above.\n", "No se pudo registrar: revisá el mensaje de arriba.\n"),
+  );
 }

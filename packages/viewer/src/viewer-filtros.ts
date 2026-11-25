@@ -15,7 +15,13 @@ export const FILTROS_JS = String.raw`
 (function () {
   "use strict";
   var esc = function (s) { return window.brainVisor.esc(s); };
-  var plural = function (n, uno, varios) { return n.toLocaleString("es") + " " + (n === 1 ? uno : varios); };
+  // Idioma (dec. 214): el texto se arma al pintar. Sin window.brainI18n (los tests), inglés.
+  var esES = function () { return !!(window.brainI18n && window.brainI18n.lang === "es"); };
+  var L = function (en, es) { return esES() ? es : en; };
+  var num = function (n) { return Number(n).toLocaleString(esES() ? "es" : "en"); };
+  // Una etiqueta de la configuración: texto o función que lo devuelve al pintar (así sigue el cambio de idioma).
+  var val = function (x) { return typeof x === "function" ? x() : x; };
+  var plural = function (n, uno, varios) { return num(n) + " " + (n === 1 ? val(uno) : val(varios)); };
   var elem = function (id) { return document.getElementById(id); };
   var pct1 = function (n, total) { return total ? Math.round((1000 * n) / total) / 10 : 0; };
 
@@ -27,12 +33,16 @@ export const FILTROS_JS = String.raw`
   }
   var cifra = function (valor, texto, color, grupo, pre) {
     var ir = grupo !== undefined && grupo !== null;
-    return '<div class="fd-cifra' + (ir ? " es-ir" : "") + '"' + (ir ? ' role="button" tabindex="0" data-fl="' + pre + '" data-grupo="' + esc(grupo) + '"' : "") + "><b" + (color ? ' style="color:' + color + '"' : "") + ">" + (typeof valor === "number" ? valor.toLocaleString("es") : valor) + "</b><span>" + texto + "</span></div>";
+    return '<div class="fd-cifra' + (ir ? " es-ir" : "") + '"' + (ir ? ' role="button" tabindex="0" data-fl="' + pre + '" data-grupo="' + esc(grupo) + '"' : "") + "><b" + (color ? ' style="color:' + color + '"' : "") + ">" + (typeof valor === "number" ? num(valor) : valor) + "</b><span>" + texto + "</span></div>";
   };
 
   /**
+   * Idioma: el componente no traduce nada propio de la pantalla, pinta lo que recibe. Las etiquetas (unidad, todos,
+   * buscar.ph, grupos[].etiqueta/palabra/notaPaneles, campos[].etiqueta/todos/propio, paneles[].titulo/sinValor/ninguno)
+   * pueden ser un texto o una función que lo devuelve: la función se evalúa al pintar, así que sigue el cambio de idioma
+   * sin rehacer el filtro (p. ej. unidad: function () { return L(["case", "cases"], ["caso", "casos"]); }).
    * cfg = {
-   *   pre, clave (sessionStorage; sin clave no se guarda), items: () => [...], unidad: ["caso", "casos"] (con "f" de tercero si es femenina: «Ninguna pieza»), todos: "todos los casos",
+   *   pre, clave (sessionStorage; sin clave no se guarda), items: () => [...], unidad: ["caso", "casos"] (con "f" de tercero si es femenina: «Ninguna pieza»; solo cuenta en castellano), todos: "todos los casos",
    *   grupos: [{ id, etiqueta, es(x), n?() , palabra?, sinPaneles?, ocultarVacio? }]  (el primero, id "", es "Todos"),
    *   buscar: { ph, texto(x) },
    *   campos: [{ id, etiqueta, de(x) → valor o lista, valores?() → [[v, etiqueta, n]], etiquetaDe?(v), todos?, palabra?(v),
@@ -44,9 +54,10 @@ export const FILTROS_JS = String.raw`
    */
   function crear(cfg) {
     var pre = cfg.pre, campos = cfg.campos || [], grupos = cfg.grupos || [], paneles = cfg.paneles || [];
-    var u = cfg.unidad || ["elemento", "elementos"];
+    // La unidad se lee al pintar: puede cambiar con el idioma.
+    var unidad = function () { return val(cfg.unidad) || L(["item", "items"], ["elemento", "elementos"]); };
     // Cuántos, en palabras: con contar, la pantalla lo dice a su modo («12 casos de uso y 2 reglas sueltas»).
-    var cuenta = function (xs) { return cfg.contar ? cfg.contar(xs) : plural(xs.length, u[0], u[1]); };
+    var cuenta = function (xs) { var u = unidad(); return cfg.contar ? cfg.contar(xs) : plural(xs.length, u[0], u[1]); };
     var inicial = function () { var s = { grupo: "", q: "" }, e = JSON.parse(JSON.stringify(cfg.estado || {})); Object.keys(e).forEach(function (k) { s[k] = e[k]; }); campos.forEach(function (c) { s[c.id] = c.inicial !== undefined ? c.inicial : ""; }); return s; };
     var S = inicial();
     var guardar = function () { if (!cfg.clave) return; try { if (typeof sessionStorage !== "undefined") sessionStorage.setItem(cfg.clave, JSON.stringify(S)); } catch (e) { /* sin almacenamiento */ } };
@@ -64,7 +75,8 @@ export const FILTROS_JS = String.raw`
     var puesto = function (c) { var i = c.inicial !== undefined ? c.inicial : ""; return visible(c) && S[c.id] !== i; };
     var valoresDe = function (c, x) { var v = c.de(x); return Array.isArray(v) ? v.map(String) : v === undefined || v === null || v === "" ? [] : [String(v)]; };
     var etiquetaDe = function (c, v) { return c.etiquetaDe ? c.etiquetaDe(v) : String(v); };
-    var palabra = function (c) { return c.palabra ? c.palabra(S[c.id]) : c.etiqueta.toLowerCase() + " " + etiquetaDe(c, S[c.id]); };
+    var et = function (x) { return String(val(x.etiqueta) || ""); };
+    var palabra = function (c) { return c.palabra ? c.palabra(S[c.id]) : et(c).toLowerCase() + " " + etiquetaDe(c, S[c.id]); };
 
     // salvo: la dimensión que un panel no aplica sobre sí mismo.
     function coincide(x, salvo) {
@@ -83,16 +95,16 @@ export const FILTROS_JS = String.raw`
     // Lo que hay puesto, en palabras: para la línea del resultado y para decir por qué algo quedó vacío.
     function activos(salvo) {
       var out = [], g = grupoDe(S.grupo);
-      if (g && g.id && !(salvo && g.sinPaneles)) out.push(g.palabra || g.etiqueta.toLowerCase());
+      if (g && g.id && !(salvo && g.sinPaneles)) out.push(val(g.palabra) || et(g).toLowerCase());
       campos.forEach(function (c) { if (dimDe(c) !== salvo && puesto(c)) { var w = palabra(c); if (w && out.indexOf(w) < 0) out.push(w); } });
-      if (S.q.trim()) out.push("texto «" + S.q.trim() + "»");
+      if (S.q.trim()) out.push(L("text “" + S.q.trim() + "”", "texto «" + S.q.trim() + "»"));
       return out;
     }
     function opcionesDe(c) {
       if (c.valores) return c.valores();
       var n = {};
       cfg.items().forEach(function (x) { valoresDe(c, x).forEach(function (v) { n[v] = (n[v] || 0) + 1; }); });
-      return Object.keys(n).sort(function (a, b) { return c.ordenPorCantidad ? n[b] - n[a] || (a < b ? -1 : 1) : etiquetaDe(c, a).localeCompare(etiquetaDe(c, b), "es"); }).map(function (v) { return [v, etiquetaDe(c, v), n[v]]; });
+      return Object.keys(n).sort(function (a, b) { return c.ordenPorCantidad ? n[b] - n[a] || (a < b ? -1 : 1) : etiquetaDe(c, a).localeCompare(etiquetaDe(c, b), L("en", "es")); }).map(function (v) { return [v, etiquetaDe(c, v), n[v]]; });
     }
 
     // ---------- Partes de la pantalla ----------
@@ -103,50 +115,54 @@ export const FILTROS_JS = String.raw`
     function htmlGrupos() {
       if (grupos.length < 2) return "";
       var xs = cfg.items();
-      return '<div class="fd-grupos" role="group" aria-label="Qué ver">' + grupos.map(function (g) {
+      return '<div class="fd-grupos" role="group" aria-label="' + L("What to show", "Qué ver") + '">' + grupos.map(function (g) {
         var n = g.n ? g.n() : g.es ? xs.filter(g.es).length : xs.length;
         if (g.ocultarVacio && !n && S.grupo !== g.id) return "";
-        return '<button type="button" class="fd-grupo' + (S.grupo === g.id ? " on" : "") + '" data-fl="' + pre + '" data-grupo="' + esc(g.id) + '" aria-pressed="' + (S.grupo === g.id) + '">' + esc(g.etiqueta) + " <small>" + n.toLocaleString("es") + "</small></button>";
+        return '<button type="button" class="fd-grupo' + (S.grupo === g.id ? " on" : "") + '" data-fl="' + pre + '" data-grupo="' + esc(g.id) + '" aria-pressed="' + (S.grupo === g.id) + '">' + esc(et(g)) + " <small>" + num(n) + "</small></button>";
       }).join("") + "</div>";
     }
     function herramientas() {
       var acc = cfg.acciones ? cfg.acciones() : "";
       if (!cfg.buscar && !acc) return "";
-      return '<div class="fd-herr">' + (cfg.buscar ? '<input id="' + pre + '-q" type="search" placeholder="' + esc(cfg.buscar.ph) + '" aria-label="Buscar" autocomplete="off" value="' + esc(S.q) + '">' : "") + acc + "</div>";
+      return '<div class="fd-herr">' + (cfg.buscar ? '<input id="' + pre + '-q" type="search" placeholder="' + esc(val(cfg.buscar.ph)) + '" aria-label="' + L("Search", "Buscar") + '" autocomplete="off" value="' + esc(S.q) + '">' : "") + acc + "</div>";
     }
     function control(c) {
       var id = pre + "-" + c.id;
       if (c.tipo === "numero") return '<input id="' + id + '" type="number" min="' + c.min + '" max="' + c.max + '" step="1" value="' + esc(S[c.id]) + '">';
-      return '<select id="' + id + '"><option value="">' + esc(c.todos || "Todos") + "</option>" + opcionesDe(c).map(function (v) {
-        return '<option value="' + esc(v[0]) + '"' + (String(v[0]) === String(S[c.id]) ? " selected" : "") + ">" + esc(v[1]) + (v[2] !== undefined ? " (" + v[2].toLocaleString("es") + ")" : "") + "</option>";
+      return '<select id="' + id + '"><option value="">' + esc(val(c.todos) || L("All", "Todos")) + "</option>" + opcionesDe(c).map(function (v) {
+        return '<option value="' + esc(v[0]) + '"' + (String(v[0]) === String(S[c.id]) ? " selected" : "") + ">" + esc(v[1]) + (v[2] !== undefined ? " (" + num(v[2]) + ")" : "") + "</option>";
       }).join("") + "</select>";
     }
     function filtros() {
       var hay = campos.filter(function (c) { return visible(c) && (c.tipo === "numero" || puesto(c) || opcionesDe(c).length > 1); });
       if (!hay.length) return "";
-      return '<div class="fd-filtros">' + hay.map(function (c) { return '<label class="fd-campo" for="' + pre + "-" + c.id + '"><span class="lbl">' + esc(c.etiqueta) + "</span>" + control(c) + "</label>"; }).join("") + "</div>";
+      return '<div class="fd-filtros">' + hay.map(function (c) { return '<label class="fd-campo" for="' + pre + "-" + c.id + '"><span class="lbl">' + esc(et(c)) + "</span>" + control(c) + "</label>"; }).join("") + "</div>";
     }
     // Sobre qué conjunto se calcula un panel, en palabras, y qué filtro propio no aplica.
     function sobre(salvo, xs) {
       var fs = activos(salvo), propios = campos.filter(function (c) { return dimDe(c) === salvo && puesto(c); });
       var g = grupoDe(S.grupo);
-      return '<p class="fd-sobre">Sobre ' + (fs.length ? esc(fs.join(", ")) : esc(cfg.todos || "todos")) + " · " + cuenta(xs) +
-        (propios.length ? " · sin aplicar " + esc(propios[0].propio || "el filtro de " + propios[0].etiqueta.toLowerCase()) + ", que se marca en su barra" : "") +
-        (salvo && g && g.sinPaneles && g.notaPaneles ? " · " + esc(g.notaPaneles) : "") + "</p>";
+      var propio = propios.length ? val(propios[0].propio) || L("the " + et(propios[0]).toLowerCase() + " filter", "el filtro de " + et(propios[0]).toLowerCase()) : "";
+      return '<p class="fd-sobre">' + L("Across ", "Sobre ") + (fs.length ? esc(fs.join(", ")) : esc(val(cfg.todos) || L("everything", "todos"))) + " · " + cuenta(xs) +
+        (propios.length ? L(" · ignoring " + esc(propio) + ", highlighted in its bar", " · sin aplicar " + esc(propio) + ", que se marca en su barra") : "") +
+        (salvo && g && g.sinPaneles && g.notaPaneles ? " · " + esc(val(g.notaPaneles)) : "") + "</p>";
     }
-    var vacioPanel = function () { return '<p class="fd-sin">Ningún ' + esc(u[0]) + ' coincide con los demás filtros. <button type="button" class="boton" data-fl="' + pre + '" data-fl-limpiar="1">Quitar filtros</button></p>'; };
+    var quitar = function () { return '<button type="button" class="boton" data-fl="' + pre + '" data-fl-limpiar="1">' + L("Clear filters", "Quitar filtros") + "</button>"; };
+    // «todas las pantallas» → «Ninguna pantalla»; «todos los archivos» → «Ningún archivo».
+    var ninguno = function (u) { return u[2] === "f" || /^todas\b/.test(val(cfg.todos) || "") ? "Ninguna " : "Ningún "; };
+    var vacioPanel = function () { var u = unidad(); return '<p class="fd-sin">' + L("No " + esc(u[0]) + " matches the other filters. ", ninguno(u) + esc(u[0]) + " coincide con los demás filtros. ") + quitar() + "</p>"; };
     var api = {
       barra: function (etiqueta, pct, detalle, set, activa, color, titulo) { return barra(pre, etiqueta, pct, detalle, set, activa, color, titulo); },
       vacio: vacioPanel, S: function () { return S; }, plural: plural
     };
     // El panel de un campo: una barra por valor con su cantidad. Con muchos valores, los que más tienen y el elegido.
     function panelDeCampo(p, xs) {
-      var c = campoDe(p.campo), n = {}, de = {}, orden = [];
+      var c = campoDe(p.campo), n = {}, de = {}, orden = [], u = unidad();
       if (!xs.length) return vacioPanel();
       xs.forEach(function (x) { valoresDe(c, x).forEach(function (v) { if (n[v] === undefined) { n[v] = 0; de[v] = []; orden.push(v); } n[v]++; de[v].push(x); }); });
       if (p.orden === "fijo") { var fijo = opcionesDe(c).map(function (v) { return String(v[0]); }); orden = fijo.filter(function (v) { return n[v]; }); }
-      else orden.sort(function (a, b) { return n[b] - n[a] || etiquetaDe(c, a).localeCompare(etiquetaDe(c, b), "es"); });
-      if (!orden.length) return '<p class="fd-sin">' + esc(p.ninguno || "Ninguno de estos " + u[1] + " tiene " + c.etiqueta.toLowerCase() + ".") + "</p>";
+      else orden.sort(function (a, b) { return n[b] - n[a] || etiquetaDe(c, a).localeCompare(etiquetaDe(c, b), L("en", "es")); });
+      if (!orden.length) return '<p class="fd-sin">' + esc(val(p.ninguno) || L("None of these " + u[1] + " has " + et(c).toLowerCase() + ".", (ninguno(u) === "Ninguna " ? "Ninguna de estas " : "Ninguno de estos ") + u[1] + " tiene " + et(c).toLowerCase() + ".")) + "</p>";
       var max = p.max || 8, sel = String(S[c.id]), vis = orden.slice(0, max);
       if (sel && orden.indexOf(sel) >= max) vis.push(sel);
       var tope = 0; vis.forEach(function (v) { if (n[v] > tope) tope = n[v]; });
@@ -155,8 +171,8 @@ export const FILTROS_JS = String.raw`
         var set = {}; set[c.id] = v;
         return barra(pre, esc(etiquetaDe(c, v)), (100 * n[v]) / tope, cuenta(de[v]) + " · " + pct1(n[v], xs.length) + " %", set, sel === v, c.color ? c.color(v) : c.id === "cerebro" && window.brainVisor.colorCerebro ? window.brainVisor.colorCerebro(v) : "");
       }).join("") +
-        (orden.length > vis.length ? '<p class="fd-sin">Y ' + plural(orden.length - vis.length, "valor más", "valores más") + ": elegilos en el filtro «" + esc(c.etiqueta) + "».</p>" : "") +
-        (sinValor && p.sinValor ? '<p class="fd-sin">' + plural(sinValor, u[0], u[1]) + ": " + esc(p.sinValor) + "</p>" : "");
+        (orden.length > vis.length ? '<p class="fd-sin">' + L("And " + plural(orden.length - vis.length, "more value", "more values") + ": pick them in the “" + esc(et(c)) + "” filter.", "Y " + plural(orden.length - vis.length, "valor más", "valores más") + ": elegilos en el filtro «" + esc(et(c)) + "».") + "</p>" : "") +
+        (sinValor && p.sinValor ? '<p class="fd-sin">' + plural(sinValor, u[0], u[1]) + ": " + esc(val(p.sinValor)) + "</p>" : "");
     }
     function graficos() {
       var hechos = paneles.map(function (p) {
@@ -165,7 +181,7 @@ export const FILTROS_JS = String.raw`
         if (p.campo && !visible(campoDe(p.campo))) return "";
         var cuerpo = p.html ? p.html(xs, api) : panelDeCampo(p, xs);
         if (!cuerpo) return "";
-        return "<section><h2>" + esc(p.titulo) + "</h2>" + sobre(salvo, xs) + '<div class="fd-barras">' + cuerpo + "</div>" + (p.nota ? p.nota(xs) : "") + "</section>";
+        return "<section><h2>" + esc(val(p.titulo)) + "</h2>" + sobre(salvo, xs) + '<div class="fd-barras">' + cuerpo + "</div>" + (p.nota ? p.nota(xs) : "") + "</section>";
       }).join("");
       return hechos ? '<div class="fd-graficos">' + hechos + "</div>" : "";
     }
@@ -176,18 +192,19 @@ export const FILTROS_JS = String.raw`
     // La línea del resultado: cuántos coinciden y con qué, lo que agrega la pantalla y «Quitar filtros».
     // xs: la lista que quedó (o cuántos son).
     function resultado(xs, extra, botones) {
-      var a = activos(), n = typeof xs === "number" ? xs : xs.length;
+      var a = activos(), n = typeof xs === "number" ? xs : xs.length, u = unidad();
       var dice = typeof xs === "number" ? plural(n, u[0], u[1]) : cuenta(xs);
-      return '<div class="fd-cab"><p class="subtitulo">' + dice + (a.length ? " " + (n === 1 ? "coincide" : "coinciden") + " (" + esc(a.join(", ")) + ")" : "") + (extra || "") + "</p>" +
-        ((botones || a.length) ? '<div class="fd-acc">' + (botones || "") + (a.length ? '<button type="button" class="boton" data-fl="' + pre + '" data-fl-limpiar="1">Quitar filtros</button>' : "") + "</div>" : "") + "</div>";
+      return '<div class="fd-cab"><p class="subtitulo">' + dice + (a.length ? " " + (n === 1 ? L("matches", "coincide") : L("match", "coinciden")) + " (" + esc(a.join(", ")) + ")" : "") + (extra || "") + "</p>" +
+        ((botones || a.length) ? '<div class="fd-acc">' + (botones || "") + (a.length ? quitar() : "") + "</div>" : "") + "</div>";
     }
     // Lista vacía: por qué (qué filtros) y cuántos hay en total, con el camino para salir. total: los ítems o cuántos son.
     function vacio(total, unidadTotal) {
-      var a = activos(), ut = unidadTotal || u;
-      // «todas las pantallas» → «Ninguna pantalla»; «todos los archivos» → «Ningún archivo».
-      var ningun = u[2] === "f" || /^todas\b/.test(cfg.todos || "") ? "Ninguna " : "Ningún ";
-      return '<p class="aviso">' + ningun + esc(u[0]) + " coincide" + (a.length ? " con " + esc(a.join(", ")) : "") + ". Hay " + (typeof total === "number" ? plural(total, ut[0], ut[1]) : cuenta(total)) + " en total." +
-        (a.length ? ' <button type="button" class="boton" data-fl="' + pre + '" data-fl-limpiar="1">Quitar filtros</button>' : "") + "</p>";
+      var a = activos(), u = unidad(), ut = val(unidadTotal) || u;
+      var hay = typeof total === "number" ? plural(total, ut[0], ut[1]) : cuenta(total);
+      if (!esES()) return '<p class="aviso">No ' + esc(u[0]) + " matches" + (a.length ? " " + esc(a.join(", ")) : "") + ". " + hay + " in total." + (a.length ? " " + quitar() : "") + "</p>";
+      var ningun = ninguno(u);
+      return '<p class="aviso">' + ningun + esc(u[0]) + " coincide" + (a.length ? " con " + esc(a.join(", ")) : "") + ". Hay " + hay + " en total." +
+        (a.length ? " " + quitar() : "") + "</p>";
     }
 
     var cambio = function (todo) { guardar(); if (cfg.alCambiar) cfg.alCambiar(todo); };
@@ -239,6 +256,6 @@ export const FILTROS_JS = String.raw`
     };
   }
 
-  window.brainFiltros = { crear: crear, plural: plural };
+  window.brainFiltros = { crear: crear, plural: plural, val: val };
 })();
 `;

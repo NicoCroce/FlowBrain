@@ -8,7 +8,7 @@ const feat = (id: string, tests = 0) => ({
   id, expone: [], usa: [], codigo: [], archivos: 3, datos: [], usaFuncionalidades: [], usadaPor: [],
   tests: tests ? [{ archivo: `${id}.test.ts`, casos: Array.from({ length: tests }, (_, i) => ({ nombre: `caso ${i}`, linea: i + 1 })) }] : [],
 });
-function montar() {
+function montar(lang?: "es") {
   const funcionalidades = [feat("front/feat-agenda", 2), feat("back/feat-agenda"), feat("back/feat-cobros")];
   const porId: Record<string, { n: string; r: string | null }> = {
     "front/feat-agenda": { n: "Agenda", r: "Calendario del club" },
@@ -21,7 +21,7 @@ function montar() {
   const raiz = { innerHTML: "", addEventListener(t: string, f: Oyente) { (oyentes[t] ??= []).push(f); } };
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   const colorCerebro = (v: string) => ({ front: "#111111", back: "#222222" })[v] ?? "";
-  const window = { brainVisor: { D: { funcionalidades, edges: [] }, porId, esc, colorCerebro }, brainFiltros: null as unknown, brainProducto: null as null | { mostrar(h: string): void } };
+  const window = { brainVisor: { D: { funcionalidades, edges: [] }, porId, esc, colorCerebro }, brainFiltros: null as unknown, brainProducto: null as null | { mostrar(h: string): void }, brainI18n: lang ? { lang } : undefined };
   const document = { getElementById: (id: string) => (id === "producto" ? raiz : null) };
   new Function("window", "document", "sessionStorage", FILTROS_JS)(window, document, sessionStorage);
   new Function("window", "document", "sessionStorage", PRODUCTO_JS)(window, document, sessionStorage);
@@ -41,9 +41,9 @@ function montar() {
 describe("pantalla Funcionalidades", () => {
   it("tiene las cifras, los grupos, el buscador, el filtro por cerebro y la estadística de las demás pantallas", () => {
     const v = montar();
-    expect(v.cifras()).toEqual(["2 funcionalidades", "3 fichas, una por cerebro que la tiene", "1 sin descripción", "1 sin tests"]);
-    expect(v.pagina()).toContain('placeholder="Buscar por nombre o descripción…"');
-    expect(v.pagina()).toContain("<h2>Por cerebro</h2>");
+    expect(v.cifras()).toEqual(["2 features", "3 cards, one per brain that has it", "1 no description", "1 untested"]);
+    expect(v.pagina()).toContain('placeholder="Search by name or description…"');
+    expect(v.pagina()).toContain("<h2>By brain</h2>");
     // El cerebro lleva su color, el mismo del mapa 3D, en la barra y en la tarjeta.
     expect(v.pagina()).toContain("background:#222222");
     expect(v.pagina()).toContain('<span class="pc" style="background:#111111"></span>front');
@@ -59,7 +59,18 @@ describe("pantalla Funcionalidades", () => {
     expect(v.tarjetas()).toEqual(["Agenda"]);
     v.escribir("cobros");
     v.cambiar("fu-cerebro", "front");
-    expect(v.pagina()).toContain("Ninguna funcionalidad coincide con");
+    expect(v.pagina()).toContain("No feature matches brain front, text “cobros”.");
+    expect(v.pagina()).toContain("Clear filters");
+  });
+
+  it("en castellano: los mismos textos de siempre, con el género de la unidad", () => {
+    const v = montar("es");
+    expect(v.cifras()).toEqual(["2 funcionalidades", "3 fichas, una por cerebro que la tiene", "1 sin descripción", "1 sin tests"]);
+    expect(v.pagina()).toContain('placeholder="Buscar por nombre o descripción…"');
+    expect(v.pagina()).toContain("<h2>Por cerebro</h2>");
+    v.escribir("cobros");
+    v.cambiar("fu-cerebro", "front");
+    expect(v.pagina()).toContain("Ninguna funcionalidad coincide con cerebro front, texto «cobros».");
     expect(v.pagina()).toContain("Quitar filtros");
   });
 });

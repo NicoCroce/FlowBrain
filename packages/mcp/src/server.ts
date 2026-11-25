@@ -66,14 +66,14 @@ export function cargadorConCache(raiz: string, alDesfase?: () => Promise<unknown
 }
 
 const comunes = {
-  proyeccion: z.enum(PROYECCIONES).optional().describe("resumen | relaciones | contrato | completo"),
+  proyeccion: z.enum(PROYECCIONES).optional().describe("summary (resumen) | relations (relaciones) | contract (contrato) | full (completo)"),
   budget_tokens: z
     .number()
     .int()
     .positive()
     .nullable()
     .optional()
-    .describe(`presupuesto de tokens de la respuesta (por defecto ${BUDGET_POR_DEFECTO}; null = sin límite)`),
+    .describe(`token budget for the response (default ${BUDGET_POR_DEFECTO}; null = no limit)`),
 };
 
 type Texto = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
@@ -95,24 +95,24 @@ async function responder(fn: () => unknown): Promise<Texto> {
 
 /** Guía de uso que el cliente MCP le pasa al agente al conectarse. */
 export const INSTRUCCIONES = [
-  "Grafo de conocimiento del sistema: producto (funcionalidades, pantallas), código (endpoints, métodos, tablas) y cómo se conectan entre repos. Consultalo antes de explorar el código con grep.",
-  "Qué herramienta usar:",
-  "- No sé el id de algo, o busco una clase, método o palabra: buscar_nodo.",
-  "- Qué hace una funcionalidad de producto: funcionalidad.",
-  "- Una pantalla del front de punta a punta: pantalla.",
-  "- Qué ejecuta un endpoint o un método, paso a paso: recorrido.",
-  "- Qué recibe y devuelve un endpoint: contrato_de.",
-  "- Qué se rompe si cambio una tabla, endpoint, servicio o funcionalidad: impacto. Si es un método o una clase: quien_llama.",
-  "- Qué tan riesgoso es un cambio concreto (un diff o unos archivos): riesgo.",
-  "- Endpoints que nadie llama o llamadas que nadie atiende: deriva.",
-  "- Qué falta migrar de un servicio a otro: paridad.",
-  "- Por dónde viaja un dato entre servicios: trazar.",
-  "- Cómo se construye, despliega y configura un servicio (imagen, pipeline, variables de entorno, proxy, Kubernetes, Helm, Terraform, serverless): infra.",
-  "- Vecinos de un nodo por tipo de relación: recorrer_grafo.",
-  "- Qué tiene que cumplir una funcionalidad (requisitos de negocio y de producto), qué archivo lo cumple y qué test lo verifica: especificaciones.",
-  "- Qué archivos no son de ninguna funcionalidad y a cuál conviene asociar cada uno: sin_asociar.",
-  "- Qué tan confiable es lo que el grafo dice de un archivo o una funcionalidad, y qué falta completar: fidelidad.",
-  "Cada dato trae evidencia `repo:ruta#Ln`: abrí ese archivo antes de afirmar algo. `avisos` y `truncado` marcan huecos conocidos: ahí falta dato, no significa que no pase nada.",
+  "Knowledge graph of the system: product (features, screens), code (endpoints, methods, tables) and how they connect across repos. Query it before exploring the code with grep.",
+  "Which tool to use:",
+  "- I don't know the id of something, or I'm looking for a class, method or word: buscar_nodo.",
+  "- What a product feature does: funcionalidad.",
+  "- A front-end screen end to end: pantalla.",
+  "- What an endpoint or a method executes, step by step: recorrido.",
+  "- What an endpoint receives and returns: contrato_de.",
+  "- What breaks if I change a table, endpoint, service or feature: impacto. If it's a method or a class: quien_llama.",
+  "- How risky a concrete change is (a diff or some files): riesgo.",
+  "- Endpoints nobody calls or calls nobody serves: deriva.",
+  "- What is left to migrate from one service to another: paridad.",
+  "- Where a piece of data travels between services: trazar.",
+  "- How a service is built, deployed and configured (image, pipeline, environment variables, proxy, Kubernetes, Helm, Terraform, serverless): infra.",
+  "- Neighbors of a node by relation type: recorrer_grafo.",
+  "- What a feature must satisfy (business and product requirements), which file satisfies it and which test verifies it: especificaciones.",
+  "- Which files belong to no feature and which one each should be assigned to: sin_asociar.",
+  "- How reliable what the graph says about a file or a feature is, and what is missing: fidelidad.",
+  "Every fact comes with evidence `repo:path#Ln`: open that file before claiming anything. `avisos` (notices) and `truncado` (truncated) mark known gaps: data is missing there, it does not mean nothing happens.",
 ].join("\n");
 
 /** Quita claves con valor undefined (el motor usa exactOptionalPropertyTypes). */
@@ -147,7 +147,7 @@ export interface Multi {
 export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): McpServer {
   const server = new McpServer({ name: "flowbrain", version: typeof __FLOWBRAIN_VERSION__ === "string" ? __FLOWBRAIN_VERSION__ : "dev" }, { instructions: multi ? `${INSTRUCCIONES}\n${multi.descripcion}` : INSTRUCCIONES });
   // Siempre declarado; con un solo brain no cambia nada.
-  const deCerebro = { cerebro: z.string().min(1).optional().describe("con varios cerebros, cuál consultar; por defecto, el del repo actual") };
+  const deCerebro = { cerebro: z.string().min(1).optional().describe("with several brains, which one to query; by default, the one of the current repo") };
 
   /** Corre una herramienta sobre el cerebro que corresponde y, con varios cerebros, rotula la respuesta. */
   async function correr<A extends Record<string, unknown>>(herramienta: string, a: A, fn: (ctx: Contexto, args: SinUndefined<A>) => unknown): Promise<Texto> {
@@ -173,10 +173,10 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "buscar_nodo",
     {
       description:
-        "Busca nodos del grafo (servicios, repos, tablas, funcionalidades, endpoints, pantallas) por id, nombre o alias, y también dentro del nombre y en el texto de su página. Además devuelve `simbolos`: clases, métodos y funciones del código con ese nombre, con su `repo:ruta#Ln`. Exacto > prefijo > contiene > difuso > texto.",
+        "Searches graph nodes (services, repos, tables, features, endpoints, screens) by id, name or alias, and also inside the name and in the text of their page. It also returns `simbolos`: classes, methods and functions in the code with that name, with their `repo:path#Ln`. Exact > prefix > contains > fuzzy > text.",
       inputSchema: {
         texto: z.string().min(1),
-        tipos: z.array(z.string()).optional().describe("filtra por tipo de nodo, p. ej. [\"svc\", \"endpoint\"]; \"simbolo\" para solo símbolos de código"),
+        tipos: z.array(z.string()).optional().describe("filter by node type, e.g. [\"svc\", \"endpoint\"]; \"simbolo\" for code symbols only"),
         limite: z.number().int().positive().optional(),
         ...comunes,
         ...deCerebro,
@@ -189,7 +189,7 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "recorrer_grafo",
     {
       description:
-        "Recorre el grafo desde un nodo por niveles. Con verbos=[\"depende_de\"] y direccion=\"in\" responde qué se rompe si cambia el nodo. Cada arista trae evidencia.",
+        "Walks the graph from a node, level by level. With verbos=[\"depende_de\"] and direccion=\"in\" it answers what breaks if the node changes. Every edge comes with evidence.",
       inputSchema: {
         nodo: z.string().min(1),
         verbos: z.array(z.enum(VERBOS)).optional(),
@@ -205,10 +205,10 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
   server.registerTool(
     "contrato_de",
     {
-      description: "Endpoints y eventos de un servicio, con los tipos de request/response expandidos y quién llama a cada endpoint.",
+      description: "Endpoints and events of a service, with request/response types expanded and who calls each endpoint.",
       inputSchema: {
-        nodo: z.string().min(1).describe("id de un svc o de un endpoint"),
-        endpoint: z.string().optional().describe("filtra un endpoint: \"MÉTODO /ruta\""),
+        nodo: z.string().min(1).describe("id of a svc or an endpoint"),
+        endpoint: z.string().optional().describe("filter one endpoint: \"METHOD /path\""),
         ...comunes,
         ...deCerebro,
       },
@@ -220,10 +220,10 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "trazar",
     {
       description:
-        "Traza el flujo de datos desde un nodo, URL/ruta HTTP o archivo: saltos ordenados con verbo, evidencia, tipo de dato y confianza.",
+        "Traces the data flow from a node, URL/HTTP path or file: ordered hops with verb, evidence, data type and confidence.",
       inputSchema: {
-        desde: z.string().min(1).describe("id de nodo, ruta (/checkout), \"MÉTODO /ruta\", URL o archivo"),
-        hasta: z.string().optional().describe("id de nodo destino: devuelve solo los caminos más cortos"),
+        desde: z.string().min(1).describe("node id, path (/checkout), \"METHOD /path\", URL or file"),
+        hasta: z.string().optional().describe("target node id: returns only the shortest paths"),
         ...comunes,
         ...deCerebro,
       },
@@ -237,8 +237,8 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "funcionalidad",
     {
       description:
-        "Ficha de una funcionalidad de producto (feat) por id o nombre: qué endpoints expone y qué método atiende cada uno, qué consume y de qué funcionalidad, qué tablas toca, con qué funcionalidades se relaciona y qué dominio comparte. Cada dato con repo:ruta#Ln.",
-      inputSchema: { id: z.string().min(1).describe("id (feat-billing), sufijo (billing) o nombre"), ...presupuesto, ...deCerebro },
+        "Card of a product feature (feat) by id or name: which endpoints it exposes and which method serves each one, what it consumes and from which feature, which tables it touches, which features it relates to and which domain it shares. Every fact with repo:path#Ln.",
+      inputSchema: { id: z.string().min(1).describe("id (feat-billing), suffix (billing) or name"), ...presupuesto, ...deCerebro },
     },
     async (a) => correr("funcionalidad", a, (ctx, args) => funcionalidad(ctx, args)),
   );
@@ -247,8 +247,8 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "recorrido",
     {
       description:
-        "Qué ejecuta el código desde un endpoint, un método, un hook/función del front o una pantalla (`pantalla /ruta`): pasos en orden de llamada (front → endpoint → controller → servicio → repositorio) con repo:ruta#Ln y lo que toca cada paso (lee_de/escribe_en tabla, llama_a endpoint). `via` marca saltos por HTTP, eventos o colas; `repite`, un método ya recorrido; `aviso`, un hueco conocido.",
-      inputSchema: { desde: z.string().min(1).describe("endpoint (\"MÉTODO /ruta\", /ruta o id) o símbolo (Clase.metodo, funcion, ruta#Clase.metodo) o pantalla (\"pantalla /login\")"), ...presupuesto, ...deCerebro },
+        "What the code executes from an endpoint, a method, a front-end hook/function or a screen (`pantalla /path`): steps in call order (front → endpoint → controller → service → repository) with repo:path#Ln and what each step touches (lee_de/escribe_en table, llama_a endpoint). `via` marks hops over HTTP, events or queues; `repite`, a method already walked; `aviso`, a known gap.",
+      inputSchema: { desde: z.string().min(1).describe("endpoint (\"METHOD /path\", /path or id) or symbol (Class.method, function, path#Class.method) or screen (\"pantalla /login\")"), ...presupuesto, ...deCerebro },
     },
     async (a) => correr("recorrido", a, (ctx, args) => recorrido(ctx, args)),
   );
@@ -257,8 +257,8 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "pantalla",
     {
       description:
-        "Una pantalla del front de punta a punta: su componente y funcionalidad, qué la envuelve (layouts, guardas y a dónde redirigen), desde qué pantallas o menús se llega, a cuáles lleva, qué endpoints del back llama y el recorrido completo (pantalla → componentes → hooks → API → endpoint → controller → servicio → tabla) con repo:ruta#Ln.",
-      inputSchema: { ruta: z.string().min(1).describe("ruta del front (/login, /pedidos/{id}), id de la pantalla o nombre de su componente (LoginScreen)"), ...presupuesto, ...deCerebro },
+        "A front-end screen end to end: its component and feature, what wraps it (layouts, guards and where they redirect), which screens or menus lead to it, which ones it leads to, which back-end endpoints it calls and the full flow (screen → components → hooks → API → endpoint → controller → service → table) with repo:path#Ln.",
+      inputSchema: { ruta: z.string().min(1).describe("front-end route (/login, /orders/{id}), screen id or the name of its component (LoginScreen)"), ...presupuesto, ...deCerebro },
     },
     async (a) => correr("pantalla", a, (ctx, args) => pantalla(ctx, args)),
   );
@@ -267,10 +267,10 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "quien_llama",
     {
       description:
-        "Quién llama a un método, función o clase, hacia arriba por niveles, con la línea de cada llamada (también por eventos y colas, con `via`); qué endpoints y funcionalidades quedan alcanzados y quién llama a esos endpoints por HTTP desde otros repos (`porHttp`). Los `avisos` listan llamadas sin resolver con el mismo nombre. Usalo antes de cambiar una firma o un comportamiento.",
+        "Who calls a method, function or class, upwards level by level, with the line of each call (also through events and queues, with `via`); which endpoints and features are reached and who calls those endpoints over HTTP from other repos (`porHttp`). `avisos` lists unresolved calls with the same name. Use it before changing a signature or a behavior.",
       inputSchema: {
-        simbolo: z.string().min(1).describe("Clase.metodo, funcion, Clase o ruta#Simbolo"),
-        profundidad: z.number().int().min(1).max(6).optional().describe("niveles hacia arriba (por defecto 3)"),
+        simbolo: z.string().min(1).describe("Class.method, function, Class or path#Symbol"),
+        profundidad: z.number().int().min(1).max(6).optional().describe("levels upwards (default 3)"),
         ...presupuesto,
         ...deCerebro,
       },
@@ -282,8 +282,8 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "impacto",
     {
       description:
-        "Si cambia una pieza (tabla, endpoint, servicio, externo, funcionalidad o símbolo de código), qué se ve afectado: funcionalidades y piezas técnicas por niveles con el porqué; para una tabla, además, qué métodos la leen o escriben.",
-      inputSchema: { pieza: z.string().min(1).describe("id de nodo, nombre, \"MÉTODO /ruta\" o símbolo"), ...presupuesto, ...deCerebro },
+        "If a piece changes (table, endpoint, service, external, feature or code symbol), what is affected: features and technical pieces by level with the reason; for a table, also which methods read or write it.",
+      inputSchema: { pieza: z.string().min(1).describe("node id, name, \"METHOD /path\" or symbol"), ...presupuesto, ...deCerebro },
     },
     async (a) => correr("impacto", a, (ctx, args) => impactoDe(ctx, args)),
   );
@@ -292,10 +292,10 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "infra",
     {
       description:
-        "Infraestructura declarada en los repos: imagen de cada servicio (base, puertos, comando), servicios de compose y de qué dependen, pipelines de CI con sus pasos, variables de entorno que espera (solo nombres), rutas del proxy, manifiestos de Kubernetes (Deployment, Service, Ingress, ConfigMap y Secret con solo sus claves), charts de Helm (Chart.yaml, values y plantillas, sin renderizar), Terraform (recursos, módulos, variables y salidas) y funciones serverless (serverless.yml, SAM: handler, eventos http, programados y colas). Cada dato con repo:ruta#Ln. Una ruta de Ingress, un evento http o un route_key trae `endpoints` (los del servicio a los que llega); una función, `atiende` (la función del código del handler). Con `texto` responde dónde se usa una variable, un puerto o una imagen; con un endpoint como `nodo`, qué infraestructura llega a él.",
+        "Infrastructure declared in the repos: image of each service (base, ports, command), compose services and what they depend on, CI pipelines with their steps, expected environment variables (names only), proxy routes, Kubernetes manifests (Deployment, Service, Ingress, ConfigMap and Secret with keys only), Helm charts (Chart.yaml, values and templates, not rendered), Terraform (resources, modules, variables and outputs) and serverless functions (serverless.yml, SAM: handler, http, scheduled and queue events). Every fact with repo:path#Ln. An Ingress route, an http event or a route_key comes with `endpoints` (the service endpoints it reaches); a function, with `atiende` (the code function of the handler). With `texto` it answers where a variable, a port or an image is used; with an endpoint as `nodo`, which infrastructure reaches it.",
       inputSchema: {
-        nodo: z.string().min(1).optional().describe("id de un servicio, repo, base, cola, externo o endpoint; sin nodo, todo el brain"),
-        texto: z.string().min(1).optional().describe("filtra: nombre de variable, puerto, imagen, paso (DATABASE_URL, 5432, deploy)"),
+        nodo: z.string().min(1).optional().describe("id of a service, repo, database, queue, external or endpoint; without nodo, the whole brain"),
+        texto: z.string().min(1).optional().describe("filter: variable name, port, image, step (DATABASE_URL, 5432, deploy)"),
         ...presupuesto,
         ...deCerebro,
       },
@@ -307,12 +307,12 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "riesgo",
     {
       description:
-        "Riesgo de un cambio antes de hacerlo o de mergearlo: con un diff (`git diff`) o una lista de archivos, dice qué métodos, tipos y constantes cambian, quién los llama o los usa y qué queda alcanzado (funcionalidades, endpoints, pantallas, tablas, otros repos que lo consumen por HTTP, equipos y decisiones), con un `nivel` de alcance (bajo, medio, alto) y sus `motivos`. Los `avisos` listan lo que no se pudo medir.",
+        "Risk of a change before making or merging it: with a diff (`git diff`) or a list of files, it says which methods, types and constants change, who calls or uses them and what is reached (features, endpoints, screens, tables, other repos that consume it over HTTP, teams and decisions), with a reach `nivel` (bajo, medio, alto = low, medium, high) and its `motivos` (reasons). `avisos` lists what could not be measured.",
       inputSchema: {
-        diff: z.string().min(1).optional().describe("diff unificado, tal como lo da git diff"),
-        archivos: z.array(z.string().min(1)).optional().describe("archivos tocados (ruta o repo:ruta), si no hay diff"),
-        repo: z.string().min(1).optional().describe("id del repo al que pertenecen las rutas"),
-        profundidad: z.number().int().min(1).max(6).optional().describe("niveles de llamadores hacia arriba (por defecto 4)"),
+        diff: z.string().min(1).optional().describe("unified diff, as git diff prints it"),
+        archivos: z.array(z.string().min(1)).optional().describe("touched files (path or repo:path), if there is no diff"),
+        repo: z.string().min(1).optional().describe("id of the repo the paths belong to"),
+        profundidad: z.number().int().min(1).max(6).optional().describe("levels of callers upwards (default 4)"),
         ...presupuesto,
         ...deCerebro,
       },
@@ -324,8 +324,8 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "deriva",
     {
       description:
-        "Deriva de contratos entre servicios: llamadas a rutas que ningún endpoint atiende (y si existen con otro método), llamadas que coinciden con varios endpoints, y endpoints que ningún consumidor indexado llama. Con varios cerebros cruza: lo que atiende o llama otro cerebro comunicado no cuenta como deriva. Compara campos de cada llamada unida contra el contrato del endpoint (también en otro cerebro): lo que se manda y el back no declara, lo requerido que no se manda y lo que se espera de la respuesta y no viene (`camposQueNoCoinciden`, con evidencia de los dos lados); lo que no se puede comparar va en `campos.noComparables` con su motivo. Sirve antes de borrar un endpoint o para encontrar integraciones rotas.",
-      inputSchema: { nodo: z.string().min(1).optional().describe("id de un servicio; sin esto, todos"), ...presupuesto, ...deCerebro },
+        "Contract drift between services: calls to paths no endpoint serves (and whether they exist with another method), calls that match several endpoints, and endpoints no indexed consumer calls. With several brains it cross-references: what another connected brain serves or calls does not count as drift. It compares the fields of each matched call against the endpoint contract (also in another brain): what is sent and the back end does not declare, what is required and not sent, and what is expected from the response and does not come (`camposQueNoCoinciden`, with evidence from both sides); what cannot be compared goes in `campos.noComparables` with its reason. Useful before deleting an endpoint or to find broken integrations.",
+      inputSchema: { nodo: z.string().min(1).optional().describe("id of a service; without it, all of them"), ...presupuesto, ...deCerebro },
     },
     async (a) => correr("deriva", a, (ctx, args) => deriva(ctx, args)),
   );
@@ -334,8 +334,8 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "paridad",
     {
       description:
-        "Paridad de una migración entre dos servicios (el que se reemplaza y el que lo reemplaza): qué endpoints o pantallas ya están del otro lado, cuáles faltan, cuáles son nuevos, en cuáles difieren las tablas que tocan, y qué tablas del viejo todavía no usa el nuevo.",
-      inputSchema: { viejo: z.string().min(1).describe("id del servicio de origen; con varios cerebros, `cerebro/svc-x` o solo `cerebro` si tiene un único servicio"), nuevo: z.string().min(1).describe("id del servicio que lo reemplaza; igual que `viejo`"), ...presupuesto, ...deCerebro },
+        "Parity of a migration between two services (the one being replaced and its replacement): which endpoints or screens are already on the other side, which are missing, which are new, in which the touched tables differ, and which tables of the old one the new one does not use yet.",
+      inputSchema: { viejo: z.string().min(1).describe("id of the source service; with several brains, `brain/svc-x` or just `brain` if it has a single service"), nuevo: z.string().min(1).describe("id of the replacing service; same format as `viejo`"), ...presupuesto, ...deCerebro },
     },
     async (a) => {
       if (!multi) return correr("paridad", a, (ctx, args) => paridad(ctx, args));
@@ -356,14 +356,14 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "especificaciones",
     {
       description:
-        "Casos de uso y requisitos de negocio y de producto de una funcionalidad, en llano: qué puede hacer alguien con ella (cada caso con su estado: cumplido, sin_test, sin_codigo; y `problema` si una persona lo marcó como mal), qué tiene que cumplirse, qué archivos lo cumplen y qué casos de test lo verifican, con su estado (propuesta por un modelo o confirmada por una persona). Sin argumentos: cuántas tiene cada funcionalidad y cuántos casos de test no verifican ninguna. Con `funcionalidad`: cada requisito, los que no tienen test (`manual`: una persona decidió probarlo a mano, cuenta como verificado) y los casos de test sueltos. Cada regla que se pidió testear termina en uno de cuatro resultados: verificada con un test nuevo, ya cubierta por un test existente, o con `hallazgo` (`codigo_no_cumple`: el código no la cumple; `no_testeable`: no se puede testear sin tocarlo; con el informe de qué hace hoy el código, qué habría que cambiar y el test que lo demuestra, y `decision` si una persona resolvió si está mal la regla o el código). El agente que escribe tests nunca modifica el código del producto. Con `con_hallazgo` ves solo esas reglas. Para escribir los tests que faltan: `flowbrain specs --guide-tests`. Usalo antes de cambiar una funcionalidad, para saber qué no puede romperse y qué no está probado.",
+        "Use cases and business and product requirements of a feature, in plain language: what someone can do with it (each case with its state: cumplido = satisfied, sin_test = untested, sin_codigo = no code; and `problema` if a person marked it as wrong), what must hold, which files satisfy it and which test cases verify it, with its state (propuesta = proposed by a model, confirmada = confirmed by a person). Without arguments: how many each feature has and how many test cases verify none. With `funcionalidad`: each requirement, the untested ones (`manual`: a person decided to test it by hand, counts as verified) and loose test cases. Every rule that was requested to be tested ends in one of four outcomes: verified with a new test, already covered by an existing test, or with a `hallazgo` (finding: `codigo_no_cumple` = the code does not satisfy it; `no_testeable` = it cannot be tested without touching the code; with the report of what the code does today, what would have to change and the test that proves it, and `decision` if a person settled whether the rule or the code is wrong). The agent that writes tests never modifies the product code. With `con_hallazgo` you see only those rules. To write the missing tests: `flowbrain specs --guide-tests`. Use it before changing a feature, to know what must not break and what is untested.",
       inputSchema: {
-        funcionalidad: z.string().min(1).optional().describe("id (feat-billing), sufijo (billing) o nombre"),
-        estado: z.enum(["propuesta", "confirmada"]).optional().describe("solo las de ese estado"),
-        tipo: z.enum(["negocio", "producto"]).optional().describe("solo las de ese tipo"),
-        sin_test: z.boolean().optional().describe("solo las que ningún caso de test verifica (ni se prueban a mano)"),
-        con_problema: z.boolean().optional().describe("solo los casos de uso que una persona marcó como mal"),
-        con_hallazgo: z.boolean().optional().describe("solo las reglas con hallazgo: el código no las cumple o no se pueden testear sin tocarlo"),
+        funcionalidad: z.string().min(1).optional().describe("id (feat-billing), suffix (billing) or name"),
+        estado: z.enum(["propuesta", "confirmada"]).optional().describe("only those in that state"),
+        tipo: z.enum(["negocio", "producto"]).optional().describe("only those of that type (negocio = business, producto = product)"),
+        sin_test: z.boolean().optional().describe("only those no test case verifies (and not tested by hand)"),
+        con_problema: z.boolean().optional().describe("only the use cases a person marked as wrong"),
+        con_hallazgo: z.boolean().optional().describe("only rules with a finding: the code does not satisfy them or they cannot be tested without touching the code"),
         ...presupuesto,
         ...deCerebro,
       },
@@ -375,17 +375,17 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "fidelidad",
     {
       description:
-        "Qué tan entendido quedó cada archivo por el índice, de 0 a 100, y qué le falta con su línea (llamadas sin resolver, HTTP sin ruta, accesos a tablas sin columnas o sin página, endpoints sin recorrido o sin tipo de respuesta, pantallas sin llamadas). Sin argumentos: puntaje general, reparto por tramos, por signal, por funcionalidad, capa y lenguaje, y los archivos de menor puntaje. Con `archivo`: su detalle. Los archivos donde no hay ninguna relación para medir tienen fidelidad incierta: no llevan puntaje ni entran al promedio (`inciertos: true` los lista). Con `plan: true`: las tareas para llevar esos archivos a 100 y cómo se resuelve cada una. Usalo para saber dónde desconfiar del grafo y qué completar primero.",
+        "How well the index understood each file, from 0 to 100, and what is missing with its line (unresolved calls, HTTP without a path, table accesses without columns or without a page, endpoints without a flow or without a response type, screens without calls). Without arguments: overall score, distribution by bands, by signal, by feature, layer and language, and the lowest-scoring files. With `archivo`: its detail. Files with no relation to measure have uncertain fidelity: they get no score and do not enter the average (`inciertos: true` lists them). With `plan: true`: the tasks to bring those files to 100 and how each one is solved. Use it to know where to distrust the graph and what to complete first.",
       inputSchema: {
-        archivo: z.string().min(1).optional().describe("repo:ruta o ruta de un archivo: devuelve solo ese"),
-        min: z.number().int().min(0).max(100).optional().describe("puntaje mínimo (0 a 100)"),
-        max: z.number().int().min(0).max(100).optional().describe("puntaje máximo (0 a 100)"),
-        funcionalidad: z.string().min(1).optional().describe("id o nombre de una funcionalidad; \"ninguna\" para los archivos sin funcionalidad"),
-        tipo: z.string().min(1).optional().describe("lenguaje o extensión: php, ts, vue"),
-        signal: z.enum(SIGNALS).optional().describe("solo archivos a los que les falta esta signal"),
-        limite: z.number().int().positive().optional().describe("cuántos archivos listar (por defecto 30; en un plan, 40)"),
-        inciertos: z.boolean().optional().describe("en vez del informe, los archivos de fidelidad incierta (sin ninguna relación para medir, sin puntaje) y por qué"),
-        plan: z.boolean().optional().describe("en vez del informe, un plan en texto con las tareas de los archivos que pasan los filtros y cómo se resuelve cada una"),
+        archivo: z.string().min(1).optional().describe("repo:path or path of a file: returns only that one"),
+        min: z.number().int().min(0).max(100).optional().describe("minimum score (0 to 100)"),
+        max: z.number().int().min(0).max(100).optional().describe("maximum score (0 to 100)"),
+        funcionalidad: z.string().min(1).optional().describe("id or name of a feature; \"ninguna\" for files without a feature"),
+        tipo: z.string().min(1).optional().describe("language or extension: php, ts, vue"),
+        signal: z.enum(SIGNALS).optional().describe("only files missing this signal"),
+        limite: z.number().int().positive().optional().describe("how many files to list (default 30; in a plan, 40)"),
+        inciertos: z.boolean().optional().describe("instead of the report, the files with uncertain fidelity (no relation to measure, no score) and why"),
+        plan: z.boolean().optional().describe("instead of the report, a text plan with the tasks of the files that pass the filters and how each one is solved"),
         ...presupuesto,
         ...deCerebro,
       },
@@ -397,11 +397,11 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "sin_asociar",
     {
       description:
-        "Archivos del índice que no son de ninguna funcionalidad ni librería, agrupados por carpeta, con la funcionalidad recomendada para cada uno y el motivo (atiende un endpoint que esa funcionalidad llama, lo importan o importa archivos suyos, o sus vecinos de carpeta son de ella). Marca el código compartido (lo usan varias funcionalidades) y las carpetas que se pueden asociar enteras. Usalo para completar el catálogo de funcionalidades.",
+        "Index files that belong to no feature or library, grouped by folder, with the recommended feature for each one and the reason (it serves an endpoint that feature calls, it is imported by or imports files of it, or its folder neighbors belong to it). It marks shared code (used by several features) and folders that can be assigned as a whole. Use it to complete the feature catalog.",
       inputSchema: {
-        carpeta: z.string().min(1).optional().describe("solo los de esta carpeta o de las de adentro (repo:ruta o ruta)"),
-        funcionalidad: z.string().min(1).optional().describe("solo los que tienen recomendada esta funcionalidad; \"ninguna\" para los que no tienen pista"),
-        limite: z.number().int().positive().optional().describe("cuántas carpetas listar (por defecto 30)"),
+        carpeta: z.string().min(1).optional().describe("only those in this folder or its subfolders (repo:path or path)"),
+        funcionalidad: z.string().min(1).optional().describe("only those with this feature recommended; \"ninguna\" for those without a hint"),
+        limite: z.number().int().positive().optional().describe("how many folders to list (default 30)"),
         ...presupuesto,
         ...deCerebro,
       },
@@ -414,7 +414,7 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
       "conexiones",
       {
         description:
-          "Qué viaja entre cerebros: por cada par de servicios (uno de este cerebro, otro de un cerebro comunicado), cuántas llamadas HTTP hay, a cuántos endpoints, si la conexión está declarada en el registro y ejemplos con su línea. Los `avisos` listan conexiones declaradas sin respaldo y llamadas sin declarar.",
+          "What travels between brains: for each pair of services (one in this brain, another in a connected brain), how many HTTP calls there are, to how many endpoints, whether the connection is declared in the registry and examples with their line. `avisos` lists declared connections without backing and undeclared calls.",
         inputSchema: { ...deCerebro },
       },
       async (a) => {

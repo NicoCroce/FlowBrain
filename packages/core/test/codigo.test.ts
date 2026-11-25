@@ -53,7 +53,7 @@ const RIESGO_CLIENTE = {
   funcionalidades: ["feat-carrito", "feat-checkout"],
   indice: {},
   llamadores: ["postCheckout @ repo-tienda:apps/bff/src/routes/checkout.ts#L14"],
-  motivos: ["alcanza 1 endpoint", "alcanza 1 pantalla", "alcanza 2 funcionalidades"],
+  motivos: ["reaches 1 endpoint", "reaches 1 screen", "reaches 2 features"],
   nivel: "medio",
   otrosRepos: [],
   pantallas: ["svc-web:pantalla:/checkout"],
@@ -89,7 +89,7 @@ describe("consultas de código", () => {
     expect(r.consumidoresIndexados).toEqual({ "svc-bff": ["svc-web"], "svc-payments": ["svc-bff"] });
     // Todos los endpoints del fixture tienen quién los llame (al webhook, un externo desde una página curada).
     expect(r.endpointsSinLlamadasDetectadas.map((e) => e.endpoint)).toEqual([]);
-    expect(r.avisos[0]).toContain("1 llamadas con URL armada en tiempo de ejecución");
+    expect(r.avisos[0]).toContain("1 calls with a URL built at runtime");
     expect(() => deriva(ctx, { nodo: "tabla-pagos" })).toThrow(ConsultaError);
   });
 
@@ -108,13 +108,13 @@ describe("consultas de código", () => {
     const sola = deriva(ctx, { cruzadas: vacio }) as unknown as R;
     expect(sola.llamadasSinEndpoint).toHaveLength(1);
     expect(sola.atendidasEnOtrosCerebros).toEqual([]);
-    expect(sola.avisos.join(" ")).toContain("no las atiende ni este cerebro ni otro");
+    expect(sola.avisos.join(" ")).toContain("served neither by this brain nor by otro");
     // Coincide con endpoints de dos cerebros: no es deriva ni está unida; va aparte, con los candidatos.
     const disp = deriva(ctx, { cruzadas: { ...vacio, disputadas: new Map([[L30, ["a/svc-a:GET:/checkout", "b/svc-b:GET:/checkout"]]]) } }) as unknown as R;
     expect(disp.llamadasSinEndpoint).toEqual([]);
     expect(disp.disputadasEntreCerebros).toEqual([{ desde: "svc-web", llamada: "GET ${base}/checkout", ev: L30, candidatos: ["a/svc-a:GET:/checkout", "b/svc-b:GET:/checkout"] }]);
     // Sin comunicación con nadie, se avisa por qué todo figura como sin endpoint.
-    expect((deriva(ctx, { cruzadas: { ...vacio, vecinos: [] } }) as unknown as R).avisos.join(" ")).toContain("no tiene la comunicación activa con ningún otro");
+    expect((deriva(ctx, { cruzadas: { ...vacio, vecinos: [] } }) as unknown as R).avisos.join(" ")).toContain("has no active communication with any other");
     // Sin `cruzadas` (un solo cerebro) la respuesta no cambia de forma.
     expect(deriva(ctx, {})).not.toHaveProperty("atendidasEnOtrosCerebros");
   });
@@ -126,7 +126,7 @@ describe("consultas de código", () => {
     // El índice viejo (sin `campos`) no compara: lo dice y pide reindexar.
     const viejo = deriva(ctx, { budget_tokens: null }) as unknown as R;
     expect(viejo.campos.comparadas).toBe(0);
-    expect(viejo.avisos.join(" ")).toContain("el índice de repo-tienda no trae los campos de las llamadas");
+    expect(viejo.avisos.join(" ")).toContain("the index of repo-tienda does not include call fields");
     const extraccion = JSON.stringify({
       ...JSON.parse(extraccionCheckout),
       campos: {
@@ -146,12 +146,12 @@ describe("consultas de código", () => {
       { llamada: "POST /checkout", ev: L8, endpoint: "svc-bff:POST:/checkout", evEndpoint: "repo-tienda:apps/bff/src/routes/checkout.ts#L14", respuesta: { front: "Confirmacion", back: "CheckoutResponse", esperaYNoViene: ["recibo"] } },
     ]);
     // La llamada del bff al servicio de pagos no tiene campos registrados: no se compara, y se dice.
-    expect(r.campos.noComparables.find((n) => n.lado === "cuerpo")).toMatchObject({ motivo: "no se sabe qué cuerpo manda la llamada", llamadas: 1 });
+    expect(r.campos.noComparables.find((n) => n.lado === "cuerpo")).toMatchObject({ motivo: "unknown body sent by the call", llamadas: 1 });
     // Sin el contrato del otro cerebro, esa llamada no se compara: no es coincidencia.
     const sin = deriva(nuevo, { budget_tokens: null, cruzadas: { ...vacio, salientes } }) as unknown as R;
     expect(sin.campos.comparadas).toBe(1);
-    expect(sin.campos.noComparables.map((n) => n.motivo)).toContain("no se cargó el contrato del endpoint en otro");
-    expect(sin.avisos.join(" ")).not.toContain("no trae los campos");
+    expect(sin.campos.noComparables.map((n) => n.motivo)).toContain("the endpoint contract in otro was not loaded");
+    expect(sin.avisos.join(" ")).not.toContain("does not include call fields");
   });
 
   it("riesgo: de un diff a los métodos que cambian, quién los llama y lo que queda alcanzado", () => {
@@ -161,9 +161,9 @@ describe("consultas de código", () => {
     // Tocar el método que escribe en una tabla sube el nivel; un archivo que no está en el índice se avisa.
     const r = riesgo(ctx, { archivos: ["apps/bff/src/routes/checkout.ts", "docs/LEEME.md"], repo: "repo-tienda" }) as { nivel: string; motivos: string[]; tablas: string[]; avisos: string[] };
     expect(r.nivel).toBe("alto");
-    expect(r.motivos[0]).toBe("cambia código que escribe en tabla-pagos");
+    expect(r.motivos[0]).toBe("changes code that writes to tabla-pagos");
     expect(r.tablas).toEqual(["escribe_en tabla-pagos"]);
-    expect(r.avisos).toContain("archivos fuera del índice (no se pudo medir su alcance): docs/LEEME.md");
+    expect(r.avisos).toContain("files outside the index (their reach could not be measured): docs/LEEME.md");
     expect(() => riesgo(ctx, {})).toThrow(ConsultaError);
   });
 
@@ -185,9 +185,9 @@ describe("consultas de código", () => {
     // Una constante que solo usa código suelto (`router.post(…)`) lo dice, en vez de quedar muda.
     const s = riesgo(ctx, { diff: diffDe("apps/bff/src/routes/checkout.ts", 19, 1) }) as typeof RIESGO_CLIENTE;
     expect(s.cambia).toEqual(["router @ repo-tienda:apps/bff/src/routes/checkout.ts#L19"]);
-    expect(s.avisos).toEqual(["tipos o constantes que ningún símbolo indexado nombra (si se usan, es fuera del código analizado: otro repo, plantillas, texto o reflexión): router"]);
+    expect(s.avisos).toEqual(["types or constants no indexed symbol names (if used, it is outside the analyzed code: another repo, templates, text or reflection): router"]);
     // Un import no cae en ningún símbolo.
-    expect((riesgo(ctx, { diff: diffDe("apps/bff/src/routes/checkout.ts", 2, 1) }) as typeof RIESGO_CLIENTE).avisos[0]).toMatch(/^cambios fuera de todo símbolo/);
+    expect((riesgo(ctx, { diff: diffDe("apps/bff/src/routes/checkout.ts", 2, 1) }) as typeof RIESGO_CLIENTE).avisos[0]).toMatch(/^changes outside any symbol/);
   });
 
   it("riesgo avisa cuando el índice no registra los usos de tipos (indexado con una versión anterior)", () => {
@@ -200,7 +200,7 @@ describe("consultas de código", () => {
     const r = riesgo(v, { diff: ["--- a/apps/bff/src/clients/payments.ts", "+++ b/apps/bff/src/clients/payments.ts", "@@ -6,1 +6,1 @@", "+x"].join("\n") }) as typeof RIESGO_CLIENTE;
     expect(r.cambia).toEqual(["PagoCreado @ repo-tienda:apps/bff/src/clients/payments.ts#L5"]);
     expect(r.endpoints).toEqual([]);
-    expect(r.avisos).toEqual(["el índice de repo-tienda no registra quién usa tipos y constantes (indexado antes de registrarlos, o su parser no los sigue): corré `flowbrain index` y `flowbrain compile` para seguirlos"]);
+    expect(r.avisos).toEqual(["the index of repo-tienda does not record who uses types and constants (indexed before they were recorded, or its parser does not follow them): run `flowbrain index` and `flowbrain compile` to follow them"]);
   });
 
   it("simbolosTocados: una clase cuenta solo si el cambio cae fuera de sus métodos", () => {
@@ -266,10 +266,10 @@ describe("consultas de código", () => {
     expect(r.recorrido.map((p) => `${p.n} ${p.simbolo}${p.via ? ` (${p.via})` : ""}`)).toEqual([
       "0 main",
       "1 confirmarCheckout",
-      "2 postCheckout (por HTTP: svc-bff:POST:/checkout)",
+      "2 postCheckout (over HTTP: svc-bff:POST:/checkout)",
       "3 crearPago",
     ]);
-    expect(r.avisos[0]).toMatch(/ninguna pantalla conocida lleva acá/);
+    expect(r.avisos[0]).toMatch(/no known screen leads here/);
     // `recorrido` acepta la pantalla, y una ruta del front que no es un endpoint.
     expect(recorrido(ctx, { desde: "pantalla /checkout", budget_tokens: null })).toMatchObject({ inicio: "svc-web:pantalla:/checkout" });
     expect(() => pantalla(ctx, { ruta: "/nada" })).toThrow(ConsultaError);
@@ -290,7 +290,7 @@ describe("consultas de código", () => {
   });
 
   it("pantalla con espacios en la ruta (React Navigation nombra pantallas con espacios)", () => {
-    expect(() => pantalla(ctx, { ruta: "/mi cuenta" })).toThrow(/no hay una pantalla con la ruta \/mi cuenta$/);
+    expect(() => pantalla(ctx, { ruta: "/mi cuenta" })).toThrow(/there is no screen with the route \/mi cuenta$/);
   });
 
   it("quien_llama sube por las invocaciones y dice qué endpoints y funcionalidades alcanza", () => {
@@ -322,7 +322,7 @@ describe("consultas de código", () => {
 
   it("impacto de una tabla: funcionalidades por niveles con el porqué y qué métodos la tocan", () => {
     const r = impactoDe(ctx, { pieza: "tabla-pagos" }) as { funcionalidades: Array<{ id: string; nivel: number; porque: string }>; tocadaPor: Array<{ quien: string; verbo: string }> };
-    expect(r.funcionalidades.map((f) => `${f.nivel} ${f.id}: ${f.porque}`)).toEqual(["1 feat-checkout: escribe en tabla-pagos", "2 feat-carrito: usa feat-checkout, que escribe en tabla-pagos"]);
+    expect(r.funcionalidades.map((f) => `${f.nivel} ${f.id}: ${f.porque}`)).toEqual(["1 feat-checkout: writes to tabla-pagos", "2 feat-carrito: uses feat-checkout, which writes to tabla-pagos"]);
     expect(r.tocadaPor).toEqual([{ verbo: "escribe_en", quien: "postCheckout @ repo-tienda:apps/bff/src/routes/checkout.ts#L14", ev: "repo-tienda:apps/bff/src/routes/checkout.ts#L16" }]);
     // Un símbolo de código delega en quien_llama.
     expect(impactoDe(ctx, { pieza: "crearPago" })).toMatchObject({ endpoints: ["svc-bff:POST:/checkout"] });
@@ -333,7 +333,7 @@ describe("consultas de código", () => {
     expect(r.id).toBe("feat-checkout");
     expect(r.expone).toEqual([{ endpoint: "svc-bff:POST:/checkout", atiende: "postCheckout @ repo-tienda:apps/bff/src/routes/checkout.ts#L14" }]);
     expect(r.usadaPor).toEqual(["feat-carrito"]);
-    expect(() => funcionalidad(ctx, { id: "chekout" })).toThrow(/no existe la funcionalidad/);
+    expect(() => funcionalidad(ctx, { id: "chekout" })).toThrow(/no such feature/);
   });
 
   it("respeta el presupuesto y avisa cuando recorta; sin índice de código, error claro", () => {
@@ -341,7 +341,7 @@ describe("consultas de código", () => {
       expect(tokens(r)).toBeLessThanOrEqual(Math.ceil(120 * 1.05) + 60);
     }
     expect(() => recorrido(sinIndice, { desde: "POST /checkout" })).toThrow(ConsultaError);
-    expect(() => quienLlama(ctx, { simbolo: "noExiste" })).toThrow(/no existe el símbolo/);
+    expect(() => quienLlama(ctx, { simbolo: "noExiste" })).toThrow(/no such symbol/);
   });
   it("avisa cuando el clon avanzó desde que se indexó (HEAD leído de .git, incluso con packed-refs)", async () => {
     const brain = await mkdtemp(join(tmpdir(), "brain-head-"));
@@ -357,7 +357,7 @@ describe("consultas de código", () => {
     await writeFile(join(git, "refs/heads/main"), `${"b".repeat(40)}\n`);
     await actualizarHeads(ix, brain);
     expect(recorrido(c, { desde: "POST /checkout" }).avisos).toEqual([
-      "índice desactualizado: repo-tienda se indexó en aaaaaaaaaaaa y el clon está en bbbbbbbbbbbb; las líneas pueden no coincidir (corré `flowbrain index` y `flowbrain compile`)",
+      "outdated index: repo-tienda was indexed at aaaaaaaaaaaa and the clone is at bbbbbbbbbbbb; lines may not match (run `flowbrain index` and `flowbrain compile`)",
     ]);
   });
   it("evaluar cuenta aciertos por herramienta: textos esperados, prohibidos y errores esperados", () => {
@@ -372,13 +372,13 @@ describe("consultas de código", () => {
     // Lo que la evaluación no mide queda a la vista.
     expect(r.sinPreguntas).toEqual(["buscar_nodo", "contrato_de", "deriva", "fidelidad", "funcionalidad", "impacto", "infra", "pantalla", "paridad", "recorrer_grafo", "riesgo", "trazar"]);
     expect(r.falladas).toEqual([{ id: "c", pregunta: "c", herramienta: "recorrido", ok: false, faltan: ["tabla-inexistente"], sobran: [] }]);
-    expect(() => leerPreguntas('[{"id":"x","herramienta":"otra","args":{}}]')).toThrow(/herramienta desconocida/);
+    expect(() => leerPreguntas('[{"id":"x","herramienta":"otra","args":{}}]')).toThrow(/unknown herramienta/);
   });
   it("recorrido desde el front cruza por HTTP al método del back que atiende el endpoint", () => {
     const r = recorrido(ctx, { desde: "confirmarCheckout" }) as { pasos: Array<{ n: number; simbolo: string; toca?: string[]; via?: string }> };
     expect(r.pasos.map((p) => `${p.n} ${p.simbolo}${p.via ? ` (${p.via})` : ""}`)).toEqual([
       "0 confirmarCheckout",
-      "1 postCheckout (por HTTP: svc-bff:POST:/checkout)",
+      "1 postCheckout (over HTTP: svc-bff:POST:/checkout)",
       "2 crearPago",
     ]);
     expect(r.pasos[0]!.toca).toEqual(["llama_a svc-bff:POST:/checkout"]);
@@ -424,7 +424,7 @@ describe("paridad de una migración", () => {
     expect(r.endpoints).toEqual(junto.endpoints);
     expect(r.tablasSinMigrar).toEqual(["tabla-auditoria"]);
     expect(r).toMatchObject({ cerebros: { viejo: "legado", nuevo: "back" } });
-    expect(r.avisos.join(" ")).toContain("las tablas se comparan por nombre, sin guiones ni mayúsculas");
+    expect(r.avisos.join(" ")).toContain("tables are compared by name, ignoring hyphens and case");
     // La misma tabla con otro id de página en cada cerebro no es una diferencia.
     const conOtroId = (g: Graph): Graph => JSON.parse(JSON.stringify(g).replaceAll("tabla-turno", "tabla-Tur_no").replaceAll("tabla-auditoria", "tabla-audi-toria")) as Graph;
     const nuevoRenombrado = crearContexto(conOtroId({ version: 1, nodes: graph.nodes.filter((n) => !n.id.startsWith("svc-viejo")), edges: graph.edges.filter((e) => !e.desde.startsWith("svc-viejo")) }), [], new Map());
@@ -432,6 +432,6 @@ describe("paridad de una migración", () => {
     expect(rr.endpoints.difierenEnTablas).toEqual([{ viejo: "svc-viejo:POST:/turnos", nuevo: "svc-nuevo:POST:/api/turnos", soloViejo: ["escribe_en tabla-auditoria"], soloNuevo: [] }]);
     expect(rr.tablasSinMigrar).toEqual(["tabla-auditoria"]);
     expect(junto).not.toHaveProperty("cerebros");
-    expect(() => paridadEntre({ ctx: solo("svc-viejo"), svc: "svc-nuevo", cerebro: "legado" }, { ctx: solo("svc-nuevo"), svc: "svc-nuevo", cerebro: "back" })).toThrow(/no existe el servicio: svc-nuevo en el cerebro legado/);
+    expect(() => paridadEntre({ ctx: solo("svc-viejo"), svc: "svc-nuevo", cerebro: "legado" }, { ctx: solo("svc-nuevo"), svc: "svc-nuevo", cerebro: "back" })).toThrow(/no such service: svc-nuevo in brain legado/);
   });
 });

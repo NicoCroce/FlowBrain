@@ -68,20 +68,20 @@ export async function verificarAristas(
     verificadas++;
     const dudosa = (motivo: string) => dudosas.push({ desde: e.desde, endpoint: e.endpoint, evidencia: e.evidencia, hasta: e.hasta, motivo, verbo: e.verbo });
     if (contenido === null) {
-      dudosa("archivo inexistente");
+      dudosa("file does not exist");
       continue;
     }
     if (!lineas) continue;
     const [desde, hasta] = lineas.replace(/#L/, "").split("-L").map(Number) as [number, number | undefined];
     const ultima = hasta ?? desde;
     if (ultima > contenido.length) {
-      dudosa(`línea ${ultima} fuera del archivo (${contenido.length} líneas)`);
+      dudosa(`line ${ultima} outside the file (${contenido.length} lines)`);
       continue;
     }
     const esperados = simbolos.get(`${repo}:${ruta}`)?.get(desde);
     // Los métodos se guardan como `Clase.metodo`; en la línea aparece solo el nombre del método.
     if (esperados && !esperados.some((s) => (contenido[desde - 1] ?? "").includes(s.slice(s.lastIndexOf(".") + 1)))) {
-      dudosa(`la línea ${desde} ya no contiene \`${esperados.join("`, `")}\``);
+      dudosa(`line ${desde} no longer contains \`${esperados.join("`, `")}\``);
     }
   }
   // Las dudosas de repos no disponibles se conservan: un clon ausente no es evidencia de nada.

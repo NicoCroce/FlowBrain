@@ -16,7 +16,7 @@ export async function servir(argv: string[], env: NodeJS.ProcessEnv = process.en
   const sync = sincronizar && argv.includes("--sync") ? sincronizar : undefined;
   // Una carpeta con `flowbrain.yaml` sirve todos sus cerebros; si no, es un brain solo.
   const server = (await esRegistro(raiz))
-    ? crearServidor(() => Promise.reject(new Error("sin cerebro")), crearMulti(raiz, sync ? { sincronizar: sync } : {}))
+    ? crearServidor(() => Promise.reject(new Error("no brain")), crearMulti(raiz, sync ? { sincronizar: sync } : {}))
     : crearServidor(cargadorConCache(raiz, sync ? () => sync(raiz) : undefined));
   await server.connect(new StdioServerTransport());
 }

@@ -36,14 +36,35 @@ export const MAPA_JS =
   var tipo = function (id) { return porId[id] ? porId[id].t : SIM[id] ? SIM[id].t : ""; };
   // Dónde está un símbolo: "repo:ruta#Ln".
   var donde = function (id) { return SIM[id] ? SIM[id].a + "#L" + SIM[id].l : ""; };
+  var L = function (en, es) { return window.brainI18n && window.brainI18n.lang === "es" ? es : en; };
+  var num = function (n) { return Number(n).toLocaleString(window.brainI18n && window.brainI18n.lang === "es" ? "es" : "en"); };
   var plural = function (n, uno, varios) { return n + " " + (n === 1 ? uno : varios); };
-  var TIPO = { feat: "funcionalidad", pantalla: "pantalla", componente: "componente", tabla: "tabla", endpoint: "endpoint", svc: "servicio", ext: "servicio externo", db: "base de datos", queue: "cola", lib: "librería", repo: "repo",
-    archivo: "archivo", test: "archivo de test", contrato: "contrato", team: "equipo", decision: "decisión",
-    hook: "hook", clase: "clase", metodo: "método", funcion: "función", interfaz: "interfaz", tipo: "tipo", enum: "enum", constante: "constante", modelo: "modelo", objeto: "objeto" };
-  var TIPOS = { feat: "funcionalidades", pantalla: "pantallas", componente: "componentes", tabla: "tablas", endpoint: "endpoints", svc: "servicios", ext: "servicios externos", db: "bases de datos", queue: "colas", lib: "librerías", repo: "repos",
-    archivo: "archivos", test: "archivos de test", contrato: "contratos", team: "equipos", decision: "decisiones",
-    hook: "hooks", clase: "clases", metodo: "métodos", funcion: "funciones", interfaz: "interfaces", tipo: "tipos", enum: "enums", constante: "constantes", modelo: "modelos", objeto: "objetos" };
-  var VERBO = { se_atiende_con: "se atiende con", tiene_codigo: "tiene el código de", usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" };
+  // Las tablas de etiquetas se arman en el idioma actual y se rehacen al cambiarlo (tablas() corre en alCambiar).
+  var TIPO, TIPOS, VERBO, VERBO_IDA, DEPENDIENTES;
+  function tablas() {
+    TIPO = L(
+      { feat: "feature", pantalla: "screen", componente: "component", tabla: "table", endpoint: "endpoint", svc: "service", ext: "external service", db: "database", queue: "queue", lib: "library", repo: "repo",
+        archivo: "file", test: "test file", contrato: "contract", team: "team", decision: "decision",
+        hook: "hook", clase: "class", metodo: "method", funcion: "function", interfaz: "interface", tipo: "type", enum: "enum", constante: "constant", modelo: "model", objeto: "object" },
+      { feat: "funcionalidad", pantalla: "pantalla", componente: "componente", tabla: "tabla", endpoint: "endpoint", svc: "servicio", ext: "servicio externo", db: "base de datos", queue: "cola", lib: "librería", repo: "repo",
+        archivo: "archivo", test: "archivo de test", contrato: "contrato", team: "equipo", decision: "decisión",
+        hook: "hook", clase: "clase", metodo: "método", funcion: "función", interfaz: "interfaz", tipo: "tipo", enum: "enum", constante: "constante", modelo: "modelo", objeto: "objeto" });
+    TIPOS = L(
+      { feat: "features", pantalla: "screens", componente: "components", tabla: "tables", endpoint: "endpoints", svc: "services", ext: "external services", db: "databases", queue: "queues", lib: "libraries", repo: "repos",
+        archivo: "files", test: "test files", contrato: "contracts", team: "teams", decision: "decisions",
+        hook: "hooks", clase: "classes", metodo: "methods", funcion: "functions", interfaz: "interfaces", tipo: "types", enum: "enums", constante: "constants", modelo: "models", objeto: "objects" },
+      { feat: "funcionalidades", pantalla: "pantallas", componente: "componentes", tabla: "tablas", endpoint: "endpoints", svc: "servicios", ext: "servicios externos", db: "bases de datos", queue: "colas", lib: "librerías", repo: "repos",
+        archivo: "archivos", test: "archivos de test", contrato: "contratos", team: "equipos", decision: "decisiones",
+        hook: "hooks", clase: "clases", metodo: "métodos", funcion: "funciones", interfaz: "interfaces", tipo: "tipos", enum: "enums", constante: "constantes", modelo: "modelos", objeto: "objetos" });
+    VERBO = L(
+      { se_atiende_con: "is served by", tiene_codigo: "holds the code of", usa: "uses", escribe_en: "writes to", lee_de: "reads", llama_a: "calls", implementa: "is implemented by", vive_en: "lives in", publica_en: "publishes to", consume_de: "consumes from", depende_de: "depends on", alimenta: "receives messages from" },
+      { se_atiende_con: "se atiende con", tiene_codigo: "tiene el código de", usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "está implementada por", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" });
+    VERBO_IDA = L(
+      { usa: "uses", escribe_en: "writes to", lee_de: "reads", llama_a: "calls", implementa: "relies on", vive_en: "lives in", publica_en: "publishes to", consume_de: "consumes from", depende_de: "depends on", alimenta: "receives messages from" },
+      { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "se apoya en", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" });
+    DEPENDIENTES = [["0", L("None", "Nadie")], ["1-2", L("1 or 2", "1 o 2")], ["3-9", L("3 to 9", "De 3 a 9")], ["10+", L("10 or more", "10 o más")]];
+  }
+  tablas();
   var puntoT = function (t) { return '<span class="punto" style="background:' + color(t) + '"></span>'; };
   var punto = function (id) { return puntoT(tipo(id)); };
   var entran = {}, salen = {};
@@ -63,11 +84,19 @@ export const MAPA_JS =
   var cerebroIdx = function (id) { var n = porId[id] || (SIM[id] && porId[SIM[id].a]); return n && n.c !== undefined ? n.c : ""; };
   // Campos que comparten la portada y el detalle: el tipo de pieza y el cerebro.
   var campoTipo = function (todos) {
-    return { id: "tipo", etiqueta: "Tipo de pieza", todos: todos, propio: "el tipo elegido", de: function (x) { return x.t; },
-      valores: null, etiquetaDe: function (v) { return mayus(tituloT(v, 2)); }, color: function (v) { return color(v); }, palabra: function (v) { return "solo " + tituloT(v, 2); } };
+    return { id: "tipo", etiqueta: L("Piece type", "Tipo de pieza"), todos: todos, propio: L("the chosen type", "el tipo elegido"), de: function (x) { return x.t; },
+      valores: null, etiquetaDe: function (v) { return mayus(tituloT(v, 2)); }, color: function (v) { return color(v); }, palabra: function (v) { return L("only ", "solo ") + tituloT(v, 2); } };
   };
-  var campoCerebro = { id: "cerebro", etiqueta: "Cerebro", propio: "el cerebro elegido", solo: function () { return CEREBROS.length > 1; }, de: function (x) { return x.c; },
-    etiquetaDe: nombreCerebro, palabra: function (v) { return "cerebro " + nombreCerebro(v); } };
+  var campoCerebro = function () {
+    return { id: "cerebro", etiqueta: L("Brain", "Cerebro"), propio: L("the chosen brain", "el cerebro elegido"), solo: function () { return CEREBROS.length > 1; }, de: function (x) { return x.c; },
+      etiquetaDe: nombreCerebro, palabra: function (v) { return L("brain ", "cerebro ") + nombreCerebro(v); } };
+  };
+  // Un filtro se arma con los textos del idioma actual: al cambiarlo se rehace y se le pasa el estado del anterior.
+  var rehacerFiltro = function (viejo, cfg) {
+    var nuevo = window.brainFiltros.crear(cfg), s = viejo.S(), t = nuevo.S();
+    Object.keys(s).forEach(function (k) { t[k] = s[k]; });
+    return nuevo;
+  };
   var FLI = null;
   // Los eventos de la raíz van al filtro que esté a la vista (portada o detalle); el resto es de la ficha técnica.
   raizImpacto.addEventListener("click", function (ev) { if (FLI) FLI.manejar(ev, "click"); });
@@ -76,7 +105,6 @@ export const MAPA_JS =
 
   // ---------- Portada: elegir una pieza ----------
   // Cada pieza con cuántas dependen de ella en forma directa: lo más usado arriba.
-  var DEPENDIENTES = [["0", "Nadie"], ["1-2", "1 o 2"], ["3-9", "De 3 a 9"], ["10+", "10 o más"]];
   var PIEZAS = candidatos.map(function (n) {
     var quien = {};
     (entran[n.id] || []).forEach(function (d) { quien[d[0]] = true; });
@@ -90,32 +118,35 @@ export const MAPA_JS =
   PIEZAS.forEach(function (x) { PIEZA[x.id] = x; });
   var VER_INICIO = 50, verInicio = VER_INICIO;
   var tramoDe = function (v) { for (var i = 0; i < DEPENDIENTES.length; i++) if (DEPENDIENTES[i][0] === v) return DEPENDIENTES[i][1]; return v; };
-  var flInicio = window.brainFiltros.crear({
-    pre: "im", clave: "flowbrain.impacto", unidad: ["pieza", "piezas"], todos: "todas las piezas",
-    items: function () { return PIEZAS; },
-    grupos: [
-      { id: "", etiqueta: "Todas" },
-      { id: "usadas", etiqueta: "Alguien depende de ellas", palabra: "de las que algo depende", es: function (x) { return x.dep > 0; } },
-      { id: "sueltas", etiqueta: "Nadie depende de ellas", palabra: "de las que nada depende", es: function (x) { return !x.dep; } }
-    ],
-    buscar: { ph: "Buscar una pieza: funcionalidad, tabla, endpoint, archivo, clase, método…", texto: function (x) { return x.texto; } },
-    campos: [
-      campoTipo("Todos"), campoCerebro,
-      { id: "dependen", etiqueta: "Cuántas dependen directo", todos: "Cualquier cantidad", propio: "la cantidad elegida", de: function (x) { return x.tramo; },
-        valores: function () { return DEPENDIENTES.map(function (t) { return [t[0], t[1], PIEZAS.filter(function (x) { return x.tramo === t[0]; }).length]; }); },
-        etiquetaDe: tramoDe, palabra: function (v) { return "dependen " + tramoDe(v).toLowerCase(); } }
-    ],
-    paneles: [
-      { titulo: "Por tipo de pieza", campo: "tipo", max: 40, nota: function () { return COD ? "" : '<p class="fd-sin">Sin índice de código: no aparecen clases, métodos, funciones ni hooks. Corré <code>flowbrain index</code> y <code>flowbrain compile</code> para verlos.</p>'; } },
-      { titulo: "Cuántas dependen directo", campo: "dependen", orden: "fijo" },
-      { titulo: "Por cerebro", campo: "cerebro" }
-    ],
-    cifras: function () {
-      var n = function (t) { return PIEZAS.filter(function (x) { return x.t === t; }).length; };
-      return [[PIEZAS.length, "piezas"], [n("feat"), "funcionalidades"], [n("endpoint"), "endpoints"], [n("tabla"), "tablas"], [SIMS.length, "símbolos de código"], [PIEZAS.filter(function (x) { return x.dep >= 10; }).length, "con 10 o más dependientes", "var(--atencion)"]];
-    },
-    alCambiar: function (todo) { verInicio = VER_INICIO; if (todo) inicioImpacto(); else { var l = document.getElementById("im-lista"); if (l) l.innerHTML = listaInicio(); } }
-  });
+  var cfgInicio = function () {
+    return {
+      pre: "im", clave: "flowbrain.impacto", unidad: L(["piece", "pieces"], ["pieza", "piezas"]), todos: L("all pieces", "todas las piezas"),
+      items: function () { return PIEZAS; },
+      grupos: [
+        { id: "", etiqueta: L("All", "Todas") },
+        { id: "usadas", etiqueta: L("Something depends on them", "Alguien depende de ellas"), palabra: L("that something depends on", "de las que algo depende"), es: function (x) { return x.dep > 0; } },
+        { id: "sueltas", etiqueta: L("Nothing depends on them", "Nadie depende de ellas"), palabra: L("that nothing depends on", "de las que nada depende"), es: function (x) { return !x.dep; } }
+      ],
+      buscar: { ph: L("Search a piece: feature, table, endpoint, file, class, method…", "Buscar una pieza: funcionalidad, tabla, endpoint, archivo, clase, método…"), texto: function (x) { return x.texto; } },
+      campos: [
+        campoTipo(L("All", "Todos")), campoCerebro(),
+        { id: "dependen", etiqueta: L("Direct dependents", "Cuántas dependen directo"), todos: L("Any number", "Cualquier cantidad"), propio: L("the chosen number", "la cantidad elegida"), de: function (x) { return x.tramo; },
+          valores: function () { return DEPENDIENTES.map(function (t) { return [t[0], t[1], PIEZAS.filter(function (x) { return x.tramo === t[0]; }).length]; }); },
+          etiquetaDe: tramoDe, palabra: function (v) { return L("direct dependents: ", "dependen ") + tramoDe(v).toLowerCase(); } }
+      ],
+      paneles: [
+        { titulo: L("By piece type", "Por tipo de pieza"), campo: "tipo", max: 40, nota: function () { return COD ? "" : L('<p class="fd-sin">No code index: classes, methods, functions and hooks are missing. Run <code>flowbrain index</code> and <code>flowbrain compile</code> to see them.</p>', '<p class="fd-sin">Sin índice de código: no aparecen clases, métodos, funciones ni hooks. Corré <code>flowbrain index</code> y <code>flowbrain compile</code> para verlos.</p>'); } },
+        { titulo: L("Direct dependents", "Cuántas dependen directo"), campo: "dependen", orden: "fijo" },
+        { titulo: L("By brain", "Por cerebro"), campo: "cerebro" }
+      ],
+      cifras: function () {
+        var n = function (t) { return PIEZAS.filter(function (x) { return x.t === t; }).length; };
+        return [[PIEZAS.length, L("pieces", "piezas")], [n("feat"), L("features", "funcionalidades")], [n("endpoint"), "endpoints"], [n("tabla"), L("tables", "tablas")], [SIMS.length, L("code symbols", "símbolos de código")], [PIEZAS.filter(function (x) { return x.dep >= 10; }).length, L("with 10 or more dependents", "con 10 o más dependientes"), "var(--atencion)"]];
+      },
+      alCambiar: function (todo) { verInicio = VER_INICIO; if (todo) inicioImpacto(); else { var l = document.getElementById("im-lista"); if (l) l.innerHTML = listaInicio(); } }
+    };
+  };
+  var flInicio = window.brainFiltros.crear(cfgInicio());
   // La portada, segmentada: arriba lo de producto y servicios en una columna por tipo (las 10 con más dependientes,
   // «Ver todas» filtra por ese tipo); abajo el código agrupado por archivo, con sus clases y métodos plegados adentro.
   // Así un archivo, su clase y sus métodos no salen como filas sueltas que se repiten.
@@ -123,19 +154,24 @@ export const MAPA_JS =
   var esCodigo = function (x) { return !!SIM[x.id] || x.t === "archivo" || x.t === "test"; };
   var filaPieza = function (x, conDonde) {
     // En la columna el tipo ya está en el título; dentro de un archivo se dice (clase, método…) y en qué línea.
-    return "<li>" + enlaceImpacto(x.id) + " <small>· " + (conDonde ? esc(TIPO[x.t] || x.t) + (SIM[x.id] ? " · L" + SIM[x.id].l : "") + " · " : "") + (x.dep ? plural(x.dep, "pieza depende", "piezas dependen") + " directo" : "nadie depende") + "</small></li>";
+    return "<li>" + enlaceImpacto(x.id) + " <small>· " + (conDonde ? esc(TIPO[x.t] || x.t) + (SIM[x.id] ? " · L" + SIM[x.id].l : "") + " · " : "") + dependenTexto(x.dep) + "</small></li>";
+  };
+  // «3 piezas dependen directo» / «3 pieces depend on it directly».
+  var dependenTexto = function (k) {
+    return k ? L(plural(k, "piece depends", "pieces depend") + " on it directly", plural(k, "pieza depende", "piezas dependen") + " directo") : L("nothing depends on it", "nadie depende");
   };
   function columnas(xs, S) {
     var porTipo = {};
     xs.forEach(function (x) { (porTipo[x.t] = porTipo[x.t] || []).push(x); });
     var tipos = Object.keys(porTipo).sort(porOrden), uno = tipos.length === 1;
     if (!tipos.length) return "";
-    return '<h2 class="titulo-seccion">Producto y servicios</h2><div class="grupos-impacto' + (uno ? " uno" : "") + '">' + tipos.map(function (t) {
+    return '<h2 class="titulo-seccion">' + L("Product and services", "Producto y servicios") + '</h2><div class="grupos-impacto' + (uno ? " uno" : "") + '">' + tipos.map(function (t) {
       var ys = porTipo[t], vis = uno ? ys.slice(0, verInicio) : ys.slice(0, COLUMNA);
+      var falta = Math.min(VER_INICIO, ys.length - vis.length);
       var mas = uno
-        ? (ys.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" id="im-mas">Mostrar ' + Math.min(VER_INICIO, ys.length - vis.length) + " más</button> <small>" + vis.length + " de " + ys.length + "</small></p>" : "")
-        : (ys.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" data-fl="im" data-fl-set="' + esc(JSON.stringify({ tipo: t })) + '">Ver ' + (ys.length === 1 ? "la" : "las " + ys.length) + "</button></p>" : "");
-      return '<section class="grupo-impacto" data-tipo="' + t + '"><h2>' + puntoT(t) + " " + esc(mayus(tituloT(t, 2))) + ' <small class="cuenta">' + ys.length.toLocaleString("es") + "</small></h2>" +
+        ? (ys.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" id="im-mas">' + L("Show " + falta + " more", "Mostrar " + falta + " más") + "</button> <small>" + L(vis.length + " of " + ys.length, vis.length + " de " + ys.length) + "</small></p>" : "")
+        : (ys.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" data-fl="im" data-fl-set="' + esc(JSON.stringify({ tipo: t })) + '">' + L(ys.length === 1 ? "See it" : "See all " + ys.length, "Ver " + (ys.length === 1 ? "la" : "las " + ys.length)) + "</button></p>" : "");
+      return '<section class="grupo-impacto" data-tipo="' + t + '"><h2>' + puntoT(t) + " " + esc(mayus(tituloT(t, 2))) + ' <small class="cuenta">' + num(ys.length) + "</small></h2>" +
         '<ul class="lista">' + vis.map(function (x) { return filaPieza(x, false); }).join("") + "</ul>" + mas + "</section>";
     }).join("") + "</div>";
   }
@@ -155,28 +191,29 @@ export const MAPA_JS =
       var g = grupos[a], arch = g.archivo || PIEZA[a], ruta = a.slice(a.indexOf(":") + 1);
       // El archivo que no pasó el filtro (se buscó un método suyo) se nombra igual, para saber dónde está.
       var cab = (porId[a] ? enlaceImpacto(a) : punto(a) + " <code>" + esc(ruta) + "</code>") +
-        " <small>· " + esc(TIPO[(arch && arch.t) || "archivo"]) + (arch ? " · " + (arch.dep ? plural(arch.dep, "pieza depende", "piezas dependen") + " directo" : "nadie depende") : "") +
-        (g.sims.length ? " · " + plural(g.sims.length, "símbolo", "símbolos") : "") + "</small>";
+        " <small>· " + esc(TIPO[(arch && arch.t) || "archivo"]) + (arch ? " · " + dependenTexto(arch.dep) : "") +
+        (g.sims.length ? " · " + L(plural(g.sims.length, "symbol", "symbols"), plural(g.sims.length, "símbolo", "símbolos")) : "") + "</small>";
       if (!g.sims.length) return '<li class="im-archivo">' + cab + "</li>";
       var sims = g.sims.slice().sort(function (x, y) { return y.dep - x.dep || (nombre(x.id) < nombre(y.id) ? -1 : 1); });
       return '<li class="im-archivo"><details' + (buscando || !g.archivo ? " open" : "") + "><summary>" + cab + '</summary><ul class="lista im-simbolos">' + sims.map(function (x) { return filaPieza(x, true); }).join("") + "</ul></details></li>";
     }).join("");
-    return '<h2 class="titulo-seccion">Código, por archivo <small class="cuenta">' + plural(orden.length, "archivo", "archivos") + "</small></h2>" +
-      '<p class="explica">Cada archivo con sus clases, métodos y funciones adentro, ordenados por cuántas piezas dependen de ellos. Abrí un archivo para verlos.</p>' +
+    var falta = Math.min(VER_INICIO, orden.length - vis.length);
+    return '<h2 class="titulo-seccion">' + L("Code, by file", "Código, por archivo") + ' <small class="cuenta">' + L(plural(orden.length, "file", "files"), plural(orden.length, "archivo", "archivos")) + "</small></h2>" +
+      '<p class="explica">' + L("Each file with its classes, methods and functions inside, sorted by how many pieces depend on them. Open a file to see them.", "Cada archivo con sus clases, métodos y funciones adentro, ordenados por cuántas piezas dependen de ellos. Abrí un archivo para verlos.") + "</p>" +
       '<ul class="lista im-codigo">' + html + "</ul>" +
-      (orden.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" id="im-mas">Mostrar ' + Math.min(VER_INICIO, orden.length - vis.length) + " archivos más</button> <small>" + vis.length + " de " + orden.length + "</small></p>" : "");
+      (orden.length > vis.length ? '<p class="fd-mas"><button type="button" class="boton" id="im-mas">' + L("Show " + falta + " more files", "Mostrar " + falta + " archivos más") + "</button> <small>" + L(vis.length + " of " + orden.length, vis.length + " de " + orden.length) + "</small></p>" : "");
   }
   function listaInicio() {
     var xs = flInicio.filtrar(), S = flInicio.S();
     if (!xs.length) return flInicio.vacio(PIEZAS.length);
     var producto = xs.filter(function (x) { return !esCodigo(x); }), codigo = xs.filter(esCodigo);
-    return flInicio.resultado(xs, " · lo de producto por tipo y el código por archivo; las que más dependientes tienen, primero") +
+    return flInicio.resultado(xs, L(" · product pieces by type and code by file; most dependents first", " · lo de producto por tipo y el código por archivo; las que más dependientes tienen, primero")) +
       columnas(producto, S) + porArchivo(codigo, S);
   }
   function inicioImpacto() {
     FLI = flInicio;
-    raizImpacto.innerHTML = "<h1>Impacto de un cambio</h1>" +
-      '<p class="subtitulo">Elegí una pieza y mirá todo lo que depende de ella, directa o indirectamente: para planificar un cambio, revisar un PR o estimar el riesgo.</p>' +
+    raizImpacto.innerHTML = "<h1>" + L("Impact of a change", "Impacto de un cambio") + "</h1>" +
+      '<p class="subtitulo">' + L("Pick a piece and see everything that depends on it, directly or indirectly: to plan a change, review a PR or estimate the risk.", "Elegí una pieza y mirá todo lo que depende de ella, directa o indirectamente: para planificar un cambio, revisar un PR o estimar el riesgo.") + "</p>" +
       flInicio.html() + '<div id="im-lista">' + listaInicio() + "</div>";
   }
   raizImpacto.addEventListener("keydown", function (ev) {
@@ -194,9 +231,8 @@ export const MAPA_JS =
    * La otra dirección del impacto: de qué depende una pieza (lo que, si cambia, la afecta a ella). Desde una
    * funcionalidad: sus pantallas y servicio, lo que llaman, las tablas que tocan y las funcionalidades que usa.
    * Igual que en el impacto, "implementa" solo se sigue desde el origen, y un servicio alcanzado no se expande: sería
-   * todo lo que ese servicio toca.
+   * todo lo que ese servicio toca. Los verbos de esa dirección están en VERBO_IDA (tablas()).
    */
-  var VERBO_IDA = { usa: "usa", escribe_en: "escribe en", lee_de: "lee", llama_a: "llama a", implementa: "se apoya en", vive_en: "vive en", publica_en: "publica en", consume_de: "consume de", depende_de: "depende de", alimenta: "recibe mensajes de" };
   /**
    * El impacto de un símbolo o de un archivo, como quien_llama: quién lo llama o lo usa, y quién llama a esos, por
    * niveles. Desde el código salta al grafo por dos puentes: el endpoint que atiende un símbolo alcanzado y la
@@ -268,39 +304,52 @@ export const MAPA_JS =
   // ---------- Detalle: lo que afecta una pieza o de qué depende, con su filtro ----------
   // DET: { id, items: [{ id, t, c, nivel, porque }] } de la pestaña a la vista.
   var DET = { id: "", activa: "afecta", items: [] };
-  var nivelDe = function (v) { return v === "1" ? "Directo" : "Nivel " + v; };
-  var flDet = window.brainFiltros.crear({
-    pre: "imd", unidad: ["pieza", "piezas", "f"], todos: "todo lo alcanzado",
-    items: function () { return DET.items; },
-    grupos: [
-      { id: "", etiqueta: "Todo" },
-      { id: "directo", etiqueta: "Directo", palabra: "directo", es: function (x) { return x.nivel === 1; } },
-      { id: "indirecto", etiqueta: "Indirecto", palabra: "indirecto", es: function (x) { return x.nivel > 1; } }
-    ],
-    buscar: { ph: "Buscar en lo alcanzado: nombre, id o por qué…", texto: function (x) { return nombre(x.id) + " " + x.id + " " + x.porque; } },
-    campos: [
-      campoTipo("Todos"), campoCerebro,
-      { id: "nivel", etiqueta: "Nivel", propio: "el nivel elegido", de: function (x) { return String(x.nivel); },
-        valores: function () { var n = {}; DET.items.forEach(function (x) { n[x.nivel] = (n[x.nivel] || 0) + 1; }); return Object.keys(n).sort(function (a, b) { return a - b; }).map(function (v) { return [v, nivelDe(v), n[v]]; }); },
-        etiquetaDe: nivelDe, palabra: function (v) { return nivelDe(v).toLowerCase(); } }
-    ],
-    paneles: [
-      { titulo: "Por tipo de pieza", campo: "tipo" },
-      { titulo: "Por nivel", campo: "nivel", orden: "fijo" },
-      { titulo: "Por cerebro", campo: "cerebro" }
-    ],
-    alCambiar: function (todo) { var l = document.getElementById("imd-lista"); if (!todo && l) l.innerHTML = listaDetalle(); else mostrarImpacto(DET.id, DET.activa); }
+  var nivelDe = function (v) { return v === "1" ? L("Direct", "Directo") : L("Level ", "Nivel ") + v; };
+  var cfgDet = function () {
+    return {
+      pre: "imd", unidad: L(["piece", "pieces", "f"], ["pieza", "piezas", "f"]), todos: L("everything reached", "todo lo alcanzado"),
+      items: function () { return DET.items; },
+      grupos: [
+        { id: "", etiqueta: L("All", "Todo") },
+        { id: "directo", etiqueta: L("Direct", "Directo"), palabra: L("direct", "directo"), es: function (x) { return x.nivel === 1; } },
+        { id: "indirecto", etiqueta: L("Indirect", "Indirecto"), palabra: L("indirect", "indirecto"), es: function (x) { return x.nivel > 1; } }
+      ],
+      buscar: { ph: L("Search what is reached: name, id or why…", "Buscar en lo alcanzado: nombre, id o por qué…"), texto: function (x) { return nombre(x.id) + " " + x.id + " " + x.porque; } },
+      campos: [
+        campoTipo(L("All", "Todos")), campoCerebro(),
+        { id: "nivel", etiqueta: L("Level", "Nivel"), propio: L("the chosen level", "el nivel elegido"), de: function (x) { return String(x.nivel); },
+          valores: function () { var n = {}; DET.items.forEach(function (x) { n[x.nivel] = (n[x.nivel] || 0) + 1; }); return Object.keys(n).sort(function (a, b) { return a - b; }).map(function (v) { return [v, nivelDe(v), n[v]]; }); },
+          etiquetaDe: nivelDe, palabra: function (v) { return nivelDe(v).toLowerCase(); } }
+      ],
+      paneles: [
+        { titulo: L("By piece type", "Por tipo de pieza"), campo: "tipo" },
+        { titulo: L("By level", "Por nivel"), campo: "nivel", orden: "fijo" },
+        { titulo: L("By brain", "Por cerebro"), campo: "cerebro" }
+      ],
+      alCambiar: function (todo) { var l = document.getElementById("imd-lista"); if (!todo && l) l.innerHTML = listaDetalle(); else mostrarImpacto(DET.id, DET.activa); }
+    };
+  };
+  var flDet = window.brainFiltros.crear(cfgDet());
+  // Al cambiar de idioma: las tablas de etiquetas y los dos filtros, con su estado; el router repinta después.
+  // DET se vacía para que el porqué de cada pieza se vuelva a escribir en el idioma nuevo.
+  if (window.brainI18n) window.brainI18n.alCambiar(function () {
+    tablas();
+    var eraInicio = FLI === flInicio, eraDet = FLI === flDet;
+    flInicio = rehacerFiltro(flInicio, cfgInicio());
+    flDet = rehacerFiltro(flDet, cfgDet());
+    FLI = eraInicio ? flInicio : eraDet ? flDet : FLI;
+    DET = { id: "", activa: "", items: [] };
   });
-  var enlaceImp = function (x) { return ' · <a href="#/impacto/' + encodeURIComponent(x.id) + '">su impacto</a>'; };
+  var enlaceImp = function (x) { return ' · <a href="#/impacto/' + encodeURIComponent(x.id) + '">' + L("its impact", "su impacto") + "</a>"; };
   function listaDetalle() {
     var xs = flDet.filtrar();
     if (!xs.length) return flDet.vacio(DET.items.length);
     var porTipo = {};
     xs.forEach(function (x) { (porTipo[x.t] = porTipo[x.t] || []).push(x); });
     var porNivel = function (ys) { return ys.slice().sort(function (a, b) { return a.nivel - b.nivel || (nombre(a.id) < nombre(b.id) ? -1 : 1); }); };
-    var item = function (x) { return "<li>" + ligado(x.id) + " <small>· " + (SIM[x.id] ? "<code>" + esc(donde(x.id)) + "</code> · " : "") + (x.nivel > 1 ? "nivel " + x.nivel : "directo") + enlaceImp(x) + "</small><br><small>" + esc(x.porque) + "</small></li>"; };
+    var item = function (x) { return "<li>" + ligado(x.id) + " <small>· " + (SIM[x.id] ? "<code>" + esc(donde(x.id)) + "</code> · " : "") + (x.nivel > 1 ? L("level ", "nivel ") + x.nivel : L("direct", "directo")) + enlaceImp(x) + "</small><br><small>" + esc(x.porque) + "</small></li>"; };
     var tipos = Object.keys(porTipo).sort(porOrden);
-    return flDet.resultado(xs, "", DET.activa === "afecta" ? '<button type="button" class="boton" id="copiar-impacto">Copiar como lista</button>' : "") +
+    return flDet.resultado(xs, "", DET.activa === "afecta" ? '<button type="button" class="boton" id="copiar-impacto">' + L("Copy as list", "Copiar como lista") + "</button>" : "") +
       '<div class="grupos-impacto' + (tipos.length === 1 ? " uno" : "") + '">' + tipos.map(function (t) {
         return '<section class="grupo-impacto" data-tipo="' + t + '"><h2>' + puntoT(t) + " " + esc(mayus(tituloT(t, 2))) + ' <small class="cuenta">' + porTipo[t].length + "</small></h2>" +
           '<ul class="lista">' + porNivel(porTipo[t]).map(item).join("") + "</ul></section>";
@@ -313,12 +362,12 @@ export const MAPA_JS =
     var xs = flDet.filtrar(), n = porId[DET.id];
     var feats = xs.filter(function (x) { return porFicha[x.id]; }), tecnicas = xs.filter(function (x) { return !porFicha[x.id]; });
     var porNivel = function (ys) { return ys.slice().sort(function (a, b) { return a.nivel - b.nivel || (nombre(a.id) < nombre(b.id) ? -1 : 1); }); };
-    var plano = function (x) { return "- " + nombre(x.id) + " (" + (TIPO[x.t] || x.t) + (SIM[x.id] ? ", " + donde(x.id) : "") + ", " + (x.nivel > 1 ? "nivel " + x.nivel : "directo") + "): " + x.porque; };
-    copia = "Impacto de cambiar " + (n ? n.n : DET.id) + " (" + DET.id + ")" + (flDet.activos().length ? " — " + flDet.activos().join(", ") : "") + "\n\n" +
-      (feats.length ? "Funcionalidades:\n" + porNivel(feats).map(plano).join("\n") + "\n\n" : "") +
-      (tecnicas.length ? "Piezas técnicas:\n" + porNivel(tecnicas).map(plano).join("\n") + "\n" : "");
-    var listo = function () { b.textContent = "Copiado"; setTimeout(function () { b.textContent = "Copiar como lista"; }, 1500); };
-    if (navigator.clipboard) navigator.clipboard.writeText(copia).then(listo, function () { b.textContent = "No se pudo copiar"; });
+    var plano = function (x) { return "- " + nombre(x.id) + " (" + (TIPO[x.t] || x.t) + (SIM[x.id] ? ", " + donde(x.id) : "") + ", " + (x.nivel > 1 ? L("level ", "nivel ") + x.nivel : L("direct", "directo")) + "): " + x.porque; };
+    copia = L("Impact of changing ", "Impacto de cambiar ") + (n ? n.n : DET.id) + " (" + DET.id + ")" + (flDet.activos().length ? " — " + flDet.activos().join(", ") : "") + "\n\n" +
+      (feats.length ? L("Features:\n", "Funcionalidades:\n") + porNivel(feats).map(plano).join("\n") + "\n\n" : "") +
+      (tecnicas.length ? L("Technical pieces:\n", "Piezas técnicas:\n") + porNivel(tecnicas).map(plano).join("\n") + "\n" : "");
+    var listo = function () { b.textContent = L("Copied", "Copiado"); setTimeout(function () { b.textContent = L("Copy as list", "Copiar como lista"); }, 1500); };
+    if (navigator.clipboard) navigator.clipboard.writeText(copia).then(listo, function () { b.textContent = L("Could not copy", "No se pudo copiar"); });
   });
   function mostrarImpacto(id, pestana) {
     if (!id || (!porId[id] && !SIM[id])) return inicioImpacto();
@@ -329,12 +378,12 @@ export const MAPA_JS =
     var porque = function (x) {
       var partes = [];
       for (var c = x; c; c = imp.info[c.via]) partes.push((VERBO[c.verbo] || c.verbo) + " " + nombreEn(c.via));
-      return partes.join(", que ");
+      return partes.join(L(", which ", ", que "));
     };
     var camino = function (x) {
       var pasos = [];
       for (var c = x; c; c = dep.info[c.via]) pasos.unshift(c);
-      return pasos.map(function (c, i) { return (i === 0 ? nombre(id) + " " : "que ") + (VERBO_IDA[c.verbo] || c.verbo) + " " + nombreEn(c.id); }).join(", ");
+      return pasos.map(function (c, i) { return (i === 0 ? nombre(id) + " " : L("which ", "que ")) + (VERBO_IDA[c.verbo] || c.verbo) + " " + nombreEn(c.id); }).join(", ");
     };
     var todos = imp.todos;
     // Sin nada que dependa de la pieza, se abre en lo que ella necesita.
@@ -344,22 +393,24 @@ export const MAPA_JS =
     FLI = flDet;
     var n = porId[id] || { n: SIM[id].n, t: SIM[id].t };
     // Por qué no hay nada: en el grafo, en el código indexado, o porque no hay índice de código.
-    var porQueNada = SIM[id] ? "Nada llama ni usa " + esc(n.n) + " en el código indexado: puede llamarse con un nombre armado en tiempo de ejecución, desde fuera de los repos indexados, o no usarse."
-      : (n.t === "archivo" || n.t === "test") && !codigo ? "Nada depende de " + esc(n.n) + " en el grafo. " + (COD ? "El índice de código no le encontró clases, funciones ni otros símbolos." : "Sin índice de código no se sabe quién usa su código: corré <code>flowbrain index</code> y <code>flowbrain compile</code>.")
-      : codigo ? "Nada llama ni usa el código de " + esc(n.n) + " desde otro archivo, ni lo atiende un endpoint o lo tiene una funcionalidad."
-      : "Nada depende de " + esc(n.n) + " en el grafo: cambiarla no rompe otras funcionalidades ni servicios conocidos.";
+    var nn = esc(n.n);
+    var porQueNada = SIM[id] ? L("Nothing calls or uses " + nn + " in the indexed code: it may be called by a name built at runtime, from outside the indexed repos, or not be used.", "Nada llama ni usa " + nn + " en el código indexado: puede llamarse con un nombre armado en tiempo de ejecución, desde fuera de los repos indexados, o no usarse.")
+      : (n.t === "archivo" || n.t === "test") && !codigo ? L("Nothing depends on " + nn + " in the graph. ", "Nada depende de " + nn + " en el grafo. ") + (COD ? L("The code index found no classes, functions or other symbols in it.", "El índice de código no le encontró clases, funciones ni otros símbolos.") : L("Without a code index there is no way to know who uses its code: run <code>flowbrain index</code> and <code>flowbrain compile</code>.", "Sin índice de código no se sabe quién usa su código: corré <code>flowbrain index</code> y <code>flowbrain compile</code>."))
+      : codigo ? L("Nothing calls or uses the code of " + nn + " from another file, no endpoint is served by it and no feature holds it.", "Nada llama ni usa el código de " + nn + " desde otro archivo, ni lo atiende un endpoint o lo tiene una funcionalidad.")
+      : L("Nothing depends on " + nn + " in the graph: changing it breaks no other known features or services.", "Nada depende de " + nn + " en el grafo: cambiarla no rompe otras funcionalidades ni servicios conocidos.");
+    var hrefDepende = "#/impacto/" + encodeURIComponent(id) + "/depende";
     var panelAfecta = todos.length
-      ? '<p class="explica">Lo que se rompe o hay que revisar si cambia ' + esc(n.n) + ".</p>" + flDet.html() + '<div id="imd-lista">' + listaDetalle() + "</div>"
-      : '<p class="aviso">' + porQueNada + (dep.todos.length ? ' Mirá <a href="#/impacto/' + encodeURIComponent(id) + '/depende">de qué depende</a>: si cambia alguna de esas piezas, sí la afecta.' : "") + "</p>";
+      ? '<p class="explica">' + L("What breaks or needs a review if " + nn + " changes.", "Lo que se rompe o hay que revisar si cambia " + nn + ".") + "</p>" + flDet.html() + '<div id="imd-lista">' + listaDetalle() + "</div>"
+      : '<p class="aviso">' + porQueNada + (dep.todos.length ? L(' See <a href="' + hrefDepende + '">what it depends on</a>: if any of those pieces changes, it does affect it.', ' Mirá <a href="' + hrefDepende + '">de qué depende</a>: si cambia alguna de esas piezas, sí la afecta.') : "") + "</p>";
     var panelDepende = dep.todos.length
-      ? '<p class="explica">Lo que ' + esc(n.n) + " necesita: si cambia alguna de estas piezas, " + esc(n.n) + " puede verse afectada.</p>" + flDet.html() + '<div id="imd-lista">' + listaDetalle() + "</div>"
-      : '<p class="aviso">' + esc(n.n) + (codigo ? " no llama ni usa otro código indexado." : " no depende de otras piezas en el grafo.") + "</p>";
+      ? '<p class="explica">' + L("What " + nn + " needs: if any of these pieces changes, " + nn + " may be affected.", "Lo que " + nn + " necesita: si cambia alguna de estas piezas, " + nn + " puede verse afectada.") + "</p>" + flDet.html() + '<div id="imd-lista">' + listaDetalle() + "</div>"
+      : '<p class="aviso">' + nn + (codigo ? L(" does not call or use other indexed code.", " no llama ni usa otro código indexado.") : L(" does not depend on other pieces in the graph.", " no depende de otras piezas en el grafo.")) + "</p>";
     var tab = function (k, texto, cuenta) { return '<a class="pestana' + (activa === k ? " on" : "") + '" href="#/impacto/' + encodeURIComponent(id) + "/" + k + '">' + texto + " <b>" + cuenta + "</b></a>"; };
-    raizImpacto.innerHTML = '<a class="volver" href="#/impacto">← Impacto</a>' +
+    raizImpacto.innerHTML = '<a class="volver" href="#/impacto">← ' + L("Impact", "Impacto") + "</a>" +
       "<h1>" + esc(n.n) + "</h1>" +
-      (SIM[id] ? '<p class="subtitulo">' + esc(TIPO[n.t] || n.t) + " · <code>" + esc(donde(id)) + '</code> · <a href="#/n/' + encodeURIComponent(SIM[id].a) + '">su archivo</a> · <a href="#/impacto/' + encodeURIComponent(SIM[id].a) + '">impacto del archivo</a></p>' :
-      '<p class="subtitulo">' + esc(TIPO[n.t] || n.t) + " · <code>" + esc(id) + "</code>" + (porFicha[id] ? ' · <a href="#/f/' + encodeURIComponent(id) + '">ficha de producto</a>' : "") + ' · <a href="#/n/' + encodeURIComponent(id) + '">ficha técnica</a> · <a href="#/grafo/' + encodeURIComponent(id) + '">mapa 3D</a></p>') +
-      '<nav class="pestanas">' + tab("afecta", "Si cambia, afecta a", todos.length) + tab("depende", "Depende de", dep.todos.length) + "</nav>" +
+      (SIM[id] ? '<p class="subtitulo">' + esc(TIPO[n.t] || n.t) + " · <code>" + esc(donde(id)) + '</code> · <a href="#/n/' + encodeURIComponent(SIM[id].a) + '">' + L("its file", "su archivo") + '</a> · <a href="#/impacto/' + encodeURIComponent(SIM[id].a) + '">' + L("file impact", "impacto del archivo") + "</a></p>" :
+      '<p class="subtitulo">' + esc(TIPO[n.t] || n.t) + " · <code>" + esc(id) + "</code>" + (porFicha[id] ? ' · <a href="#/f/' + encodeURIComponent(id) + '">' + L("product card", "ficha de producto") + "</a>" : "") + ' · <a href="#/n/' + encodeURIComponent(id) + '">' + L("technical sheet", "ficha técnica") + '</a> · <a href="#/grafo/' + encodeURIComponent(id) + '">' + L("3D map", "mapa 3D") + "</a></p>") +
+      '<nav class="pestanas">' + tab("afecta", L("If it changes, it affects", "Si cambia, afecta a"), todos.length) + tab("depende", L("Depends on", "Depende de"), dep.todos.length) + "</nav>" +
       '<div class="panel-impacto">' + (activa === "afecta" ? panelAfecta : panelDepende) + "</div>";
   }
 
@@ -407,79 +458,83 @@ export const MAPA_JS =
       return Object.keys(porVerbo).sort().map(function (v) {
         var otros = Object.keys(porVerbo[v]).sort(function (a, b) { return nombre(a) < nombre(b) ? -1 : 1; });
         return '<section class="grupo-impacto"><h2>' + titulo(v) + ' <small class="cuenta">' + otros.length + "</small></h2>" +
-          (otros.length > 8 ? '<input type="search" class="buscar-grupo" placeholder="Buscar" autocomplete="off">' : "") +
+          (otros.length > 8 ? '<input type="search" class="buscar-grupo" placeholder="' + L("Search", "Buscar") + '" autocomplete="off">' : "") +
           '<ul class="lista">' + otros.map(function (o) {
             var evs = porVerbo[v][o].filter(Boolean);
-            return '<li data-texto="' + esc((nombre(o) + " " + o).toLowerCase()) + '">' + ligado(o) + " <small>· " + esc(TIPO[tipo(o)] || tipo(o)) + (evs.length > 1 ? " · " + evs.length + " lugares" : "") + "</small>" + (evs[0] ? "<br><small>" + ev(evs[0]) + "</small>" : "") + "</li>";
-          }).join("") + '</ul><p class="vacio" hidden>Nada coincide.</p></section>';
+            return '<li data-texto="' + esc((nombre(o) + " " + o).toLowerCase()) + '">' + ligado(o) + " <small>· " + esc(TIPO[tipo(o)] || tipo(o)) + (evs.length > 1 ? " · " + L(evs.length + " places", evs.length + " lugares") : "") + "</small>" + (evs[0] ? "<br><small>" + ev(evs[0]) + "</small>" : "") + "</li>";
+          }).join("") + '</ul><p class="vacio" hidden>' + L("Nothing matches.", "Nada coincide.") + "</p></section>";
       }).join("");
     };
-    var VERBO_OUT = { usa: "Usa", escribe_en: "Escribe en", lee_de: "Lee", llama_a: "Llama a", implementa: "Implementa", vive_en: "Vive en", publica_en: "Publica en", consume_de: "Consume de", depende_de: "Depende de", expone: "Expone", navega_a: "Navega a", contiene: "Contiene" };
-    var VERBO_IN = { usa: "La usan", escribe_en: "Escriben en ella", lee_de: "La leen", llama_a: "La llaman", implementa: "La implementan", vive_en: "Viven acá", publica_en: "Publican acá", consume_de: "Consumen de acá", depende_de: "Dependen de ella", expone: "La expone", navega_a: "Llegan desde", contiene: "Está dentro de" };
+    var VERBO_OUT = L(
+      { usa: "Uses", escribe_en: "Writes to", lee_de: "Reads", llama_a: "Calls", implementa: "Implements", vive_en: "Lives in", publica_en: "Publishes to", consume_de: "Consumes from", depende_de: "Depends on", expone: "Exposes", navega_a: "Navigates to", contiene: "Contains" },
+      { usa: "Usa", escribe_en: "Escribe en", lee_de: "Lee", llama_a: "Llama a", implementa: "Implementa", vive_en: "Vive en", publica_en: "Publica en", consume_de: "Consume de", depende_de: "Depende de", expone: "Expone", navega_a: "Navega a", contiene: "Contiene" });
+    var VERBO_IN = L(
+      { usa: "Used by", escribe_en: "Written to by", lee_de: "Read by", llama_a: "Called by", implementa: "Implemented by", vive_en: "Live here", publica_en: "Publish here", consume_de: "Consume from here", depende_de: "Depended on by", expone: "Exposed by", navega_a: "Reached from", contiene: "Is inside" },
+      { usa: "La usan", escribe_en: "Escriben en ella", lee_de: "La leen", llama_a: "La llaman", implementa: "La implementan", vive_en: "Viven acá", publica_en: "Publican acá", consume_de: "Consumen de acá", depende_de: "Dependen de ella", expone: "La expone", navega_a: "Llegan desde", contiene: "Está dentro de" });
     var mayus = function (x) { return x.charAt(0).toUpperCase() + x.slice(1); };
-    return lista(salen, function (v) { return VERBO_OUT[v] || mayus(v.replace(/_/g, " ")); }) + lista(entran, function (v) { return VERBO_IN[v] || mayus(v.replace(/_/g, " ")) + " (entrantes)"; });
+    return lista(salen, function (v) { return VERBO_OUT[v] || mayus(v.replace(/_/g, " ")); }) + lista(entran, function (v) { return VERBO_IN[v] || mayus(v.replace(/_/g, " ")) + L(" (incoming)", " (entrantes)"); });
   }
   function mostrarFicha(id) {
     var n = porId[id];
     cerebroActual = cerebroDe(id);
     FLI = null;
-    if (!n) { raizImpacto.innerHTML = '<a class="volver" href="#/impacto">← Impacto</a><h1>No existe esa pieza</h1><p class="vacio"><code>' + esc(id) + "</code></p>"; return; }
+    if (!n) { raizImpacto.innerHTML = '<a class="volver" href="#/impacto">← ' + L("Impact", "Impacto") + "</a><h1>" + L("That piece does not exist", "No existe esa pieza") + '</h1><p class="vacio"><code>' + esc(id) + "</code></p>"; return; }
     var at = n.at || {}, t = n.t, partes = [];
     var cerebro = CEREBROS.length > 1 && n.c !== undefined ? CEREBROS[n.c].nombre : null;
     var resumen = n.r && !/^Borrador:/.test(n.r) ? n.r : null;
     partes.push(tablaKV([
-      fila("Tipo", esc(TIPO[t] || t)),
+      fila(L("Type", "Tipo"), esc(TIPO[t] || t)),
       fila("Id", ev(id)),
-      cerebro ? fila("Cerebro", esc(cerebro)) : "",
-      n.a && n.a.length ? fila("También se llama", esc(n.a.join(", "))) : "",
-      fila("Origen", esc(n.o === "curado" ? "curado (revisado)" : n.o === "parser" ? "leído del código" : n.o || "")),
-      n.e && n.e !== "vigente" ? fila("Estado", esc(n.e)) : "",
-      n.p ? fila("Página", ev(n.p)) : "",
+      cerebro ? fila(L("Brain", "Cerebro"), esc(cerebro)) : "",
+      n.a && n.a.length ? fila(L("Also called", "También se llama"), esc(n.a.join(", "))) : "",
+      fila(L("Source", "Origen"), esc(n.o === "curado" ? L("curated (reviewed)", "curado (revisado)") : n.o === "parser" ? L("read from the code", "leído del código") : n.o || "")),
+      n.e && n.e !== "vigente" ? fila(L("Status", "Estado"), esc(n.e)) : "",
+      n.p ? fila(L("Page", "Página"), ev(n.p)) : "",
     ]));
     if (t === "endpoint") {
-      partes.push(seccion("Contrato", tablaKV([
-        fila("Método", esc(at.metodo || "")), fila("Ruta", ev(at.ruta)), fila("Definido en", ev(at.evidencia)),
-        at.request ? fila("Recibe", "<pre>" + esc(JSON.stringify(at.request, null, 2)) + "</pre>") : "",
-        at.response ? fila("Devuelve", "<pre>" + esc(JSON.stringify(at.response, null, 2)) + "</pre>") : "",
+      partes.push(seccion(L("Contract", "Contrato"), tablaKV([
+        fila(L("Method", "Método"), esc(at.metodo || "")), fila(L("Route", "Ruta"), ev(at.ruta)), fila(L("Defined in", "Definido en"), ev(at.evidencia)),
+        at.request ? fila(L("Receives", "Recibe"), "<pre>" + esc(JSON.stringify(at.request, null, 2)) + "</pre>") : "",
+        at.response ? fila(L("Returns", "Devuelve"), "<pre>" + esc(JSON.stringify(at.response, null, 2)) + "</pre>") : "",
       ])));
       var r = recorridoDe(id);
-      if (r && r.pasos.length) partes.push(seccion("Qué ejecuta", '<ul class="lista pasos">' + r.pasos.map(function (p) {
+      if (r && r.pasos.length) partes.push(seccion(L("What it runs", "Qué ejecuta"), '<ul class="lista pasos">' + r.pasos.map(function (p) {
         var toca = (p.toca || []).map(function (x) { return esc(VERBO[x.verbo] || x.verbo) + " " + (porId[x.hasta] ? ligado(x.hasta) : esc(x.hasta)) + (x.columnas && x.columnas.length ? " <small>(" + esc(x.columnas.join(", ")) + ")</small>" : ""); }).join(" · ");
         return '<li style="padding-left:' + (p.nivel * 16) + 'px"><code>' + esc(p.simbolo) + "</code> <small>· " + esc(p.capa) + "</small>" + (toca ? "<br>" + toca : "") + "<br><small>" + ev(p.evidencia) + "</small></li>";
-      }).join("") + "</ul>" + (r.truncado ? '<p class="vacio">El recorrido se cortó por tamaño.</p>' : "")));
+      }).join("") + "</ul>" + (r.truncado ? '<p class="vacio">' + L("The flow was cut for size.", "El recorrido se cortó por tamaño.") + "</p>" : "")));
     } else if (t === "tabla") {
       var cols = at.columnas || [];
-      partes.push(seccion("Columnas del esquema", cols.length
-        ? '<table class="datos"><tr><th>Columna</th><th>Tipo</th><th></th></tr>' + cols.map(function (c) { return "<tr><td><code>" + esc(c.nombre) + "</code></td><td>" + esc(c.tipo) + "</td><td><small>" + (c.pk ? "clave primaria" : "") + (c.nulo ? (c.pk ? " · " : "") + "admite nulo" : "") + "</small></td></tr>"; }).join("") + "</table>" + (at.esquema ? "<p><small>Definido en " + ev(at.esquema) + "</small></p>" : "")
-        : '<p class="vacio">No se encontró la definición de la tabla (migración, entidad o esquema).</p>'));
+      partes.push(seccion(L("Schema columns", "Columnas del esquema"), cols.length
+        ? '<table class="datos"><tr><th>' + L("Column", "Columna") + "</th><th>" + L("Type", "Tipo") + "</th><th></th></tr>" + cols.map(function (c) { return "<tr><td><code>" + esc(c.nombre) + "</code></td><td>" + esc(c.tipo) + "</td><td><small>" + (c.pk ? L("primary key", "clave primaria") : "") + (c.nulo ? (c.pk ? " · " : "") + L("nullable", "admite nulo") : "") + "</small></td></tr>"; }).join("") + "</table>" + (at.esquema ? "<p><small>" + L("Defined in ", "Definido en ") + ev(at.esquema) + "</small></p>" : "")
+        : '<p class="vacio">' + L("The table definition was not found (migration, entity or schema).", "No se encontró la definición de la tabla (migración, entidad o esquema).") + "</p>"));
       var usadas = columnasUsadas(id);
-      if (usadas.length) partes.push(seccion("Columnas que usa el código", '<p><small>Leídas de los accesos a la tabla en los recorridos conocidos; cuenta lugares distintos del código.</small></p><table class="datos"><tr><th>Columna</th><th>Lee</th><th>Escribe</th></tr>' + usadas.map(function (u) { return "<tr><td><code>" + esc(u.c) + "</code></td><td>" + (u.lee || "") + "</td><td>" + (u.escribe || "") + "</td></tr>"; }).join("") + "</table>"));
+      if (usadas.length) partes.push(seccion(L("Columns used by the code", "Columnas que usa el código"), "<p><small>" + L("Read from the table accesses in the known flows; counts distinct places in the code.", "Leídas de los accesos a la tabla en los recorridos conocidos; cuenta lugares distintos del código.") + '</small></p><table class="datos"><tr><th>' + L("Column", "Columna") + "</th><th>" + L("Reads", "Lee") + "</th><th>" + L("Writes", "Escribe") + "</th></tr>" + usadas.map(function (u) { return "<tr><td><code>" + esc(u.c) + "</code></td><td>" + (u.lee || "") + "</td><td>" + (u.escribe || "") + "</td></tr>"; }).join("") + "</table>"));
     } else if (t === "pantalla") {
       var pa = (D.pantallas || []).filter(function (x) { return x.id === id; })[0] || {};
-      partes.push(seccion("Pantalla", tablaKV([
-        fila("Ruta", ev(pa.ruta)), fila("Componentes", (pa.componentes || []).map(ev).join("<br>")), fila("Definida en", ev(pa.evidencia)),
-        fila("Navegación", '<a href="#/p/' + encodeURIComponent(id) + '">de dónde se llega, a dónde lleva y la traza hasta la tabla</a>'),
+      partes.push(seccion(L("Screen", "Pantalla"), tablaKV([
+        fila(L("Route", "Ruta"), ev(pa.ruta)), fila(L("Components", "Componentes"), (pa.componentes || []).map(ev).join("<br>")), fila(L("Defined in", "Definida en"), ev(pa.evidencia)),
+        fila(L("Navigation", "Navegación"), '<a href="#/p/' + encodeURIComponent(id) + '">' + L("where it is reached from, where it leads and the trace down to the table", "de dónde se llega, a dónde lleva y la traza hasta la tabla") + "</a>"),
       ])));
     } else if (t === "svc") {
       var pe = at.puntos_de_entrada || [], infra = at.infra || [];
-      if (pe.length) partes.push(seccion("Puntos de entrada", '<ul class="lista">' + pe.map(function (x) { return "<li>" + (typeof x === "string" ? ev(x) : esc(JSON.stringify(x))) + "</li>"; }).join("") + "</ul>"));
-      if (infra.length) partes.push(seccion("Infraestructura", '<ul class="lista">' + infra.map(function (x) { return "<li><b>" + esc(x.clase || "") + "</b> " + esc(x.nombre || "") + (x.detalle && x.detalle.length ? "<br><small>" + x.detalle.map(esc).join("<br>") + "</small>" : "") + (x.atiende ? "<br><small>atiende " + esc(x.atiende.simbolo) + " · " + ev(x.atiende.evidencia) + "</small>" : "") + (x.endpoints && x.endpoints.length ? "<br><small>llega a " + (x.endpointsTotal || x.endpoints.length) + " endpoints: " + x.endpoints.map(esc).join(", ") + (x.endpointsTotal ? "…" : "") + "</small>" : "") + "<br><small>" + ev(x.evidencia) + "</small></li>"; }).join("") + "</ul>"));
+      if (pe.length) partes.push(seccion(L("Entry points", "Puntos de entrada"), '<ul class="lista">' + pe.map(function (x) { return "<li>" + (typeof x === "string" ? ev(x) : esc(JSON.stringify(x))) + "</li>"; }).join("") + "</ul>"));
+      if (infra.length) partes.push(seccion(L("Infrastructure", "Infraestructura"), '<ul class="lista">' + infra.map(function (x) { return "<li><b>" + esc(x.clase || "") + "</b> " + esc(x.nombre || "") + (x.detalle && x.detalle.length ? "<br><small>" + x.detalle.map(esc).join("<br>") + "</small>" : "") + (x.atiende ? "<br><small>" + L("serves ", "atiende ") + esc(x.atiende.simbolo) + " · " + ev(x.atiende.evidencia) + "</small>" : "") + (x.endpoints && x.endpoints.length ? "<br><small>" + L("reaches ", "llega a ") + (x.endpointsTotal || x.endpoints.length) + " endpoints: " + x.endpoints.map(esc).join(", ") + (x.endpointsTotal ? "…" : "") + "</small>" : "") + "<br><small>" + ev(x.evidencia) + "</small></li>"; }).join("") + "</ul>"));
     } else {
       var claves = Object.keys(at);
-      if (claves.length) partes.push(seccion("Datos", tablaKV(claves.map(function (k) { var v = at[k]; return fila(k, typeof v === "string" ? esc(v) : "<pre>" + esc(JSON.stringify(v, null, 2)) + "</pre>"); }))));
+      if (claves.length) partes.push(seccion(L("Data", "Datos"), tablaKV(claves.map(function (k) { var v = at[k]; return fila(k, typeof v === "string" ? esc(v) : "<pre>" + esc(JSON.stringify(v, null, 2)) + "</pre>"); }))));
     }
     // Un archivo: sus símbolos, cada uno con su impacto.
-    if (simsDeArchivo[id]) partes.push(seccion("Símbolos", '<ul class="lista">' + simsDeArchivo[id].map(function (i) {
+    if (simsDeArchivo[id]) partes.push(seccion(L("Symbols", "Símbolos"), '<ul class="lista">' + simsDeArchivo[id].map(function (i) {
       var x = SIMS[i], k = (llamanA[i] || []).length;
-      return '<li><a href="#/impacto/' + encodeURIComponent(x.id) + '">' + puntoT(x.t) + " " + esc(x.n) + "</a> <small>· " + esc(TIPO[x.t] || x.t) + " · línea " + x.l + " · " + (k ? plural(k, "lugar lo llama o lo usa", "lugares lo llaman o lo usan") : "nadie lo llama ni lo usa") + "</small></li>";
+      return '<li><a href="#/impacto/' + encodeURIComponent(x.id) + '">' + puntoT(x.t) + " " + esc(x.n) + "</a> <small>· " + esc(TIPO[x.t] || x.t) + L(" · line ", " · línea ") + x.l + " · " + (k ? L(plural(k, "place calls or uses it", "places call or use it"), plural(k, "lugar lo llama o lo usa", "lugares lo llaman o lo usan")) : L("nobody calls or uses it", "nadie lo llama ni lo usa")) + "</small></li>";
     }).join("") + "</ul>"));
     var rel = relaciones(id);
-    raizImpacto.innerHTML = '<a class="volver" href="javascript:history.back()">← Volver</a>' +
+    raizImpacto.innerHTML = '<a class="volver" href="javascript:history.back()">← ' + L("Back", "Volver") + "</a>" +
       '<h1>' + puntoT(t) + " " + esc(n.n) + "</h1>" +
-      '<p class="subtitulo">' + esc(TIPO[t] || t) + (porFicha[id] ? ' · <a href="#/f/' + encodeURIComponent(id) + '">ficha de producto</a>' : "") + ' · <a href="#/impacto/' + encodeURIComponent(id) + '">impacto</a> · <a href="#/grafo/' + encodeURIComponent(id) + '">mapa 3D</a></p>' +
+      '<p class="subtitulo">' + esc(TIPO[t] || t) + (porFicha[id] ? ' · <a href="#/f/' + encodeURIComponent(id) + '">' + L("product card", "ficha de producto") + "</a>" : "") + ' · <a href="#/impacto/' + encodeURIComponent(id) + '">' + L("impact", "impacto") + '</a> · <a href="#/grafo/' + encodeURIComponent(id) + '">' + L("3D map", "mapa 3D") + "</a></p>" +
       (resumen ? '<p class="resumen">' + esc(resumen) + "</p>" : "") +
       '<div class="ficha-tecnica">' + partes.join("") + "</div>" +
-      (rel ? '<h2 class="titulo-rel">Relaciones</h2><div class="grupos-impacto">' + rel + "</div>" : '<p class="vacio">Sin relaciones en el grafo.</p>');
+      (rel ? '<h2 class="titulo-rel">' + L("Relations", "Relaciones") + '</h2><div class="grupos-impacto">' + rel + "</div>" : '<p class="vacio">' + L("No relations in the graph.", "Sin relaciones en el grafo.") + "</p>");
     conectarBuscadoresDeGrupo();
   }
   function conectarBuscadoresDeGrupo() {
@@ -488,7 +543,7 @@ export const MAPA_JS =
         var q = input.value.trim().toLowerCase(), g = input.parentNode, visibles = 0;
         g.querySelectorAll("li").forEach(function (li) { var ok = !q || li.dataset.texto.indexOf(q) >= 0; li.hidden = !ok; if (ok) visibles++; });
         g.querySelector(".vacio").hidden = visibles > 0;
-        g.querySelector(".cuenta").textContent = q ? visibles + " de " + g.querySelectorAll("li").length : String(g.querySelectorAll("li").length);
+        g.querySelector(".cuenta").textContent = q ? L(visibles + " of " + g.querySelectorAll("li").length, visibles + " de " + g.querySelectorAll("li").length) : String(g.querySelectorAll("li").length);
       });
     });
   }
@@ -525,6 +580,8 @@ export const MAPA_JS =
     window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", ir);
+  // Al cambiar de idioma, el router vuelve a dibujar la pantalla abierta.
+  if (window.brainI18n) window.brainI18n.repintar = ir;
   ir();
 })();
 `;

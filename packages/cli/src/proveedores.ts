@@ -103,11 +103,11 @@ export function pasosDeEvento(ev: unknown, cwd: string): string[] {
     if (c.type === "text" && c.text?.trim()) out.push(corto(c.text.trim().replace(/\s+/g, " "), 240));
     if (c.type !== "tool_use") continue;
     const i = c.input ?? {};
-    if (c.name === "Read") out.push(`Lee ${rel(i["file_path"])}`);
-    else if (c.name === "Edit" || c.name === "MultiEdit") out.push(`Edita ${rel(i["file_path"])}`);
-    else if (c.name === "Write") out.push(`Escribe ${rel(i["file_path"])}`);
-    else if (c.name === "Bash") out.push(`Corre: ${corto(String(i["command"] ?? "").replace(/\s+/g, " "), 160)}`);
-    else if (c.name === "Grep" || c.name === "Glob") out.push(`Busca ${corto(String(i["pattern"] ?? ""), 80)}`);
+    if (c.name === "Read") out.push(`Reads ${rel(i["file_path"])}`);
+    else if (c.name === "Edit" || c.name === "MultiEdit") out.push(`Edits ${rel(i["file_path"])}`);
+    else if (c.name === "Write") out.push(`Writes ${rel(i["file_path"])}`);
+    else if (c.name === "Bash") out.push(`Runs: ${corto(String(i["command"] ?? "").replace(/\s+/g, " "), 160)}`);
+    else if (c.name === "Grep" || c.name === "Glob") out.push(`Searches ${corto(String(i["pattern"] ?? ""), 80)}`);
   }
   return out;
 }
@@ -131,7 +131,7 @@ export function claudeCode(comando = process.env["FLOWBRAIN_AGENTE"] ?? "claude"
       if (!visto) {
         const prueba = spawnSync(comando, ["--version"], { encoding: "utf8", timeout: 15_000 });
         visto = prueba.error || prueba.status !== 0
-          ? { instalado: false, motivo: `no se encontró Claude Code (${comando}) en esta máquina: instalalo, o copiá el pedido y pegáselo a tu agente` }
+          ? { instalado: false, motivo: `Claude Code (${comando}) was not found on this machine: install it, or copy the request and paste it into your agent` }
           : { instalado: true, version: prueba.stdout.trim().split("\n")[0] ?? "" };
       }
       return visto;
@@ -165,7 +165,7 @@ export function claudeCode(comando = process.env["FLOWBRAIN_AGENTE"] ?? "claude"
       if (ev.type === "result") {
         if (typeof ev.result === "string") out.resultado = ev.result;
         if (typeof ev.total_cost_usd === "number") out.costoUsd = ev.total_cost_usd;
-        if (ev.is_error) out.error = ev.result ?? "el agente terminó con error";
+        if (ev.is_error) out.error = ev.result ?? "the agent finished with an error";
       }
       return out;
     },

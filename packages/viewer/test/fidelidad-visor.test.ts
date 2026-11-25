@@ -7,7 +7,7 @@ import { FILTROS_JS } from "../src/viewer-filtros.js";
  * `innerHTML` y oyentes) para fijar lo que importa: qué lista, cómo filtra y qué dice cuando queda vacía.
  */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
-function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; guardado?: Map<string, string>; fetch?: (url: string, init: { method: string; body?: string; headers: Record<string, string> }) => Promise<unknown> } = {}) {
+function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; lang?: "es"; guardado?: Map<string, string>; fetch?: (url: string, init: { method: string; body?: string; headers: Record<string, string> }) => Promise<unknown> } = {}) {
   const guardado = opciones.guardado ?? new Map<string, string>();
   const sessionStorage = { getItem: (k: string) => guardado.get(k) ?? null, setItem: (k: string, v: string) => void guardado.set(k, v) };
   const elementos = new Map<string, { innerHTML: string; oyentes: Record<string, Oyente>; addEventListener(t: string, f: Oyente): void }>();
@@ -21,7 +21,7 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; g
   const porId: Record<string, { n: string }> = {};
   for (const n of (datos["nodes"] as Array<{ id: string; n: string }> | undefined) ?? []) porId[n.id] = n;
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-  const window = { brainVisor: { D: datos, porId, esc }, brainFiltros: null as unknown, brainFidelidad: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion };
+  const window = { brainVisor: { D: datos, porId, esc }, brainFiltros: null as unknown, brainFidelidad: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion, ...(opciones.lang ? { brainI18n: { lang: opciones.lang } } : {}) };
   let recargas = 0;
   new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
   new Function("window", "document", "sessionStorage", "fetch", "location", FIDELIDAD_JS)(window, { getElementById: el }, sessionStorage, opciones.fetch, { reload: () => void recargas++ });
@@ -86,14 +86,14 @@ describe("pantalla Fidelidad", () => {
   it("lista los archivos de todos los cerebros, de menor a mayor, con qué falta y qué hacer", () => {
     const v = montar(datos);
     expect(v.rutas()).toEqual(["src/api.ts", "src/Servicio.php", "src/Pedidos.tsx", "src/suelto.ts"]);
-    expect(v.pagina()).toContain("puntaje promedio");
+    expect(v.pagina()).toContain("average score");
     expect(v.lista()).toContain("1 llamada HTTP cuya ruta no se pudo leer");
     expect(v.lista()).toContain("Escribir la ruta.");
     expect(v.lista()).toContain('<a class="chip fd-sinfeat" href="#/sin-asociar"');
-    expect(v.lista()).toContain("Completo: todo lo que el índice vio acá quedó unido.");
+    expect(v.lista()).toContain("Complete: everything the index saw here is linked.");
     // Lo que no se pudo medir se explica, no se esconde.
-    expect(v.pagina()).toContain("2 archivos tienen fidelidad incierta");
-    expect(v.pagina()).toContain('data-grupo="incierta" aria-pressed="false">Fidelidad incierta <small>2</small>');
+    expect(v.pagina()).toContain("2 files have uncertain fidelity");
+    expect(v.pagina()).toContain('data-grupo="incierta" aria-pressed="false">Uncertain fidelity <small>2</small>');
     v.tocar({ "data-acc": "orden" });
     expect(v.rutas()[0]).toBe("src/Pedidos.tsx");
   });
@@ -102,17 +102,17 @@ describe("pantalla Fidelidad", () => {
     const v = montar(datos);
     const cadenas = [...v.lista().matchAll(/<div class="fd-cadena"[^>]*>(.*?)<\/div>/g)].map((m) => [...m[1]!.matchAll(/class="fd-es (\w+)"[^>]*>([^<]+)</g)].map((e) => `${e[2]}:${e[1]}`));
     // api.ts: una de dos llamadas HTTP quedó sin unir.
-    expect(cadenas[0]).toEqual(["Pantalla:na", "HTTP 1/2:no", "Endpoint:na", "Llamadas:na", "Datos:na"]);
-    expect(cadenas[2]).toEqual(["Pantalla:ok", "HTTP:na", "Endpoint:na", "Llamadas:na", "Datos:na"]);
+    expect(cadenas[0]).toEqual(["Screen:na", "HTTP 1/2:no", "Endpoint:na", "Calls:na", "Data:na"]);
+    expect(cadenas[2]).toEqual(["Screen:ok", "HTTP:na", "Endpoint:na", "Calls:na", "Data:na"]);
     // suelto.ts: no hay nada que medir, y que no tenga funcionalidad no entra en la cadena.
-    expect(cadenas[3]).toEqual(["Pantalla:na", "HTTP:na", "Endpoint:na", "Llamadas:na", "Datos:na"]);
+    expect(cadenas[3]).toEqual(["Screen:na", "HTTP:na", "Endpoint:na", "Calls:na", "Data:na"]);
   });
 
   it("agrupa por quién resuelve lo que falta; un archivo con las dos cosas está en los dos grupos", () => {
     const v = montar(datos);
-    expect(v.pagina()).toContain('data-grupo="vos" aria-pressed="false">Lo resolvés vos <small>2</small>');
-    expect(v.pagina()).toContain('data-grupo="agente" aria-pressed="false">Lo resuelve el agente <small>1</small>');
-    expect(v.pagina()).toContain('data-grupo="completos" aria-pressed="false">Completos <small>2</small>');
+    expect(v.pagina()).toContain('data-grupo="vos" aria-pressed="false">You resolve it <small>2</small>');
+    expect(v.pagina()).toContain('data-grupo="agente" aria-pressed="false">The agent resolves it <small>1</small>');
+    expect(v.pagina()).toContain('data-grupo="completos" aria-pressed="false">Complete <small>2</small>');
     v.grupo("agente");
     expect(v.rutas()).toEqual(["src/Servicio.php"]);
     v.grupo("completos");
@@ -125,7 +125,7 @@ describe("pantalla Fidelidad", () => {
     const v = montar(datos);
     expect(v.pagina()).not.toContain('data-acc="mas-filtros"');
     expect(v.pagina()).toContain('id="fd-lenguaje"');
-    expect(v.pagina()).toContain("Por cerebro");
+    expect(v.pagina()).toContain("By brain");
     v.cambiar("fd-min", "40");
     v.cambiar("fd-max", "60");
     expect(v.rutas()).toEqual(["src/api.ts", "src/Servicio.php"]);
@@ -156,57 +156,57 @@ describe("pantalla Fidelidad", () => {
     const seccion = (titulo: string) => { const p = v.graficos(), i = p.indexOf("<h2>" + titulo); return p.slice(i, p.indexOf("</section>", i)); };
     const barra = (sec: string, attr: string) => { const i = sec.indexOf(attr); return sec.slice(i, sec.indexOf("</button>", i)); };
     // Sin filtros: todos los archivos medidos.
-    expect(seccion("Reparto por puntaje")).toContain("Sobre todos los archivos medidos · 4 archivos");
-    expect(barra(seccion("Reparto por puntaje"), 'data-fl-set="{&#34;min&#34;:100,&#34;max&#34;:100}"')).toContain("2 archivos");
-    expect(barra(seccion("Qué se entendió"), 'data-fl-set="{&#34;signal&#34;:&#34;http&#34;}"')).toContain("50% · 1 archivo con falta");
+    expect(seccion("Score distribution")).toContain("Across all measured files · 4 files");
+    expect(barra(seccion("Score distribution"), 'data-fl-set="{&#34;min&#34;:100,&#34;max&#34;:100}"')).toContain("2 files");
+    expect(barra(seccion("What was understood"), 'data-fl-set="{&#34;signal&#34;:&#34;http&#34;}"')).toContain("50% · 1 file with gaps");
     // Cerebro back: el reparto y las signals cuentan solo sus archivos; Por cerebro sigue mostrando todos, con back marcado.
     v.cambiar("fd-cerebro", "1");
-    expect(seccion("Reparto por puntaje")).toContain("Sobre cerebro back · 1 archivo");
-    expect(barra(seccion("Reparto por puntaje"), 'data-fl-set="{&#34;min&#34;:100,&#34;max&#34;:100}"')).toContain("0 archivos");
-    expect(barra(seccion("Reparto por puntaje"), 'data-fl-set="{&#34;min&#34;:60,&#34;max&#34;:79}"')).toContain("1 archivo");
-    expect(seccion("Qué se entendió")).toContain("Sobre cerebro back · 1 archivo");
-    expect(seccion("Qué se entendió")).not.toContain('data-fl-set="{&#34;signal&#34;:&#34;http&#34;}"');
-    expect(seccion("Qué se entendió")).toContain("No aplican a estos archivos: Llamadas HTTP, Recorrido de endpoints, Tipo de respuesta, Pantallas con llamadas.");
-    expect(barra(seccion("Qué se entendió"), 'data-fl-set="{&#34;signal&#34;:&#34;llamadas&#34;}"')).toContain("50% · 1 archivo con falta");
-    expect(seccion("Por cerebro")).toContain("Sobre todos los archivos medidos · 4 archivos · sin aplicar el cerebro elegido");
-    expect(seccion("Por cerebro")).toContain('data-fl-set="{&#34;cerebro&#34;:&#34;0&#34;}"');
-    expect(seccion("Por cerebro")).toMatch(/fd-barra on" data-fl="fd" data-fl-set="\{&#34;cerebro&#34;:&#34;1&#34;\}"/);
+    expect(seccion("Score distribution")).toContain("Across brain back · 1 file");
+    expect(barra(seccion("Score distribution"), 'data-fl-set="{&#34;min&#34;:100,&#34;max&#34;:100}"')).toContain("0 files");
+    expect(barra(seccion("Score distribution"), 'data-fl-set="{&#34;min&#34;:60,&#34;max&#34;:79}"')).toContain("1 file");
+    expect(seccion("What was understood")).toContain("Across brain back · 1 file");
+    expect(seccion("What was understood")).not.toContain('data-fl-set="{&#34;signal&#34;:&#34;http&#34;}"');
+    expect(seccion("What was understood")).toContain("Not applicable to these files: HTTP calls, Endpoint flow, Response type, Screens with calls.");
+    expect(barra(seccion("What was understood"), 'data-fl-set="{&#34;signal&#34;:&#34;llamadas&#34;}"')).toContain("50% · 1 file with gaps");
+    expect(seccion("By brain")).toContain("Across all measured files · 4 files · ignoring the chosen brain");
+    expect(seccion("By brain")).toContain('data-fl-set="{&#34;cerebro&#34;:&#34;0&#34;}"');
+    expect(seccion("By brain")).toMatch(/fd-barra on" data-fl="fd" data-fl-set="\{&#34;cerebro&#34;:&#34;1&#34;\}"/);
     // Los demás filtros también: tipo tsx deja un solo archivo en todos los paneles, y un cerebro sin coincidencias lo dice.
     v.cambiar("fd-cerebro", "");
     v.cambiar("fd-lenguaje", "tsx");
-    expect(seccion("Reparto por puntaje")).toContain("Sobre tipo tsx · 1 archivo");
-    expect(seccion("Por cerebro")).toContain("<strong>back</strong> · ningún archivo coincide con los demás filtros");
+    expect(seccion("Score distribution")).toContain("Across type tsx · 1 file");
+    expect(seccion("By brain")).toContain("<strong>back</strong> · no file matches the other filters");
     // El rango de puntaje filtra la lista, pero el reparto no se lo aplica a sí mismo: lo marca en su barra.
     v.cambiar("fd-lenguaje", "");
     v.barra({ min: 40, max: 59 });
-    expect(seccion("Reparto por puntaje")).toContain("Sobre todos los archivos medidos · 4 archivos · sin aplicar el rango de puntaje");
-    expect(seccion("Reparto por puntaje")).toMatch(/fd-barra on" data-fl="fd" data-fl-set="\{&#34;min&#34;:40,&#34;max&#34;:59\}"/);
-    expect(seccion("Qué se entendió")).toContain("Sobre puntaje de 40 a 59 · 1 archivo");
+    expect(seccion("Score distribution")).toContain("Across all measured files · 4 files · ignoring the score range");
+    expect(seccion("Score distribution")).toMatch(/fd-barra on" data-fl="fd" data-fl-set="\{&#34;min&#34;:40,&#34;max&#34;:59\}"/);
+    expect(seccion("What was understood")).toContain("Across score 40 to 59 · 1 file");
     // Un conjunto vacío lo dice y ofrece salir.
     v.escribir("no-existe");
     // Buscar repinta la estadística junto con la lista.
-    expect(seccion("Reparto por puntaje")).toContain("Ningún archivo coincide con los demás filtros");
+    expect(seccion("Score distribution")).toContain("No file matches the other filters");
   });
 
   it("fidelidad incierta: un apartado sin puntaje, con el porqué de cada archivo, fuera del promedio", () => {
     const v = montar(datos);
     // El promedio es solo de los medidos: (50 + 60 + 100 + 100) / 4.
-    expect(v.pagina()).toContain("<b style=\"color:var(--atencion)\">77.5</b><span>puntaje promedio de lo medido</span>");
-    expect(v.pagina()).toContain("<b>2</b><span>de fidelidad incierta</span>");
+    expect(v.pagina()).toContain("<b style=\"color:var(--atencion)\">77.5</b><span>average score of what was measured</span>");
+    expect(v.pagina()).toContain("<b>2</b><span>of uncertain fidelity</span>");
     v.grupo("incierta");
     // Primero los que tienen código; cada uno dice por qué no se lo puede medir.
     expect(v.rutas()).toEqual(["src/tipos.ts", "config.json"]);
-    expect(v.lista()).toContain('<span class="fd-p fd-inc" title="Fidelidad incierta">?</span>');
-    expect(v.lista()).toContain("El índice vio código, pero ninguna relación para medir");
-    expect(v.lista()).toContain("El índice no encontró nada acá");
-    expect(v.lista()).toContain("2 archivos de fidelidad incierta: 1 con código pero sin relaciones, 1 donde el índice no vio nada");
+    expect(v.lista()).toContain('<span class="fd-p fd-inc" title="Uncertain fidelity">?</span>');
+    expect(v.lista()).toContain("The index saw code, but no relationship to measure");
+    expect(v.lista()).toContain("The index found nothing here");
+    expect(v.lista()).toContain("2 files of uncertain fidelity: 1 with code but no relationships, 1 where the index saw nothing");
     expect(v.lista()).toContain('<a class="chip" href="#/f/front%2Ffeat-pedidos">Pedidos</a>');
     // No hay plan ni tareas para ellos, y la búsqueda también los filtra.
     expect(v.lista()).not.toContain('data-acc="plan"');
     v.escribir("config");
     expect(v.rutas()).toEqual(["config.json"]);
     v.escribir("nada-que-coincida");
-    expect(v.lista()).toContain("Ningún archivo de fidelidad incierta coincide con los filtros. Hay 2 archivos en total.");
+    expect(v.lista()).toContain("No uncertain-fidelity file matches the filters. There are 2 files in total.");
   });
 
   it("un vacío dice por qué está vacío y ofrece salir", () => {
@@ -214,11 +214,11 @@ describe("pantalla Fidelidad", () => {
     v.cambiar("fd-cerebro", "1");
     v.cambiar("fd-lenguaje", "tsx");
     expect(v.rutas()).toEqual([]);
-    expect(v.lista()).toContain("Ningún archivo coincide con cerebro back, tipo tsx");
-    expect(v.lista()).toContain("Hay 4 archivos medidos en total");
+    expect(v.lista()).toContain("No file matches brain back, type tsx");
+    expect(v.lista()).toContain("4 measured files in total");
     expect(v.lista()).toContain('data-fl-limpiar="1"');
     // Sin índice de código no hay lista: se dice cómo conseguirla.
-    expect(montar({ cerebros: [], nodes: [], fidelidad: null }).pagina()).toContain("No hay índice de código");
+    expect(montar({ cerebros: [], nodes: [], fidelidad: null }).pagina()).toContain("There is no code index");
   });
 
   it("recuerda el filtro al recargar", () => {
@@ -233,7 +233,7 @@ describe("pantalla Fidelidad", () => {
     const plan = () => /<textarea id="fd-pl-texto"[^>]*>([\s\S]*?)<\/textarea>/.exec(v.lista())?.[1]?.replace(/&#(\d+);/g, (_, c: string) => String.fromCharCode(Number(c))) ?? "";
     expect(v.lista()).not.toContain("fd-pl-texto");
     v.tocar({ "data-acc": "plan" });
-    expect(plan()).toContain("llevar a 100 el puntaje de fidelidad de 2 archivos");
+    expect(plan()).toContain("Goal: bring the fidelity score of 2 files");
     expect(plan()).not.toContain("suelto.ts");
     expect(plan()).toContain("- [ ] llamadas: 1 llamada que no se sabe a qué método va (L6).");
     expect(plan()).toContain("- **datos**: seguí flowbrain coverage --guide");
@@ -241,16 +241,16 @@ describe("pantalla Fidelidad", () => {
     expect(plan()).not.toContain("Pedidos.tsx");
     // Se saca una relación: sus tareas y su explicación salen del plan.
     v.marcar("fd-pl-s-http", false);
-    expect(plan()).toContain("de 1 archivo ");
+    expect(plan()).toContain("of 1 file ");
     expect(plan()).not.toContain("src/api.ts");
     expect(plan()).not.toContain("**http**");
     v.marcar("fd-pl-s-http", true);
     // El plan sigue a la lista: con un grupo puesto, solo sus archivos.
     v.grupo("agente");
-    expect(plan()).toContain("de 1 archivo ");
+    expect(plan()).toContain("of 1 file ");
     v.cambiar("fd-pl-n", "1");
     v.grupo("completos");
-    expect(v.lista()).toContain("No hay plan que armar");
+    expect(v.lista()).toContain("No plan to build");
     // Por archivo: el pedido de ese solo.
     v.grupo("");
     v.tocar({ "data-acc": "pedido", "data-a": "front/repo-web:src/api.ts" });
@@ -260,20 +260,51 @@ describe("pantalla Fidelidad", () => {
 
   it("abierta como archivo es de solo lectura y lo dice; servida, ofrece resolver lo que depende de una persona", () => {
     const fija = montar(datos);
-    expect(fija.pagina()).toContain("Esta página es de solo lectura");
+    expect(fija.pagina()).toContain("This page is read-only");
     expect(fija.pagina()).toContain("flowbrain viewer --serve");
     expect(fija.lista()).not.toContain('data-acc="resolver"');
-    expect(fija.lista()).toContain("Lo resolvés vos");
+    expect(fija.lista()).toContain("You resolve it");
     // El pedido para el agente no necesita servidor.
     expect(fija.lista().match(/data-acc="pedido"/g)).toHaveLength(2);
     const servida = montar(datos, { edicion: { token: "t", sinAplicar: ["back"] } });
-    expect(servida.pagina()).not.toContain("solo lectura");
+    expect(servida.pagina()).not.toContain("read-only");
     // Lo que resuelve una persona tiene su botón; lo del agente, no. Asociar a una funcionalidad ya no se hace acá.
     expect(servida.lista()).not.toContain("sumar-sugerida");
-    expect(servida.lista()).toContain(">Escribir la ruta</button>");
-    expect(servida.lista()).toContain(">Elegir destino</button>");
-    expect(servida.lista().match(/Lo resuelve el agente/g)).toHaveLength(1);
-    expect(servida.pagina()).toContain('data-acc="aplicar" data-cerebro="back">Reindexar back');
+    expect(servida.lista()).toContain(">Write the route</button>");
+    expect(servida.lista()).toContain(">Choose target</button>");
+    expect(servida.lista().match(/The agent resolves it/g)).toHaveLength(1);
+    expect(servida.pagina()).toContain('data-acc="aplicar" data-cerebro="back">Reindex back');
+  });
+
+  it("en castellano: los textos de siempre, y el plan para el modelo sigue en inglés", () => {
+    const v = montar(datos, { lang: "es" });
+    expect(v.pagina()).toContain("<h1>Fidelidad</h1>");
+    expect(v.pagina()).toContain('data-grupo="vos" aria-pressed="false">Lo resolvés vos <small>2</small>');
+    expect(v.pagina()).toContain("Reparto por puntaje");
+    expect(v.pagina()).toContain("2 archivos tienen fidelidad incierta");
+    expect(v.lista()).toContain('<span class="fd-es na" title="No aplica a este archivo">Pantalla</span>');
+    v.tocar({ "data-acc": "plan" });
+    expect(v.lista()).toContain("<h2>Plan para el agente</h2>");
+    expect(v.lista()).toContain("# Fidelity plan");
+  });
+
+  it("al cambiar de idioma, los textos fijos del filtro se rehacen", () => {
+    const oyentes: Array<() => void> = [];
+    const i18n = { lang: "en", alCambiar: (fn: () => void) => void oyentes.push(fn) };
+    const guardado = new Map<string, string>();
+    const sessionStorage = { getItem: (k: string) => guardado.get(k) ?? null, setItem: (k: string, v: string) => void guardado.set(k, v) };
+    const els = new Map<string, { innerHTML: string; addEventListener(): void }>();
+    const el = (id: string) => { if (!els.has(id)) els.set(id, { innerHTML: "", addEventListener() {} }); return els.get(id)!; };
+    const window = { brainVisor: { D: datos, porId: {}, esc: (x: unknown) => String(x) }, brainFiltros: null, brainI18n: i18n, brainFidelidad: null as null | { mostrar(): void } };
+    new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
+    new Function("window", "document", "sessionStorage", FIDELIDAD_JS)(window, { getElementById: el }, sessionStorage);
+    window.brainFidelidad!.mostrar();
+    expect(el("fidelidad").innerHTML).toContain("Score distribution");
+    i18n.lang = "es";
+    oyentes.forEach((fn) => fn());
+    window.brainFidelidad!.mostrar();
+    expect(el("fidelidad").innerHTML).toContain("Reparto por puntaje");
+    expect(el("fidelidad").innerHTML).toContain("Buscar por ruta o por lo que falta…");
   });
 
   it("resolver: elegir destino muestra los candidatos como botones y manda los ids del cerebro", async () => {
@@ -291,11 +322,11 @@ describe("pantalla Fidelidad", () => {
     const v = montar(datos, { edicion: { token: "secreto", sinAplicar: [] }, fetch });
     const esperar = () => new Promise((ok) => setTimeout(ok, 0));
     v.tocar({ "data-acc": "resolver", "data-que": "llamadas", "data-a": "back/repo-api:src/Servicio.php" });
-    expect(v.lista()).toContain("Leyendo el archivo");
+    expect(v.lista()).toContain("Reading the file");
     await esperar();
     // El id que viaja es el del cerebro, sin el prefijo que le pone el visor.
     expect(pedidos[0]).toEqual({ url: "/api/archivo?cerebro=back&archivo=repo-api%3Asrc%2FServicio.php", metodo: "GET", token: "secreto", cuerpo: null });
-    expect(v.lista()).toContain("se llama a <code>repo.traer</code>. ¿A cuál va?");
+    expect(v.lista()).toContain("there is a call to <code>repo.traer</code>. Where does it go?");
     expect(v.lista()).toContain('data-acc="declarar-llamada" data-linea="6" data-hacia="repo-api:src/RepoA.php#RepoA.traer">RepoA.traer');
     expect(v.lista()).not.toContain("<select");
     v.tocar({ "data-acc": "declarar-llamada", "data-linea": "6", "data-hacia": "repo-api:src/RepoB.php#RepoB.traer" });

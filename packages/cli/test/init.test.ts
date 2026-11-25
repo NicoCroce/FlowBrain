@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { fijarIdioma } from "../src/idioma.js";
 import { init, instalarHooksClaudeCode } from "../src/init.js";
 import { ejecutar } from "../src/main.js";
 
@@ -47,7 +48,13 @@ describe("flowbrain init", () => {
   it("no toca un settings.json inválido", async () => {
     const settings = join(dir, "settings.json");
     await writeFile(settings, "{ roto");
-    await expect(instalarHooksClaudeCode(settings, "flowbrain hook claude-code")).rejects.toThrow(/no es JSON válido/);
+    await expect(instalarHooksClaudeCode(settings, "flowbrain hook claude-code")).rejects.toThrow(/is not valid JSON/);
+    fijarIdioma("es");
+    try {
+      await expect(instalarHooksClaudeCode(settings, "flowbrain hook claude-code")).rejects.toThrow(/no es JSON válido/);
+    } finally {
+      fijarIdioma("en");
+    }
     expect(await readFile(settings, "utf8")).toBe("{ roto");
   });
 
@@ -55,7 +62,7 @@ describe("flowbrain init", () => {
     const r = await ejecutar(["init", "b", "--claude-code", "--settings", "s.json"], { FLOWBRAIN_COMANDO: "flowbrain" }, dir);
     expect(r.codigo).toBe(0);
     expect(r.stdout).toContain(`claude mcp add --scope user flowbrain -- flowbrain serve --root ${join(dir, "b")}`);
-    expect(r.stdout).toContain(`Hooks de Claude Code registrados en ${join(dir, "s.json")}`);
+    expect(r.stdout).toContain(`Claude Code hooks registered in ${join(dir, "s.json")}`);
   });
 });
 
@@ -71,6 +78,6 @@ describe("paquete flowbrain", () => {
     for (const h of ["buscar_nodo", "recorrer_grafo", "contrato_de", "trazar", "funcionalidad", "recorrido", "quien_llama", "impacto"]) expect(bundle).toContain(`"${h}"`);
     const { stdout } = await run("node", [bin, "init", join(dir, "b")], { cwd: dir });
     expect(stdout).toContain(`npx -y @nicocroce/flowbrain@${pkg.version} serve --root ${join(dir, "b")}`);
-    expect(await readFile(join(dir, "b/_build/viewer.html"), "utf8")).toContain("<title>FlowBrain · visor</title>");
+    expect(await readFile(join(dir, "b/_build/viewer.html"), "utf8")).toContain("<title>FlowBrain · viewer</title>");
   }, 60_000);
 });
