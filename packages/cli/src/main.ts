@@ -56,6 +56,7 @@ import { doctor, estado, reposIndexados, sync, textoEstado } from "./estado.js";
 import { evidencia } from "./evidencia.js";
 import { GUIA_ANALISIS, GUIA_ESPECIFICACIONES, GUIA_ESTUDIO, GUIA_FUNCIONALIDADES, GUIA_TESTS, NOMBRE_COMANDO, NOMBRE_ESPECIFICACIONES, NOMBRE_ESTUDIO, NOMBRE_FUNCIONALIDADES, NOMBRE_TESTS } from "./guia.js";
 import { crearReporte, duracion, type Reporte } from "./progreso.js";
+import { refrescarMcp } from "./agentes.js";
 import { comandoBrain, comillas, init, instalarComando, instalarHooksClaudeCode, VERSION } from "./init.js";
 import { promover } from "./promover.js";
 import { idioma as idiomaDelMenu, L, resolverIdioma } from "./idioma.js";
@@ -68,8 +69,9 @@ Knowledge graph of the system for coding agents. Start with "flowbrain install" 
 Commands:
   (no command) | menu                       terminal menu: set up the project, run the full analysis with Claude
                                             Code, reindex, open the viewer, connect the MCP and update FlowBrain
-  setup                                     gets the machine ready (command, hooks and Claude Code commands) without
-                                            touching any project
+  setup [--mcp]                             gets the machine ready (command, hooks and Claude Code commands) without
+                                            touching any project; with --mcp registers the MCP server again with
+                                            this version in the agents that already had it
   init [dir] [--claude-code]                creates a brain in dir (the current one by default) and compiles it;
                                             with --claude-code registers the hooks in ~/.claude/settings.json
   compile                                   compiles pages and JSON → _build/, INDEX.md, backlinks
@@ -163,8 +165,9 @@ Grafo de conocimiento del sistema para agentes de código. Empezá con "flowbrai
 Comandos:
   (sin comando) | menu                      menú en la terminal: configurar el proyecto, analizarlo completo con Claude
                                             Code, reindexar, abrir el visor, conectar el MCP y actualizar FlowBrain
-  setup                                     deja lista la máquina (comando, hooks y comandos de Claude Code) sin
-                                            tocar ningún proyecto
+  setup [--mcp]                             deja lista la máquina (comando, hooks y comandos de Claude Code) sin
+                                            tocar ningún proyecto; con --mcp vuelve a registrar el servidor MCP con
+                                            esta versión en los agentes que ya lo tenían
   init [dir] [--claude-code]                crea un brain en dir (por defecto el actual) y lo compila;
                                             con --claude-code registra los hooks en ~/.claude/settings.json
   compile                                   compila páginas y JSON → _build/, INDEX.md, backlinks
@@ -370,6 +373,7 @@ export async function ejecutar(
         split: { type: "boolean" },
         single: { type: "boolean" },
         version: { type: "boolean", short: "v" },
+        mcp: { type: "boolean" },
         help: { type: "boolean", short: "h" },
         lang: { type: "string" },
       },
@@ -439,7 +443,10 @@ export async function ejecutar(
 
     if (comando === "setup") {
       // Solo la máquina: el comando en el PATH, los hooks y los comandos de Claude Code. No toca ningún proyecto.
-      return { codigo: 0, stdout: (await prepararMaquina(env, cwd, o.settings, o.bin)).join("\n") + "\n", stderr: "" };
+      // Con --mcp (lo usa «Actualizar FlowBrain»), además vuelve a registrar el servidor MCP con este comando.
+      const lineas = await prepararMaquina(env, cwd, o.settings, o.bin);
+      if (o.mcp) lineas.push(...(await refrescarMcp(comandoBrain(env))));
+      return { codigo: 0, stdout: lineas.join("\n") + "\n", stderr: "" };
     }
 
     if (comando === "install") {

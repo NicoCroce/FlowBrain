@@ -41,7 +41,7 @@ flowbrain
 | Abrir el visor | Lo sirve en `http://127.0.0.1:4780` para ver y corregir lo que se entendió. |
 | Ver estado | Repos al día, conteos y huecos conocidos de cada cerebro. |
 | Conectar un agente (MCP) | Registra el servidor MCP en Claude Code, Codex u otro cliente. |
-| Actualizar FlowBrain | Instala la última versión. |
+| Actualizar FlowBrain | Instala la última versión y vuelve a registrar el MCP con ella. La cabecera del menú avisa cuando hay una nueva. |
 
 Cada opción corre los mismos comandos que se pueden escribir a mano (`flowbrain --help` los lista todos). El menú, la ayuda y los archivos que crea FlowBrain están en inglés; el castellano está disponible como segundo idioma.
 

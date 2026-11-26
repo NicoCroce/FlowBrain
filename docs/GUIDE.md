@@ -41,7 +41,7 @@ flowbrain
 | Open the viewer | Serves it on `http://127.0.0.1:4780` to see and correct what was understood. |
 | See status | Repositories up to date, counts and known gaps of each brain. |
 | Connect an agent (MCP) | Registers the MCP server in Claude Code, Codex or another client. |
-| Update FlowBrain | Installs the latest version. |
+| Update FlowBrain | Installs the latest version and registers the MCP again with it. The menu header tells you when there is a new one. |
 
 Every option runs the same commands you can type by hand (`flowbrain --help` lists them all). The menu, the help and the files FlowBrain creates are in English; Spanish is available as a second language.
 

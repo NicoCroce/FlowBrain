@@ -42,7 +42,7 @@ Ya configurado, `flowbrain` sin argumentos (o `flowbrain menu`, que lo abre siem
 - **Reindexar** y **Ver estado** (todos los cerebros).
 - **Abrir el visor:** lo sirve en `http://127.0.0.1:4780` (o el siguiente puerto libre) para ver y corregir desde la página, y abre el navegador. Si ya hay un visor de FlowBrain corriendo para el mismo proyecto, abre ese. Queda andando hasta Ctrl+C, que lo corta y vuelve al menú. Si el servidor no puede arrancar, abre `flowbrain.html` (solo lectura) y dice por qué.
 - **Conectar un agente (MCP):** registra el servidor para todos tus proyectos en el agente que elijas; pregunta antes.
-- **Actualizar FlowBrain:** desde el repo, `git pull --ff-only`, `pnpm install` y `flowbrain setup`; con el paquete publicado, `npm install -g @nicocroce/flowbrain@latest`. Pregunta antes.
+- **Actualizar FlowBrain:** desde el repo, `git pull --ff-only`, `pnpm install` y `flowbrain setup --mcp`; con el paquete publicado, `npm install -g @nicocroce/flowbrain@latest`. Después corre `flowbrain setup --mcp`, que vuelve a registrar el servidor MCP con la versión nueva en los agentes que ya lo tenían. Pregunta antes; si ya tenés la última, lo dice. Al abrir el menú, si hay una versión nueva publicada, la cabecera lo avisa.
 
 `flowbrain setup` deja lista la máquina (comando, hooks y comandos de Claude Code) sin tocar ningún proyecto. Sin terminal, `flowbrain` sin argumentos imprime la ayuda.
 

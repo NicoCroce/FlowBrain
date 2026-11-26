@@ -43,6 +43,8 @@ export interface ContextoMenu {
   agentes: Agente["id"][];
   git: boolean;
   version: string;
+  /** Última versión publicada en npm, si es más nueva que la que corre; null si está al día, es "dev" o no se pudo saber. */
+  nueva: string | null;
 }
 
 /** Lo que el menú necesita del mundo: correr comandos y hablar con la persona. Las pruebas lo reemplazan. */
@@ -75,7 +77,29 @@ export const PROMPT_ANALISIS = [
   "Read each guide in full before starting its step. When you finish, run `flowbrain brains viewer` and give me a short report: what changed in each brain and what is still undetermined.",
 ].join("\n");
 
-export async function contextoMenu(cwd: string, entorno: { hayComando(nombre: string): boolean; mcpConfig?: string[] } = { hayComando }): Promise<ContextoMenu> {
+/** ¿`a` es una versión posterior a `b`? Compara mayor.menor.parche; una versión con sufijo (`-stage`) nunca gana. */
+export function esMasNueva(a: string, b: string): boolean {
+  const partes = (v: string) => (/^\d+\.\d+\.\d+$/.test(v) ? v.split(".").map(Number) : null);
+  const x = partes(a), y = partes(b);
+  if (!x || !y) return false;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i]! > y[i]!;
+  return false;
+}
+
+let ultimaCache: Promise<string | null> | undefined;
+/** La última versión publicada en npm, una vez por sesión del menú; sin red o si tarda, null (el menú no espera). */
+export function ultimaPublicada(): Promise<string | null> {
+  ultimaCache ??= fetch(`https://registry.npmjs.org/${PAQUETE.replace("/", "%2f")}/latest`, { signal: AbortSignal.timeout(2000) })
+    .then((r) => (r.ok ? (r.json() as Promise<{ version?: string }>) : null))
+    .then((j) => j?.version ?? null)
+    .catch(() => null);
+  return ultimaCache;
+}
+
+export async function contextoMenu(
+  cwd: string,
+  entorno: { hayComando(nombre: string): boolean; mcpConfig?: string[]; ultima?: () => Promise<string | null> } = { hayComando },
+): Promise<ContextoMenu> {
   const registro = await buscarRegistro(cwd);
   let lista: Array<{ nombre: string; raiz: string }> = [];
   if (registro) {
@@ -100,6 +124,11 @@ export async function contextoMenu(cwd: string, entorno: { hayComando(nombre: st
     agentes: AGENTES.filter((a) => entorno.hayComando(a.comando)).map((a) => a.id),
     git: entorno.hayComando("git"),
     version: VERSION,
+    nueva: await (async () => {
+      if (VERSION === "dev") return null;
+      const u = await (entorno.ultima ?? ultimaPublicada)();
+      return u && esMasNueva(u, VERSION) ? u : null;
+    })(),
   };
 }
 
@@ -144,7 +173,12 @@ export function opciones(c: ContextoMenu): Opcion[] {
     {
       clave: "actualizar",
       titulo: L("Update FlowBrain", "Actualizar FlowBrain"),
-      detalle: c.version === "dev" ? L("pulls the latest version from the FlowBrain repo and installs it", "trae la última versión del repo de FlowBrain y la instala") : L(`version ${c.version}: installs the latest published one`, `versión ${c.version}: instala la última publicada`),
+      detalle:
+        c.version === "dev"
+          ? L("pulls the latest version from the FlowBrain repo and installs it", "trae la última versión del repo de FlowBrain y la instala")
+          : c.nueva
+            ? L(`you have ${c.version}: installs ${c.nueva}, the new one, and registers the MCP again`, `tenés la ${c.version}: instala la ${c.nueva}, la nueva, y vuelve a registrar el MCP`)
+            : L(`version ${c.version}: installs the latest published one`, `versión ${c.version}: instala la última publicada`),
     },
     { clave: "idioma", titulo: L("Language: English · switch to Español", "Idioma: castellano · cambiar a English"), detalle: L("saved for the next times", "queda guardado para las próximas veces") },
     { clave: "salir", titulo: L("Quit", "Salir"), detalle: "" },
@@ -173,6 +207,9 @@ export function dibujar(c: ContextoMenu, ops: Opcion[], elegida: number): string
     : L("not set up", "sin configurar");
   const lineas = [
     `${NEGRITA}FlowBrain${FIN} ${TENUE}${c.version}${FIN}`,
+    ...(c.nueva
+      ? [L(`${NEGRITA}New version ${c.nueva} available${FIN} (you have ${c.version}): I recommend Update FlowBrain`, `${NEGRITA}Hay una versión nueva: ${c.nueva}${FIN} (tenés la ${c.version}): te recomiendo Actualizar FlowBrain`)]
+      : []),
     L(`${TENUE}Project:${FIN} ${c.proyecto}`, `${TENUE}Proyecto:${FIN} ${c.proyecto}`),
     L(`${TENUE}Status:${FIN}  ${estado} · MCP ${c.mcp ? "connected" : "not connected"}`, `${TENUE}Estado:${FIN}   ${estado} · MCP ${c.mcp ? "conectado" : "sin conectar"}`),
     ...(() => {
@@ -344,13 +381,19 @@ const repoFlowbrain = () => resolve(dirname(fileURLToPath(import.meta.url)), "..
 
 async function actualizar(c: ContextoMenu, e: Entorno): Promise<void> {
   if (c.version !== "dev") {
+    const ultima = c.nueva ?? (await ultimaPublicada());
+    if (ultima && !esMasNueva(ultima, c.version)) {
+      e.escribir(L(`You already have the latest published version (${c.version}).\n`, `Ya tenés la última versión publicada (${c.version}).\n`));
+      return;
+    }
     if (!si(await e.preguntar(L(`I will install the latest published version (npm install -g ${PAQUETE}@latest). Continue? (y/N) `, `Voy a instalar la última versión publicada (npm install -g ${PAQUETE}@latest). ¿Sigo? (s/N) `)))) return;
     if ((await e.correr("npm", ["install", "-g", `${PAQUETE}@latest`], c.proyecto)) !== 0) {
       e.escribir(L("npm could not install it: check the message above.\n", "npm no pudo instalarla: revisá el mensaje de arriba.\n"));
       return;
     }
-    await e.correr("flowbrain", ["setup"], c.proyecto);
-    e.escribir(L("FlowBrain updated.\n", "FlowBrain actualizado.\n"));
+    // El binario nuevo deja la máquina al día y vuelve a registrar el MCP con su versión (el viejo quedaría fijado).
+    await e.correr("flowbrain", ["setup", "--mcp"], c.proyecto);
+    e.escribir(L("FlowBrain updated. If something in the index changed, pick Re-index.\n", "FlowBrain actualizado. Si cambió algo del índice, elegí Reindexar.\n"));
     return;
   }
   const repo = repoFlowbrain();
@@ -364,7 +407,7 @@ async function actualizar(c: ContextoMenu, e: Entorno): Promise<void> {
     return;
   }
   // El código nuevo deja la máquina al día (comandos de Claude Code y hooks); este proceso todavía tiene el viejo.
-  await e.correr("sh", ["-c", `${comandoBrain()} setup`], c.proyecto);
+  await e.correr("sh", ["-c", `${comandoBrain()} setup --mcp`], c.proyecto);
   e.escribir(L("FlowBrain updated. If something in the index changed, pick Re-index.\n", "FlowBrain actualizado. Si cambió algo del índice, elegí Reindexar.\n"));
 }
 

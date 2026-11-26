@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
-import { agentesConMcp, partir } from "../src/agentes.js";
+import { agentesConMcp, partir, refrescarMcp } from "../src/agentes.js";
 import { asistente } from "../src/asistente.js";
 import { ejecutar } from "../src/main.js";
 import { fijarIdioma, idioma } from "../src/idioma.js";
-import { accion, contextoMenu, dibujar, elegir, opciones, PROMPT_ANALISIS, siguiente, type ContextoMenu, type Entorno } from "../src/menu.js";
+import { accion, contextoMenu, dibujar, elegir, esMasNueva, opciones, PROMPT_ANALISIS, siguiente, type ContextoMenu, type Entorno } from "../src/menu.js";
 
 let dir: string;
 beforeEach(async () => {
@@ -38,7 +38,7 @@ function falso(teclas: string[] = [], respuestas: string[] = []) {
   return { e, corridas, salida };
 }
 
-const base: ContextoMenu = { proyecto: "/p", registro: null, cerebros: [], faltaIndice: [], faltaAnalisis: [], visor: null, mcp: false, mcpEn: [], agentes: ["claude"], git: true, version: "dev" };
+const base: ContextoMenu = { proyecto: "/p", registro: null, cerebros: [], faltaIndice: [], faltaAnalisis: [], visor: null, mcp: false, mcpEn: [], agentes: ["claude"], git: true, version: "dev", nueva: null };
 
 describe("menú", () => {
   it("sin configurar: primero configurar; reindexar, visor y estado no aparecen", () => {
@@ -253,3 +253,45 @@ describe("asistente de un proyecto nuevo", () => {
   });
 });
 
+
+describe("versión nueva y Actualizar FlowBrain", () => {
+  it("compara versiones publicadas; un sufijo (-stage) nunca gana", () => {
+    expect(esMasNueva("0.1.2", "0.1.1")).toBe(true);
+    expect(esMasNueva("0.10.0", "0.9.9")).toBe(true);
+    expect(esMasNueva("0.1.1", "0.1.1")).toBe(false);
+    expect(esMasNueva("0.1.0", "0.1.1")).toBe(false);
+    expect(esMasNueva("0.0.0-stage", "0.1.1")).toBe(false);
+    expect(esMasNueva("0.2.0", "dev")).toBe(false);
+  });
+
+  it("el menú muestra la versión y recomienda actualizar cuando hay una nueva", () => {
+    const c: ContextoMenu = { ...base, version: "0.1.1", nueva: "0.1.2" };
+    const ops = opciones(c);
+    const texto = dibujar(c, ops, 0);
+    expect(texto).toContain("0.1.1");
+    expect(texto).toMatch(/New version 0\.1\.2 available.*you have 0\.1\.1.*Update FlowBrain/);
+    expect(ops.find((o) => o.clave === "actualizar")?.detalle).toContain("installs 0.1.2");
+    expect(dibujar({ ...c, nueva: null }, ops, 0)).not.toContain("New version");
+  });
+
+  it("instala la nueva y la deja registrar el MCP con su versión (setup --mcp)", async () => {
+    const f = falso([], ["s"]);
+    const c: ContextoMenu = { ...base, version: "0.1.1", nueva: "0.1.2" };
+    await accion(opciones(c).find((o) => o.clave === "actualizar")!, c, f.e);
+    expect(f.corridas).toEqual(["npm install -g @nicocroce/flowbrain@latest @/p", "flowbrain setup --mcp @/p"]);
+  });
+
+  it("refrescarMcp registra de nuevo solo donde apunta a otra versión", async () => {
+    const cmd = "npx -y @nicocroce/flowbrain@0.1.2";
+    const claude = join(dir, "claude.json"), codex = join(dir, "config.toml"), opencode = join(dir, "opencode.json");
+    await writeFile(claude, JSON.stringify({ mcpServers: { flowbrain: { command: "npx", args: ["-y", "@nicocroce/flowbrain@0.1.1", "serve", "--sync"] } } }));
+    await writeFile(codex, '[mcp_servers.flowbrain]\ncommand = "npx"\nargs = ["-y", "@nicocroce/flowbrain@0.1.2", "serve", "--sync"]\n');
+    await writeFile(opencode, JSON.stringify({ mcp: { flowbrain: { type: "local", command: ["npx", "-y", "@nicocroce/flowbrain@0.1.1", "serve", "--sync"] } } }));
+    const corridas: string[] = [];
+    const lineas = await refrescarMcp(cmd, { configs: { claude, codex, opencode: [opencode] }, correr: (p, a) => (corridas.push(`${p} ${a.join(" ")}`), 0) });
+    // Claude Code estaba en la 0.1.1: se quita y se vuelve a agregar; Codex ya estaba en la 0.1.2: no se toca.
+    expect(corridas).toEqual(["claude mcp remove --scope user flowbrain", `sh -c claude mcp add --scope user flowbrain -- ${cmd} serve --sync`]);
+    expect(lineas.join("\n")).toMatch(/Claude Code registered again/);
+    expect(lineas.join("\n")).toMatch(/OpenCode is configured by hand[\s\S]*0\.1\.2/);
+  });
+});

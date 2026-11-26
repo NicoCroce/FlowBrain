@@ -42,7 +42,7 @@ Once configured, `flowbrain` with no arguments (or `flowbrain menu`, which alway
 - **Reindex** and **View status** (all brains).
 - **Open the viewer:** serves it at `http://127.0.0.1:4780` (or the next free port) so you can view and correct things from the page, and opens the browser. If a FlowBrain viewer is already running for the same project, it opens that one. It keeps running until Ctrl+C, which stops it and returns to the menu. If the server can't start, it opens `flowbrain.html` (read-only) and explains why.
 - **Connect an agent (MCP):** registers the server for all your projects in the agent you choose; asks first.
-- **Update FlowBrain:** from the repo, `git pull --ff-only`, `pnpm install` and `flowbrain setup`; with the published package, `npm install -g @nicocroce/flowbrain@latest`. Asks first.
+- **Update FlowBrain:** from the repo, `git pull --ff-only`, `pnpm install` and `flowbrain setup --mcp`; with the published package, `npm install -g @nicocroce/flowbrain@latest`. Then it runs `flowbrain setup --mcp`, which registers the MCP server again with the new version in the agents that already had it. Asks first; if you already have the latest, it says so. When you open the menu and a newer version is published, the header tells you.
 
 `flowbrain setup` gets the machine ready (command, hooks and Claude Code commands) without touching any project. Without a terminal, `flowbrain` with no arguments prints the help.
 

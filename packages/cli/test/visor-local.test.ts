@@ -89,7 +89,7 @@ describe("contra servidores de verdad", () => {
 });
 
 describe("la opción Abrir el visor del menú", () => {
-  const c: ContextoMenu = { proyecto: "/p", registro: "/p/.flowbrain", cerebros: ["web"], faltaIndice: [], faltaAnalisis: [], visor: "/p/.flowbrain/flowbrain.html", mcp: true, mcpEn: [], agentes: [], git: true, version: "dev" };
+  const c: ContextoMenu = { proyecto: "/p", registro: "/p/.flowbrain", cerebros: ["web"], faltaIndice: [], faltaAnalisis: [], visor: "/p/.flowbrain/flowbrain.html", mcp: true, mcpEn: [], agentes: [], git: true, version: "dev", nueva: null };
   function entorno(visorLocal: NonNullable<Entorno["visorLocal"]>) {
     const corridas: string[] = [], salida: string[] = [];
     let cortes = 0;

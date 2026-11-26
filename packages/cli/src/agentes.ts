@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -180,4 +181,54 @@ export async function conectarMcp(c: ContextoMenu, e: Entorno, confirmar = true)
       ? L(`Done: open ${a.nombre} again so it picks it up.\n`, `Listo: abrí ${a.nombre} de nuevo para que lo tome.\n`)
       : L("Could not register it: check the message above.\n", "No se pudo registrar: revisá el mensaje de arriba.\n"),
   );
+}
+
+/**
+ * Después de actualizar FlowBrain, el servidor MCP sigue registrado con el comando anterior (`npx -y …@<versión vieja>`).
+ * Vuelve a registrarlo con `cmd` en cada agente que ya lo tenía a nivel usuario y apunta a otro comando. Los que se
+ * configuran a mano (OpenCode) o están registrados solo en un proyecto quedan como aviso, con lo que hay que hacer.
+ */
+export async function refrescarMcp(
+  cmd: string,
+  opciones: { configs?: { claude: string; codex: string; opencode: string[] }; correr?: (programa: string, args: string[]) => number } = {},
+): Promise<string[]> {
+  const configs = opciones.configs ?? {
+    claude: join(homedir(), ".claude.json"),
+    codex: join(homedir(), ".codex/config.toml"),
+    opencode: [join(homedir(), ".config/opencode/opencode.json"), join(homedir(), ".config/opencode/opencode.jsonc")],
+  };
+  const correr = opciones.correr ?? ((programa: string, args: string[]) => spawnSync(programa, args, { stdio: "inherit" }).status ?? 1);
+  const tokens = partir(cmd);
+  const out: string[] = [];
+  const registrar = (a: Agente) => {
+    const m = a.mcp(cmd);
+    if (!("correr" in m)) return;
+    correr(m.quitar.programa, m.quitar.args);
+    const ok = correr("sh", ["-c", m.correr]) === 0;
+    out.push(
+      ok
+        ? L(`MCP server in ${a.nombre} registered again with ${cmd}: open ${a.nombre} again so it picks it up.`, `Servidor MCP en ${a.nombre} registrado de nuevo con ${cmd}: abrí ${a.nombre} de nuevo para que lo tome.`)
+        : L(`Could not register the MCP server in ${a.nombre} again: run  ${m.correr}`, `No pude volver a registrar el servidor MCP en ${a.nombre}: corré  ${m.correr}`),
+    );
+  };
+
+  // Claude Code: la entrada de usuario (`mcpServers` de primer nivel); la de un proyecto no se toca.
+  const claude = await readFile(configs.claude, "utf8").then((t) => JSON.parse(t) as Record<string, unknown>, () => null);
+  const usuario = (claude?.["mcpServers"] as Record<string, { command?: string; args?: string[] }> | undefined)?.["flowbrain"];
+  if (usuario) {
+    if (![usuario.command ?? "", ...(usuario.args ?? [])].join(" ").includes(tokens.join(" "))) registrar(AGENTES[0]!);
+  } else if (claude && (await mcpRegistrado([configs.claude])))
+    out.push(L("Claude Code has FlowBrain's MCP server registered only in a project: register it again from the menu (Connect an agent).", "Claude Code tiene el servidor MCP de FlowBrain registrado solo en un proyecto: registralo de nuevo desde el menú (Conectar un agente)."));
+
+  const codex = await readFile(configs.codex, "utf8").catch(() => "");
+  if (/^\s*\[mcp_servers\.(?:"?flowbrain"?)\]/m.test(codex) && !tokens.every((t) => codex.includes(t))) registrar(AGENTES[1]!);
+
+  for (const p of configs.opencode) {
+    const t = await readFile(p, "utf8").catch(() => "");
+    if (/"mcp"\s*:[\s\S]*"flowbrain"\s*:/.test(t) && !tokens.every((x) => t.includes(x))) {
+      const m = AGENTES[2]!.mcp(cmd);
+      if ("pegar" in m) out.push(L(`OpenCode is configured by hand: replace the flowbrain entry in ${p} with:\n${m.pegar}`, `OpenCode se configura a mano: reemplazá la entrada flowbrain de ${p} por:\n${m.pegar}`));
+    }
+  }
+  return out;
 }
