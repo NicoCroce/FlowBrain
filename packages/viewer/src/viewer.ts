@@ -361,7 +361,6 @@ button.pestana { border-top: 0; border-left: 0; border-right: 0; background: non
 .fd-plan h2 { margin: 0; }
 .fd-casillas { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .fd-casilla { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--claro); cursor: pointer; } .fd-casilla small { color: var(--suave); }
-.fd-linea-plan { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; } .fd-linea-plan .fd-campo { width: 260px; }
 .fd-texto { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--campo-borde); border-radius: 10px; background: var(--campo-fondo); color: var(--claro); font: 400 12px/1.5 var(--mono); resize: vertical; }
 .fd-cadena { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .fd-es { padding: 2px 9px; border: 1px solid var(--borde); border-radius: 8px; font-size: 12px; white-space: nowrap; }

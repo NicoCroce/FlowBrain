@@ -3,9 +3,9 @@ import { readdirSync, realpathSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ConsultaError, leerRegistro, type Registro } from "@flowbrain/core";
+import { ConsultaError, leerRegistro, SIGNALS, type Registro, type Signal } from "@flowbrain/core";
 import { aplicarCerebro, htmlDelVisor } from "./cerebros.js";
-import { crearAgente, esTipoDePagina, TIPOS_DE_PEDIDO, type Agente, type ArchivoDePedido, type ItemDePagina, type ReglaDePedido, type TipoDePedido } from "./agente.js";
+import { crearAgente, esTipoDePagina, TIPOS_DE_PEDIDO, type Agente, type ArchivoDeFidelidad, type ArchivoDePedido, type ItemDePagina, type ReglaDePedido, type TipoDePedido } from "./agente.js";
 import { codigoDeArchivo, detalleDeArchivo, editar, type Edicion } from "./edicion.js";
 import { L } from "./idioma.js";
 import { VERSION } from "./init.js";
@@ -161,12 +161,12 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
     }
     if (req.method === "GET" && url.pathname === "/api/agente") return { json: { noDisponible: agente.noDisponible(), proveedores: agente.proveedores(), trabajos: agente.lista(), lotes: agente.lotes() } };
     if (req.method === "POST" && url.pathname === "/api/agente/lote") {
-      // Un lote: reglas a testear (Especificaciones, `tipo` test o sin tipo), archivos a asociar (Sin asociar) o
-      // funcionalidades, casos y reglas a agrupar, escribir o corregir (Especificaciones). Todos con los mismos límites:
-      // hasta 3000 y 2 MB.
+      // Un lote: reglas a testear (Especificaciones, `tipo` test o sin tipo), archivos a asociar (Sin asociar),
+      // funcionalidades, casos y reglas a agrupar, escribir o corregir (Especificaciones) o archivos a llevar a 100
+      // (Fidelidad). Todos con los mismos límites: hasta 3000 y 2 MB.
       const b = await cuerpoJson(req, 2 * 1024 * 1024);
       const tipo = b["tipo"] ?? "test", proveedor = b["proveedor"], modelo = b["modelo"];
-      if (tipo !== "test" && tipo !== "asociar" && !esTipoDePagina(tipo)) throw new ErrorHttp(400, `unknown batch type: ${String(tipo)}`);
+      if (tipo !== "test" && tipo !== "asociar" && tipo !== "fidelidad" && !esTipoDePagina(tipo)) throw new ErrorHttp(400, `unknown batch type: ${String(tipo)}`);
       if ((proveedor !== undefined && typeof proveedor !== "string") || (modelo !== undefined && typeof modelo !== "string")) throw new ErrorHttp(400, "proveedor and modelo must be text");
       const elegido = { ...(proveedor ? { proveedor } : {}), ...(modelo ? { modelo } : {}) };
       if (tipo === "asociar") {
@@ -184,6 +184,26 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
         const no = agente.noDisponible();
         if (no) throw new ErrorHttp(409, no);
         return { json: agente.encolarLote({ tipo: "asociar", archivos: validos, ...elegido }) };
+      }
+      if (tipo === "fidelidad") {
+        const archivos = b["archivos"];
+        if (!Array.isArray(archivos) || !archivos.length || archivos.length > 3000) throw new ErrorHttp(400, "archivos must be a list of 1 to 3000 files");
+        const vistos = new Set<string>();
+        // Cada falta: una relación conocida, qué pasa (una línea de texto) y sus líneas del archivo.
+        const tarea = (t: Record<string, unknown>) =>
+          !!t && SIGNALS.includes(t["signal"] as Signal) && typeof t["que"] === "string" && !!t["que"].trim() && t["que"].length <= 600 && !/\n/.test(t["que"]) &&
+          Array.isArray(t["lineas"]) && t["lineas"].length <= 500 && t["lineas"].every((l) => Number.isInteger(l) && (l as number) > 0);
+        const validos: ArchivoDeFidelidad[] = archivos.map((x: Record<string, unknown>) => {
+          const { cerebro, archivo, puntaje, tareas } = x ?? {};
+          if (typeof cerebro !== "string" || !registro.cerebro(cerebro) || typeof archivo !== "string" || !/^[^:\s]+:[^\n]+$/.test(archivo) || archivo.length > 1000 ||
+            typeof puntaje !== "number" || !(puntaje >= 0 && puntaje <= 100) || !Array.isArray(tareas) || !tareas.length || tareas.length > 50 || !tareas.every(tarea)) throw new ErrorHttp(400, `invalid file: ${JSON.stringify(x).slice(0, 160)}`);
+          if (vistos.has(`${cerebro}|${archivo}`)) throw new ErrorHttp(400, `repeated file: ${cerebro} ${archivo}`);
+          vistos.add(`${cerebro}|${archivo}`);
+          return { cerebro, archivo, puntaje, tareas: (tareas as Array<Record<string, unknown>>).map((t) => ({ signal: t["signal"] as Signal, que: (t["que"] as string).trim(), lineas: t["lineas"] as number[] })) };
+        });
+        const no = agente.noDisponible();
+        if (no) throw new ErrorHttp(409, no);
+        return { json: agente.encolarLote({ tipo: "fidelidad", archivos: validos, ...elegido }) };
       }
       if (esTipoDePagina(tipo)) {
         const items = b["items"];

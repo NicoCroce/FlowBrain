@@ -2,8 +2,10 @@
  * "Fidelidad" (`#/fidelidad`): qué tan entendido quedó cada archivo por el índice, de 0 a 100, y qué hacer para
  * llevarlo a 100. Cada fila se explica sola: la cadena de trazabilidad (qué eslabón quedó unido, cuál se corta y cuál
  * no aplica), y por cada cosa que falta, qué pasa, qué hacer y quién lo resuelve. Lo que se resuelve con un dato que
- * una persona conoce se hace ahí mismo (si la página la sirve `flowbrain viewer --serve`); lo demás va a un plan en
- * texto para pegarle a un modelo. La estadística y los filtros están siempre a la vista. Un vacío siempre dice por qué.
+ * una persona conoce se hace ahí mismo (si la página la sirve `flowbrain viewer --serve`); lo demás se suma al pedido
+ * al agente, el componente único del visor (`window.brainPedido`, dec. 231): «Pedir» en cada archivo o «Pedir los N de
+ * la lista», con las relaciones marcadas, y de ahí sale en lote (o como .md). La estadística y los filtros están
+ * siempre a la vista. Un vacío siempre dice por qué.
  * JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
 export const FIDELIDAD_JS = String.raw`
@@ -55,10 +57,10 @@ export const FIDELIDAD_JS = String.raw`
   var S = null, fl = null;
   // Edición: solo cuando la página la sirve flowbrain viewer --serve.
   var ED = window.FLOWBRAIN_EDICION || null;
-  // abierto: { a: archivo, que: "llamadas" | "http" }. MSG: { a, texto, ... }. PEDIDO: archivo con su plan a la vista.
-  var abierto = null, DET = null, MSG = null, ocupado = false, PEDIDO = null;
-  // El plan de la lista: qué relaciones entran y cuántos archivos.
-  var PL = { abierto: false, signals: {}, limite: 40, copiado: false };
+  // abierto: { a: archivo, que: "llamadas" | "http" }. MSG: { a, texto, ... }.
+  var abierto = null, DET = null, MSG = null, ocupado = false;
+  // El pedido al agente: el componente único del visor (viewer-pedido). TANDA: los archivos de una tanda del lote en el servidor.
+  var PD = window.brainPedido, TANDA = 10;
 
   var plural = function (n, uno, varios) { return num(n) + " " + (n === 1 ? uno : varios); };
   var archivos = function (n) { return plural(n, L("file", "archivo"), L("files", "archivos")); };
@@ -70,6 +72,9 @@ export const FIDELIDAD_JS = String.raw`
     var c = cerebroDe(x), a = c && x.a.indexOf(c + "/") === 0 ? x.a.slice(c.length + 1) : x.a, i = a.indexOf(":");
     return { repo: i < 0 ? "" : a.slice(0, i), ruta: i < 0 ? a : a.slice(i + 1) };
   };
+  // El id que conoce el servidor: "repo-x:src/a.ts", sin el cerebro.
+  var idServidor = function (x) { var p = partes(x); return p.repo + ":" + p.ruta; };
+  var porArchivo = function (a) { for (var i = 0; i < filas.length; i++) if (filas[i].a === a) return filas[i]; return null; };
   var nombreFeat = function (id) { return porId[id] ? porId[id].n : id; };
   // en: el plan para el modelo va siempre en inglés; lo visible sigue al idioma.
   var lineas = function (ls, en) { return ls.length > 6 ? "L" + ls.slice(0, 6).join(", L") + (en ? " and " + (ls.length - 6) + " more" : L(" and " + (ls.length - 6) + " more", " y " + (ls.length - 6) + " más")) : "L" + ls.join(", L"); };
@@ -81,7 +86,6 @@ export const FIDELIDAD_JS = String.raw`
   // El grupo de fidelidad incierta no tiene puntaje: los paneles lo ignoran y miden los archivos con los demás filtros.
   // Cada panel cuenta los archivos que pasan todos los filtros menos el suyo (el rango en el reparto, el cerebro en
   // "Por cerebro", la signal en "por signal"): así refleja la lista y sigue sirviendo para elegir otra barra.
-  var campo = function (id, etiqueta, html) { return '<label class="fd-campo" for="' + id + '"><span class="lbl">' + etiqueta + "</span>" + html + "</label>"; };
   var porCantidad = function (m) { return Object.keys(m).sort(function (a, b) { return m[b] - m[a] || (a < b ? -1 : 1); }); };
   function contar(clave) {
     var m = {};
@@ -167,7 +171,6 @@ export const FIDELIDAD_JS = String.raw`
       var p = promedio(filas), completos = filas.filter(function (x) { return x.p === 100; }).length;
       return [[p === null ? "—" : String(p), L("average score of what was measured", "puntaje promedio de lo medido"), p === null ? "" : tono(p)], [filas.length, L("files measured", "archivos medidos")], [completos, L("at 100", "en 100")], [filas.length - completos, L("with something to complete", "con algo por completar")], [INC.length, L("of uncertain fidelity", "de fidelidad incierta")]];
     },
-    acciones: function () { return '<button type="button" class="boton' + (PL.abierto ? " on" : "") + '" data-acc="plan">' + L("Generate plan for the agent", "Generar plan para el agente") + "</button>"; },
     alCambiar: function (todo) { refrescar(todo); }
   };
   // Los textos fijos del filtro, en el idioma actual. Se cambian en el mismo objeto (y la misma lista de unidad), que el
@@ -207,57 +210,117 @@ export const FIDELIDAD_JS = String.raw`
 
   function herramientas() { return fl.html(); }
 
-  // ---------- Plan para el agente ----------
-  // El mismo texto que arma flowbrain fidelity --plan: reglas, cómo se resuelve cada cosa, archivos con sus tareas y cierre.
-  // Es una instrucción para el modelo: va siempre en inglés, sin importar el idioma del visor.
-  function textoDelPlan(xs, quiere, limite) {
-    var con = xs.map(function (x) { return { x: x, t: x.t.filter(function (t) { return !quiere || quiere[t[0]]; }) }; }).filter(function (e) { return e.t.length; });
-    con.sort(function (a, b) { return a.x.p - b.x.p || (a.x.a < b.x.a ? -1 : 1); });
+  // ---------- El tipo «fidelidad» del pedido al agente (viewer-pedido, dec. 231) ----------
+  // Un ítem por archivo, con las faltas de las relaciones marcadas en las casillas:
+  // { tipo: "fidelidad", k: el archivo como lo ve el visor, cerebro, repo, datos: { a, cerebro, archivo, p, t: [[relación, qué pasa, líneas]] } }.
+  // Las casillas: qué relaciones se piden (todas, salvo las que se desmarquen).
+  var PL = { signals: {} };
+  var pide = function (s) { return PL.signals[s] !== false; };
+  // Las faltas de un archivo que se piden: las de las relaciones marcadas (sigs: las de un ítem ya pedido, al ponerlo al día).
+  var faltasPedidas = function (x, sigs) { return x.t.filter(function (t) { return sigs ? sigs.indexOf(t[0]) >= 0 : pide(t[0]); }).map(function (t) { return [t[0], t[2], t[4]]; }); };
+  function entradaDe(x, sigs) {
+    var p = partes(x);
+    return { tipo: "fidelidad", k: x.a, cerebro: cerebroDe(x), repo: p.repo, datos: { a: x.a, cerebro: cerebroDe(x), archivo: idServidor(x), p: x.p, t: faltasPedidas(x, sigs) } };
+  }
+  var claveServidor = function (d) { return d.cerebro + "|" + d.archivo; };
+  // El texto para cualquier agente: el mismo plan que arma flowbrain fidelity --plan (reglas, cómo se resuelve cada cosa,
+  // archivos con sus faltas y cierre; cada tanda del lote lo arma el servidor con planDeFidelidad). Es una instrucción
+  // para el modelo: va siempre en inglés, sin importar el idioma del visor. ds: los datos de los ítems.
+  function textoDelPlan(ds) {
+    var con = ds.filter(function (d) { return d.t.length; }).sort(function (a, b) { return a.p - b.p || (a.a < b.a ? -1 : 1); });
     if (!con.length) return "";
-    var elegidos = con.slice(0, limite);
-    var usadas = ORDEN_SIGNAL.filter(function (s) { return elegidos.some(function (e) { return e.t.some(function (t) { return t[0] === s; }); }); });
+    var usadas = ORDEN_SIGNAL.filter(function (s) { return con.some(function (d) { return d.t.some(function (t) { return t[0] === s; }); }); });
     var out = ["# Fidelity plan", "",
-      "Goal: bring the fidelity score of " + elegidos.length + " " + (elegidos.length === 1 ? "file" : "files") + " in the FlowBrain index to 100 (today they average " + promedio(elegidos.map(function (e) { return e.x; })) + "). The score measures how much of what is in each file ended up linked in the graph."];
-    if (con.length > elegidos.length) out.push("", "This plan brings the " + elegidos.length + " with the lowest score; " + (con.length - elegidos.length) + " more remain for another batch.");
+      "Goal: bring the fidelity score of " + con.length + " " + (con.length === 1 ? "file" : "files") + " in the FlowBrain index to 100 (today they average " + promedio(con) + "). The score measures how much of what is in each file ended up linked in the graph."];
     if (CEREBROS.length > 1) out.push("", "Each file is given as brain/repo:path. What you declare goes in that brain's folder.");
     out.push("", "## Rules", "");
     F.plan.reglas.forEach(function (r) { out.push("- " + r); });
     out.push("", "## How to resolve each thing", "");
     usadas.forEach(function (s) { out.push("- **" + s + "**: " + F.plan.como[s]); });
     out.push("", "## Files");
-    elegidos.forEach(function (e) {
-      out.push("", "### " + e.x.a + " (" + e.x.p + "/100)");
-      e.t.forEach(function (t) { out.push("- [ ] " + t[0] + ": " + t[2] + (t[4].length ? " (" + lineas(t[4], true) + ")" : "") + "."); });
+    con.forEach(function (d) {
+      out.push("", "### " + d.a + " (" + d.p + "/100)");
+      d.t.forEach(function (t) { out.push("- [ ] " + t[0] + ": " + t[1] + (t[2].length ? " (" + lineas(t[2], true) + ")" : "") + "."); });
     });
     out.push("", "## When done", "");
     F.plan.cierre.forEach(function (c, i) { out.push((i + 1) + ". " + c); });
     return out.join("\n") + "\n";
   }
-  function copiar(texto, listo) {
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(texto).then(function () { listo(true); }, function () { listo(false); }); return; }
-    } catch (e) { /* sin portapapeles */ }
-    listo(false);
+  // Lo que suma cada botón celeste, según su data-k: «a|<archivo>» o «l|» (la lista filtrada). Solo los que tienen
+  // alguna falta de las relaciones marcadas.
+  function xsDeBoton(k, memo) {
+    if (!k) return [];
+    var xs = k.indexOf("a|") === 0 ? [porArchivo(k.slice(2))].filter(Boolean) : k === "l|" ? (memo ? memo.l || (memo.l = filtradas()) : filtradas()) : [];
+    return xs.filter(function (x) { return faltasPedidas(x).length; });
   }
-  var cajaDeTexto = function (id, texto) { return '<textarea id="' + id + '" class="fd-texto" readonly rows="12" aria-label="' + L("Plan for the agent", "Plan para el agente") + '">' + esc(texto) + "</textarea>"; };
-  var notaCopia = function (copiado) { return copiado === true ? '<span class="fd-ok">' + L("Copied. Paste it into your agent.", "Copiado. Pegalo en tu agente.") + "</span>" : copiado === "no" ? '<span class="fd-nota">' + L("Could not copy automatically: select the text and copy it.", "No se pudo copiar solo: seleccioná el texto y copialo.") + "</span>" : ""; };
-  function planDeLista() {
-    if (!PL.abierto) return "";
-    var xs = filtradas(), presentes = ORDEN_SIGNAL.filter(function (s) { return xs.some(function (x) { return x.t.some(function (t) { return t[0] === s; }); }); });
-    if (!presentes.length) return '<div class="fd-plan"><p class="aviso">' + L("No plan to build: no file in the list has anything to resolve. Switch group or remove filters.", "No hay plan que armar: ningún archivo de la lista tiene algo por resolver. Cambiá de grupo o quitá filtros.") + "</p></div>";
-    var quiere = {};
-    presentes.forEach(function (s) { quiere[s] = PL.signals[s] !== false; });
-    var texto = textoDelPlan(xs, quiere, PL.limite);
+  var botonSumar = function (k, xs, et) { return PD.boton({ tipo: "fidelidad", k: k, et: et, claves: xs.map(function (x) { return x.a; }) }); };
+  // Cuántas tandas arma el servidor: por cerebro y repo, de hasta TANDA archivos.
+  function tandasDeLista(ds) {
+    var g = {}, n = 0;
+    ds.forEach(function (d) { var k = d.cerebro + "|" + d.archivo.split(":")[0]; g[k] = (g[k] || 0) + 1; });
+    Object.keys(g).forEach(function (k) { n += Math.ceil(g[k] / TANDA); });
+    return n;
+  }
+  var cifrasLote = function (c, p) { return L(num(c) + " without the requested gaps · " + num(p) + " with gaps left", plural(c, "sin las faltas pedidas", "sin las faltas pedidas") + " · " + plural(p, "con faltas todavía", "con faltas todavía")); };
+  var cuentaDe = function (ts, k) { return ts.reduce(function (n, t) { return n + (t[k] || []).length; }, 0); };
+  if (F) PD.registrar("fidelidad", {
+    get nombre() { return L("Files to bring to 100", "Archivos a llevar a 100"); },
+    unidad: ["file", "files", "archivo", "archivos"],
+    raiz: raiz,
+    claves: function (k, memo) { return xsDeBoton(k, memo).map(function (x) { return x.a; }); },
+    items: function (k) { return xsDeBoton(k).map(function (x) { return entradaDe(x); }); },
+    repintar: function () { if (document.getElementById("fd-lista")) pintarLista(); },
+    orden: function (a, b) { return a.datos.p - b.datos.p || (a.k < b.k ? -1 : 1); },
+    resumen: function (es) {
+      var n = es.reduce(function (s, e) { return s + e.datos.t.length; }, 0), ds = es.map(function (e) { return e.datos; });
+      return [L(plural(n, "gap", "gaps") + " to resolve · average score " + promedio(ds), plural(n, "falta", "faltas") + " por resolver · puntaje promedio " + promedio(ds)),
+        PD.agente && es.length ? L("In " + plural(tandasDeLista(ds), "batch", "batches") + " of up to " + TANDA + " files of the same repo; after each one, the brain is reindexed and the score measured", "En " + plural(tandasDeLista(ds), "tanda", "tandas") + " de hasta " + TANDA + " archivos de un mismo repo; después de cada una se reindexa el cerebro y se mide el puntaje") : ""];
+    },
+    costo: function (mo) { return typeof mo.costoPorFidelidadUsd === "number" ? mo.costoPorFidelidadUsd : null; },
+    lote: function (es) {
+      return { tipo: "fidelidad", archivos: es.map(function (e) { var d = e.datos; return { cerebro: d.cerebro, archivo: d.archivo, puntaje: d.p, tareas: d.t.map(function (t) { return { signal: t[0], que: t[1], lineas: t[2] }; }) }; }) };
+    },
+    md: { archivo: "fidelity-plan.md", texto: function (es) { return textoDelPlan(es.map(function (e) { return e.datos; })); } },
+    clave: function (it) { return claveServidor(it.datos); },
+    enTanda: function (t) { return (t.archivos || []).map(claveServidor); },
+    hechos: function (t) { return (t.completados || []).map(claveServidor); },
+    seguimiento: {
+      cuantos: function (t) { return (t.archivos || []).length; },
+      get espera() { return L("Waits for the previous batch of this brain to finish.", "Espera a que termine la tanda anterior de este cerebro."); },
+      get reindexando() { return L("Finishing…", "Terminando…"); },
+      pidiendo: function (n, repos) { return L("Bringing " + plural(n, "file", "files") + " to 100 in " + plural(repos, "repo", "repos"), "Llevando " + plural(n, "archivo", "archivos") + " a 100 en " + plural(repos, "repo", "repos")); },
+      extraTanda: function (t) {
+        if (PD.vivo(t) || (!t.completados && !t.pendientes)) return "";
+        return "<small>" + cifrasLote((t.completados || []).length, (t.pendientes || []).length) + "</small>" +
+          (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
+      },
+      resumen: function (ts) {
+        var p = cuentaDe(ts, "pendientes");
+        return cifrasLote(cuentaDe(ts, "completados"), p) + (p ? L(" (what is left stays in the list: each batch says why)", " (lo que quedó sigue en la lista: cada tanda dice por qué)") : "");
+      }
+    },
+    // La tarjeta: el archivo, su puntaje, qué le falta (por relación, con sus líneas) y el cerebro.
+    tarjeta: function (it, enTanda) {
+      var d = it.datos, x = porArchivo(d.a), ps = x ? partes(x) : { ruta: d.archivo, repo: "" };
+      var faltas = d.t.map(function (t) { return '<span class="chip" title="' + esc(t[1]) + '">' + esc(SIGNAL(t[0])) + (t[2].length ? " · " + lineas(t[2]) : "") + "</span>"; }).join("");
+      return '<p class="es-texto"><code>' + esc(ps.ruta) + "</code>" + (ps.repo ? " <small>" + esc(ps.repo) + "</small>" : "") + "</p>" +
+        '<div class="chips"><span class="chip" style="color:' + tono(d.p) + ";border-color:" + tono(d.p) + '" title="' + L("Fidelity score", "Puntaje de fidelidad") + '">' + d.p + "/100</span>" + faltas +
+        (CEREBROS.length > 1 ? '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(d.cerebro) + "</span>" : "") +
+        (enTanda ? '<span class="chip es-ok">' + L("Resolving…", "Resolviéndose…") + "</span>" : "") + "</div>";
+    }
+  });
+  // Arriba de la lista: qué relaciones pedir y «Pedir los N de la lista».
+  function barraDePedido(xs) {
+    var presentes = ORDEN_SIGNAL.filter(function (s) { return xs.some(function (x) { return x.t.some(function (t) { return t[0] === s; }); }); });
+    if (!presentes.length) return "";
     var casillas = presentes.map(function (s) {
       var n = xs.filter(function (x) { return x.t.some(function (t) { return t[0] === s; }); }).length;
-      return '<label class="fd-casilla" title="' + esc(MIDE(s)) + '"><input type="checkbox" id="fd-pl-s-' + s + '"' + (quiere[s] ? " checked" : "") + "> " + SIGNAL(s) + " <small>" + num(n) + "</small></label>";
+      return '<label class="fd-casilla" title="' + esc(MIDE(s)) + '"><input type="checkbox" id="fd-pl-s-' + s + '"' + (pide(s) ? " checked" : "") + "> " + SIGNAL(s) + " <small>" + num(n) + "</small></label>";
     }).join("");
-    return '<div class="fd-plan"><h2>' + L("Plan for the agent", "Plan para el agente") + "</h2>" +
-      '<p class="fd-nota">' + L("Builds a text with what the files in the list below are missing and how to resolve each thing. Paste it into your agent (Claude Code or another): with the code and the MCP at hand, it does the work and tells you what reached 100.", "Arma un texto con lo que les falta a los archivos de la lista de abajo y cómo se resuelve cada cosa. Pegalo en tu agente (Claude Code u otro): con el código y el MCP a mano, hace el trabajo y te dice qué quedó en 100.") + "</p>" +
-      '<div class="fd-casillas"><span class="lbl">' + L("Which relationships to complete", "Qué relaciones completar") + "</span>" + casillas + "</div>" +
-      '<div class="fd-linea-plan">' + campo("fd-pl-n", L("How many files, lowest score first", "Cuántos archivos, de menor a mayor"), '<input id="fd-pl-n" type="number" min="1" max="500" step="1" value="' + PL.limite + '">') +
-      '<button type="button" class="boton pri" data-acc="copiar-plan"' + (texto ? "" : " disabled") + ">" + L("Copy plan", "Copiar plan") + "</button>" + notaCopia(PL.copiado) + "</div>" +
-      (texto ? cajaDeTexto("fd-pl-texto", texto) : '<p class="aviso">' + L("Check at least one relationship to build the plan.", "Marcá al menos una relación para armar el plan.") + "</p>") + "</div>";
+    var con = xs.filter(function (x) { return faltasPedidas(x).length; });
+    return '<div class="fd-plan"><div class="fd-casillas"><span class="lbl">' + L("Which relationships to request", "Qué relaciones pedir") + "</span>" + casillas + "</div>" +
+      '<div class="fd-hacer">' + (con.length ? botonSumar("l|", con, con.length === 1 ? L("Request it", "Pedirlo") : L("Request the " + num(con.length) + " in the list", "Pedir los " + num(con.length) + " de la lista")) : "") +
+      "<small>" + (con.length ? L("With the files in the list below, filters applied: the agent declares what is missing in the brain's folder, and the score is measured again.", "Con los archivos de la lista de abajo, con los filtros aplicados: el agente declara lo que falta en la carpeta del cerebro y se vuelve a medir el puntaje.") : L("Check at least one relationship to request the files.", "Marcá al menos una relación para pedir los archivos.")) + "</small></div></div>";
   }
 
   // ---------- Lista ----------
@@ -285,7 +348,6 @@ export const FIDELIDAD_JS = String.raw`
   function fila(x) {
     var p = partes(x), c = cerebroDe(x);
     var msg = MSG && MSG.a === x.a ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + (MSG.aplicar ? ' <button type="button" class="boton" data-acc="aplicar" data-cerebro="' + esc(MSG.aplicar) + '">' + L("Reindex " + esc(MSG.aplicar) + " now", "Reindexar " + esc(MSG.aplicar) + " ahora") + "</button>" : "") + (MSG.recargar ? ' <button type="button" class="boton" data-acc="recargar">' + L("See the new score", "Ver el puntaje nuevo") + "</button>" : "") + "</p>" : "";
-    var pedido = PEDIDO && PEDIDO.a === x.a ? '<div class="fd-ed">' + '<p class="fd-nota">' + L("Paste this text into your agent so it resolves what this file needs.", "Pegale este texto a tu agente para que resuelva lo de este archivo.") + (PEDIDO.copiado ? " " + notaCopia(PEDIDO.copiado) : "") + "</p>" + cajaDeTexto("fd-pedido", textoDelPlan([x], null, 1)) + "</div>" : "";
     return '<li class="fd-fila">' +
       '<span class="fd-p" style="color:' + tono(x.p) + ";border-color:" + tono(x.p) + '">' + x.p + "</span>" +
       '<div class="fd-cuerpo"><div class="fd-ruta"><code>' + esc(p.ruta) + "</code>" + (p.repo ? " <small>" + esc(p.repo) + "</small>" : "") + "</div>" +
@@ -294,15 +356,13 @@ export const FIDELIDAD_JS = String.raw`
       cadena(x) +
       (x.t.length ? x.t.map(function (t) { return tarea(x, t); }).join("") : '<p class="fd-ok">' + L("Complete: everything the index saw here is linked.", "Completo: todo lo que el índice vio acá quedó unido.") + "</p>") +
       msg +
-      (x.t.length ? '<div><button type="button" class="boton' + (PEDIDO && PEDIDO.a === x.a ? " on" : "") + '" data-acc="pedido" data-a="' + esc(x.a) + '">' + L("Copy request for the agent", "Copiar pedido para el agente") + "</button></div>" + pedido : "") +
+      (faltasPedidas(x).length ? '<div class="fd-hacer">' + botonSumar("a|" + x.a, [x], L("Request", "Pedir")) + "<small>" + L("Adds what it is missing to the request to the agent", "Suma lo que le falta al pedido al agente") + "</small></div>" : "") +
       "</div></li>";
   }
 
   // ---------- Edición ----------
-  var idServidor = function (x) { var p = partes(x); return p.repo + ":" + p.ruta; };
   // "cerebro/feat-x" → "feat-x": el servidor conoce los ids del cerebro, sin el prefijo del visor.
   var idLocal = function (x, id) { var c = cerebroDe(x); return c && id.indexOf(c + "/") === 0 ? id.slice(c.length + 1) : id; };
-  var porArchivo = function (a) { for (var i = 0; i < filas.length; i++) if (filas[i].a === a) return filas[i]; return null; };
   function pedir(metodo, ruta, cuerpo) {
     return fetch(ruta, { method: metodo, headers: cuerpo ? { "content-type": "application/json", "x-flowbrain-token": ED.token } : { "x-flowbrain-token": ED.token }, body: cuerpo ? JSON.stringify(cuerpo) : undefined })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || L("the server responded ", "el servidor respondió ") + r.status); return j; }); });
@@ -320,11 +380,11 @@ export const FIDELIDAD_JS = String.raw`
         var destino = l.candidatos.length
           ? '<select id="fd-l-' + l.linea + '" aria-label="' + L("Which method it goes to", "A qué método va") + '">' + l.candidatos.map(function (k) { var i = k.lastIndexOf("#"); return '<option value="' + esc(k) + '">' + esc(k.slice(i + 1)) + " · " + esc(k.slice(k.indexOf(":") + 1, i)) + "</option>"; }).join("") + "</select>"
           : '<input id="fd-l-' + l.linea + '" type="search" placeholder="' + L("repo:path/File.ext#Class.method", "repo:ruta/Archivo.ext#Clase.metodo") + '" aria-label="' + L("Which method it goes to", "A qué método va") + '" autocomplete="off">';
-        return '<div class="fd-pregunta">' + donde + (l.candidatos.length ? "" : '<p class="fd-nota">' + L("The index found no candidates with that name: write it, or leave it to the agent with «Copy request».", "El índice no encontró candidatos con ese nombre: escribilo, o dejáselo al agente con «Copiar pedido».") + "</p>") + '<div class="fd-linea">' + destino + '<button type="button" class="boton" data-acc="declarar-llamada" data-linea="' + l.linea + '">' + L("Declare", "Declarar") + "</button></div></div>";
+        return '<div class="fd-pregunta">' + donde + (l.candidatos.length ? "" : '<p class="fd-nota">' + L("The index found no candidates with that name: write it, or leave it to the agent with «Request».", "El índice no encontró candidatos con ese nombre: escribilo, o dejáselo al agente con «Pedir».") + "</p>") + '<div class="fd-linea">' + destino + '<button type="button" class="boton" data-acc="declarar-llamada" data-linea="' + l.linea + '">' + L("Declare", "Declarar") + "</button></div></div>";
       }).join("") : '<p class="fd-nota">' + L("No unresolved calls left in this file.", "Ya no quedan llamadas sin resolver en este archivo.") + "</p>";
     } else {
       html = DET.http.length ? DET.http.map(function (h) {
-        if (!h.desde) return '<p class="fd-nota">L' + h.linea + ": " + L("it is not inside a function, so it cannot be declared here. Leave it to the agent with «Copy request».", "no está dentro de una función, así que no se puede declarar acá. Dejáselo al agente con «Copiar pedido».") + "</p>";
+        if (!h.desde) return '<p class="fd-nota">L' + h.linea + ": " + L("it is not inside a function, so it cannot be declared here. Leave it to the agent with «Request».", "no está dentro de una función, así que no se puede declarar acá. Dejáselo al agente con «Pedir».") + "</p>";
         return '<div class="fd-pregunta"><p class="fd-donde">L' + h.linea + " · " +
           L("in <code>" + esc(h.desde) + "</code> there is a <code>" + esc(h.metodo) + "</code>" + (h.base ? " to <code>" + esc(h.base) + "</code>" : "") + ". Which route does it call?", "en <code>" + esc(h.desde) + "</code> hay un <code>" + esc(h.metodo) + "</code>" + (h.base ? " a <code>" + esc(h.base) + "</code>" : "") + ". ¿A qué ruta llama?") + '</p><div class="fd-linea">' +
           '<input id="fd-h-r-' + h.linea + '" type="search" placeholder="' + L("/orders/{id}", "/pedidos/{id}") + '" aria-label="' + L("Route", "Ruta") + '" autocomplete="off">' +
@@ -366,7 +426,7 @@ export const FIDELIDAD_JS = String.raw`
   var valor = function (id) { var e = elem(id); return e ? String(e.value || "").trim() : ""; };
   // Lo que se declaró y todavía no entró al índice: se dice arriba, con el botón para aplicarlo.
   function aviso(texto) {
-    if (!ED) return '<p class="aviso" id="fd-aviso">' + L("This page is read-only: you can see what is missing and build the plan for the agent. To resolve from here what depends on you, open it with <code>flowbrain viewer --serve</code>.", "Esta página es de solo lectura: podés ver qué falta y armar el plan para el agente. Para resolver desde acá lo que depende de vos, abrila con <code>flowbrain viewer --serve</code>.") + "</p>";
+    if (!ED) return '<p class="aviso" id="fd-aviso">' + L("This page is read-only: you can see what is missing and add it to the request to the agent (it goes out as a .md). To resolve from here what depends on you, or to send the request to the agent, open it with <code>flowbrain viewer --serve</code>.", "Esta página es de solo lectura: podés ver qué falta y sumarlo al pedido al agente (sale como .md). Para resolver desde acá lo que depende de vos, o para mandarle el pedido al agente, abrila con <code>flowbrain viewer --serve</code>.") + "</p>";
     if (texto) return '<p class="aviso" id="fd-aviso">' + esc(texto) + "</p>";
     if (!ED.sinAplicar || !ED.sinAplicar.length) return '<p class="aviso oculto" id="fd-aviso"></p>';
     return '<p class="aviso" id="fd-aviso">' + L("There are declarations saved in <code>calls.yaml</code> that are not in the index yet: ", "Hay declaraciones guardadas en <code>calls.yaml</code> que todavía no entraron al índice: ") +
@@ -406,9 +466,9 @@ export const FIDELIDAD_JS = String.raw`
   function lista() {
     if (S.grupo === "incierta") return listaIncierta();
     var xs = filtradas();
-    if (!xs.length) return planDeLista() + fl.vacio(filas.length, [L("measured file", "archivo medido"), L("measured files", "archivos medidos")]);
+    if (!xs.length) return fl.vacio(filas.length, [L("measured file", "archivo medido"), L("measured files", "archivos medidos")]);
     var visibles = xs.slice(0, S.ver);
-    return planDeLista() + fl.resultado(xs.length, L(" · average ", " · promedio ") + promedio(xs), '<button type="button" class="boton" data-acc="orden">' + (S.orden === "asc" ? L("Lowest first", "De menor a mayor") : L("Highest first", "De mayor a menor")) + "</button>") +
+    return barraDePedido(xs) + fl.resultado(xs.length, L(" · average ", " · promedio ") + promedio(xs), '<button type="button" class="boton" data-acc="orden">' + (S.orden === "asc" ? L("Lowest first", "De menor a mayor") : L("Highest first", "De mayor a menor")) + "</button>") +
       '<ul class="lista fd-lista">' + visibles.map(fila).join("") + "</ul>" +
       (xs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="boton" data-acc="mas">' + L("Show " + Math.min(PASO, xs.length - visibles.length) + " more", "Mostrar " + Math.min(PASO, xs.length - visibles.length) + " más") + "</button> <small>" + L(num(visibles.length) + " visible of " + num(xs.length), plural(visibles.length, "visible", "visibles") + " de " + num(xs.length)) + "</small></p>" : "");
   }
@@ -433,8 +493,7 @@ export const FIDELIDAD_JS = String.raw`
     var sin = INC.length && S.grupo !== "incierta" ? '<p class="aviso">' + L(plural(INC.length, "file has uncertain fidelity", "files have uncertain fidelity") + ": there is no relationship to measure in them, so they have no score and are left out of the average.", plural(INC.length, "archivo tiene fidelidad incierta", "archivos tienen fidelidad incierta") + ": no hay en ellos ninguna relación para medir, así que no llevan puntaje ni entran al promedio.") + ' <button type="button" class="boton" data-fl="fd" data-grupo="incierta">' + L("See them", "Verlos") + "</button></p>" : "";
     raiz.innerHTML = "<h1>" + L("Fidelity", "Fidelidad") + "</h1>" + COMO() + aviso(null) + herramientas() + '<div id="fd-lista">' + lista() + "</div>" + sin;
   }
-  function refrescar(todo) { S.ver = PASO; PL.copiado = false; guardar(); if (todo) pintarTodo(); else { pintarGraficos(); pintarLista(); } }
-  var entero = function (v, def, min, max) { var n = parseInt(v, 10); return isNaN(n) ? def : Math.min(max, Math.max(min, n)); };
+  function refrescar(todo) { S.ver = PASO; guardar(); if (todo) pintarTodo(); else { pintarGraficos(); pintarLista(); } }
 
   raiz.addEventListener("click", function (ev) {
     if (fl.manejar(ev, "click")) return;
@@ -442,14 +501,7 @@ export const FIDELIDAD_JS = String.raw`
     if (!b) return;
     var acc = b.getAttribute("data-acc"), x = b.getAttribute("data-a") ? porArchivo(b.getAttribute("data-a")) : abierto ? porArchivo(abierto.a) : null;
     if (acc === "limpiar") { fl.limpiar(); return; }
-    if (acc === "plan") { PL.abierto = !PL.abierto; PL.copiado = false; pintarTodo(); return; }
-    if (acc === "copiar-plan") { copiar(valor("fd-pl-texto") || textoDelPlan(filtradas(), (function () { var q = {}; ORDEN_SIGNAL.forEach(function (s) { q[s] = PL.signals[s] !== false; }); return q; })(), PL.limite), function (ok) { PL.copiado = ok ? true : "no"; pintarLista(); }); return; }
-    if (acc === "pedido") {
-      if (PEDIDO && PEDIDO.a === x.a) { PEDIDO = null; pintarLista(); return; }
-      PEDIDO = { a: x.a, copiado: false }; pintarLista();
-      copiar(textoDelPlan([x], null, 1), function (ok) { if (PEDIDO && PEDIDO.a === x.a) { PEDIDO.copiado = ok ? true : "no"; pintarLista(); } });
-      return;
-    }
+    if (acc === "pedir") { PD.sumar("fidelidad", b.getAttribute("data-k")); return; }
     if (acc === "resolver") { resolver(x.a, b.getAttribute("data-que")); return; }
     if (acc === "recargar") { guardar(); location.reload(); return; }
     if (acc === "aplicar") { aplicar(b.getAttribute("data-cerebro")); return; }
@@ -461,11 +513,17 @@ export const FIDELIDAD_JS = String.raw`
   raiz.addEventListener("change", function (ev) {
     var id = ev.target.id || "";
     if (fl.manejar(ev, "change")) return;
-    if (id === "fd-pl-n") { PL.limite = entero(ev.target.value, 40, 1, 500); PL.copiado = false; pintarLista(); }
-    else if (id.indexOf("fd-pl-s-") === 0) { PL.signals[id.slice(8)] = !!ev.target.checked; PL.copiado = false; pintarLista(); }
+    if (id.indexOf("fd-pl-s-") === 0) { PL.signals[id.slice(8)] = !!ev.target.checked; pintarLista(); }
   });
   raiz.addEventListener("input", function (ev) { fl.manejar(ev, "input"); });
 
+  // Al cargar, con todo ya definido: lo que ya llegó a 100 (o ya no tiene las faltas pedidas) sale del pedido; lo que sigue, se pone al día.
+  if (F) PD.podar("fidelidad", function (it) {
+    var x = porArchivo(it.k);
+    if (!x || !it.datos || !Array.isArray(it.datos.t)) return null;
+    var sigs = it.datos.t.map(function (t) { return t[0]; }), y = entradaDe(x, sigs);
+    return y.datos.t.length ? y : null;
+  });
   window.brainFidelidad = { mostrar: pintarTodo };
 })();
 `;

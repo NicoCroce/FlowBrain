@@ -1,15 +1,21 @@
+import { resolveObjectURL } from "node:buffer";
 import { describe, expect, it } from "vitest";
 import { FIDELIDAD_JS } from "../src/viewer-fidelidad.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
+import { PEDIDO_JS } from "../src/viewer-pedido.js";
+
+const DEL_PEDIDO = new Set(["panel", "cerrar-panel", "quitar", "vaciar", "pedir-todos", "descargar-lista", "cancelar-lote", "cerrar-lote"]);
 
 /**
  * La pantalla Fidelidad es JavaScript plano que corre en el navegador. Acá se la corre con un DOM mínimo (elementos con
  * `innerHTML` y oyentes) para fijar lo que importa: qué lista, cómo filtra y qué dice cuando queda vacía.
  */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
-function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; lang?: "es"; guardado?: Map<string, string>; fetch?: (url: string, init: { method: string; body?: string; headers: Record<string, string> }) => Promise<unknown> } = {}) {
+function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; lang?: "es"; guardado?: Map<string, string>; local?: Map<string, string>; fetch?: (url: string, init: { method: string; body?: string; headers: Record<string, string> }) => Promise<unknown> } = {}) {
   const guardado = opciones.guardado ?? new Map<string, string>();
   const sessionStorage = { getItem: (k: string) => guardado.get(k) ?? null, setItem: (k: string, v: string) => void guardado.set(k, v) };
+  const local = opciones.local ?? new Map<string, string>();
+  const localStorage = { getItem: (k: string) => local.get(k) ?? null, setItem: (k: string, v: string) => void local.set(k, v) };
   const elementos = new Map<string, { innerHTML: string; oyentes: Record<string, Oyente>; addEventListener(t: string, f: Oyente): void }>();
   const el = (id: string) => {
     if (!elementos.has(id)) {
@@ -24,7 +30,12 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; l
   const window = { brainVisor: { D: datos, porId, esc }, brainFiltros: null as unknown, brainFidelidad: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion, ...(opciones.lang ? { brainI18n: { lang: opciones.lang } } : {}) };
   let recargas = 0;
   new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
-  new Function("window", "document", "sessionStorage", "fetch", "location", FIDELIDAD_JS)(window, { getElementById: el }, sessionStorage, opciones.fetch, { reload: () => void recargas++ });
+  // «Descargar .md»: el documento guarda lo que se baja.
+  const bajados: Array<{ nombre: string; texto: () => Promise<string> }> = [];
+  const documento = { getElementById: el, body: { appendChild() {}, removeChild() {} }, createElement: () => ({ href: "", download: "", click() { const h = this.href; bajados.push({ nombre: this.download, texto: () => resolveObjectURL(h)!.text() }); } }) };
+  // El pedido al agente: el componente único del visor, con su panel (#pedido-panel) y su bandeja (#pedido-bandeja).
+  new Function("window", "document", "localStorage", "fetch", PEDIDO_JS)(window, documento, localStorage, opciones.fetch);
+  new Function("window", "document", "sessionStorage", "fetch", "location", FIDELIDAD_JS)(window, documento, sessionStorage, opciones.fetch, { reload: () => void recargas++ });
   const raiz = el("fidelidad");
   // Al repintar la página entera, la lista va adentro: se la deja también en su elemento, como haría el navegador.
   let html = "";
@@ -47,7 +58,11 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; l
     rutas: () => [...el("fd-lista").innerHTML.matchAll(/<div class="fd-ruta"><code>([^<]+)<\/code>/g)].map((m) => m[1]),
     cambiar: (id: string, value: string) => raiz.oyentes["change"]!({ target: { id, value } }),
     escribir: (value: string) => raiz.oyentes["input"]!({ target: { id: "fd-q", value } }),
-    tocar: (attrs: Record<string, string>) => raiz.oyentes["click"]!({ target: boton(attrs) }),
+    // Los botones del pedido (panel y bandeja) son del componente; los demás, de la pantalla.
+    tocar: (attrs: Record<string, string>) => (DEL_PEDIDO.has(attrs["data-acc"] ?? "") ? el(attrs["data-acc"] === "panel" ? "pedido-bandeja" : "pedido-panel") : raiz).oyentes["click"]!({ target: boton(attrs) }),
+    panel: () => el("pedido-panel").innerHTML,
+    bandeja: () => el("pedido-bandeja").innerHTML,
+    bajados,
     // Del filtro compartido: un grupo o una barra de la estadística.
     grupo: (g: string) => raiz.oyentes["click"]!({ target: boton({ "data-fl": "fd", "data-grupo": g }) }),
     barra: (set: Record<string, string | number>) => raiz.oyentes["click"]!({ target: boton({ "data-fl": "fd", "data-fl-set": JSON.stringify(set) }) }),
@@ -228,34 +243,86 @@ describe("pantalla Fidelidad", () => {
     expect(montar(datos, { guardado }).rutas()).toEqual(["src/Servicio.php"]);
   });
 
-  it("plan para el agente: de los archivos de la lista, con las relaciones que se elijan", () => {
-    const v = montar(datos);
-    const plan = () => /<textarea id="fd-pl-texto"[^>]*>([\s\S]*?)<\/textarea>/.exec(v.lista())?.[1]?.replace(/&#(\d+);/g, (_, c: string) => String.fromCharCode(Number(c))) ?? "";
-    expect(v.lista()).not.toContain("fd-pl-texto");
-    v.tocar({ "data-acc": "plan" });
-    expect(plan()).toContain("Goal: bring the fidelity score of 2 files");
-    expect(plan()).not.toContain("suelto.ts");
-    expect(plan()).toContain("- [ ] llamadas: 1 llamada que no se sabe a qué método va (L6).");
-    expect(plan()).toContain("- **datos**: seguí flowbrain coverage --guide");
-    expect(plan()).toContain("1. Reindexá: flowbrain brains apply <cerebro>.");
-    expect(plan()).not.toContain("Pedidos.tsx");
-    // Se saca una relación: sus tareas y su explicación salen del plan.
+  it("pedido al agente: «Pedir» por archivo y «Pedir los N de la lista», con las relaciones marcadas, al panel único", async () => {
+    const local = new Map<string, string>();
+    const v = montar(datos, { local });
+    // Nada para copiar y pegar: ni textos ni botones de copiar.
+    expect(v.pagina()).not.toContain("<textarea");
+    expect(v.pagina()).not.toContain("Copy");
+    // Los dos archivos con faltas tienen su «Pedir»; arriba, las casillas y «Pedir los 2 de la lista».
+    expect(v.lista().match(/data-acc="pedir" data-tipo="fidelidad" data-k="a\|/g)).toHaveLength(2);
+    expect(v.lista()).toContain('data-k="l|" data-et="Request the 2 in the list"');
+    expect(v.lista()).toContain('id="fd-pl-s-http" checked');
+    // Sin HTTP marcado, api.ts (que solo tiene eso) ya no se pide.
     v.marcar("fd-pl-s-http", false);
-    expect(plan()).toContain("of 1 file ");
-    expect(plan()).not.toContain("src/api.ts");
-    expect(plan()).not.toContain("**http**");
+    expect(v.lista()).toContain('data-et="Request it"');
+    expect(v.lista().match(/data-k="a\|/g)).toHaveLength(1);
     v.marcar("fd-pl-s-http", true);
-    // El plan sigue a la lista: con un grupo puesto, solo sus archivos.
-    v.grupo("agente");
-    expect(plan()).toContain("of 1 file ");
-    v.cambiar("fd-pl-n", "1");
-    v.grupo("completos");
-    expect(v.lista()).toContain("No plan to build");
-    // Por archivo: el pedido de ese solo.
-    v.grupo("");
-    v.tocar({ "data-acc": "pedido", "data-a": "front/repo-web:src/api.ts" });
-    expect(v.lista()).toContain('<textarea id="fd-pedido"');
-    expect(v.lista()).toContain("### front/repo-web:src/api.ts (50/100)");
+    v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "a|front/repo-web:src/api.ts" });
+    expect(v.lista()).toContain("✔ In the request");
+    expect(v.bandeja()).toContain(">Request (1)</button>");
+    // La tarjeta: el archivo, su puntaje y lo que le falta.
+    expect(v.panel()).toContain("<code>src/api.ts</code> <small>repo-web</small>");
+    expect(v.panel()).toContain(">50/100</span>");
+    expect(v.panel()).toContain('title="1 llamada HTTP cuya ruta no se pudo leer">HTTP calls · L14</span>');
+    expect(v.panel()).toContain('data-acc="quitar" data-tipo="fidelidad" data-k="front/repo-web:src/api.ts"');
+    // La lista entera: suma lo que falta (Servicio.php, solo con lo de llamadas si se desmarca datos).
+    v.marcar("fd-pl-s-datos", false);
+    v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "l|" });
+    expect(v.bandeja()).toContain(">Request (2)</button>");
+    const items = (JSON.parse(local.get("flowbrain.pedido")!) as { items: Array<{ tipo: string; k: string; cerebro: string; repo: string; datos: { archivo: string; p: number; t: unknown[] } }> }).items;
+    expect(items.map((x) => [x.tipo, x.k, x.cerebro, x.repo, x.datos.archivo])).toEqual([["fidelidad", "front/repo-web:src/api.ts", "front", "repo-web", "repo-web:src/api.ts"], ["fidelidad", "back/repo-api:src/Servicio.php", "back", "repo-api", "repo-api:src/Servicio.php"]]);
+    expect(items[1]!.datos.t).toEqual([["llamadas", "1 llamada que no se sabe a qué método va", [6]]]);
+    // El .md: el mismo plan que flowbrain fidelity --plan, en inglés, de menor a mayor puntaje.
+    v.tocar({ "data-acc": "descargar-lista" });
+    expect(v.bajados[0]!.nombre).toBe("fidelity-plan.md");
+    const md = await v.bajados[0]!.texto();
+    expect(md).toContain("Goal: bring the fidelity score of 2 files");
+    expect(md).toContain("- [ ] llamadas: 1 llamada que no se sabe a qué método va (L6).");
+    expect(md).not.toContain("- [ ] datos");
+    expect(md).toContain("- **http**: declarala en la sección http");
+    expect(md).toContain("1. Reindexá: flowbrain brains apply <cerebro>.");
+    expect(md.indexOf("src/api.ts")).toBeLessThan(md.indexOf("src/Servicio.php"));
+    // Otra vez la lista entera: ya está todo, así que lo saca.
+    v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "l|" });
+    expect(v.bandeja()).not.toContain("Request (");
+  });
+
+  it("al volver, lo pedido se pone al día con lo que mide la página: lo que ya no falta sale", () => {
+    const local = new Map<string, string>();
+    const v = montar(datos, { local });
+    v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "l|" });
+    expect(v.bandeja()).toContain(">Request (2)</button>");
+    // Se reindexó: api.ts llegó a 100 y Servicio.php ya no tiene la falta de datos.
+    const archivos = (datos.fidelidad.archivos as Array<Record<string, unknown>>).map((x) =>
+      x["a"] === "front/repo-web:src/api.ts" ? { ...x, p: 100, s: { http: [2, 2] }, t: [] } : x["a"] === "back/repo-api:src/Servicio.php" ? { ...x, t: (x["t"] as T[]).filter((t) => t[0] !== "datos") } : x);
+    const otra = montar({ ...datos, fidelidad: { ...datos.fidelidad, archivos } }, { local });
+    expect(otra.bandeja()).toContain(">Request (1)</button>");
+    const items = (JSON.parse(local.get("flowbrain.pedido")!) as { items: Array<{ k: string; datos: { t: unknown[] } }> }).items;
+    expect(items.map((x) => [x.k, x.datos.t.length])).toEqual([["back/repo-api:src/Servicio.php", 1]]);
+  });
+
+  it("servida con un agente: el panel estima el costo por archivo y «Pedir todos» manda un lote «fidelidad»", async () => {
+    const pedidos: Array<{ url: string; cuerpo: Record<string, unknown> | null }> = [];
+    const fetch = (url: string, init: { method: string; body?: string }) => {
+      pedidos.push({ url, cuerpo: init.body ? JSON.parse(init.body) : null });
+      const json = url === "/api/agente/lote" ? { lote: { id: "l1", tipo: "fidelidad", estado: "corriendo" }, trabajos: [] } : { trabajos: [], lotes: [] };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(json) });
+    };
+    const agente = { proveedores: [{ id: "claude-code", nombre: "Claude Code", modelos: [{ id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true, costoPorFidelidadUsd: 0.25 }] }] };
+    const v = montar(datos, { edicion: { token: "t", sinAplicar: [], agente }, fetch });
+    v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "l|" });
+    expect(v.panel()).toContain("≈ US$ 0.50");
+    expect(v.panel()).toContain("3 gaps to resolve");
+    expect(v.panel()).toContain("In 2 batches of up to 10 files of the same repo");
+    v.tocar({ "data-acc": "pedir-todos" });
+    await new Promise((ok) => setTimeout(ok, 0));
+    const lote = pedidos.find((p) => p.url === "/api/agente/lote")!.cuerpo!;
+    expect(lote).toMatchObject({ tipo: "fidelidad", proveedor: "claude-code", modelo: "claude-opus-5-5" });
+    expect(lote["archivos"]).toEqual([
+      { cerebro: "front", archivo: "repo-web:src/api.ts", puntaje: 50, tareas: [{ signal: "http", que: "1 llamada HTTP cuya ruta no se pudo leer", lineas: [14] }] },
+      { cerebro: "back", archivo: "repo-api:src/Servicio.php", puntaje: 60, tareas: [{ signal: "llamadas", que: "1 llamada que no se sabe a qué método va", lineas: [6] }, { signal: "datos", que: "1 acceso a una tabla sin saber qué columnas toca", lineas: [] }] },
+    ]);
   });
 
   it("abierta como archivo es de solo lectura y lo dice; servida, ofrece resolver lo que depende de una persona", () => {
@@ -264,8 +331,8 @@ describe("pantalla Fidelidad", () => {
     expect(fija.pagina()).toContain("flowbrain viewer --serve");
     expect(fija.lista()).not.toContain('data-acc="resolver"');
     expect(fija.lista()).toContain("You resolve it");
-    // El pedido para el agente no necesita servidor.
-    expect(fija.lista().match(/data-acc="pedido"/g)).toHaveLength(2);
+    // Sumar al pedido no necesita servidor: sale como .md.
+    expect(fija.lista().match(/data-acc="pedir" data-tipo="fidelidad" data-k="a\|/g)).toHaveLength(2);
     const servida = montar(datos, { edicion: { token: "t", sinAplicar: ["back"] } });
     expect(servida.pagina()).not.toContain("read-only");
     // Lo que resuelve una persona tiene su botón; lo del agente, no. Asociar a una funcionalidad ya no se hace acá.
@@ -283,9 +350,12 @@ describe("pantalla Fidelidad", () => {
     expect(v.pagina()).toContain("Reparto por puntaje");
     expect(v.pagina()).toContain("2 archivos tienen fidelidad incierta");
     expect(v.lista()).toContain('<span class="fd-es na" title="No aplica a este archivo">Pantalla</span>');
-    v.tocar({ "data-acc": "plan" });
-    expect(v.lista()).toContain("<h2>Plan para el agente</h2>");
-    expect(v.lista()).toContain("# Fidelity plan");
+    expect(v.lista()).toContain("Qué relaciones pedir");
+    expect(v.lista()).toContain('data-et="Pedir los 2 de la lista"');
+    v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "l|" });
+    expect(v.panel()).toContain("<h2>Pedido al agente</h2>");
+    v.tocar({ "data-acc": "descargar-lista" });
+    return v.bajados[0]!.texto().then((md) => expect(md).toContain("# Fidelity plan"));
   });
 
   it("al cambiar de idioma, los textos fijos del filtro se rehacen", () => {
@@ -297,6 +367,7 @@ describe("pantalla Fidelidad", () => {
     const el = (id: string) => { if (!els.has(id)) els.set(id, { innerHTML: "", addEventListener() {} }); return els.get(id)!; };
     const window = { brainVisor: { D: datos, porId: {}, esc: (x: unknown) => String(x) }, brainFiltros: null, brainI18n: i18n, brainFidelidad: null as null | { mostrar(): void } };
     new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
+    new Function("window", "document", PEDIDO_JS)(window, { getElementById: el });
     new Function("window", "document", "sessionStorage", FIDELIDAD_JS)(window, { getElementById: el }, sessionStorage);
     window.brainFidelidad!.mostrar();
     expect(el("fidelidad").innerHTML).toContain("Score distribution");

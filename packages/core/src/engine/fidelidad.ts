@@ -470,13 +470,23 @@ export interface OpcionesPlan {
   signals?: readonly Signal[];
   /** Cuántos archivos entran al plan, de menor a mayor puntaje (por defecto 40). */
   limite?: number;
+  /** Párrafos que van después del objetivo (una tanda de un lote del visor dice de qué cerebro es y cuál es). */
+  contexto?: readonly string[];
+}
+
+/** Lo que el plan lee de cada archivo: su id, su puntaje y sus faltas (lo que manda el visor alcanza). */
+export interface ArchivoDelPlan {
+  archivo: string;
+  puntaje: number;
+  tareas: ReadonlyArray<Pick<Tarea, "signal" | "que" | "lineas">>;
 }
 
 /**
  * Plan para pegarle a un modelo: los archivos que no llegan a 100, qué le falta a cada uno con su línea, y cómo se
- * resuelve cada tipo de falta. Es texto: el modelo que lo recibe tiene el código y el MCP para hacer el resto.
+ * resuelve cada tipo de falta. Es texto: el modelo que lo recibe tiene el código y el MCP para hacer el resto. Lo usan
+ * `flowbrain fidelity --plan`, el MCP y cada tanda de un lote «fidelidad» del visor (dec. 231).
  */
-export function planDeFidelidad(archivos: FidelidadArchivo[], opciones: OpcionesPlan = {}): string {
+export function planDeFidelidad(archivos: readonly ArchivoDelPlan[], opciones: OpcionesPlan = {}): string {
   const quiere = new Set<Signal>(opciones.signals?.length ? opciones.signals : SIGNALS);
   const limite = opciones.limite ?? 40;
   const conTareas = archivos
@@ -491,6 +501,7 @@ export function planDeFidelidad(archivos: FidelidadArchivo[], opciones: Opciones
     "",
     `Goal: bring the fidelity score of ${cuantos(elegidos.length, "file", "files")} in the FlowBrain index to 100 (today they average ${promedio(elegidos.map((x) => x.a))}). The score measures how much of what is in each file ended up linked in the graph.`,
     ...(conTareas.length > elegidos.length ? ["", `This plan includes the ${elegidos.length} lowest-scoring files; ${conTareas.length - elegidos.length} more are left for another batch.`] : []),
+    ...(opciones.contexto ?? []).flatMap((c) => ["", c]),
     "",
     "## Rules",
     "",
@@ -516,7 +527,7 @@ export function planDeFidelidad(archivos: FidelidadArchivo[], opciones: Opciones
 }
 
 const TRAMOS: Array<[string, number, number]> = [["0-19", 0, 19], ["20-39", 20, 39], ["40-59", 40, 59], ["60-79", 60, 79], ["80-99", 80, 99], ["100", 100, 100]];
-const promedio = (xs: FidelidadArchivo[]) => (xs.length ? redondo(xs.reduce((a, x) => a + x.puntaje, 0) / xs.length) : null);
+const promedio = (xs: ReadonlyArray<{ puntaje: number }>) => (xs.length ? redondo(xs.reduce((a, x) => a + x.puntaje, 0) / xs.length) : null);
 
 function agrupar(xs: FidelidadArchivo[], claves: (x: FidelidadArchivo) => string[]) {
   const m = new Map<string, FidelidadArchivo[]>();

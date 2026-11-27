@@ -1,8 +1,9 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { cargarContexto, ConsultaError, especificaciones, fidelidadDeArchivos, TEST_REF, type Contexto, type Registro } from "@flowbrain/core";
+import { cargarContexto, ConsultaError, especificaciones, fidelidadDeArchivos, planDeFidelidad, TEST_REF, type Contexto, type FidelidadArchivo, type Registro, type Signal } from "@flowbrain/core";
 import { compileDirConVisor } from "@flowbrain/viewer";
+import { aplicarCerebro } from "./cerebros.js";
 import type { Edicion } from "./edicion.js";
 import { GUIA_ESPECIFICACIONES, GUIA_TESTS } from "./guia.js";
 import { claudeCode, HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento, PROVEEDORES, type AdaptadorDeAgente, type ModeloDeAgente } from "./proveedores.js";
@@ -30,11 +31,15 @@ export { HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento };
  *     corregir. Editan las páginas de producto de varios cerebros a la vez (el mismo caso lleva el mismo id en cada
  *     uno), así que las tandas van una detrás de otra, con lo de una misma funcionalidad junto. Al terminar cada tanda
  *     el servidor compila sus cerebros y mira en las páginas qué quedó resuelto (`resueltos`) y qué no (`quedan`).
+ *   - `fidelidad` (pantalla Fidelidad, dec. 231): archivos con lo que les falta para llegar a 100. Las tandas (hasta 10
+ *     archivos de un mismo repo) declaran en la carpeta del cerebro (`calls.yaml`, extractores, páginas de tablas), así
+ *     que las de un cerebro van una detrás de otra y los cerebros, en paralelo. Al terminar cada tanda el servidor
+ *     reindexa el cerebro y mide cuáles de las faltas pedidas ya no están (`completados`) y cuáles siguen (`pendientes`).
  *   En todos, una tanda que falla no frena a las demás, y se cancela el lote entero o una tanda.
  */
 
-export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir" | "asociar";
-export const TIPOS_DE_PEDIDO: readonly TipoDePedido[] = ["test", "agrupar", "escribir", "corregir", "asociar"];
+export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir" | "asociar" | "fidelidad";
+export const TIPOS_DE_PEDIDO: readonly TipoDePedido[] = ["test", "agrupar", "escribir", "corregir", "asociar", "fidelidad"];
 
 /**
  * Guía de un pedido «asociar» (pantalla Sin asociar): asociar archivos a su funcionalidad o librería, o proponer un
@@ -74,6 +79,30 @@ $ARGUMENTS
 4. Report: what you assigned and where, the drafts you wrote, and what you left and why.
 `;
 
+/**
+ * Guía de un pedido «fidelidad» (pantalla Fidelidad): llevar a 100 lo que el índice entendió de unos archivos. El plan
+ * de cada tanda (`planDeFidelidad`, el mismo de `flowbrain fidelity --plan`) dice qué falta y cómo se resuelve cada
+ * cosa; esta guía pone los límites. Va con permisos acotados (`permisosDelPedido`): solo escribe lo que el plan deja
+ * declarar en la carpeta del cerebro (`calls.yaml`, extractores, páginas de tablas); nunca el código de los repos.
+ */
+export const GUIA_FIDELIDAD = `You are going to improve how well FlowBrain's index understood some files of this project: declare what the
+parser could not read, so each file's fidelity score reaches 100.
+
+$ARGUMENTS
+
+## Limits
+
+- **Do not modify the project's repositories.** This request can only write, inside the brain folder
+  (\`.flowbrain/<brain>/\`): \`calls.yaml\`, extractors in \`extractors/\` and table pages
+  (\`technology/tabla-*.md\`). Any other write will be refused.
+- **Do not open real environment files** (\`.env\` and similar). No network.
+- Only declare what you read in the code. What you cannot determine stays pending: say so in your answer.
+- Reply in the user's language, briefly: what reached 100, what didn't and why.
+`;
+
+/** Comandos que puede correr un pedido «fidelidad»: leer FlowBrain, compilar y reindexar el cerebro; nada de tests. */
+const COMANDOS_FIDELIDAD = ["flowbrain calls", "flowbrain fidelity", "flowbrain flow", "flowbrain screen", "flowbrain drift", "flowbrain coverage", "flowbrain search", "flowbrain feature", "flowbrain status", "flowbrain compile", "flowbrain brains apply", "cd", "ls", "git status", "git diff"];
+
 /** Comandos que puede correr un pedido «asociar»: leer FlowBrain y compilar; nada de tests ni de promover. */
 const COMANDOS_ASOCIAR = ["flowbrain compile", "flowbrain unassigned", "flowbrain feature", "flowbrain status", "flowbrain brains", "flowbrain screen", "flowbrain connections", "flowbrain specs --guide", "cd", "ls", "git status", "git diff"];
 
@@ -87,7 +116,8 @@ const COMANDOS_ESPECIFICACIONES = ["flowbrain compile", "flowbrain specs", "flow
  * Los permisos de un pedido. Sin `escritura`, los de siempre (`POLITICA`: edita dentro del proyecto y corre tests).
  * Un pedido «asociar» solo puede escribir las páginas `feat-*` y `lib-*` de sus cerebros y borradores en `_drafts/`;
  * uno sobre las especificaciones (agrupar, escribir, corregir), solo las páginas `feat-*` de sus cerebros (y las de
- * borrador): lo mismo que dice su guía, «no modifiques los repositorios del proyecto».
+ * borrador); uno de «fidelidad», solo lo que su plan deja declarar: `calls.yaml`, los extractores y las páginas de
+ * tablas. Lo mismo que dice cada guía, «no modifiques los repositorios del proyecto».
  */
 export function permisosDelPedido(tipo: TipoDePedido, raices: string[]): { escritura?: string[]; comandos?: string[] } {
   if (tipo === "asociar") {
@@ -100,6 +130,12 @@ export function permisosDelPedido(tipo: TipoDePedido, raices: string[]): { escri
     return {
       escritura: raices.flatMap((r) => [join(r, "product", "feat-*.md"), join(r, "_drafts", "product", "feat-*.md")]),
       comandos: COMANDOS_ESPECIFICACIONES,
+    };
+  }
+  if (tipo === "fidelidad") {
+    return {
+      escritura: raices.flatMap((r) => [join(r, "calls.yaml"), join(r, "extractors", "**"), join(r, "technology", "tabla-*.md")]),
+      comandos: COMANDOS_FIDELIDAD,
     };
   }
   return {};
@@ -159,7 +195,18 @@ export type TipoDePagina = "agrupar" | "escribir" | "corregir";
 export const TIPOS_DE_PAGINA: readonly TipoDePagina[] = ["agrupar", "escribir", "corregir"];
 export const esTipoDePagina = (t: unknown): t is TipoDePagina => TIPOS_DE_PAGINA.includes(t as TipoDePagina);
 
-export type TipoDeLote = "test" | "asociar" | TipoDePagina;
+/**
+ * Un archivo de un lote «fidelidad»: el id local (`repo-x:ruta`), su puntaje y las faltas que se piden (las de las
+ * relaciones marcadas en el visor), como las mide el visor (que cuenta lo que atiende otro cerebro comunicado).
+ */
+export interface ArchivoDeFidelidad {
+  cerebro: string;
+  archivo: string;
+  puntaje: number;
+  tareas: Array<{ signal: Signal; que: string; lineas: number[] }>;
+}
+
+export type TipoDeLote = "test" | "asociar" | "fidelidad" | TipoDePagina;
 
 export interface Trabajo {
   id: string;
@@ -201,6 +248,12 @@ export interface Trabajo {
   items?: Array<Omit<ItemDePagina, "linea">>;
   resueltos?: Array<Omit<ItemDePagina, "linea">>;
   quedan?: Array<Omit<ItemDePagina, "linea">>;
+  /**
+   * Tanda de un lote «fidelidad» (los archivos pedidos van en `archivos`): después de reindexar, a cuáles ya no les
+   * queda ninguna de las faltas pedidas y a cuáles sí, con el puntaje nuevo (`null` si el archivo ya no se mide).
+   */
+  completados?: Array<{ cerebro: string; archivo: string; puntaje: number | null }>;
+  pendientes?: Array<{ cerebro: string; archivo: string; puntaje: number | null }>;
 }
 
 export interface Lote {
@@ -225,6 +278,8 @@ const MAX_TRABAJOS = 400;
 const TANDA_MAX = 15;
 /** Archivos por tanda de un lote «asociar»: leer y decidir un archivo cuesta menos que testear una regla. */
 export const TANDA_MAX_ASOCIAR = 30;
+/** Archivos por tanda de un lote «fidelidad»: cada falta pide abrir el código en su línea y declarar lo que se lee. */
+export const TANDA_MAX_FIDELIDAD = 10;
 
 /**
  * Ítems por tanda de un lote sobre las especificaciones. Escribir lee el código y los tests de cada funcionalidad
@@ -239,7 +294,7 @@ export function tamanioDeTanda(n: number, max = TANDA_MAX): number {
 
 /** El texto que recibe el agente: la guía del tipo de pedido, con el pedido en lugar de `$ARGUMENTS`. */
 export function indicacionesDelPedido(tipo: TipoDePedido, pedido: string): string {
-  const guia = (tipo === "test" ? GUIA_TESTS : tipo === "asociar" ? GUIA_ASOCIAR : GUIA_ESPECIFICACIONES).replace(/^---\n[\s\S]*?\n---\n/, "");
+  const guia = (tipo === "test" ? GUIA_TESTS : tipo === "asociar" ? GUIA_ASOCIAR : tipo === "fidelidad" ? GUIA_FIDELIDAD : GUIA_ESPECIFICACIONES).replace(/^---\n[\s\S]*?\n---\n/, "");
   return guia.replace("$ARGUMENTS", `What the person asks for, from the FlowBrain viewer:\n\n${pedido.trim()}\n`);
 }
 
@@ -264,6 +319,34 @@ export function pedidoDeTandaAsociar(archivos: ArchivoDePedido[], repo: string, 
     "",
     ...archivos.map((a) => a.linea),
   ].join("\n");
+}
+
+/**
+ * El pedido de una tanda «fidelidad»: el plan de `flowbrain fidelity --plan` (reglas, cómo resolver cada cosa, los
+ * archivos con sus faltas y el cierre) para los archivos de un repo, con de qué cerebro son y qué tanda es.
+ */
+export function pedidoDeTandaFidelidad(archivos: ArchivoDeFidelidad[], repo: string, cerebro: string, n: number, de: number): string {
+  return planDeFidelidad(archivos.map((a) => ({ archivo: a.archivo, puntaje: a.puntaje, tareas: a.tareas })), {
+    limite: archivos.length,
+    contexto: [
+      `These files are in ${repo}, brain ${cerebro}: what you declare goes in that brain's folder (\`.flowbrain/${cerebro}/\`), and each brain is reindexed with \`flowbrain brains apply ${cerebro}\`.${de > 1 ? ` This is batch ${n} of ${de} of the request: other batches cover the rest, only handle these.` : ""}`,
+      "This is a request from the viewer: when you finish, the server reindexes the brain again and measures which of these gaps are gone.",
+    ],
+  });
+}
+
+/**
+ * Si un archivo ya no tiene ninguna de las faltas pedidas: ninguna de sus faltas de esas relaciones cita una línea
+ * pedida (las faltas sin línea se miran por relación). Lo que atiende otro cerebro no se pidió, así que no cuenta.
+ * Un archivo que ya no se mide no se puede comprobar: queda.
+ */
+export function fidelidadResuelta(medido: Pick<FidelidadArchivo, "tareas"> | undefined, pedido: Pick<ArchivoDeFidelidad, "tareas">): boolean {
+  if (!medido) return false;
+  return pedido.tareas.every((p) => {
+    const quedan = medido.tareas.filter((t) => t.signal === p.signal);
+    if (!p.lineas.length) return !quedan.length;
+    return !quedan.some((t) => t.lineas.some((l) => p.lineas.includes(l)));
+  });
 }
 
 /**
@@ -371,10 +454,10 @@ export interface Agente {
   proveedores(): ProveedorVisible[];
   encolar(p: { tipo: TipoDePedido; pedido: string; etiqueta: string; cerebros: string[]; proveedor?: string; modelo?: string }): Trabajo;
   /**
-   * `test`: reparte las reglas por repo (en paralelo) y cada repo en tandas. `asociar`: los archivos por cerebro (en
-   * paralelo) y por repo, en tandas. `agrupar`, `escribir` y `corregir`: los ítems en tandas, una detrás de otra.
+   * `test`: reparte las reglas por repo (en paralelo) y cada repo en tandas. `asociar` y `fidelidad`: los archivos por
+   * cerebro (en paralelo) y por repo, en tandas. `agrupar`, `escribir` y `corregir`: los ítems en tandas, una detrás de otra.
    */
-  encolarLote(p: ({ tipo?: "test"; reglas: ReglaDePedido[] } | { tipo: "asociar"; archivos: ArchivoDePedido[] } | { tipo: TipoDePagina; items: ItemDePagina[] }) & { proveedor?: string; modelo?: string }): { lote: Lote; trabajos: Trabajo[] };
+  encolarLote(p: ({ tipo?: "test"; reglas: ReglaDePedido[] } | { tipo: "asociar"; archivos: ArchivoDePedido[] } | { tipo: "fidelidad"; archivos: ArchivoDeFidelidad[] } | { tipo: TipoDePagina; items: ItemDePagina[] }) & { proveedor?: string; modelo?: string }): { lote: Lote; trabajos: Trabajo[] };
   lista(): Trabajo[];
   lotes(): Lote[];
   cancelar(id: string): Trabajo | null;
@@ -599,6 +682,44 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.asociados?.length ? "fallo" : "terminado";
   }
 
+  /** Lo que pidió cada tanda «fidelidad», con sus faltas: con eso se mide al terminar. */
+  const pedidoFidelidad = new Map<string, ArchivoDeFidelidad[]>();
+
+  /** Una tanda «fidelidad»: corre el agente, reindexa el cerebro (así entra `calls.yaml`) y mide qué faltas pedidas ya no están. */
+  async function correrTandaFidelidad(t: Trabajo, repoRuta: string | undefined) {
+    const pedidos = pedidoFidelidad.get(t.id) ?? [];
+    const sinMedir = (xs: ArchivoDeFidelidad[]) => xs.map((a) => ({ cerebro: a.cerebro, archivo: a.archivo, puntaje: null }));
+    try {
+      const reg = await lanzar(t, repoRuta);
+      // Aun cancelada pudo haber declarado algo: se reindexa y se mide igual.
+      for (const nombre of t.cerebros) {
+        const c = reg.cerebro(nombre);
+        const suyos = pedidos.filter((a) => a.cerebro === nombre);
+        if (!c) {
+          t.pendientes = [...(t.pendientes ?? []), ...sinMedir(suyos)];
+          continue;
+        }
+        try {
+          if (opciones.reindexar) await opciones.reindexar(nombre);
+          else await aplicarCerebro(c);
+          const medidos = new Map(fidelidadDeArchivos(await cargarContexto(c.raiz)).archivos.map((a) => [a.archivo, a]));
+          for (const a of suyos) {
+            const m = medidos.get(a.archivo);
+            (fidelidadResuelta(m, a) ? (t.completados ??= []) : (t.pendientes ??= [])).push({ cerebro: a.cerebro, archivo: a.archivo, puntaje: m ? m.puntaje : null });
+          }
+        } catch (e) {
+          t.pendientes = [...(t.pendientes ?? []), ...sinMedir(suyos)];
+          t.error = `${t.error ? `${t.error}. ` : ""}${nombre} could not be reindexed: ${(e as Error).message.split("\n")[0]}`;
+        }
+      }
+    } catch (e) {
+      t.error = `${t.error ? `${t.error}. ` : ""}${(e as Error).message}`;
+    }
+    pedidoFidelidad.delete(t.id);
+    t.terminado = Date.now();
+    if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.completados?.length ? "fallo" : "terminado";
+  }
+
   /** Una tanda agrupar, escribir o corregir: corre el agente, compila sus cerebros y mira en las páginas qué quedó resuelto. */
   async function correrTandaPaginas(t: Trabajo & { tipo: TipoDePagina }) {
     try {
@@ -660,7 +781,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
   }
 
   async function terminarLote(l: Lote) {
-    // Cada tanda «asociar», agrupar, escribir o corregir ya compiló sus cerebros: no hay tests nuevos que indexar.
+    // Cada tanda «asociar», «fidelidad», agrupar, escribir o corregir ya compiló (o reindexó) sus cerebros: no hay tests nuevos que indexar.
     if (l.tipo !== "test") {
       l.estado = "terminado";
       return;
@@ -702,17 +823,20 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
         if (!q.items.length) throw new ConsultaError("parametro_invalido", "there is nothing to request");
         return encolarLotePaginas(q.tipo, q.items, elegir(p.proveedor, p.modelo));
       }
-      const asociar = p.tipo === "asociar";
-      const items: Array<ReglaDePedido | (ArchivoDePedido & { repo: string })> = p.tipo === "asociar" ? p.archivos.map((a) => ({ ...a, repo: a.archivo.split(":")[0]! })) : (p as { reglas: ReglaDePedido[] }).reglas;
-      if (!items.length) throw new ConsultaError("parametro_invalido", asociar ? "there are no files to request" : "there are no rules to request");
+      const tipo = p.tipo === "asociar" || p.tipo === "fidelidad" ? p.tipo : "test";
+      // asociar y fidelidad: archivos de un cerebro, que escriben en su carpeta.
+      const porCerebro = tipo !== "test";
+      type Item = ReglaDePedido | (ArchivoDePedido & { repo: string }) | (ArchivoDeFidelidad & { repo: string });
+      const items: Item[] = p.tipo === "asociar" || p.tipo === "fidelidad" ? (p.archivos as Array<ArchivoDePedido | ArchivoDeFidelidad>).map((a) => ({ ...a, repo: a.archivo.split(":")[0]! })) : (p as { reglas: ReglaDePedido[] }).reglas;
+      if (!items.length) throw new ConsultaError("parametro_invalido", porCerebro ? "there are no files to request" : "there are no rules to request");
       const { a, modelo } = elegir(p.proveedor, p.modelo);
       const cerebros = [...new Set(items.map((r) => r.cerebro))];
-      const lote: Lote = { id: randomBytes(6).toString("hex"), tipo: asociar ? "asociar" : "test", creado: Date.now(), cerebros, estado: "corriendo" };
+      const lote: Lote = { id: randomBytes(6).toString("hex"), tipo, creado: Date.now(), cerebros, estado: "corriendo" };
       lotes.push(lote);
       // Cada cadena corre sus tandas de a una; las cadenas, en paralelo. Tests: una cadena por repo (las tandas no editan
-      // páginas). Asociar: una por cerebro (las tandas editan sus páginas), con las tandas armadas por repo.
-      const repoDe = (r: (typeof items)[number]) => r.repo ?? `brain ${r.cerebro}`;
-      const cadenaDe = (r: (typeof items)[number]) => (asociar ? `brain ${r.cerebro}` : repoDe(r));
+      // páginas). Asociar y fidelidad: una por cerebro (las tandas escriben en su carpeta), con las tandas armadas por repo.
+      const repoDe = (r: Item) => r.repo ?? `brain ${r.cerebro}`;
+      const cadenaDe = (r: Item) => (porCerebro ? `brain ${r.cerebro}` : repoDe(r));
       const grupos = new Map<string, { cadena: string; repo: string; cerebro: string; xs: typeof items }>();
       for (const r of items) {
         const k = `${cadenaDe(r)}\u0000${repoDe(r)}`;
@@ -722,12 +846,18 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
       const hechos: Trabajo[] = [];
       const cadenas = new Map<string, Array<{ t: Trabajo; repo: string }>>();
       for (const g of grupos.values()) {
-        const tam = tamanioDeTanda(g.xs.length, asociar ? TANDA_MAX_ASOCIAR : TANDA_MAX);
+        const tam = tamanioDeTanda(g.xs.length, tipo === "asociar" ? TANDA_MAX_ASOCIAR : tipo === "fidelidad" ? TANDA_MAX_FIDELIDAD : TANDA_MAX);
         const de = Math.ceil(g.xs.length / tam);
         for (let n = 1; n <= de; n++) {
           const parte = g.xs.slice((n - 1) * tam, n * tam);
           const base = { proveedor: a.id, ...(modelo ? { modelo } : {}), lote: lote.id, repo: g.repo, tanda: { n, de } };
-          const t = asociar
+          const t = tipo === "fidelidad"
+            ? nuevo({
+              ...base, tipo: "fidelidad", etiqueta: `${g.repo}${de > 1 ? ` · batch ${n} of ${de}` : ""} · ${parte.length} ${parte.length === 1 ? "file" : "files"}`,
+              pedido: pedidoDeTandaFidelidad(parte as ArchivoDeFidelidad[], g.repo, g.cerebro, n, de), cerebros: [g.cerebro],
+              archivos: (parte as ArchivoDeFidelidad[]).map((x) => ({ cerebro: x.cerebro, archivo: x.archivo })),
+            })
+            : tipo === "asociar"
             ? nuevo({
               ...base, tipo: "asociar", etiqueta: `${g.repo}${de > 1 ? ` · batch ${n} of ${de}` : ""} · ${parte.length} ${parte.length === 1 ? "file" : "files"}`,
               pedido: pedidoDeTandaAsociar(parte as ArchivoDePedido[], g.repo, g.cerebro, n, de), cerebros: [g.cerebro],
@@ -739,6 +869,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
               reglas: (parte as ReglaDePedido[]).map((r) => ({ cerebro: r.cerebro, funcionalidad: r.funcionalidad, regla: r.regla })),
             });
           adaptadorDe.set(t.id, a);
+          if (tipo === "fidelidad") pedidoFidelidad.set(t.id, parte as ArchivoDeFidelidad[]);
           trabajos.push(t);
           hechos.push(t);
           cadenas.set(g.cadena, [...(cadenas.get(g.cadena) ?? []), { t, repo: g.repo }]);
@@ -751,8 +882,11 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
         const rutaDe = (repo: string) => reg.cerebros.flatMap((c) => c.repos).find((r) => r.id === repo)?.ruta;
         await Promise.all([...cadenas.values()].map(async (ts) => {
           for (const { t, repo } of ts) {
-            if (t.estado === "cancelado") continue;
-            await (asociar ? correrTandaAsociar(t, rutaDe(repo)) : correrTanda(t, rutaDe(repo)));
+            if (t.estado === "cancelado") {
+              pedidoFidelidad.delete(t.id);
+              continue;
+            }
+            await (tipo === "fidelidad" ? correrTandaFidelidad(t, rutaDe(repo)) : tipo === "asociar" ? correrTandaAsociar(t, rutaDe(repo)) : correrTanda(t, rutaDe(repo)));
           }
         }));
         await terminarLote(lote);
