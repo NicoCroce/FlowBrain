@@ -10,6 +10,7 @@
 - El visor tiene un solo pedido al agente: la bandeja «Pedido (N)» en la barra superior, visible desde cualquier pantalla, y un panel que junta tests y archivos por asociar, con el costo estimado de cada tipo y el total. «Pedir todos» manda un lote por tipo. Lo que ya tenías pedido en cada pantalla se conserva.
 - En Especificaciones, «Agrupar en casos de uso», «Escribir casos de uso» y las correcciones (casos marcados como mal y reglas que están mal) ya no abren un recuadro para copiar: se suman al mismo pedido y se mandan en lote con «Pedir todos». El agente solo puede editar las páginas de las funcionalidades, y el visor saca de la lista lo que quedó resuelto.
 - En Fidelidad ya no hay planes para copiar: «Pedir» en cada archivo o «Pedir los N de la lista» (con las relaciones marcadas) lo suma al mismo pedido, y «Pedir todos» lo manda en lote. El agente solo puede declarar en la carpeta del cerebro (`calls.yaml`, extractores, páginas de tablas); al terminar cada tanda se reindexa y sale de la lista lo que ya no tiene las faltas pedidas.
+- En Contratos, cada problema de la deriva (llamadas que nadie atiende, endpoints que nadie llama, campos que no coinciden) se suma al mismo pedido con «Pedir», o por sección con «Pedir los N». El agente arregla la llamada o declara su destino, y lo que se podría borrar lo propone en una nota: nunca borra nada. Un endpoint que nadie llama a propósito se marca «Sin uso a propósito» y sale de la deriva (también para el MCP); se deshace desde la misma pantalla.
 
 ## 0.1.1 · 2026-11-25
 

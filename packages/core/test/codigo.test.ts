@@ -93,6 +93,26 @@ describe("consultas de código", () => {
     expect(() => deriva(ctx, { nodo: "tabla-pagos" })).toThrow(ConsultaError);
   });
 
+  it("deriva: un endpoint marcado sin uso a propósito (not-product.yaml) no es deriva y va aparte (dec. 232)", () => {
+    const n = (id: string, tipo: GraphNode["tipo"], atributos: Record<string, unknown> = {}): GraphNode => ({ actualizado: null, aliases: [], atributos, estado: "vigente", id, nombre: id, origen: "parser", pagina: null, resumen: null, tecnologia: [], tipo, verificado: null });
+    const e = (desde: string, verbo: GraphEdge["verbo"], hasta: string, endpoint: string | null = null): GraphEdge => ({ confianza: 0.9, dato: null, desde, endpoint, estado: "vigente", evidencia: null, hasta, origen: "parser", verbo });
+    const eps = ["GET:/x", "GET:/y", "POST:/hook"].map((k) => n(`svc-a:${k}`, "endpoint", { metodo: k.split(":")[0], ruta: k.split(":")[1], evidencia: `repo-a:src/${k.split("/")[1]}.ts#L1` }));
+    const g: Graph = { version: 1, nodes: [n("svc-a", "svc"), n("svc-b", "svc"), ...eps], edges: [...eps.map((x) => e("svc-a", "contiene", x.id)), e("svc-b", "llama_a", "svc-a", "svc-a:GET:/x")] };
+    // El índice de código del fixture: este grafo chico solo necesita que haya uno.
+    const c: Contexto = { ...crearContexto(g, [], new Map()), codigo: ctx.codigo! };
+    type R = { endpointsSinLlamadasDetectadas: Array<{ endpoint: string }>; sinUsoAProposito?: Array<{ endpoint: string; ev: string; nadieLoLlama: boolean }>; avisos: string[] };
+    const antes = deriva(c, { budget_tokens: null }) as unknown as R;
+    expect(antes.endpointsSinLlamadasDetectadas.map((x) => x.endpoint)).toEqual(["svc-a:GET:/y", "svc-a:POST:/hook"]);
+    expect(antes).not.toHaveProperty("sinUsoAProposito");
+    // Las marcas de archivos no cuentan; las de endpoints, sí (también las del contexto, como las lee el MCP).
+    const marcas = [{ entrada: "svc-a:POST:/hook", motivo: "sin-uso" as const }, { entrada: "svc-a:GET:/x", motivo: "sin-uso" as const }, { entrada: "repo-a:src", motivo: "script" as const }];
+    for (const r of [deriva(c, { budget_tokens: null, noProducto: marcas }), deriva({ ...c, noProducto: marcas }, { budget_tokens: null })] as unknown as R[]) {
+      expect(r.endpointsSinLlamadasDetectadas.map((x) => x.endpoint)).toEqual(["svc-a:GET:/y"]);
+      expect(r.sinUsoAProposito).toEqual([{ endpoint: "svc-a:GET:/x", ev: "repo-a:src/x.ts#L1", nadieLoLlama: false }, { endpoint: "svc-a:POST:/hook", ev: "repo-a:src/hook.ts#L1", nadieLoLlama: true }]);
+      expect(r.avisos.join(" ")).toContain("marked them as unused on purpose");
+    }
+  });
+
   it("deriva: una llamada ambigua lista los endpoints candidatos, no cuántos son", () => {
     const j = JSON.parse(extraccionCheckout) as { pendientes: unknown[] };
     j.pendientes.push({ candidatos: [{ endpoint: "svc-bff:POST:/checkout", hasta: "svc-bff" }, { endpoint: "svc-bff:POST:/checkout/{id}", hasta: "svc-bff" }], desde: "svc-web", evidencia: "repo-tienda:apps/web/src/api/checkout.ts#L50", motivo: "varios endpoints coinciden", objetivo: null, referencia: "POST ${base}/checkout/{id}", verbo: "llama_a" });

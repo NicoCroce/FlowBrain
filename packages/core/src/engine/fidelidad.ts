@@ -1,6 +1,6 @@
 import { cmp } from "../canonical.js";
 import { capaDe, ES_TEST, type Ficha } from "../funcionalidades.js";
-import type { MarcaNoProducto } from "../no-producto.js";
+import { esMarcaDeEndpoint, type MarcaNoProducto } from "../no-producto.js";
 import { dentroDe, type Contrato, type Graph } from "../schema.js";
 import { ajustarLista, crearIndiceCodigo, pantallasSinLlamadas } from "./codigo.js";
 import { crearContexto, type Contexto } from "./contexto.js";
@@ -199,7 +199,8 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
   ];
   const hayFuncionalidades = ix.fichas.size > 0;
   // Lo marcado como no de producto no se lista como sin asociar: no tiene por qué ser de una funcionalidad.
-  const marcas = opciones.noProducto ?? ctx.noProducto ?? [];
+  // Solo las de archivos y carpetas: las de endpoints («Sin uso a propósito») son de la deriva.
+  const marcas = (opciones.noProducto ?? ctx.noProducto ?? []).filter((m) => !esMarcaDeEndpoint(m));
   const tapados = new Map(marcas.map((m) => [m.entrada, 0]));
   const marcaDe = (archivo: string) => marcas.find((m) => dentroDe(archivo, m.entrada));
 

@@ -1,6 +1,6 @@
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { agregarCodigoAPagina, ARCHIVO_NO_PRODUCTO, marcarNoProducto, agregarDeclaracion, anotarResultados, cambiarEstadoDeEspecificacion, decidirHallazgo, type ResultadoDeRegla, marcarProblemaDeCaso, marcarPruebaManual, ARCHIVO_LLAMADAS, cargarContexto, cmp, ConsultaError, dentroDe, type Cerebro, type Contexto, type Registro } from "@flowbrain/core";
+import { agregarCodigoAPagina, ARCHIVO_NO_PRODUCTO, ENDPOINT_ID, marcarNoProducto, agregarDeclaracion, anotarResultados, cambiarEstadoDeEspecificacion, decidirHallazgo, type ResultadoDeRegla, marcarProblemaDeCaso, marcarPruebaManual, ARCHIVO_LLAMADAS, cargarContexto, cmp, ConsultaError, dentroDe, type Cerebro, type Contexto, type Registro } from "@flowbrain/core";
 import { compileDirConVisor } from "@flowbrain/viewer";
 
 /**
@@ -229,7 +229,11 @@ export async function editar(registro: Registro, ed: Edicion): Promise<Resultado
 
   if (ed.tipo === "no_producto") {
     if (typeof ed.entrada !== "string" || (ed.motivo !== null && typeof ed.motivo !== "string")) throw invalido("the entry is missing, or the reason is not text");
-    if (ed.motivo !== null) {
+    const deEndpoint = ENDPOINT_ID.test(ed.entrada);
+    // Un endpoint («Sin uso a propósito», desde la deriva): solo uno que el grafo del cerebro conoce.
+    if (ed.motivo !== null && deEndpoint) {
+      if (ctx.nodo.get(ed.entrada)?.tipo !== "endpoint") throw invalido(`${ed.entrada} is not an endpoint of ${c.nombre}`);
+    } else if (ed.motivo !== null) {
       // Marcar: solo un archivo del índice o una carpeta que lo contiene, como al asociar.
       const { archivo } = estructuraDe(ctx, ed.archivo);
       if (!dentroDe(archivo, ed.entrada)) throw invalido(`${ed.entrada} is neither ${archivo} nor a folder that contains it`);
@@ -249,7 +253,7 @@ export async function editar(registro: Registro, ed: Edicion): Promise<Resultado
       escrito: rel(destino),
       cambio: r.cambio,
       faltaReindexar: false,
-      mensaje: !r.cambio ? "Nothing changed: it was already like that." : ed.motivo !== null ? `${ed.entrada} is marked as not product code: Unassigned no longer lists it. Brain ${c.nombre} was recompiled.` : `${ed.entrada} is no longer marked: Unassigned lists it again. Brain ${c.nombre} was recompiled.`,
+      mensaje: !r.cambio ? "Nothing changed: it was already like that." : deEndpoint ? (ed.motivo !== null ? `${ed.entrada} is marked as unused on purpose: Contracts no longer lists it as drift. Brain ${c.nombre} was recompiled.` : `${ed.entrada} is no longer marked: Contracts lists it again if nobody calls it. Brain ${c.nombre} was recompiled.`) : ed.motivo !== null ? `${ed.entrada} is marked as not product code: Unassigned no longer lists it. Brain ${c.nombre} was recompiled.` : `${ed.entrada} is no longer marked: Unassigned lists it again. Brain ${c.nombre} was recompiled.`,
     };
   }
 

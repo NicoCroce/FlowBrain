@@ -18,6 +18,7 @@ import { dentroDe, ENDPOINT_REF, normalizarRuta, SIN_LLAMADOR, type Graph, type 
 import { notasDe, type Contexto } from "./contexto.js";
 import { ConsultaError, normalizar, rutaCoincide } from "./herramientas.js";
 import { pantallaDeRuta, raicesDePantalla } from "../pantallas.js";
+import { esMarcaDeEndpoint, type MarcaNoProducto } from "../no-producto.js";
 import { tokens } from "./proyeccion.js";
 
 /**
@@ -1123,11 +1124,37 @@ export function simbolosTocados<S extends { nombre: string; tipo: string; linea:
 
 // ------------------------------------------------------------------ deriva de contratos
 
+/**
+ * Cómo se arregla la deriva, dicho para el modelo (dec. 232): lo usan la guía del pedido «deriva» del servidor y el
+ * .md que baja el visor, para que digan lo mismo. Nunca un cambio destructivo: lo que se podría borrar va a una nota.
+ */
+export const REGLAS_DE_DERIVA = [
+  "**Never make a destructive change.** Do not delete endpoints, routes, handlers, files or tests, and do not remove fields from a contract. When something looks removable, propose it in the note and leave it as it is.",
+  "Open the code at the evidence (`repo:path#Ln`) before deciding, and only change what the code confirms. What you cannot determine stays as it is: say why.",
+  "Declarations go in the brain's `calls.yaml`; proposals go in the brain's `_drafts/drift-notes.md`, one section per item (the call or endpoint, what you checked, your proposal). Keep what is already there.",
+  "Do not open real environment files (`.env` and similar).",
+];
+export const COMO_RESOLVER_DERIVA: Readonly<Record<"sinEndpoint" | "disputada" | "sinLlamadas" | "campos", string>> = {
+  sinEndpoint: "Open the call. If its path or method is wrong, fix the call so it reaches the endpoint that exists (the problem names one with another method when there is one). If the call is right and the index could not link it (a URL built at runtime, a base that goes to another service), declare its real destination in the brain's `calls.yaml`, section `http`: `{ desde: \"repo:path#Symbol\", linea: N, metodo: \"GET\", ruta: \"/path/{id}\", base: \"<url base>\", origen: \"modelo\" }`. If it goes to an external service or to one that is not indexed, change nothing: say so.",
+  disputada: "It matches more than one endpoint and was linked to none. Open the call, find which service its base URL goes to, and declare it in the brain's `calls.yaml` (section `http`, with its `base`), or fix the call if it is ambiguous by mistake.",
+  sinLlamadas: "Look for who uses it (`flowbrain search`, `flowbrain flow`, a search in the repos): another client, a job, a webhook, an external consumer. If a call in an indexed repo uses it and the index missed it, declare that call in `calls.yaml` (section `http`). If it is used from outside (a webhook, a partner, an app that is not indexed), change nothing and write it in the note, so the person marks it «Unused on purpose» in the viewer. If nothing uses it, propose deleting it in the note with what you checked. Never delete it.",
+  campos: "Align the side that is wrong. Usually it is the client: send the required fields, stop sending what the back end does not declare, read the response fields that exist. If the contract is the stale side, add to the declared type what the code already sends or returns (never remove a field); if it is in a repo you cannot change, propose the change in the note.",
+};
+export const CIERRE_DE_DERIVA = [
+  "Run `flowbrain brains apply <brain>` so the index sees what you changed, and `flowbrain drift` to check that the problems are gone.",
+  "Report briefly what you fixed and where, what you declared, what went to the note, and what you left and why.",
+];
+
 export interface DerivaParams {
   /** Servicio a revisar; sin esto, todos. */
   nodo?: string;
   /** Con varios cerebros: lo que este cerebro llama en otros y lo que otros le llaman. Sin esto, la deriva mira solo este cerebro. */
   cruzadas?: DerivaCruzada;
+  /**
+   * Las marcas del brain (`not-product.yaml`): un endpoint marcado `sin-uso` (nadie lo llama a propósito, dec. 232) no
+   * figura entre los que nadie llama; va aparte, en `sinUsoAProposito`. Sin esto, las del contexto.
+   */
+  noProducto?: readonly MarcaNoProducto[];
   budget_tokens?: number | null;
 }
 
@@ -1321,8 +1348,14 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
   const svcs = (p.nodo ? [p.nodo] : [...new Set(endpoints.map((n) => svcDe(n.id)))]).sort(cmp);
   // Una tarea programada no la llama nadie: la dispara su horario.
   const programadas = endpoints.filter((n) => svcs.includes(svcDe(n.id)) && SIN_LLAMADOR.has(String(n.atributos["metodo"]))).length;
+  // Lo que una persona marcó como sin uso a propósito: sale de la lista y se dice aparte, con su evidencia.
+  const aProposito = new Set((p.noProducto ?? ctx.noProducto ?? []).filter((m) => esMarcaDeEndpoint(m)).map((m) => m.entrada));
+  // nadieLoLlama: sin la marca figuraría entre los que nadie llama (al sacar la marca, vuelve a la lista).
+  const sinUso = endpoints
+    .filter((n) => svcs.includes(svcDe(n.id)) && aProposito.has(n.id))
+    .map((n) => ({ endpoint: n.id, ev: String(n.atributos["evidencia"] ?? ""), nadieLoLlama: !SIN_LLAMADOR.has(String(n.atributos["metodo"])) && !llamados.has(n.id) && (consumidores.get(svcDe(n.id))?.size ?? 0) > 0 }));
   const sinLlamadas = endpoints
-    .filter((n) => svcs.includes(svcDe(n.id)) && !SIN_LLAMADOR.has(String(n.atributos["metodo"])) && !llamados.has(n.id) && (consumidores.get(svcDe(n.id))?.size ?? 0) > 0)
+    .filter((n) => svcs.includes(svcDe(n.id)) && !SIN_LLAMADOR.has(String(n.atributos["metodo"])) && !llamados.has(n.id) && !aProposito.has(n.id) && (consumidores.get(svcDe(n.id))?.size ?? 0) > 0)
     .map((n) => ({ endpoint: n.id, ev: String(n.atributos["evidencia"] ?? "") }));
   const rutaDe = (ref: string) => /^(\w+) (?:\$\{[^}]*\})?(\/\S*)$/.exec(ref);
   const pend = ix.llamadasPendientes.filter((l) => !p.nodo || l.desde === p.nodo || endpoints.some((n) => svcDe(n.id) === p.nodo && l.motivo.includes(String(n.atributos["ruta"]))));
@@ -1360,6 +1393,7 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
       : {}),
     llamadasAmbiguas: ambiguas,
     endpointsSinLlamadasDetectadas: sinLlamadas,
+    ...(sinUso.length ? { sinUsoAProposito: sinUso } : {}),
     campos: campos.resumen,
     camposQueNoCoinciden: campos.difieren,
     consumidoresIndexados: Object.fromEntries(svcs.map((s) => [s, [...(consumidores.get(s) ?? [])].sort(cmp)])),
@@ -1368,6 +1402,7 @@ export function deriva(ctx: Contexto, p: DerivaParams) {
       ...(x && !x.vecinos.length ? ["this brain has no active communication with any other: what it calls outside shows up as without endpoint (flowbrain brains shows it)"] : []),
       ...(x && sinEndpoint.length ? [`calls without endpoint are served neither by this brain nor by ${x.vecinos.join(", ") || "any other"}: either the path no longer exists, or the service that serves it is not indexed or not connected`] : []),
       ...(disputadas.length ? [`${disputadas.length} calls match endpoints of more than one brain: declare which service each URL base goes to (flowbrain evidence lists them)`] : []),
+      ...(sinUso.length ? [`${sinUso.length} ${sinUso.length === 1 ? "endpoint is" : "endpoints are"} not counted among the uncalled endpoints because a person marked ${sinUso.length === 1 ? "it" : "them"} as unused on purpose (motivo sin-uso in the brain's not-product.yaml); see \`sinUsoAProposito\`. Remove the entry (or use «Undo» in the viewer) to list ${sinUso.length === 1 ? "it" : "them"} again`] : []),
       ...(programadas ? [`${programadas} ${programadas === 1 ? "scheduled task (CRON) is" : "scheduled tasks (CRON) are"} not counted among the uncalled endpoints: a schedule triggers them, not a call`] : []),
       ...(sinAnalizar ? [`${sinAnalizar} calls with a URL built at runtime could not be analyzed: one of them may be the caller of an endpoint listed as uncalled`] : []),
       ...campos.avisos,

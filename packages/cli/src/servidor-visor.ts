@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConsultaError, leerRegistro, SIGNALS, type Registro, type Signal } from "@flowbrain/core";
 import { aplicarCerebro, htmlDelVisor } from "./cerebros.js";
-import { crearAgente, esTipoDePagina, TIPOS_DE_PEDIDO, type Agente, type ArchivoDeFidelidad, type ArchivoDePedido, type ItemDePagina, type ReglaDePedido, type TipoDePedido } from "./agente.js";
+import { CLASES_DE_DERIVA, crearAgente, esTipoDePagina, TIPOS_DE_PEDIDO, type Agente, type ArchivoDeFidelidad, type ClaseDeDeriva, type ProblemaDeDeriva, type ArchivoDePedido, type ItemDePagina, type ReglaDePedido, type TipoDePedido } from "./agente.js";
 import { codigoDeArchivo, detalleDeArchivo, editar, type Edicion } from "./edicion.js";
 import { L } from "./idioma.js";
 import { VERSION } from "./init.js";
@@ -162,11 +162,11 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
     if (req.method === "GET" && url.pathname === "/api/agente") return { json: { noDisponible: agente.noDisponible(), proveedores: agente.proveedores(), trabajos: agente.lista(), lotes: agente.lotes() } };
     if (req.method === "POST" && url.pathname === "/api/agente/lote") {
       // Un lote: reglas a testear (Especificaciones, `tipo` test o sin tipo), archivos a asociar (Sin asociar),
-      // funcionalidades, casos y reglas a agrupar, escribir o corregir (Especificaciones) o archivos a llevar a 100
-      // (Fidelidad). Todos con los mismos límites: hasta 3000 y 2 MB.
+      // funcionalidades, casos y reglas a agrupar, escribir o corregir (Especificaciones), archivos a llevar a 100
+      // (Fidelidad) o problemas de la deriva (Contratos). Todos con los mismos límites: hasta 3000 y 2 MB.
       const b = await cuerpoJson(req, 2 * 1024 * 1024);
       const tipo = b["tipo"] ?? "test", proveedor = b["proveedor"], modelo = b["modelo"];
-      if (tipo !== "test" && tipo !== "asociar" && tipo !== "fidelidad" && !esTipoDePagina(tipo)) throw new ErrorHttp(400, `unknown batch type: ${String(tipo)}`);
+      if (tipo !== "test" && tipo !== "asociar" && tipo !== "fidelidad" && tipo !== "deriva" && !esTipoDePagina(tipo)) throw new ErrorHttp(400, `unknown batch type: ${String(tipo)}`);
       if ((proveedor !== undefined && typeof proveedor !== "string") || (modelo !== undefined && typeof modelo !== "string")) throw new ErrorHttp(400, "proveedor and modelo must be text");
       const elegido = { ...(proveedor ? { proveedor } : {}), ...(modelo ? { modelo } : {}) };
       if (tipo === "asociar") {
@@ -184,6 +184,28 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
         const no = agente.noDisponible();
         if (no) throw new ErrorHttp(409, no);
         return { json: agente.encolarLote({ tipo: "asociar", archivos: validos, ...elegido }) };
+      }
+      if (tipo === "deriva") {
+        const problemas = b["problemas"];
+        if (!Array.isArray(problemas) || !problemas.length || problemas.length > 3000) throw new ErrorHttp(400, "problemas must be a list of 1 to 3000 problems");
+        const vistos = new Set<string>();
+        const linea = (v: unknown, max: number) => typeof v === "string" && !!v.trim() && v.length <= max && !/\n/.test(v);
+        // Cada problema: su clase, su evidencia (repo:ruta#Ln), la llamada o el endpoint, y qué está roto en una línea.
+        const validos: ProblemaDeDeriva[] = problemas.map((x: Record<string, unknown>) => {
+          const { cerebro, clase, ev, llamada, endpoint, que } = x ?? {};
+          const esEndpoint = clase === "sinLlamadas";
+          if (typeof cerebro !== "string" || !registro.cerebro(cerebro) || !CLASES_DE_DERIVA.includes(clase as ClaseDeDeriva) ||
+            typeof ev !== "string" || !/^[^:\s]+:[^\s#]+#L\d+(-L\d+)?$/.test(ev) || ev.length > 1000 || !linea(que, 600) ||
+            (esEndpoint ? !linea(endpoint, 500) || llamada !== undefined : !linea(llamada, 500) || endpoint !== undefined)) throw new ErrorHttp(400, `invalid problem: ${JSON.stringify(x).slice(0, 160)}`);
+          const p: ProblemaDeDeriva = { cerebro, clase: clase as ClaseDeDeriva, ev, ...(esEndpoint ? { endpoint: endpoint as string } : { llamada: (llamada as string).trim() }), que: (que as string).trim() };
+          const k = `${p.cerebro}|${p.clase}|${p.ev}|${p.endpoint ?? p.llamada}`;
+          if (vistos.has(k)) throw new ErrorHttp(400, `repeated problem: ${p.cerebro} ${p.ev}`);
+          vistos.add(k);
+          return p;
+        });
+        const no = agente.noDisponible();
+        if (no) throw new ErrorHttp(409, no);
+        return { json: agente.encolarLote({ tipo: "deriva", problemas: validos, ...elegido }) };
       }
       if (tipo === "fidelidad") {
         const archivos = b["archivos"];

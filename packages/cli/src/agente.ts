@@ -1,9 +1,10 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { cargarContexto, ConsultaError, especificaciones, fidelidadDeArchivos, planDeFidelidad, TEST_REF, type Contexto, type FidelidadArchivo, type Registro, type Signal } from "@flowbrain/core";
+import { cargarContexto, CIERRE_DE_DERIVA, COMO_RESOLVER_DERIVA, ConsultaError, especificaciones, REGLAS_DE_DERIVA, fidelidadDeArchivos, planDeFidelidad, TEST_REF, type Contexto, type FidelidadArchivo, type Registro, type Signal } from "@flowbrain/core";
+import type { DerivaVisor } from "@flowbrain/viewer";
 import { compileDirConVisor } from "@flowbrain/viewer";
-import { aplicarCerebro } from "./cerebros.js";
+import { aplicarCerebro, derivaDelCerebro } from "./cerebros.js";
 import type { Edicion } from "./edicion.js";
 import { GUIA_ESPECIFICACIONES, GUIA_TESTS } from "./guia.js";
 import { claudeCode, HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento, PROVEEDORES, type AdaptadorDeAgente, type ModeloDeAgente } from "./proveedores.js";
@@ -35,11 +36,16 @@ export { HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento };
  *     archivos de un mismo repo) declaran en la carpeta del cerebro (`calls.yaml`, extractores, páginas de tablas), así
  *     que las de un cerebro van una detrás de otra y los cerebros, en paralelo. Al terminar cada tanda el servidor
  *     reindexa el cerebro y mide cuáles de las faltas pedidas ya no están (`completados`) y cuáles siguen (`pendientes`).
+ *   - `deriva` (pantalla Contratos, dec. 232): problemas de la deriva (llamadas que nadie atiende o con varios
+ *     candidatos, endpoints que nadie llama, campos que no coinciden). Las tandas (hasta 10 problemas de un mismo repo)
+ *     arreglan la llamada en el código del repo o declaran su destino en `calls.yaml`, y lo que proponen borrar lo
+ *     dejan en una nota (nunca borran). Las de un cerebro van una detrás de otra; los cerebros, en paralelo. Al terminar
+ *     cada tanda el servidor reindexa el cerebro, rehace su deriva y mide qué problemas ya no están (`corregidos`).
  *   En todos, una tanda que falla no frena a las demás, y se cancela el lote entero o una tanda.
  */
 
-export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir" | "asociar" | "fidelidad";
-export const TIPOS_DE_PEDIDO: readonly TipoDePedido[] = ["test", "agrupar", "escribir", "corregir", "asociar", "fidelidad"];
+export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir" | "asociar" | "fidelidad" | "deriva";
+export const TIPOS_DE_PEDIDO: readonly TipoDePedido[] = ["test", "agrupar", "escribir", "corregir", "asociar", "fidelidad", "deriva"];
 
 /**
  * Guía de un pedido «asociar» (pantalla Sin asociar): asociar archivos a su funcionalidad o librería, o proponer un
@@ -100,6 +106,37 @@ $ARGUMENTS
 - Reply in the user's language, briefly: what reached 100, what didn't and why.
 `;
 
+/**
+ * Guía de un pedido «deriva» (pantalla Contratos): arreglar lo que no cierra entre lo que se llama y lo que se atiende.
+ * Va con permisos acotados (`permisosDelPedido`): el código del repo de la tanda, y en la carpeta del cerebro su
+ * `calls.yaml` y notas en `_drafts/`. Nunca un cambio destructivo: lo que se podría borrar va a la nota.
+ */
+export const GUIA_DERIVA = `You are going to fix contract drift that FlowBrain found between this project's services: calls nobody serves,
+endpoints nobody calls, and calls whose fields do not match the endpoint contract.
+
+$ARGUMENTS
+
+## Limits
+
+- You can only write the code of this batch's repo and, inside the brain folder (\`.flowbrain/<brain>/\`), its
+  \`calls.yaml\` and notes in \`_drafts/\`. Any other write will be refused. No network.
+${REGLAS_DE_DERIVA.map((r) => `- ${r}`).join("\n")}
+
+## How to resolve each problem
+
+- **A call nobody serves**: ${COMO_RESOLVER_DERIVA.sinEndpoint}
+- **A call matching several endpoints**: ${COMO_RESOLVER_DERIVA.disputada}
+- **An endpoint nobody calls**: ${COMO_RESOLVER_DERIVA.sinLlamadas}
+- **Mismatched fields**: ${COMO_RESOLVER_DERIVA.campos}
+
+## When done
+
+${CIERRE_DE_DERIVA.map((c, i) => `${i + 1}. ${c}`).join("\n")} Reply in the user's language.
+`;
+
+/** Comandos que puede correr un pedido «deriva»: leer FlowBrain, compilar y reindexar el cerebro; nada de tests ni de git que cambie algo. */
+const COMANDOS_DERIVA = ["flowbrain drift", "flowbrain calls", "flowbrain contract", "flowbrain callers", "flowbrain impact", "flowbrain flow", "flowbrain screen", "flowbrain search", "flowbrain feature", "flowbrain status", "flowbrain compile", "flowbrain brains apply", "cd", "ls", "git status", "git diff", "git log"];
+
 /** Comandos que puede correr un pedido «fidelidad»: leer FlowBrain, compilar y reindexar el cerebro; nada de tests. */
 const COMANDOS_FIDELIDAD = ["flowbrain calls", "flowbrain fidelity", "flowbrain flow", "flowbrain screen", "flowbrain drift", "flowbrain coverage", "flowbrain search", "flowbrain feature", "flowbrain status", "flowbrain compile", "flowbrain brains apply", "cd", "ls", "git status", "git diff"];
 
@@ -117,9 +154,10 @@ const COMANDOS_ESPECIFICACIONES = ["flowbrain compile", "flowbrain specs", "flow
  * Un pedido «asociar» solo puede escribir las páginas `feat-*` y `lib-*` de sus cerebros y borradores en `_drafts/`;
  * uno sobre las especificaciones (agrupar, escribir, corregir), solo las páginas `feat-*` de sus cerebros (y las de
  * borrador); uno de «fidelidad», solo lo que su plan deja declarar: `calls.yaml`, los extractores y las páginas de
- * tablas. Lo mismo que dice cada guía, «no modifiques los repositorios del proyecto».
+ * tablas. Uno de «deriva», el código del repo de su tanda (`repos`) y, en sus cerebros, `calls.yaml` y las notas en
+ * `_drafts/`. Lo mismo que dice cada guía, «no modifiques los repositorios del proyecto» (salvo la deriva, en su repo).
  */
-export function permisosDelPedido(tipo: TipoDePedido, raices: string[]): { escritura?: string[]; comandos?: string[] } {
+export function permisosDelPedido(tipo: TipoDePedido, raices: string[], repos: string[] = []): { escritura?: string[]; comandos?: string[] } {
   if (tipo === "asociar") {
     return {
       escritura: raices.flatMap((r) => [join(r, "_drafts", "**"), join(r, "product", "feat-*.md"), join(r, "technology", "lib-*.md")]),
@@ -130,6 +168,12 @@ export function permisosDelPedido(tipo: TipoDePedido, raices: string[]): { escri
     return {
       escritura: raices.flatMap((r) => [join(r, "product", "feat-*.md"), join(r, "_drafts", "product", "feat-*.md")]),
       comandos: COMANDOS_ESPECIFICACIONES,
+    };
+  }
+  if (tipo === "deriva") {
+    return {
+      escritura: [...repos.map((r) => join(r, "**")), ...raices.flatMap((r) => [join(r, "calls.yaml"), join(r, "_drafts", "**")])],
+      comandos: COMANDOS_DERIVA,
     };
   }
   if (tipo === "fidelidad") {
@@ -206,7 +250,43 @@ export interface ArchivoDeFidelidad {
   tareas: Array<{ signal: Signal; que: string; lineas: number[] }>;
 }
 
-export type TipoDeLote = "test" | "asociar" | "fidelidad" | TipoDePagina;
+/** Las cuatro clases de problema de la deriva, con la clave que les da el visor. */
+export const CLASES_DE_DERIVA = ["sinEndpoint", "disputada", "sinLlamadas", "campos"] as const;
+export type ClaseDeDeriva = (typeof CLASES_DE_DERIVA)[number];
+
+/**
+ * Un problema de un lote «deriva»: su clase, dónde está (`ev`, `repo:ruta#Ln`: la llamada, o el handler de un
+ * endpoint sin llamadas), la llamada (`GET /x`) o el endpoint (su id), y qué está roto en una línea, en inglés.
+ */
+export interface ProblemaDeDeriva {
+  cerebro: string;
+  clase: ClaseDeDeriva;
+  ev: string;
+  llamada?: string;
+  endpoint?: string;
+  que: string;
+}
+
+/**
+ * Con qué se reconoce un problema de la deriva antes y después de una tanda: el endpoint, o la llamada por su archivo
+ * (sin la línea, que se corre si el agente edita el archivo) y su texto. El visor usa la misma regla.
+ */
+export function claveDeDeriva(p: Pick<ProblemaDeDeriva, "cerebro" | "clase" | "ev" | "llamada" | "endpoint">): string {
+  return `${p.cerebro}|${p.clase}|${p.clase === "sinLlamadas" ? p.endpoint ?? "" : `${p.ev.replace(/#L\d+(-L\d+)?$/, "")} ${p.llamada ?? ""}`}`;
+}
+
+/** Los problemas que siguen en una deriva, como claves (`claveDeDeriva`). */
+export function clavesDeDeriva(cerebro: string, d: Pick<DerivaVisor, "llamadasSinEndpoint" | "llamadasAmbiguas" | "disputadasEntreCerebros" | "endpointsSinLlamadasDetectadas" | "camposQueNoCoinciden">): Set<string> {
+  const k = (clase: ClaseDeDeriva, ev: string, llamada?: string, endpoint?: string) => claveDeDeriva({ cerebro, clase, ev, ...(llamada !== undefined ? { llamada } : {}), ...(endpoint !== undefined ? { endpoint } : {}) });
+  return new Set([
+    ...d.llamadasSinEndpoint.map((x) => k("sinEndpoint", x.ev, x.llamada)),
+    ...[...d.llamadasAmbiguas, ...(d.disputadasEntreCerebros ?? [])].map((x) => k("disputada", x.ev, x.llamada)),
+    ...d.endpointsSinLlamadasDetectadas.map((x) => k("sinLlamadas", x.ev, undefined, x.endpoint)),
+    ...(d.camposQueNoCoinciden ?? []).map((x) => k("campos", x.ev, x.llamada)),
+  ]);
+}
+
+export type TipoDeLote = "test" | "asociar" | "fidelidad" | "deriva" | TipoDePagina;
 
 export interface Trabajo {
   id: string;
@@ -254,6 +334,10 @@ export interface Trabajo {
    */
   completados?: Array<{ cerebro: string; archivo: string; puntaje: number | null }>;
   pendientes?: Array<{ cerebro: string; archivo: string; puntaje: number | null }>;
+  /** Tanda de un lote «deriva»: los problemas pedidos, y después de reindexar, cuáles ya no están en la deriva y cuáles siguen. */
+  problemas?: ProblemaDeDeriva[];
+  corregidos?: ProblemaDeDeriva[];
+  persisten?: ProblemaDeDeriva[];
 }
 
 export interface Lote {
@@ -280,6 +364,8 @@ const TANDA_MAX = 15;
 export const TANDA_MAX_ASOCIAR = 30;
 /** Archivos por tanda de un lote «fidelidad»: cada falta pide abrir el código en su línea y declarar lo que se lee. */
 export const TANDA_MAX_FIDELIDAD = 10;
+/** Problemas por tanda de un lote «deriva»: cada uno pide abrir la llamada (o buscar quién usa el endpoint) y decidir. */
+export const TANDA_MAX_DERIVA = 10;
 
 /**
  * Ítems por tanda de un lote sobre las especificaciones. Escribir lee el código y los tests de cada funcionalidad
@@ -294,7 +380,7 @@ export function tamanioDeTanda(n: number, max = TANDA_MAX): number {
 
 /** El texto que recibe el agente: la guía del tipo de pedido, con el pedido en lugar de `$ARGUMENTS`. */
 export function indicacionesDelPedido(tipo: TipoDePedido, pedido: string): string {
-  const guia = (tipo === "test" ? GUIA_TESTS : tipo === "asociar" ? GUIA_ASOCIAR : tipo === "fidelidad" ? GUIA_FIDELIDAD : GUIA_ESPECIFICACIONES).replace(/^---\n[\s\S]*?\n---\n/, "");
+  const guia = (tipo === "test" ? GUIA_TESTS : tipo === "asociar" ? GUIA_ASOCIAR : tipo === "fidelidad" ? GUIA_FIDELIDAD : tipo === "deriva" ? GUIA_DERIVA : GUIA_ESPECIFICACIONES).replace(/^---\n[\s\S]*?\n---\n/, "");
   return guia.replace("$ARGUMENTS", `What the person asks for, from the FlowBrain viewer:\n\n${pedido.trim()}\n`);
 }
 
@@ -333,6 +419,20 @@ export function pedidoDeTandaFidelidad(archivos: ArchivoDeFidelidad[], repo: str
       "This is a request from the viewer: when you finish, the server reindexes the brain again and measures which of these gaps are gone.",
     ],
   });
+}
+
+/** Cómo se nombra cada clase de problema de la deriva, para el modelo. */
+const CLASE_EN: Record<ClaseDeDeriva, string> = { sinEndpoint: "call nobody serves", disputada: "call matching several endpoints", sinLlamadas: "endpoint nobody calls", campos: "mismatched fields" };
+
+/** El pedido de una tanda «deriva»: los problemas de un repo, uno por línea, con su evidencia. */
+export function pedidoDeTandaDeriva(problemas: ProblemaDeDeriva[], repo: string, cerebro: string, n: number, de: number): string {
+  return [
+    `Fix ${problemas.length === 1 ? "this contract drift problem" : `these ${problemas.length} contract drift problems`} found in ${repo} (brain ${cerebro}${de > 1 ? `, batch ${n} of ${de}` : ""}), following the guide.`,
+    `Code changes go only in ${repo}; declarations go in \`.flowbrain/${cerebro}/calls.yaml\` and proposals in \`.flowbrain/${cerebro}/_drafts/drift-notes.md\`. Never delete anything.`,
+    "This is a request from the viewer: when you finish, the server reindexes the brain and checks which of these problems are gone from the drift.",
+    "",
+    ...problemas.map((p) => `- [ ] ${CLASE_EN[p.clase]}: ${p.endpoint ?? p.llamada ?? ""} at ${p.ev}. ${p.que}`),
+  ].join("\n");
 }
 
 /**
@@ -457,7 +557,7 @@ export interface Agente {
    * `test`: reparte las reglas por repo (en paralelo) y cada repo en tandas. `asociar` y `fidelidad`: los archivos por
    * cerebro (en paralelo) y por repo, en tandas. `agrupar`, `escribir` y `corregir`: los ítems en tandas, una detrás de otra.
    */
-  encolarLote(p: ({ tipo?: "test"; reglas: ReglaDePedido[] } | { tipo: "asociar"; archivos: ArchivoDePedido[] } | { tipo: "fidelidad"; archivos: ArchivoDeFidelidad[] } | { tipo: TipoDePagina; items: ItemDePagina[] }) & { proveedor?: string; modelo?: string }): { lote: Lote; trabajos: Trabajo[] };
+  encolarLote(p: ({ tipo?: "test"; reglas: ReglaDePedido[] } | { tipo: "asociar"; archivos: ArchivoDePedido[] } | { tipo: "fidelidad"; archivos: ArchivoDeFidelidad[] } | { tipo: "deriva"; problemas: ProblemaDeDeriva[] } | { tipo: TipoDePagina; items: ItemDePagina[] }) & { proveedor?: string; modelo?: string }): { lote: Lote; trabajos: Trabajo[] };
   lista(): Trabajo[];
   lotes(): Lote[];
   cancelar(id: string): Trabajo | null;
@@ -479,6 +579,8 @@ export interface OpcionesDeAgente {
   aplicar?: (ed: Edicion) => Promise<unknown>;
   /** Actualiza el índice de un cerebro: así los tests nuevos entran y cuentan como verificados. */
   reindexar?: (cerebro: string) => Promise<void>;
+  /** La deriva de un cerebro, cruzada con los demás (para medir un lote «deriva»); por defecto, la del registro. */
+  deriva?: (cerebro: string) => Promise<Parameters<typeof clavesDeDeriva>[1] | null>;
 }
 
 /** `registro()` se lee cada vez: si el registro cambia, vale lo que hay en disco. */
@@ -539,7 +641,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     const antes = new Map(repos.map((r) => [r, estadoGit(r)]));
     const afuera = todos.filter((r) => !resolve(r).startsWith(cwd + sep));
     const raices = t.cerebros.map((n) => reg.cerebro(n)?.raiz).filter((r): r is string => !!r).map((r) => resolve(r));
-    const { comando, args } = a.armar({ prompt: indicacionesDelPedido(t.tipo, t.pedido), ...(t.modelo ? { modelo: t.modelo } : {}), cwd, carpetasExtra: afuera, ...permisosDelPedido(t.tipo, raices) });
+    const { comando, args } = a.armar({ prompt: indicacionesDelPedido(t.tipo, t.pedido), ...(t.modelo ? { modelo: t.modelo } : {}), cwd, carpetasExtra: afuera, ...permisosDelPedido(t.tipo, raices, soloRepo ? [resolve(soloRepo)] : []) });
     await new Promise<void>((listo) => {
       const p = spawn(comando, args, { cwd, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FLOWBRAIN_ROOT: reg.carpeta } });
       procesos.set(t.id, p);
@@ -720,6 +822,40 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.completados?.length ? "fallo" : "terminado";
   }
 
+  /**
+   * Una tanda «deriva»: corre el agente, reindexa el cerebro (así entran el código y `calls.yaml` cambiados), rehace su
+   * deriva cruzada con los demás cerebros y mide qué problemas pedidos ya no están.
+   */
+  async function correrTandaDeriva(t: Trabajo, repoRuta: string | undefined) {
+    const pedidos = t.problemas ?? [];
+    try {
+      const reg = await lanzar(t, repoRuta);
+      // Aun cancelada pudo haber cambiado algo: se reindexa y se mide igual.
+      for (const nombre of t.cerebros) {
+        const c = reg.cerebro(nombre);
+        const suyos = pedidos.filter((p) => p.cerebro === nombre);
+        if (!c) {
+          t.persisten = [...(t.persisten ?? []), ...suyos];
+          continue;
+        }
+        try {
+          if (opciones.reindexar) await opciones.reindexar(nombre);
+          else await aplicarCerebro(c);
+          const d = await (opciones.deriva ?? ((n: string) => derivaDelCerebro(reg, n)))(nombre);
+          const quedan = d ? clavesDeDeriva(nombre, d) : null;
+          for (const p of suyos) (quedan && !quedan.has(claveDeDeriva(p)) ? (t.corregidos ??= []) : (t.persisten ??= [])).push(p);
+        } catch (e) {
+          t.persisten = [...(t.persisten ?? []), ...suyos];
+          t.error = `${t.error ? `${t.error}. ` : ""}${nombre} could not be reindexed: ${(e as Error).message.split("\n")[0]}`;
+        }
+      }
+    } catch (e) {
+      t.error = `${t.error ? `${t.error}. ` : ""}${(e as Error).message}`;
+    }
+    t.terminado = Date.now();
+    if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.corregidos?.length ? "fallo" : "terminado";
+  }
+
   /** Una tanda agrupar, escribir o corregir: corre el agente, compila sus cerebros y mira en las páginas qué quedó resuelto. */
   async function correrTandaPaginas(t: Trabajo & { tipo: TipoDePagina }) {
     try {
@@ -781,7 +917,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
   }
 
   async function terminarLote(l: Lote) {
-    // Cada tanda «asociar», «fidelidad», agrupar, escribir o corregir ya compiló (o reindexó) sus cerebros: no hay tests nuevos que indexar.
+    // Cada tanda «asociar», «fidelidad», «deriva», agrupar, escribir o corregir ya compiló (o reindexó) sus cerebros: no hay tests nuevos que indexar.
     if (l.tipo !== "test") {
       l.estado = "terminado";
       return;
@@ -823,12 +959,14 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
         if (!q.items.length) throw new ConsultaError("parametro_invalido", "there is nothing to request");
         return encolarLotePaginas(q.tipo, q.items, elegir(p.proveedor, p.modelo));
       }
-      const tipo = p.tipo === "asociar" || p.tipo === "fidelidad" ? p.tipo : "test";
-      // asociar y fidelidad: archivos de un cerebro, que escriben en su carpeta.
+      const tipo = p.tipo === "asociar" || p.tipo === "fidelidad" || p.tipo === "deriva" ? p.tipo : "test";
+      // asociar, fidelidad y deriva: cosas de un cerebro, que escriben en su carpeta.
       const porCerebro = tipo !== "test";
-      type Item = ReglaDePedido | (ArchivoDePedido & { repo: string }) | (ArchivoDeFidelidad & { repo: string });
-      const items: Item[] = p.tipo === "asociar" || p.tipo === "fidelidad" ? (p.archivos as Array<ArchivoDePedido | ArchivoDeFidelidad>).map((a) => ({ ...a, repo: a.archivo.split(":")[0]! })) : (p as { reglas: ReglaDePedido[] }).reglas;
-      if (!items.length) throw new ConsultaError("parametro_invalido", porCerebro ? "there are no files to request" : "there are no rules to request");
+      type Item = ReglaDePedido | (ArchivoDePedido & { repo: string }) | (ArchivoDeFidelidad & { repo: string }) | (ProblemaDeDeriva & { repo: string });
+      const items: Item[] = p.tipo === "deriva"
+        ? p.problemas.map((x) => ({ ...x, repo: x.ev.split(":")[0]! }))
+        : p.tipo === "asociar" || p.tipo === "fidelidad" ? (p.archivos as Array<ArchivoDePedido | ArchivoDeFidelidad>).map((a) => ({ ...a, repo: a.archivo.split(":")[0]! })) : (p as { reglas: ReglaDePedido[] }).reglas;
+      if (!items.length) throw new ConsultaError("parametro_invalido", tipo === "deriva" ? "there are no problems to request" : porCerebro ? "there are no files to request" : "there are no rules to request");
       const { a, modelo } = elegir(p.proveedor, p.modelo);
       const cerebros = [...new Set(items.map((r) => r.cerebro))];
       const lote: Lote = { id: randomBytes(6).toString("hex"), tipo, creado: Date.now(), cerebros, estado: "corriendo" };
@@ -846,12 +984,18 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
       const hechos: Trabajo[] = [];
       const cadenas = new Map<string, Array<{ t: Trabajo; repo: string }>>();
       for (const g of grupos.values()) {
-        const tam = tamanioDeTanda(g.xs.length, tipo === "asociar" ? TANDA_MAX_ASOCIAR : tipo === "fidelidad" ? TANDA_MAX_FIDELIDAD : TANDA_MAX);
+        const tam = tamanioDeTanda(g.xs.length, tipo === "asociar" ? TANDA_MAX_ASOCIAR : tipo === "fidelidad" ? TANDA_MAX_FIDELIDAD : tipo === "deriva" ? TANDA_MAX_DERIVA : TANDA_MAX);
         const de = Math.ceil(g.xs.length / tam);
         for (let n = 1; n <= de; n++) {
           const parte = g.xs.slice((n - 1) * tam, n * tam);
           const base = { proveedor: a.id, ...(modelo ? { modelo } : {}), lote: lote.id, repo: g.repo, tanda: { n, de } };
-          const t = tipo === "fidelidad"
+          const t = tipo === "deriva"
+            ? nuevo({
+              ...base, tipo: "deriva", etiqueta: `${g.repo}${de > 1 ? ` · batch ${n} of ${de}` : ""} · ${parte.length} ${parte.length === 1 ? "problem" : "problems"}`,
+              pedido: pedidoDeTandaDeriva(parte as ProblemaDeDeriva[], g.repo, g.cerebro, n, de), cerebros: [g.cerebro],
+              problemas: (parte as Array<ProblemaDeDeriva & { repo?: string }>).map(({ repo: _, ...x }) => x),
+            })
+            : tipo === "fidelidad"
             ? nuevo({
               ...base, tipo: "fidelidad", etiqueta: `${g.repo}${de > 1 ? ` · batch ${n} of ${de}` : ""} · ${parte.length} ${parte.length === 1 ? "file" : "files"}`,
               pedido: pedidoDeTandaFidelidad(parte as ArchivoDeFidelidad[], g.repo, g.cerebro, n, de), cerebros: [g.cerebro],
@@ -879,14 +1023,24 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
       // Dentro de una cadena, una tanda después de otra (dos agentes en el mismo repo, o en las mismas páginas, se pisarían).
       void (async () => {
         const reg = await registro();
-        const rutaDe = (repo: string) => reg.cerebros.flatMap((c) => c.repos).find((r) => r.id === repo)?.ruta;
+        // La carpeta de un repo: la que declara el registro con su id o, si no lo declara, la que anotó el índice del cerebro.
+        const indexadas = new Map<string, Promise<Record<string, string>>>();
+        const rutaDe = async (repo: string, cerebro: string | undefined) => {
+          const declarada = reg.cerebros.flatMap((c) => c.repos).find((r) => r.id === repo)?.ruta;
+          const c = cerebro ? reg.cerebro(cerebro) : null;
+          if (declarada || !c) return declarada;
+          if (!indexadas.has(c.nombre)) indexadas.set(c.nombre, cargarContexto(c.raiz).then((x) => x.codigo?.raices ?? {}, () => ({})));
+          const r = (await indexadas.get(c.nombre)!)[repo];
+          return r ? resolve(c.raiz, r) : undefined;
+        };
         await Promise.all([...cadenas.values()].map(async (ts) => {
           for (const { t, repo } of ts) {
             if (t.estado === "cancelado") {
               pedidoFidelidad.delete(t.id);
               continue;
             }
-            await (tipo === "fidelidad" ? correrTandaFidelidad(t, rutaDe(repo)) : tipo === "asociar" ? correrTandaAsociar(t, rutaDe(repo)) : correrTanda(t, rutaDe(repo)));
+            const ruta = await rutaDe(repo, t.cerebros[0]);
+            await (tipo === "deriva" ? correrTandaDeriva(t, ruta) : tipo === "fidelidad" ? correrTandaFidelidad(t, ruta) : tipo === "asociar" ? correrTandaAsociar(t, ruta) : correrTanda(t, ruta));
           }
         }));
         await terminarLote(lote);

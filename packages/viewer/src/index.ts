@@ -32,8 +32,9 @@ export const compileDirConVisor = (raiz: string, progreso?: Progreso) =>
     }
     avisar(progreso, { etapa: "fidelidad" });
     const ctx = contextoDeFuentes(s.graph, s.funcionalidades, archivos, extracciones, contratos.map((c) => JSON.parse(c) as Contrato));
-    const fidelidad = fidelidadDeArchivos(ctx, { noProducto: await cargarNoProducto(raiz) });
-    const derivaVisor = deriva(ctx, { budget_tokens: null }) as unknown as DerivaVisor;
+    const noProducto = await cargarNoProducto(raiz);
+    const fidelidad = fidelidadDeArchivos(ctx, { noProducto });
+    const derivaVisor = deriva(ctx, { budget_tokens: null, noProducto }) as unknown as DerivaVisor;
     avisar(progreso, { etapa: "visor" });
     return visor(s, fidelidad, derivaVisor, simbolosDelVisor(ctx));
   }, progreso);

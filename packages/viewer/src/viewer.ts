@@ -1,4 +1,4 @@
-import { CIERRE_DEL_PLAN, COMO_RESOLVER, GUIA_TESTS, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type CodigoVisor, type ArchivoSinAsociar, type IgnoradoSinAsociar, type SenalDeRecomendacion, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { CIERRE_DE_DERIVA, CIERRE_DEL_PLAN, COMO_RESOLVER, COMO_RESOLVER_DERIVA, GUIA_TESTS, REGLAS_DE_DERIVA, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type CodigoVisor, type ArchivoSinAsociar, type IgnoradoSinAsociar, type SenalDeRecomendacion, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
 import { CONTRATOS_JS } from "./viewer-contratos.js";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
@@ -81,6 +81,8 @@ export interface DerivaVisor {
   llamadasSinEndpoint: Array<{ desde: string; llamada: string; ev: string; existeConOtroMetodo?: string[] }>;
   llamadasAmbiguas: Array<{ desde: string; llamada: string; ev: string; candidatos: string[] }>;
   endpointsSinLlamadasDetectadas: Array<{ endpoint: string; ev: string }>;
+  /** Endpoints que una persona marcó como sin uso a propósito (`not-product.yaml`, dec. 232): no cuentan como deriva. */
+  sinUsoAProposito?: Array<{ endpoint: string; ev: string; nadieLoLlama: boolean }>;
   consumidoresIndexados: Record<string, string[]>;
   comunicadoCon?: string[];
   atendidasEnOtrosCerebros?: Array<{ cerebro: string; llamadas: number; endpoints: number }>;
@@ -102,6 +104,8 @@ export function derivaDelVisor(d: DerivaVisor | undefined) {
     disputadas: (d.disputadasEntreCerebros ?? []).map((x) => ({ d: x.desde, l: x.llamada, ev: x.ev, k: x.candidatos })),
     atendidas: (d.atendidasEnOtrosCerebros ?? []).map((x) => ({ cerebro: x.cerebro, llamadas: x.llamadas, endpoints: x.endpoints })),
     sinLlamadas: d.endpointsSinLlamadasDetectadas.map((x) => ({ e: x.endpoint, ev: x.ev })),
+    // n: sin la marca, nadie lo llamaría (al deshacerla vuelve a «Endpoints que nadie llama»).
+    sinUso: (d.sinUsoAProposito ?? []).map((x) => ({ e: x.endpoint, ev: x.ev, n: x.nadieLoLlama })),
     consumidores: d.consumidoresIndexados,
     // Campos: `null` si la deriva no los trae. l: llamada, ev, e: endpoint, c: cerebro, eb: evidencia del endpoint.
     campos: d.campos ?? null,
@@ -113,6 +117,8 @@ export function derivaDelVisor(d: DerivaVisor | undefined) {
   };
 }
 
+export const PLAN_DE_DERIVA = { reglas: REGLAS_DE_DERIVA, como: COMO_RESOLVER_DERIVA, cierre: CIERRE_DE_DERIVA };
+
 /** Lo que el visor embebe de un brain. */
 export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidelidad?: FidelidadVisor, deriva?: DerivaVisor, codigo?: CodigoVisor | null) {
   // Los archivos de test de alguna funcionalidad se dibujan como tipo propio (`test`), para prenderlos y apagarlos aparte.
@@ -123,6 +129,8 @@ export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidel
     noProducto: noProductoDelVisor(fidelidad),
     // Una entrada por cerebro; `null` si no hay índice de código (sin él no se sabe qué se llama).
     deriva: deriva ? [derivaDelVisor(deriva)!] : null,
+    // Cómo se arregla la deriva, para el .md del pedido al agente: el mismo texto que usa el servidor (dec. 232).
+    derivaPlan: deriva ? PLAN_DE_DERIVA : null,
     dependencias: dependenciasDelGrafo(graph, funcionalidades),
     // Símbolos del índice de código (clases, métodos, funciones, hooks…) con quién los llama y los usa, para Impacto;
     // `null` sin índice de código.

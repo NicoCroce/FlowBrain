@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agregarCodigoAPagina, leerNoProducto, marcarNoProducto, agregarDeclaracion, cambiarEstadoDeEspecificacion, leerLlamadasDeclaradas } from "../src/index.js";
+import { agregarCodigoAPagina, esMarcaDeEndpoint, leerNoProducto, marcarNoProducto, agregarDeclaracion, cambiarEstadoDeEspecificacion, leerLlamadasDeclaradas } from "../src/index.js";
 
 const PAGINA = `---
 id: feat-pedidos
@@ -91,6 +91,21 @@ describe("marcar como no de producto (not-product.yaml)", () => {
     expect(marcarNoProducto(d.contenido, "repo-x:scripts", null).cambio).toBe(false);
     expect(() => marcarNoProducto(null, "../fuera", "otro")).toThrow(/invalid entry/);
     expect(() => marcarNoProducto(null, "repo-x:a", "porque sí")).toThrow(/unknown motivo/);
+  });
+
+  it("un endpoint se marca sin uso a propósito con el mismo archivo y solo con el motivo sin-uso (dec. 232)", () => {
+    const a = marcarNoProducto(null, "svc-x:POST:/webhooks/pago", "sin-uso");
+    expect(a.contenido).toContain("endpoints nobody calls on purpose");
+    expect(a.contenido).toContain('entrada: "svc-x:POST:/webhooks/pago"');
+    const b = marcarNoProducto(a.contenido, "repo-x:scripts", "script");
+    expect(leerNoProducto(b.contenido).marcas.map((m) => [m.entrada, m.motivo])).toEqual([["svc-x:POST:/webhooks/pago", "sin-uso"], ["repo-x:scripts", "script"]]);
+    expect(esMarcaDeEndpoint({ entrada: "svc-x:POST:/webhooks/pago" })).toBe(true);
+    expect(esMarcaDeEndpoint({ entrada: "repo-x:scripts" })).toBe(false);
+    // Se deshace igual que una de archivo.
+    expect(leerNoProducto(marcarNoProducto(b.contenido, "svc-x:POST:/webhooks/pago", null).contenido).marcas.map((m) => m.entrada)).toEqual(["repo-x:scripts"]);
+    expect(() => marcarNoProducto(null, "svc-x:GET:/a", "script")).toThrow(/only takes motivo sin-uso/);
+    expect(() => marcarNoProducto(null, "repo-x:a", "sin-uso")).toThrow(/only for an endpoint/);
+    expect(leerNoProducto("no_producto:\n  - entrada: svc-x:GET:/a\n    motivo: test\n  - entrada: repo-x:b\n    motivo: sin-uso\n").rechazadas).toHaveLength(2);
   });
 
   it("al leer descarta lo mal formado y dice por qué", () => {

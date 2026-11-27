@@ -7,6 +7,11 @@
  *   ya está del otro lado, qué falta y dónde difieren las tablas. Se calcula acá, con la misma regla que `paridad` del
  *   motor: método y ruta sin el nombre de los parámetros, prefijo fijo descontado, y entre cerebros las tablas por
  *   nombre sin separadores.
+ * Cada problema de la deriva se suma al pedido al agente, el componente único del visor (`window.brainPedido`, dec.
+ * 232): «Pedir» en cada problema y «Pedir los N» por sección o servicio; de ahí sale en lote (tandas por repo) o como
+ * .md. Un endpoint que nadie llama a propósito (un webhook, un cliente afuera) se marca «Sin uso a propósito»: se
+ * guarda en el cerebro como «No es de producto» (`not-product.yaml`, motivo `sin-uso`), sale de la deriva y se
+ * deshace desde la misma pantalla.
  * Un vacío siempre dice por qué. JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
 export const CONTRATOS_JS = String.raw`
@@ -67,19 +72,26 @@ export const CONTRATOS_JS = String.raw`
   var svcDeId = function (id) { var s = String(id || ""), i = s.indexOf(":"); return i < 0 ? s : s.slice(0, i); };
   var metodoDe = function (texto) { var m = /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|CRON|GRPC)\b/.exec(String(texto || "")); return m ? m[1] : ""; };
   var cerebroD = function (d, i) { return d.c !== undefined ? d.c : i; };
-  var ITEMS_D = [];
-  (DERIVA || []).forEach(function (d, i) {
-    var c = cerebroD(d, i);
-    d.sinEndpoint.forEach(function (x) { ITEMS_D.push({ t: "sinEndpoint", c: c, svc: svcDeId(x.d), m: metodoDe(x.l), x: x, texto: x.l + " " + x.ev + " " + nombre(x.d) }); });
-    d.disputadas.concat(d.ambiguas).forEach(function (x) { ITEMS_D.push({ t: "disputada", c: c, svc: svcDeId(x.d), m: metodoDe(x.l), x: x, texto: x.l + " " + x.ev }); });
-    var svcs = Object.keys(d.consumidores);
-    d.sinLlamadas.forEach(function (x) {
-      var s = svcDeId(x.e);
-      svcs.forEach(function (k) { if (x.e.indexOf(k + ":") === 0) s = k; });
-      ITEMS_D.push({ t: "sinLlamadas", c: c, svc: s, m: metodoDe(pieza(x.e)), x: x, texto: pieza(x.e) + " " + x.ev });
+  // Los problemas, uno por fila; k: su clave en la lista y en el pedido al agente. Se rearman al marcar un endpoint
+  // «Sin uso a propósito» (sale de la deriva) o al deshacerlo (vuelve).
+  var ITEMS_D = [], ITEM_POR_K = {};
+  function armarItems() {
+    ITEMS_D = []; ITEM_POR_K = {};
+    var sumar = function (it) { it.k = it.t + "|" + it.c + "|" + (it.t === "sinLlamadas" ? it.x.e : it.x.ev + "|" + it.x.l); ITEMS_D.push(it); ITEM_POR_K[it.k] = it; };
+    (DERIVA || []).forEach(function (d, i) {
+      var c = cerebroD(d, i);
+      d.sinEndpoint.forEach(function (x) { sumar({ t: "sinEndpoint", c: c, svc: svcDeId(x.d), m: metodoDe(x.l), x: x, texto: x.l + " " + x.ev + " " + nombre(x.d) }); });
+      d.disputadas.concat(d.ambiguas).forEach(function (x) { sumar({ t: "disputada", c: c, svc: svcDeId(x.d), m: metodoDe(x.l), x: x, texto: x.l + " " + x.ev }); });
+      var svcs = Object.keys(d.consumidores);
+      d.sinLlamadas.forEach(function (x) {
+        var s = svcDeId(x.e);
+        svcs.forEach(function (k) { if (x.e.indexOf(k + ":") === 0) s = k; });
+        sumar({ t: "sinLlamadas", c: c, svc: s, m: metodoDe(pieza(x.e)), x: x, texto: pieza(x.e) + " " + x.ev });
+      });
+      (d.difieren || []).forEach(function (x) { sumar({ t: "campos", c: c, svc: svcDeId(x.e), m: metodoDe(x.l), x: x, texto: x.l + " " + x.ev + " " + x.e + " " + JSON.stringify([x.cuerpo, x.query, x.respuesta]) }); });
     });
-    (d.difieren || []).forEach(function (x) { ITEMS_D.push({ t: "campos", c: c, svc: svcDeId(x.e), m: metodoDe(x.l), x: x, texto: x.l + " " + x.ev + " " + x.e + " " + JSON.stringify([x.cuerpo, x.query, x.respuesta]) }); });
-  });
+  }
+  armarItems();
   var nombreCerebro = function (v) { return CEREBROS[Number(v)] ? CEREBROS[Number(v)].nombre : String(v); };
   var nombreSvc = function (s) { return porId[s] ? nombre(s) : local(s); };
   var flD = DERIVA ? window.brainFiltros.crear({
@@ -120,7 +132,7 @@ export const CONTRATOS_JS = String.raw`
   }
   var conCerebro = function (x) { return DERIVA.length > 1 ? ' <span class="chip">' + esc(nombreCerebro(x.c)) + "</span>" : ""; };
   function llamada(x, extra, it) {
-    return "<li><code>" + esc(x.l) + "</code> <small>" + L("from ", "desde ") + esc(nombre(x.d)) + " · <code>" + esc(x.ev) + "</code></small>" + (it ? conCerebro(it) : "") + (extra || "") + "</li>";
+    return "<li><code>" + esc(x.l) + "</code> <small>" + L("from ", "desde ") + esc(nombre(x.d)) + " · <code>" + esc(x.ev) + "</code></small>" + (it ? conCerebro(it) : "") + (extra || "") + (it ? hacer(it) : "") + "</li>";
   }
   var ninguno = function () { return '<p class="aviso">' + L("Nothing matches ", "Ninguno coincide con ") + esc(flD.activos().join(", ")) + ".</p>"; };
   // Lo de cada cerebro que no es una lista: con quién se cruza, lo que atiende otro, lo que no se pudo medir.
@@ -161,7 +173,8 @@ export const CONTRATOS_JS = String.raw`
     if (!DERIVA) return '<p class="aviso">' + L("There's no code index, so it's unknown what each service calls or whom. Run <code>flowbrain index</code> on each repo and then <code>flowbrain compile</code> (or <code>flowbrain brains apply</code>).",
       "No hay índice de código, así que no se sabe qué llama cada servicio ni a quién. Corré <code>flowbrain index</code> sobre cada repo y después <code>flowbrain compile</code> (o <code>flowbrain brains apply</code>).") + "</p>";
     var ds = alcance(), ctx = contexto(ds);
-    return ctx.cruces + flD.html() + '<div id="ct-lista">' + listaDeriva() + "</div>" + ctx.atendidas + ctx.avisos;
+    var msg = MSG ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '" role="status">' + esc(MSG.texto) + "</p>" : "";
+    return ctx.cruces + flD.html() + msg + '<div id="ct-lista">' + listaDeriva() + "</div>" + ctx.atendidas + ctx.avisos;
   }
   function listaDeriva() {
     var ds = alcance(), S2 = flD.S(), xs = flD.filtrar(), ve = function (t) { return !S2.grupo || S2.grupo === t; };
@@ -171,7 +184,7 @@ export const CONTRATOS_JS = String.raw`
     if (ve("sinEndpoint")) {
       var sinEp = de("sinEndpoint"), n = total(function (d) { return d.sinEndpoint.length; });
       out += seccion(L("Calls nobody handles", "Llamadas que nadie atiende"), sinEp.length, n
-        ? "<p><small>" + L("The route no longer exists, changed method, or the service that handles it isn't indexed", "La ruta ya no existe, cambió de método, o el servicio que la atiende no está indexado") + (ds.some(function (d) { return d.comunicadoCon; }) ? L(" or connected", " ni comunicado") : "") + ".</small></p>" +
+        ? "<p><small>" + L("The route no longer exists, changed method, or the service that handles it isn't indexed", "La ruta ya no existe, cambió de método, o el servicio que la atiende no está indexado") + (ds.some(function (d) { return d.comunicadoCon; }) ? L(" or connected", " ni comunicado") : "") + ".</small></p>" + barra("s|sinEndpoint", L("The agent fixes each call or declares its real destination.", "El agente arregla cada llamada o declara su destino real.")) +
           (sinEp.length ? listaCortada("sinEndpoint", sinEp, function (it) {
             var x = it.x;
             return llamada(x, x.o ? '<div class="fd-nota">' + L("Exists with another method: ", "Existe con otro método: ") + x.o.map(function (id) { return "<code>" + esc(pieza(id)) + "</code>"; }).join(", ") + "</div>" : "", it);
@@ -180,7 +193,7 @@ export const CONTRATOS_JS = String.raw`
     }
     if (ve("disputada")) {
       var disp = de("disputada");
-      if (disp.length) out += seccion(L("Match several endpoints", "Coinciden con varios endpoints"), disp.length, "<p><small>" + L("They match more than one endpoint and weren't linked to any. Between brains, fix it by declaring which service each base URL goes to (<code>flowbrain evidence</code>).", "Coinciden con más de un endpoint y no se unieron a ninguno. Entre cerebros se resuelve declarando a qué servicio va cada base de URL (<code>flowbrain evidence</code>).") + "</small></p>" +
+      if (disp.length) out += seccion(L("Match several endpoints", "Coinciden con varios endpoints"), disp.length, "<p><small>" + L("They match more than one endpoint and weren't linked to any. Between brains, fix it by declaring which service each base URL goes to (<code>flowbrain evidence</code>).", "Coinciden con más de un endpoint y no se unieron a ninguno. Entre cerebros se resuelve declarando a qué servicio va cada base de URL (<code>flowbrain evidence</code>).") + "</small></p>" + barra("s|disputada", L("The agent declares which service each one goes to, or fixes the call.", "El agente declara a qué servicio va cada una, o arregla la llamada.")) +
         listaCortada("disputadas", disp, function (it) { return llamada(it.x, '<div class="fd-nota">' + L("Candidates: ", "Candidatos: ") + it.x.k.map(function (k) { return "<code>" + esc(k) + "</code>"; }).join(", ") + "</div>", it); }), true);
     }
     if (ve("sinLlamadas")) {
@@ -192,15 +205,20 @@ export const CONTRATOS_JS = String.raw`
           if (S2.servicio && S2.servicio !== s) return "";
           var todos = d.sinLlamadas.filter(function (x) { return x.e.indexOf(s + ":") === 0; }), suyos = sinLl.filter(function (x) { return x.c === c && x.svc === s; }), cons = d.consumidores[s];
           if (filtrado && !suyos.length && cons.length) return "";
-          var cab = "<h4>" + esc(nombre(s)) + " <small>" + (cons.length ? L("called by ", "lo llaman ") + cons.map(function (k) { return esc(porId[k] ? nombre(k) : k); }).join(", ") : L("no indexed consumers", "sin consumidores indexados")) + "</small>" + (ds.length > 1 ? ' <span class="chip">' + esc(nombreCerebro(c)) + "</span>" : "") + "</h4>";
+          var cab = "<h4>" + esc(nombre(s)) + " <small>" + (cons.length ? L("called by ", "lo llaman ") + cons.map(function (k) { return esc(porId[k] ? nombre(k) : k); }).join(", ") : L("no indexed consumers", "sin consumidores indexados")) + "</small>" + (ds.length > 1 ? ' <span class="chip">' + esc(nombreCerebro(c)) + "</span>" : "") + (suyos.length > 1 ? " " + botonPedir("g|" + c + "|" + s, L("Request the " + num(suyos.length), "Pedir los " + num(suyos.length))) : "") + "</h4>";
           if (!cons.length) return cab + '<p class="aviso">' + L("Nothing indexed calls this service, so it's impossible to tell which of its endpoints are unused. Index whoever consumes it, or turn on communication with its brain.", "Nadie indexado llama a este servicio, así que no se puede decir qué endpoints suyos no se usan. Falta indexar a quien lo consume, o activar la comunicación con su cerebro.") + "</p>";
           if (!todos.length) return cab + '<p class="fd-ok">' + L("All its endpoints have at least one call.", "Todos sus endpoints tienen al menos una llamada.") + "</p>";
-          return cab + (suyos.length ? listaCortada("sinLlamadas:" + c + ":" + s, suyos, function (it) { return "<li><code>" + esc(pieza(it.x.e)) + "</code>" + (it.x.ev ? " <small><code>" + esc(it.x.ev) + "</code></small>" : "") + "</li>"; }) : ninguno());
+          return cab + (suyos.length ? listaCortada("sinLlamadas:" + c + ":" + s, suyos, function (it) {
+            return "<li><code>" + esc(pieza(it.x.e)) + "</code>" + (it.x.ev ? " <small><code>" + esc(it.x.ev) + "</code></small>" : "") + hacer(it,
+              ED ? '<button type="button" class="boton chico" data-acc="sin-uso" data-k="' + esc(it.k) + '" title="' + L("Someone uses it on purpose (a webhook, a client that isn't indexed): it leaves the drift and is saved in the brain. It can be undone.", "Alguien lo usa a propósito (un webhook, un cliente que no está indexado): sale de la deriva y se guarda en el cerebro. Se puede deshacer.") + '"' + (ocupado ? " disabled" : "") + ">" + L("Unused on purpose", "Sin uso a propósito") + "</button>" : "") + "</li>";
+          }) : ninguno());
         }).join("");
       }).join("");
       var hay = ds.some(function (d) { return Object.keys(d.consumidores).length; });
-      out += seccion(L("Endpoints nobody calls", "Endpoints que nadie llama"), sinLl.length, hay ? "<p><small>" + L("Candidates for deletion, or called by something that isn't indexed. Before deleting one, check its impact.", "Candidatos a borrar, o llamados por algo que no está indexado. Antes de borrar uno, revisá su impacto.") + "</small></p>" + (porSvc || ninguno())
+      out += seccion(L("Endpoints nobody calls", "Endpoints que nadie llama"), sinLl.length, hay ? "<p><small>" + L("Candidates for deletion, or called by something that isn't indexed. Before deleting one, check its impact.", "Candidatos a borrar, o llamados por algo que no está indexado. Antes de borrar uno, revisá su impacto.") + "</small></p>" +
+          barra("s|sinLlamadas", L("The agent looks for who uses each one and declares it, or proposes deleting it in a note: it never deletes anything.", "El agente busca quién usa cada uno y lo declara, o propone borrarlo en una nota: nunca borra nada.")) + (porSvc || ninguno())
         : '<p class="aviso">' + L((ds.length > 1 ? "These brains have" : "This brain has") + " no services with endpoints: there's nothing anyone could stop calling.", (ds.length > 1 ? "Estos cerebros no tienen" : "Este cerebro no tiene") + " servicios con endpoints: no hay nada que alguien pueda dejar de llamar.") + "</p>", true);
+      out += sinUsoHtml(ds);
     }
     if (ve("campos")) out += seccion(L("Mismatched fields", "Campos que no coinciden"), de("campos").length, camposHtml(ds, de("campos")), true);
     return out;
@@ -221,7 +239,8 @@ export const CONTRATOS_JS = String.raw`
     });
     if (!unidas) return '<p class="aviso">' + L("No call " + (ds.length > 1 ? "from these brains" : "from this brain") + " is linked to an endpoint, so there are no fields to compare.", "Ninguna llamada " + (ds.length > 1 ? "de estos cerebros" : "de este cerebro") + " está unida a un endpoint, así que no hay campos que comparar.") + "</p>";
     var resumen = "<p><small>" + L(plural(unidas, "call", "calls") + " linked to an endpoint; " + num(comparadas) + " compared (" + num(sinDif) + " with no differences). The object's first level is compared, by name.",
-      plural(unidas, "llamada unida", "llamadas unidas") + " a un endpoint; " + plural(comparadas, "se comparó", "se compararon") + " (" + num(sinDif) + " sin diferencias). Se compara el primer nivel del objeto, por nombre.") + "</small></p>";
+      plural(unidas, "llamada unida", "llamadas unidas") + " a un endpoint; " + plural(comparadas, "se comparó", "se compararon") + " (" + num(sinDif) + " sin diferencias). Se compara el primer nivel del objeto, por nombre.") + "</small></p>" +
+      barra("s|campos", L("The agent aligns the side that is wrong: usually the client; the contract only by adding, never removing.", "El agente alinea el lado que está mal: casi siempre el cliente; el contrato solo sumando, nunca sacando."));
     var filas = dif.length ? listaCortada("campos", dif, function (it) {
       var x = it.x;
       var notas = ["cuerpo", "query", "respuesta"].filter(function (k) { return x[k]; }).map(function (k) {
@@ -229,13 +248,183 @@ export const CONTRATOS_JS = String.raw`
         var et = ETIQUETAS(), partes = Object.keys(et).filter(function (e) { return o[e]; }).map(function (e) { return et[e] + ": " + o[e].map(function (c) { return "<code>" + esc(c) + "</code>"; }).join(", "); });
         return '<div class="fd-nota">' + LADOS()[k] + " (<code>" + esc(o.front) + "</code> → <code>" + esc(o.back) + "</code>): " + partes.join(" · ") + "</div>";
       }).join("");
-      return "<li><code>" + esc(x.l) + "</code> <small>→ <code>" + esc(x.c ? x.c + "/" + pieza(x.e) : pieza(x.e)) + "</code> · " + L("call", "llama") + " <code>" + esc(x.ev) + "</code> · " + L("handler", "atiende") + " <code>" + esc(x.eb) + "</code></small>" + conCerebro(it) + notas + "</li>";
+      return "<li><code>" + esc(x.l) + "</code> <small>→ <code>" + esc(x.c ? x.c + "/" + pieza(x.e) : pieza(x.e)) + "</code> · " + L("call", "llama") + " <code>" + esc(x.ev) + "</code> · " + L("handler", "atiende") + " <code>" + esc(x.eb) + "</code></small>" + conCerebro(it) + notas + hacer(it) + "</li>";
     }) : total ? ninguno() : comparadas ? '<p class="fd-ok">' + L("In what could be compared, what's sent and expected matches what the back end declares.", "En lo que se pudo comparar, lo que se manda y se espera coincide con lo que declara el back.") + "</p>" : "";
     var nc = noComp.length
       ? "<h4>" + L("Couldn't be compared <small>they don't count as a match</small>", "No se pudieron comparar <small>no cuentan como coincidencia</small>") + '</h4><ul class="lista">' + noComp.map(function (n) { return "<li>" + LADOS()[n.lado] + ": " + esc(n.motivo) + " <small>" + plural(n.llamadas, L("call", "llamada"), L("calls", "llamadas")) + (n.tipos ? " · " + n.tipos.map(function (t) { return "<code>" + esc(t) + "</code>"; }).join(", ") : "") + "</small></li>"; }).join("") + "</ul>"
       : "";
     // Un índice anterior no trae lo que manda cada llamada: que se lea acá, no solo en los avisos.
     return (viejo.length ? '<p class="aviso">' + esc(viejo[0]) + "</p>" : "") + resumen + filas + nc;
+  }
+
+  // ---------- El tipo «deriva» del pedido al agente (viewer-pedido, dec. 232) ----------
+  // Un ítem por problema: { tipo: "deriva", k: la clave de la fila, cerebro, repo, datos: { c, cerebro, clase, ev,
+  // llamada | endpoint (id del cerebro, sin prefijo), que: qué está roto, en inglés } }.
+  var PD = window.brainPedido || null, ED = window.FLOWBRAIN_EDICION || null, PLAN = D.derivaPlan || null, TANDA = 10;
+  var MSG = null, ocupado = false, BT = String.fromCharCode(96);
+  var derivaDe = function (c) { for (var i = 0; i < (DERIVA || []).length; i++) if (cerebroD(DERIVA[i], i) === c) return DERIVA[i]; return null; };
+  var cerebroNombre = function (c) { return CEREBROS[Number(c)] ? CEREBROS[Number(c)].nombre : ""; };
+  // Lo que va al modelo, solo en inglés (dec. 214).
+  var CLASE_EN = { sinEndpoint: "call nobody serves", disputada: "call matching several endpoints", sinLlamadas: "endpoint nobody calls", campos: "mismatched fields" };
+  var ET_EN = { mandaYElBackNoDeclara: "sent but not declared by the back end", requeridosQueNoManda: "required but not sent", opcionalesQueElBackRequiere: "sent as optional but required by the back end", esperaYNoViene: "expected but missing", opcionalesQueNoVienen: "optional and missing", distintoNombre: "different name" };
+  var LADO_EN = { cuerpo: "Body", query: "Query", respuesta: "Response" };
+  function queEn(it) {
+    var x = it.x, t;
+    if (it.t === "sinEndpoint") t = "Nobody serves this call, made from " + local(x.d) + "." + (x.o ? " It exists with another method: " + x.o.map(pieza).join(", ") + "." : "");
+    else if (it.t === "disputada") t = "It matches several endpoints and was linked to none: " + x.k.map(local).join(", ") + ".";
+    else if (it.t === "sinLlamadas") {
+      var d = derivaDe(it.c), cons = d && d.consumidores[it.svc] ? d.consumidores[it.svc].map(local) : [];
+      t = "No indexed consumer calls this endpoint" + (cons.length ? " (its service is called by " + cons.join(", ") + ")" : "") + ".";
+    } else {
+      t = ["cuerpo", "query", "respuesta"].filter(function (k) { return x[k]; }).map(function (k) {
+        var o = x[k];
+        return LADO_EN[k] + " (" + o.front + " -> " + o.back + "): " + Object.keys(ET_EN).filter(function (e) { return o[e]; }).map(function (e) { return ET_EN[e] + ": " + o[e].join(", "); }).join("; ");
+      }).join(". ") + ". Endpoint " + local(x.e) + (x.c ? " in brain " + x.c : "") + ", handled at " + x.eb + ".";
+    }
+    return t.length > 590 ? t.slice(0, 589) + "…" : t;
+  }
+  // Se puede pedir lo que tiene dónde mirar: repo:ruta#Ln.
+  var pedible = function (it) { return /^[^:\s]+:[^\s#]+#L\d+/.test(String(it.x.ev || "")); };
+  function entradaDe(it) {
+    var x = it.x, cer = cerebroNombre(it.c), d = { c: it.c, cerebro: cer, clase: it.t, ev: x.ev, que: queEn(it) };
+    if (it.t === "sinLlamadas") d.endpoint = local(x.e); else d.llamada = x.l;
+    return { tipo: "deriva", k: it.k, cerebro: cer, repo: String(x.ev).split(":")[0], datos: d };
+  }
+  // Con qué se reconoce un problema antes y después de una tanda (la misma regla que claveDeDeriva del servidor): el
+  // endpoint, o la llamada por su archivo sin la línea (que se corre si el agente edita el archivo) y su texto.
+  var claveSrv = function (d) { return d.cerebro + "|" + d.clase + "|" + (d.clase === "sinLlamadas" ? d.endpoint : String(d.ev).replace(/#L\d+(-L\d+)?$/, "") + " " + d.llamada); };
+  // Lo que suma cada botón, según su data-k: «p|<fila>», «s|<clase>» (la sección, con los filtros) o «g|<cerebro>|<servicio>».
+  function xsDeBoton(k, memo) {
+    k = String(k || "");
+    var xs = [], filtrados = function () { return memo ? memo.f || (memo.f = flD.filtrar()) : flD.filtrar(); };
+    if (k.indexOf("p|") === 0) xs = ITEM_POR_K[k.slice(2)] ? [ITEM_POR_K[k.slice(2)]] : [];
+    else if (k.indexOf("s|") === 0) xs = filtrados().filter(function (it) { return it.t === k.slice(2); });
+    else if (k.indexOf("g|") === 0) { var p = k.slice(2).split("|"); xs = filtrados().filter(function (it) { return it.t === "sinLlamadas" && String(it.c) === p[0] && it.svc === p.slice(1).join("|"); }); }
+    return xs.filter(pedible);
+  }
+  var botonPedir = function (k, et) { var xs = PD ? xsDeBoton(k) : []; return xs.length ? PD.boton({ tipo: "deriva", k: k, et: et, claves: xs.map(function (it) { return it.k; }) }) : ""; };
+  // El botón de una fila (y lo que la fila sume al lado, como «Sin uso a propósito»).
+  var hacer = function (it, extra) { var b = PD && pedible(it) ? PD.boton({ tipo: "deriva", k: "p|" + it.k, et: L("Request", "Pedir"), claves: [it.k] }) : ""; return b || extra ? '<div class="fd-hacer">' + b + (extra || "") + "</div>" : ""; };
+  // Arriba de una sección: «Pedir los N» con lo que se ve (los filtros aplicados).
+  function barra(k, que) {
+    var xs = PD ? xsDeBoton(k) : [];
+    if (!xs.length) return "";
+    return '<div class="fd-hacer">' + botonPedir(k, xs.length === 1 ? L("Request it", "Pedirlo") : L("Request the " + num(xs.length), "Pedir los " + num(xs.length))) + "<small>" + que + "</small></div>";
+  }
+  var CLASES = ["sinEndpoint", "disputada", "sinLlamadas", "campos"];
+  var cuantasTandas = function (ds) { var g = {}, n = 0; ds.forEach(function (d) { var k = d.cerebro + "|" + d.ev.split(":")[0]; g[k] = (g[k] || 0) + 1; }); Object.keys(g).forEach(function (k) { n += Math.ceil(g[k] / TANDA); }); return n; };
+  // El .md para cualquier agente: las mismas reglas que usa el servidor (D.derivaPlan) y los problemas por cerebro y repo.
+  function textoMd(es) {
+    var ds = es.map(function (e) { return e.datos; });
+    if (!ds.length) return "";
+    var out = ["# Contract drift to fix", "", "Fix these " + ds.length + " " + (ds.length === 1 ? "problem" : "problems") + " that FlowBrain's drift found between this project's services." + (CEREBROS.length > 1 ? " Each group says its brain: declarations and notes go in that brain's folder (" + BT + ".flowbrain/<brain>/" + BT + ")." : "")];
+    if (PLAN) {
+      out.push("", "## Rules", "");
+      PLAN.reglas.forEach(function (r) { out.push("- " + r); });
+      out.push("", "## How to resolve each problem", "");
+      CLASES.filter(function (c) { return ds.some(function (d) { return d.clase === c; }); }).forEach(function (c) { out.push("- **" + CLASE_EN[c] + "**: " + PLAN.como[c]); });
+    }
+    out.push("", "## Problems");
+    var grupos = {}, orden = [];
+    ds.forEach(function (d) { var g = (d.cerebro ? d.cerebro + " / " : "") + d.ev.split(":")[0]; if (!grupos[g]) { grupos[g] = []; orden.push(g); } grupos[g].push(d); });
+    orden.forEach(function (g) {
+      out.push("", "### " + g);
+      grupos[g].forEach(function (d) { out.push("- [ ] " + CLASE_EN[d.clase] + ": " + (d.endpoint || d.llamada) + " at " + d.ev + ". " + d.que); });
+    });
+    if (PLAN) { out.push("", "## When done", ""); PLAN.cierre.forEach(function (c, i) { out.push((i + 1) + ". " + c); }); }
+    return out.join("\n") + "\n";
+  }
+  var cifrasLote = function (c, p) { return L(plural(c, "problem gone", "problems gone") + " · " + plural(p, "still in the drift", "still in the drift"), plural(c, "problema resuelto", "problemas resueltos") + " · " + plural(p, "sigue en la deriva", "siguen en la deriva")); };
+  var cuentaDe = function (ts, k) { return ts.reduce(function (n, t) { return n + (t[k] || []).length; }, 0); };
+  if (DERIVA && PD) PD.registrar("deriva", {
+    get nombre() { return L("Drift to fix", "Deriva a arreglar"); },
+    unidad: ["problem", "problems", "problema", "problemas"],
+    raiz: raiz,
+    claves: function (k, memo) { return xsDeBoton(k, memo).map(function (it) { return it.k; }); },
+    items: function (k) { return xsDeBoton(k).map(entradaDe); },
+    repintar: function () { var l = elem("ct-lista"); if (l && S.tab === "deriva") l.innerHTML = listaDeriva(); },
+    orden: function (a, b) { return CLASES.indexOf(a.datos.clase) - CLASES.indexOf(b.datos.clase) || (a.k < b.k ? -1 : 1); },
+    resumen: function (es) {
+      var ds = es.map(function (e) { return e.datos; });
+      var partes = CLASES.map(function (c) { var n = ds.filter(function (d) { return d.clase === c; }).length; return n ? num(n) + " " + tipoD(c).toLowerCase() : ""; }).filter(Boolean);
+      return [partes.join(" · "),
+        PD.agente && ds.length ? L("In " + plural(cuantasTandas(ds), "batch", "batches") + " of up to " + TANDA + " problems of the same repo; after each one, the brain is reindexed and the drift measured again. Nothing is deleted: proposals go to a note", "En " + plural(cuantasTandas(ds), "tanda", "tandas") + " de hasta " + TANDA + " problemas de un mismo repo; después de cada una se reindexa el cerebro y se vuelve a medir la deriva. No se borra nada: las propuestas van a una nota") : ""];
+    },
+    costo: function (mo) { return typeof mo.costoPorDerivaUsd === "number" ? mo.costoPorDerivaUsd : null; },
+    lote: function (es) {
+      return { tipo: "deriva", problemas: es.map(function (e) { var d = e.datos, p = { cerebro: d.cerebro, clase: d.clase, ev: d.ev, que: d.que }; if (d.clase === "sinLlamadas") p.endpoint = d.endpoint; else p.llamada = d.llamada; return p; }) };
+    },
+    md: { archivo: "drift-fixes.md", texto: textoMd },
+    clave: function (it) { return claveSrv(it.datos); },
+    enTanda: function (t) { return (t.problemas || []).map(claveSrv); },
+    hechos: function (t) { return (t.corregidos || []).map(claveSrv); },
+    seguimiento: {
+      cuantos: function (t) { return (t.problemas || []).length; },
+      get espera() { return L("Waits for the previous batch of this brain to finish.", "Espera a que termine la tanda anterior de este cerebro."); },
+      get reindexando() { return L("Finishing…", "Terminando…"); },
+      pidiendo: function (n, repos) { return L("Fixing " + plural(n, "drift problem", "drift problems") + " in " + plural(repos, "repo", "repos"), "Arreglando " + plural(n, "problema", "problemas") + " de la deriva en " + plural(repos, "repo", "repos")); },
+      extraTanda: function (t) {
+        if (PD.vivo(t) || (!t.corregidos && !t.persisten)) return "";
+        return "<small>" + cifrasLote((t.corregidos || []).length, (t.persisten || []).length) + "</small>" +
+          (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
+      },
+      resumen: function (ts) {
+        var p = cuentaDe(ts, "persisten");
+        return cifrasLote(cuentaDe(ts, "corregidos"), p) + (p ? L(" (what is left stays in the list: each batch says why)", " (lo que quedó sigue en la lista: cada tanda dice por qué)") : "");
+      }
+    },
+    // La tarjeta: qué está roto, la llamada o el endpoint, dónde (repo:ruta#Ln) y el cerebro.
+    tarjeta: function (it, enTanda) {
+      var d = it.datos;
+      return '<p class="es-texto"><code>' + esc(d.clase === "sinLlamadas" ? pieza(d.endpoint) : d.llamada) + "</code></p>" +
+        "<p><small><code>" + esc(d.ev) + "</code></small></p>" +
+        '<div class="chips"><span class="chip">' + esc(tipoD(d.clase)) + "</span>" +
+        (CEREBROS.length > 1 && d.cerebro ? '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(d.cerebro) + "</span>" : "") +
+        (enTanda ? '<span class="chip es-ok">' + L("Resolving…", "Resolviéndose…") + "</span>" : "") + "</div>";
+    }
+  });
+  // Lo que ya no está en la deriva (se arregló, o se marcó sin uso) sale del pedido; lo que sigue, se pone al día.
+  function podarPedido() { if (DERIVA && PD) PD.podar("deriva", function (x) { var it = ITEM_POR_K[x.k]; return it && pedible(it) ? entradaDe(it) : null; }); }
+
+  // ---------- «Sin uso a propósito»: una marca de la persona, no del agente ----------
+  // Se guarda en el cerebro como «No es de producto» (not-product.yaml, motivo sin-uso): el endpoint sale de la deriva.
+  function sinUsoHtml(ds) {
+    var xs = [];
+    ds.forEach(function (d, i) { (d.sinUso || []).forEach(function (m) { xs.push({ c: cerebroD(d, i), m: m }); }); });
+    if (!xs.length) return "";
+    return seccion(L("Unused on purpose", "Sin uso a propósito"), xs.length, "<p><small>" + L("Endpoints nobody calls on purpose (a webhook, a client that isn't indexed): they don't count as drift. They're saved in the brain's <code>not-product.yaml</code>.", "Endpoints que nadie llama a propósito (un webhook, un cliente que no está indexado): no cuentan como deriva. Se guardan en el <code>not-product.yaml</code> del cerebro.") + (ED ? "" : L(" To undo one from here, open it with <code>flowbrain viewer --serve</code>.", " Para deshacer uno desde acá, abrilo con <code>flowbrain viewer --serve</code>.")) + "</small></p>" +
+      '<ul class="lista">' + xs.map(function (y) {
+        return "<li><code>" + esc(pieza(y.m.e)) + "</code>" + (y.m.ev ? " <small><code>" + esc(y.m.ev) + "</code></small>" : "") + (ds.length > 1 ? ' <span class="chip">' + esc(nombreCerebro(y.c)) + "</span>" : "") +
+          (ED ? ' <button type="button" class="boton chico" data-acc="deshacer-sin-uso" data-c="' + esc(String(y.c)) + '" data-e="' + esc(y.m.e) + '"' + (ocupado ? " disabled" : "") + ">" + L("Undo", "Deshacer") + "</button>" : "") + "</li>";
+      }).join("") + "</ul>", false);
+  }
+  function marcarSinUso(k) {
+    var it = ITEM_POR_K[k], d = it ? derivaDe(it.c) : null;
+    if (!it || !d || ocupado || !ED || !PD) return;
+    ocupado = true; MSG = { texto: L("Saving…", "Guardando…") }; pintar();
+    PD.llamar("/api/editar", { tipo: "no_producto", cerebro: cerebroNombre(it.c), entrada: local(it.x.e), motivo: "sin-uso" }).then(function (r) {
+      ocupado = false;
+      d.sinLlamadas = d.sinLlamadas.filter(function (x) { return x.e !== it.x.e; });
+      (d.sinUso = d.sinUso || []).push({ e: it.x.e, ev: it.x.ev, n: true });
+      armarItems(); podarPedido();
+      MSG = { texto: L(pieza(it.x.e) + " is marked as unused on purpose and left the drift. You can undo it in «Unused on purpose».", pieza(it.x.e) + " quedó marcado sin uso a propósito y salió de la deriva. Se deshace en «Sin uso a propósito».") + " (" + r.escrito + ")" };
+      pintar();
+    }).catch(function (e) { ocupado = false; MSG = { texto: e.message, error: true }; pintar(); });
+  }
+  function deshacerSinUso(c, e) {
+    var d = derivaDe(Number(c)), m = null;
+    (d && d.sinUso || []).forEach(function (x) { if (x.e === e) m = x; });
+    if (!m || ocupado || !ED || !PD) return;
+    ocupado = true; MSG = { texto: L("Saving…", "Guardando…") }; pintar();
+    PD.llamar("/api/editar", { tipo: "no_producto", cerebro: cerebroNombre(Number(c)), entrada: local(e), motivo: null }).then(function () {
+      ocupado = false;
+      d.sinUso = d.sinUso.filter(function (x) { return x.e !== e; });
+      // Vuelve a la deriva si nadie lo llama (si lo llaman, ya no es deriva).
+      if (m.n) d.sinLlamadas.push({ e: m.e, ev: m.ev });
+      armarItems();
+      MSG = { texto: m.n ? L(pieza(e) + " is no longer marked: it's back in «Endpoints nobody calls».", pieza(e) + " ya no está marcado: volvió a «Endpoints que nadie llama».") : L(pieza(e) + " is no longer marked.", pieza(e) + " ya no está marcado.") };
+      pintar();
+    }).catch(function (er) { ocupado = false; MSG = { texto: er.message, error: true }; pintar(); });
   }
 
   // ---------- Paridad ----------
@@ -412,6 +601,10 @@ export const CONTRATOS_JS = String.raw`
     if (!b) return;
     var acc = b.getAttribute("data-acc");
     if (acc === "mas") { var k = b.getAttribute("data-k"); S.ver[k] = (S.ver[k] || PASO) + PASO; pintar(); return; }
+    // Sumar o sacar del pedido al agente (el componente cambia los botones y el panel, sin repintar la lista).
+    if (acc === "pedir") { if (PD) PD.sumar("deriva", b.getAttribute("data-k")); return; }
+    if (acc === "sin-uso") { marcarSinUso(b.getAttribute("data-k")); return; }
+    if (acc === "deshacer-sin-uso") { deshacerSinUso(b.getAttribute("data-c"), b.getAttribute("data-e")); return; }
     if (acc === "invertir") { var t = S.viejo; S.viejo = S.nuevo; S.nuevo = t; refrescar(true); return; }
     if (b.hasAttribute("data-tab")) { S.tab = b.getAttribute("data-tab"); refrescar(true); }
   });
@@ -423,6 +616,8 @@ export const CONTRATOS_JS = String.raw`
   });
   raiz.addEventListener("input", function (ev) { var f = actual(); if (f) f.manejar(ev, "input"); });
 
+  // Al cargar, con todo ya definido: el pedido guardado se pone al día con la deriva de esta página.
+  podarPedido();
   window.brainContratos = { mostrar: pintar, paridad: paridad };
 })();
 `;

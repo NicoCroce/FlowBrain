@@ -348,8 +348,12 @@ export async function escribirVisor(registro: Registro, progreso?: Progreso): Pr
   return archivo;
 }
 
-/** La página del visor de todo el registro, sin escribirla (`null` si ningún cerebro está compilado). */
-export async function htmlDelVisor(registro: Registro): Promise<string | null> {
+/**
+ * Todo lo que el visor calcula de cada cerebro compilado del registro, con los cruces entre ellos: su fidelidad, sus
+ * símbolos y su deriva (con la misma regla para todos: lo que atiende o llama otro cerebro comunicado no es deriva).
+ * Lo usa la página del visor y, para medir qué arregló un pedido de la deriva, el agente (`derivaDelCerebro`).
+ */
+async function analizarRegistro(registro: Registro) {
   const visibles: CerebroVisor[] = [];
   const fuentes: FuenteTraza[] = [];
   const livianos = new Map<string, CerebroLiviano>();
@@ -389,8 +393,21 @@ export async function htmlDelVisor(registro: Registro): Promise<string | null> {
     x.visible.codigo = simbolosDelVisor(ctx);
     // Y su deriva, con la misma regla: lo que atiende o llama otro cerebro comunicado no es deriva.
     const vecinos = visibles.map((v) => v.nombre).filter((n) => n !== x.visible.nombre && registro.comunicados(x.visible.nombre, n));
-    x.visible.deriva = deriva(ctx, { budget_tokens: null, ...(visibles.length > 1 ? { cruzadas: { ...derivaCruzadaDe(x.visible.nombre, todos, vecinos), contratoDe } } : {}) }) as unknown as NonNullable<CerebroVisor["deriva"]>;
+    x.visible.deriva = deriva(ctx, { budget_tokens: null, noProducto: x.noProducto, ...(visibles.length > 1 ? { cruzadas: { ...derivaCruzadaDe(x.visible.nombre, todos, vecinos), contratoDe } } : {}) }) as unknown as NonNullable<CerebroVisor["deriva"]>;
   }
+  return { visibles, cruces, livianos, fuentes };
+}
+
+/** La deriva de un cerebro tal como la ve el visor, cruzada con los demás (`null` si no está compilado o no tiene índice). */
+export async function derivaDelCerebro(registro: Registro, nombre: string): Promise<NonNullable<CerebroVisor["deriva"]> | null> {
+  return (await analizarRegistro(registro))?.visibles.find((v) => v.nombre === nombre)?.deriva ?? null;
+}
+
+/** La página del visor de todo el registro, sin escribirla (`null` si ningún cerebro está compilado). */
+export async function htmlDelVisor(registro: Registro): Promise<string | null> {
+  const a = await analizarRegistro(registro);
+  if (!a) return null;
+  const { visibles, cruces, livianos, fuentes } = a;
   const conexiones = resumenConexiones(cruces, registro.conexiones.filter((x) => registro.comunicados(x.desde.cerebro, x.hacia.cerebro)));
   return visorDeCerebros(visibles, cruces, conexiones, trazasCruzadas(fuentes, cruces), usosEntreCerebros([...livianos.values()]));
 }
