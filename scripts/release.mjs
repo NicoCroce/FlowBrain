@@ -51,7 +51,9 @@ async function main() {
 
   // 1. Repo en orden: en main, sin cambios (salvo el CHANGELOG) y al día con origin.
   if (git("rev-parse", "--abbrev-ref", "HEAD") !== "main") throw new Error("estás fuera de main: cambiá a main para publicar");
-  const sucios = git("status", "--porcelain").split("\n").filter(Boolean).filter((l) => !l.endsWith("packages/flowbrain/CHANGELOG.md"));
+  const sucios = git("status", "--porcelain").split("\n").filter(Boolean).filter((l) => !l.endsWith("packages/flowbrain/CHANGELOG.md"))
+    // Un archivo sin seguimiento fuera de packages/ (una captura en la raíz) no entra al paquete: no frena.
+    .filter((l) => !(l.startsWith("?? ") && !l.slice(3).startsWith("packages/")));
   if (sucios.length) throw new Error(`hay cambios sin commitear:\n${sucios.join("\n")}\nCommitealos (o descartalos) antes de publicar: el paquete se arma con lo que hay en disco.`);
   git("fetch", "-q", "origin", "main");
   if (git("rev-list", "--count", "HEAD..origin/main") !== "0") throw new Error("origin/main tiene commits que no tenés: hacé git pull --ff-only");
