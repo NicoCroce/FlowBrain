@@ -87,7 +87,7 @@ Running `flowbrain install` again updates it. Full details, manual installation 
 
 ## How a project gets completed
 
-With Claude Code open in the project folder (with another agent, the menu gives a single prompt that goes through the same steps with `flowbrain coverage --guide`, `evidence --guide` and `feature --guide`):
+With Claude Code open in the project folder (with another agent, the menu gives a single prompt that goes through the same steps with `flowbrain coverage --guide`, `evidence --guide`, `feature --guide` and `specs --guide`):
 
 1. **`/flowbrain-study`**: the model studies how each repo is built, writes `profile.md`, extractors in `.flowbrain/<brain>/extractors/<repo-id>/` for what the parsers do not see, and checks (`checks.yaml`) that must keep passing. `flowbrain coverage` measures the progress.
 2. **`/flowbrain-index`**: decides which service each call between repos goes to (by base URL, configuration and infrastructure) and declares it with evidence.

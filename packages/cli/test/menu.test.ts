@@ -78,7 +78,7 @@ describe("menú", () => {
     const c = { ...base, registro: "/p/.flowbrain", cerebros: ["web"], faltaIndice: ["web"], faltaAnalisis: ["web"] };
     expect(await accion(opciones(c)[1]!, c, f.e)).toBe(true);
     expect(f.corridas).toEqual(["flowbrain brains apply @/p", `claude ${PROMPT_ANALISIS.slice(0, 40)} @/p`]);
-    expect(PROMPT_ANALISIS).toMatch(/coverage --guide[\s\S]*evidence --guide[\s\S]*feature --guide/);
+    expect(PROMPT_ANALISIS).toMatch(/coverage --guide[\s\S]*evidence --guide[\s\S]*feature --guide[\s\S]*specs --guide/);
   });
 
   it("el análisis se hace con el agente elegido, o con las instrucciones para pegar en cualquiera", async () => {

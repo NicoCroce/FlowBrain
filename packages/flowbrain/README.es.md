@@ -87,7 +87,7 @@ Volver a correr `flowbrain install` actualiza. Detalle completo, instalación a 
 
 ## Cómo se completa un proyecto
 
-Con Claude Code abierto en la carpeta del proyecto (con otro agente, el menú da un único pedido que recorre los mismos pasos con `flowbrain coverage --guide`, `evidence --guide` y `feature --guide`):
+Con Claude Code abierto en la carpeta del proyecto (con otro agente, el menú da un único pedido que recorre los mismos pasos con `flowbrain coverage --guide`, `evidence --guide`, `feature --guide` y `specs --guide`):
 
 1. **`/flowbrain-study`**: el modelo estudia cómo está hecho cada repo, escribe `profile.md`, extractores en `.flowbrain/<cerebro>/extractors/<repo-id>/` para lo que los parsers no ven, y controles (`checks.yaml`) que tienen que seguir cumpliéndose. `flowbrain coverage` mide el avance.
 2. **`/flowbrain-index`**: decide a qué servicio va cada llamada entre repos (por base de URL, configuración e infraestructura) y lo declara con evidencia.

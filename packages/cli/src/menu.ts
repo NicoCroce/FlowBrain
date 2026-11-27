@@ -74,6 +74,7 @@ export const PROMPT_ANALISIS = [
   "1. Study each repo and write the extractors that complete the index: follow the instructions printed by `flowbrain coverage --guide`.",
   "2. Analyze the real communication between services: follow the ones from `flowbrain evidence --guide`.",
   "3. Deduce and complete the product features: follow the ones from `flowbrain feature --guide`.",
+  "4. Deduce the specifications of each feature (use cases and rules, with the file that satisfies them and the test that verifies them): follow the ones from `flowbrain specs --guide`.",
   "Read each guide in full before starting its step. When you finish, run `flowbrain brains viewer` and give me a short report: what changed in each brain and what is still undetermined.",
 ].join("\n");
 
@@ -147,8 +148,8 @@ export function opciones(c: ContextoMenu): Opcion[] {
       titulo: L("Analyze the whole project", "Analizar el proyecto completo"),
       detalle: c.agentes.length
         ? L(
-            `the agent you pick studies each repo, joins the services and completes the features${listo ? "" : " (sets it up first)"}`,
-            `el agente que elijas estudia cada repo, une los servicios y completa las funcionalidades${listo ? "" : " (antes lo configura)"}`,
+            `the agent you pick studies each repo, joins the services and completes the features and their specifications${listo ? "" : " (sets it up first)"}`,
+            `el agente que elijas estudia cada repo, une los servicios y completa las funcionalidades y sus especificaciones${listo ? "" : " (antes lo configura)"}`,
           )
         : L("Claude Code, Codex or OpenCode not found: I give you the instructions for the agent you use", "no encontré Claude Code, Codex ni OpenCode: te doy las instrucciones para el agente que uses"),
     },
