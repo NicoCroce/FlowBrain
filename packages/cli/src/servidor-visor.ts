@@ -1,12 +1,14 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
-import { realpathSync } from "node:fs";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { readdirSync, realpathSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ConsultaError, leerRegistro, type Registro } from "@flowbrain/core";
 import { aplicarCerebro, htmlDelVisor } from "./cerebros.js";
 import { crearAgente, TIPOS_DE_PEDIDO, type Agente, type ReglaDePedido, type TipoDePedido } from "./agente.js";
 import { codigoDeArchivo, detalleDeArchivo, editar, type Edicion } from "./edicion.js";
 import { L } from "./idioma.js";
+import { VERSION } from "./init.js";
 
 /**
  * `flowbrain viewer --serve`: el visor servido desde esta máquina, con edición. El archivo `flowbrain.html` es estático
@@ -21,6 +23,39 @@ import { L } from "./idioma.js";
  */
 
 export const PUERTO_VISOR = 4780;
+
+/**
+ * Qué código atiende este visor. El menú reusa un visor ya abierto solo si su huella es la misma: uno levantado antes
+ * de actualizar FlowBrain sigue sirviendo la pantalla vieja. Publicado es la versión; en desarrollo (`dev`), un hash
+ * de las fechas y tamaños de los fuentes de `packages/` (cambia con cada edición o `git pull`).
+ */
+export const HUELLA: string = VERSION !== "dev" ? VERSION : huellaDev();
+
+function huellaDev(): string {
+  const h = createHash("sha1");
+  const paquetes = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const recorrer = (d: string): void => {
+    let entradas: string[];
+    try {
+      entradas = readdirSync(d).sort();
+    } catch {
+      return;
+    }
+    for (const n of entradas) {
+      const f = join(d, n);
+      const st = statSync(f, { throwIfNoEntry: false });
+      if (!st) continue;
+      if (st.isDirectory()) recorrer(f);
+      else if (n.endsWith(".ts")) h.update(`${f}:${st.mtimeMs}:${st.size}\n`);
+    }
+  };
+  try {
+    for (const p of readdirSync(paquetes).sort()) recorrer(join(paquetes, p, "src"));
+  } catch {
+    return "dev";
+  }
+  return "dev-" + h.digest("hex").slice(0, 12);
+}
 
 /** La ruta sin symlinks, para comparar el registro de dos servidores. */
 export function rutaReal(p: string): string {
@@ -197,7 +232,7 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
         if (origen !== undefined && origen !== `http://${host}`) throw new ErrorHttp(403, "request from another origin");
         const url = new URL(req.url ?? "/", `http://${host}`);
         // Sin token ni registro: el menú pregunta si en un puerto ya hay un visor de FlowBrain para su registro, y lo reusa.
-        if (req.method === "GET" && url.pathname === "/api/quien") return responder(200, "application/json", JSON.stringify({ flowbrain: true, registro: carpetaReal }));
+        if (req.method === "GET" && url.pathname === "/api/quien") return responder(200, "application/json", JSON.stringify({ flowbrain: true, registro: carpetaReal, huella: HUELLA }));
         // El registro se lee en cada pedido: si alguien lo edita a mano, vale lo que hay en disco.
         const r = await atender(req, url, await leerRegistro(carpeta));
         if (r.html !== undefined) responder(200, "text/html", r.html);

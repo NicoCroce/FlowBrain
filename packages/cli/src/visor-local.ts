@@ -1,11 +1,12 @@
 import { request } from "node:http";
 import { L } from "./idioma.js";
-import { PUERTO_VISOR, rutaReal, servirVisor, type ServidorVisor } from "./servidor-visor.js";
+import { HUELLA, PUERTO_VISOR, rutaReal, servirVisor, type ServidorVisor } from "./servidor-visor.js";
 
 /**
  * La opción "Abrir el visor" del menú: el visor servido en `127.0.0.1` (con edición), no el archivo estático.
  * Decide en este orden:
- * 1. si en alguno de los puertos del visor ya hay un servidor de FlowBrain para este mismo registro, se reusa;
+ * 1. si en alguno de los puertos del visor ya hay un servidor de FlowBrain para este mismo registro y con el mismo código
+ *    (la misma huella), se reusa; uno del mismo registro con código anterior no se reusa y se avisa (`viejos`);
  * 2. si no, se levanta uno en el primer puerto libre desde 4780;
  * 3. si no se puede (todos ocupados, un error al escuchar, o la página no carga), se cae al archivo estático con el motivo.
  */
@@ -14,13 +15,15 @@ export const INTENTOS_PUERTO = 10;
 
 export type ResultadoVisor =
   | { modo: "reusa"; url: string }
-  | { modo: "nuevo"; url: string; servidor: ServidorVisor }
+  | { modo: "nuevo"; url: string; servidor: ServidorVisor; viejos?: string[] }
   | { modo: "estatico"; motivo: string };
 
 /** Lo que la decisión necesita del mundo: las pruebas lo reemplazan. */
 export interface DepsVisorLocal {
-  /** El registro que atiende el visor de FlowBrain en ese puerto, o null si no hay uno (o no es de FlowBrain). */
-  quien(puerto: number): Promise<string | null>;
+  /** El registro (y la huella del código) que atiende el visor de FlowBrain en ese puerto, o null si no hay uno. */
+  quien(puerto: number): Promise<{ registro: string; huella?: string } | null>;
+  /** La huella del código que corre ahora (por defecto, `HUELLA`). */
+  huella?: string;
   /** Escucha en ese puerto; rechaza con `code: "EADDRINUSE"` si está ocupado. */
   servir(puerto: number): Promise<ServidorVisor>;
   /** Pide la página: estado HTTP y, si falló, el error que explica el servidor. */
@@ -35,9 +38,14 @@ export const puertosCandidatos = (base = PUERTO_VISOR, intentos = INTENTOS_PUERT
 export async function prepararVisor(registro: string, deps: DepsVisorLocal, opciones: { base?: number; intentos?: number } = {}): Promise<ResultadoVisor> {
   const puertos = puertosCandidatos(opciones.base, opciones.intentos);
   const misma = deps.mismaRuta ?? ((a, b) => rutaReal(a) === rutaReal(b));
+  const huella = deps.huella ?? HUELLA;
+  const viejos: string[] = [];
   for (const p of puertos) {
     const r = await deps.quien(p).catch(() => null);
-    if (r !== null && misma(r, registro)) return { modo: "reusa", url: `http://127.0.0.1:${p}/` };
+    if (r === null || !misma(r.registro, registro)) continue;
+    // Levantado antes de actualizar FlowBrain: sirve la pantalla vieja, así que no se reusa.
+    if (r.huella !== huella) viejos.push(`http://127.0.0.1:${p}/`);
+    else return { modo: "reusa", url: `http://127.0.0.1:${p}/` };
   }
   for (const p of puertos) {
     let s: ServidorVisor;
@@ -54,7 +62,7 @@ export async function prepararVisor(registro: string, deps: DepsVisorLocal, opci
       const detalle = `${pag.estado || L("no response", "sin respuesta")}${pag.error ? `: ${pag.error}` : ""}`;
       return { modo: "estatico", motivo: L(`the server started but the page did not load (${detalle})`, `el servidor arrancó pero la página no cargó (${detalle})`) };
     }
-    return { modo: "nuevo", url, servidor: s };
+    return { modo: "nuevo", url, servidor: s, ...(viejos.length ? { viejos } : {}) };
   }
   return { modo: "estatico", motivo: L(`ports ${puertos[0]} to ${puertos[puertos.length - 1]} are taken by other programs`, `los puertos ${puertos[0]} a ${puertos[puertos.length - 1]} están ocupados por otros programas`) };
 }
@@ -87,8 +95,9 @@ export function depsReales(registro: string): DepsVisorLocal {
     quien: async (p) => {
       const r = await get(`http://127.0.0.1:${p}/api/quien`, 400);
       if (r.estado !== 200) return null;
-      const j = JSON.parse(r.cuerpo) as { flowbrain?: boolean; registro?: string };
-      return j.flowbrain === true && typeof j.registro === "string" ? j.registro : null;
+      const j = JSON.parse(r.cuerpo) as { flowbrain?: boolean; registro?: string; huella?: unknown };
+      if (j.flowbrain !== true || typeof j.registro !== "string") return null;
+      return { registro: j.registro, ...(typeof j.huella === "string" ? { huella: j.huella } : {}) };
     },
     servir: (p) => servirVisor(registro, p),
     pagina: async (url) => {

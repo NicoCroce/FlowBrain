@@ -325,7 +325,7 @@ const abridor = () => (process.platform === "darwin" ? "open" : process.platform
 const esperarSigint = () => new Promise<void>((ok) => process.once("SIGINT", () => ok()));
 
 /**
- * El visor servido en localhost (decisión 198): reusa el de este registro si ya corre, si no levanta uno y lo deja
+ * El visor servido en localhost (decisión 198): reusa el de este registro si ya corre con el mismo código, si no levanta uno y lo deja
  * andando hasta Ctrl+C. Si no puede, abre el archivo estático y dice por qué.
  */
 export async function abrirVisor(c: ContextoMenu, e: Entorno): Promise<void> {
@@ -349,6 +349,12 @@ export async function abrirVisor(c: ContextoMenu, e: Entorno): Promise<void> {
         L(`Editable viewer at ${r.url}`, `Visor con edición en ${r.url}`),
         L(`Only this machine can open it. What you fix there is written to ${c.registro}.`, `Solo esta máquina puede abrirlo. Lo que se corrige ahí se escribe en ${c.registro}.`),
         L("It keeps running while you use it: Ctrl+C stops it and you go back to the menu.", "Queda corriendo mientras lo uses: Ctrl+C lo corta y volvés al menú."),
+        ...(r.viejos ?? []).map((u) =>
+          L(
+            `There was a viewer of this project with older code at ${u}: I did not reuse it (it shows the old screens). Close it with Ctrl+C in its terminal.`,
+            `Había un visor de este proyecto con código anterior en ${u}: no lo reusé (muestra las pantallas viejas). Cerralo con Ctrl+C en su terminal.`,
+          ),
+        ),
         "",
       ].join("\n"),
     );

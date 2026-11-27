@@ -32,11 +32,23 @@ describe("elegir el visor en localhost", () => {
   it("reusa un visor de FlowBrain que ya atiende este mismo registro, aunque esté en otro puerto", async () => {
     const levantados: number[] = [];
     const r = await prepararVisor("/p/.flowbrain", deps({
-      quien: async (p) => (p === 4780 ? "/otro/.flowbrain" : p === 4782 ? "/p/.flowbrain" : null),
+      quien: async (p) => (p === 4780 ? { registro: "/otro/.flowbrain", huella: "h" } : p === 4782 ? { registro: "/p/.flowbrain", huella: "h" } : null),
+      huella: "h",
       servir: async (p) => (levantados.push(p), falsoServidor(p)),
     }));
     expect(r).toEqual({ modo: "reusa", url: "http://127.0.0.1:4782/" });
     expect(levantados).toEqual([]);
+  });
+
+  it("no reusa un visor del mismo registro con código anterior: levanta otro y dice dónde está el viejo", async () => {
+    const r = await prepararVisor("/p/.flowbrain", deps({
+      quien: async (p) => (p === 4780 ? { registro: "/p/.flowbrain" } : p === 4781 ? { registro: "/p/.flowbrain", huella: "vieja" } : null),
+      servir: async (p) => (p < 4782 ? Promise.reject(ocupado()) : falsoServidor(p)),
+      huella: "nueva",
+    }));
+    expect(r.modo).toBe("nuevo");
+    expect(r.modo === "nuevo" && r.url).toBe("http://127.0.0.1:4782/");
+    expect(r.modo === "nuevo" && r.viejos).toEqual(["http://127.0.0.1:4780/", "http://127.0.0.1:4781/"]);
   });
 
   it("si el puerto está ocupado prueba el siguiente", async () => {
@@ -115,6 +127,12 @@ describe("la opción Abrir el visor del menú", () => {
     expect(f.texto()).toContain("Ctrl+C stops it and you go back to the menu");
     expect(f.cortes()).toBe(1);
     expect(cerrados).toEqual([4781]);
+  });
+
+  it("avisa del visor viejo que no reusó", async () => {
+    const f = entorno(async () => ({ modo: "nuevo", url: "http://127.0.0.1:4782/", servidor: falsoServidor(4782), viejos: ["http://127.0.0.1:4781/"] }));
+    await abrirVisor(c, f.e);
+    expect(f.texto()).toContain("There was a viewer of this project with older code at http://127.0.0.1:4781/");
   });
 
   it("si ya hay uno para este registro abre esa URL y no espera nada", async () => {
