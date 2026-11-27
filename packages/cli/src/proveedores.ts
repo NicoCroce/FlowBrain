@@ -19,6 +19,11 @@ export interface ModeloDeAgente {
   porDefecto?: boolean;
   /** Dólares por regla, aproximado (tanda de 10 a 15): alcanza para estimar el costo antes de pedir. */
   costoPorReglaUsd: number;
+  /**
+   * Dólares por archivo a asociar (Sin asociar), aproximado: abrir el archivo y editar el frontmatter de una página,
+   * sin escribir ni correr tests. Estimación inicial (dec. 227), a ajustar con el costo real que muestra cada lote.
+   */
+  costoPorArchivoUsd: number;
 }
 
 /** Lo que FlowBrain le permite a cualquier agente. */
@@ -156,10 +161,10 @@ export function claudeCode(comando = process.env["FLOWBRAIN_AGENTE"] ?? "claude"
       return visto;
     },
     modelos: () => [
-      { id: "claude-fable-5-2", nombre: "Fable 5.2", costoPorReglaUsd: 0.9 },
-      { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true, costoPorReglaUsd: 0.4 },
-      { id: "claude-sonnet-5-5", nombre: "Sonnet 5.5", costoPorReglaUsd: 0.15 },
-      { id: "claude-haiku-5-5", nombre: "Haiku 5.5", costoPorReglaUsd: 0.04 },
+      { id: "claude-fable-5-2", nombre: "Fable 5.2", costoPorReglaUsd: 0.9, costoPorArchivoUsd: 0.2 },
+      { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true, costoPorReglaUsd: 0.4, costoPorArchivoUsd: 0.08 },
+      { id: "claude-sonnet-5-5", nombre: "Sonnet 5.5", costoPorReglaUsd: 0.15, costoPorArchivoUsd: 0.03 },
+      { id: "claude-haiku-5-5", nombre: "Haiku 5.5", costoPorReglaUsd: 0.04, costoPorArchivoUsd: 0.01 },
     ],
     armar: (o) => ({
       comando,

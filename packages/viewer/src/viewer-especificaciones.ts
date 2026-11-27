@@ -627,14 +627,8 @@ export const ESPECIFICACIONES_JS = String.raw`
       "4. Don't modify the product code or leave a failing test in the repo. Don't commit: the changes stay for review.", "");
     return out.join("\n");
   }
-  function descargar(archivo, texto) {
-    try {
-      var blob = new Blob([texto], { type: "text/markdown;charset=utf-8" }), url = URL.createObjectURL(blob), a = document.createElement("a");
-      a.href = url; a.download = archivo; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
-      return true;
-    } catch (e) { return false; }
-  }
+  var descargar = function (archivo, texto) { return B().descargar(archivo, texto, document); };
+
 
   // ---- lo que quedó sin resolver con un test: hallazgos (c y d) ----
   // De las páginas (los que ya estaban al abrir) y, mientras la página no se recarga, de lo que acaba de volver del lote.

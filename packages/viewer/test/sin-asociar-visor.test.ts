@@ -1,3 +1,4 @@
+import { resolveObjectURL } from "node:buffer";
 import { describe, expect, it } from "vitest";
 import { SIN_ASOCIAR_JS } from "../src/viewer-sin-asociar.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
@@ -24,7 +25,10 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; l
   const window = { brainVisor: { D: datos, porId, esc }, brainSinAsociar: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion, ...(opciones.confirmar ? { confirm: opciones.confirmar } : {}), ...(opciones.recargar ? { location: { reload: opciones.recargar } } : {}), ...(opciones.lang ? { brainI18n: { lang: opciones.lang } } : {}) };
   new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
   new Function("window", LOTE_JS)(window);
-  new Function("window", "document", "sessionStorage", "localStorage", "fetch", SIN_ASOCIAR_JS)(window, { getElementById: el }, sessionStorage, localStorage, opciones.fetch);
+  // «Descargar .md»: como en Especificaciones, el documento guarda lo que se baja.
+  const bajados: Array<{ nombre: string; texto: () => Promise<string> }> = [];
+  const documento = { getElementById: el, body: { appendChild() {}, removeChild() {} }, createElement: () => ({ href: "", download: "", click() { const h = this.href; bajados.push({ nombre: this.download, texto: () => resolveObjectURL(h)!.text() }); } }) };
+  new Function("window", "document", "sessionStorage", "localStorage", "fetch", SIN_ASOCIAR_JS)(window, documento, sessionStorage, localStorage, opciones.fetch);
   const raiz = el("sinasociar");
   let html = "";
   Object.defineProperty(raiz, "innerHTML", {
@@ -52,6 +56,7 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; l
     escribir: (value: string) => raiz.oyentes["input"]!({ target: { id: "sa-q", value } }),
     tocar: (attrs: Record<string, string>) => raiz.oyentes["click"]!({ target: boton(attrs) }),
     poner: (id: string, value: string) => void (el(id).value = value),
+    bajados,
   };
 }
 
@@ -133,41 +138,57 @@ describe("pantalla Sin asociar", () => {
     expect(v.archivos()).toEqual(["Texto.php"]);
   });
 
-  it("suma al pedido de a un archivo, por carpeta o la lista filtrada; el panel lateral se abre, quita, vacía y se recuerda", () => {
+  it("suma al pedido de a un archivo, por carpeta o la lista filtrada; el panel lateral se abre, quita, vacía y se recuerda", async () => {
     const local = new Map<string, string>();
     const v = montar(datos(), { local });
     // Sin nada sumado no hay botón del panel, y cada fila, carpeta y la lista tienen su «Sumar» celeste.
     expect(v.bandeja()).toBe("");
-    expect(v.lista()).toContain(`data-acc="sumar" data-k="a|${W}src/shared/dinero.ts" data-et="Add to the request" aria-pressed="false"`);
-    expect(v.lista()).toMatch(/class="boton es-pedir" data-acc="sumar" data-k="c\|0\|front\/repo-web:src\/shared"[^>]*>Add the folder \(3\)<\/button>/);
-    expect(v.lista()).toContain(">Add the 5 in the list</button>");
+    expect(v.lista()).toContain(`data-acc="sumar" data-k="a|${W}src/shared/dinero.ts" data-et="Request" aria-pressed="false"`);
+    expect(v.lista()).toMatch(/class="boton es-pedir" data-acc="sumar" data-k="c\|0\|front\/repo-web:src\/shared"[^>]*>Request the 3<\/button>/);
+    expect(v.lista()).toContain(">Request the 5 in the list</button>");
     // Un archivo: el botón pasa a «En el pedido» y el panel se abre con él.
     v.tocar({ "data-acc": "sumar", "data-k": `a|${W}src/shared/dinero.ts` });
     expect(v.lista()).toMatch(/class="boton es-pedir en-lista" data-acc="sumar" data-k="a\|front\/repo-web:src\/shared\/dinero.ts"[^>]*>✔ In the request<\/button>/);
-    expect(v.panel()).toContain("<h2>Agent request</h2>");
+    expect(v.panel()).toContain("<h2>Requested files</h2>");
     expect(v.panel()).toContain("<b>1 file</b>");
     expect(v.panel()).toContain("→ Pagos</span>");
     expect(v.panel()).toContain(">High confidence</span>");
-    expect(v.panel()).toContain('<small class="es-archivo"><code>repo-web:src/shared/dinero.ts</code></small>');
-    expect(v.bandeja()).toContain('data-acc="panel" aria-expanded="true">Agent request (1)</button>');
+    // La tarjeta lleva el motivo, como la regla en «Tests pedidos».
+    expect(v.panel()).toContain("<code>dinero.ts</code> <small>imported by 2 files of Pagos</small>");
+    expect(v.panel()).toContain('<small class="es-archivo">File: <code>repo-web:src/shared/dinero.ts</code></small>');
+    expect(v.bandeja()).toContain('data-acc="panel" aria-expanded="true">Requested files (1)</button>');
     // La carpeta suma los que faltan; tocarla otra vez los saca.
     v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
     expect(v.panel()).toContain("<b>3 files</b>");
     expect(v.panel()).toContain("2 with a recommendation · 1 shared · 0 with no hint");
     v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
-    expect(v.panel()).toContain("The list is empty. Click «Add to the request» on a file, on a folder or on the filtered list");
+    // Con un filtro, la carpeta suma solo lo que se ve (lo que dice el botón): fecha.ts, el único compartido.
+    v.tocar({ "data-fl": "sa", "data-grupo": "compartido" });
+    v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
+    expect(v.panel()).toContain("<b>1 file</b>");
+    expect(v.panel()).toContain("<code>fecha.ts</code>");
+    v.tocar({ "data-fl": "sa", "data-grupo": "" });
+    v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
+    expect(v.panel()).toContain("<b>3 files</b>");
+    v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
+    expect(v.panel()).toContain("The list is empty. Click «Request» on a file, «Request the N» on a folder or on the filtered list");
     // La lista filtrada entera.
     v.tocar({ "data-acc": "sumar", "data-k": "l|" });
     expect(v.panel()).toContain("<b>5 files</b>");
-    // Estática: el panel arma el texto para copiar (en inglés: es para el modelo) y dice por qué no se manda.
-    let p = v.panel();
-    expect(p).toContain("This page is static, so it can't send the request");
-    expect(p).toContain('data-acc="copiar-lista">Copy the text</button>');
-    expect(p).not.toContain('data-acc="mandar-lista"');
-    expect(p).toContain("Assign these 5 files");
-    expect(p).toContain("- repo-web:src/shared/dinero.ts (brain front): recommended feat-pagos (imported by 2 files of Pagos); others: feat-envios");
-    expect(p).toContain("- repo-web:src/shared/fecha.ts (brain front): shared code, used by 3 features");
-    expect(p).toContain("- repo-api:src/Util/Texto.php (brain back): no hint");
+    // Estática: «Pedir todos» no se puede; «Descargar .md» baja la lista (en inglés: es para el modelo) y lo dice.
+    const p = v.panel();
+    expect(p).toContain("This page is read-only: it can't send the requests. Download the .md and give it to your agent");
+    expect(p).toMatch(/data-acc="pedir-todos" disabled>Request all \(5\)<\/button><button type="button" class="boton" data-acc="descargar-lista">Download \.md<\/button><button type="button" class="boton" data-acc="vaciar">Empty the list<\/button>/);
+    v.tocar({ "data-acc": "descargar-lista" });
+    expect(v.bajados[0]!.nombre).toBe("archivos-pedidos.md");
+    const md = await v.bajados[0]!.texto();
+    expect(md).toContain("# Files to assign in FlowBrain");
+    expect(md).toContain("5 files (3 with a recommendation, 1 shared, 1 with no hint) in 2 repos.");
+    expect(md).toContain("### brain front, repo-web (4)");
+    expect(md).toContain("- repo-web:src/shared/dinero.ts (brain front): recommended feat-pagos (imported by 2 files of Pagos); others: feat-envios");
+    expect(md).toContain("- repo-web:src/shared/fecha.ts (brain front): shared code, used by 3 features");
+    expect(md).toContain("- repo-api:src/Util/Texto.php (brain back): no hint");
+    expect(md).toContain("`flowbrain compile` inside `.flowbrain/<brain>/` (`front`, `back`)");
     // Quitar de a uno.
     v.tocar({ "data-acc": "quitar", "data-k": "back|repo-api:src/Util/Texto.php" });
     expect(v.panel()).toContain("<b>4 files</b>");
@@ -185,7 +206,7 @@ describe("pantalla Sin asociar", () => {
     // Cerrar el panel lo recuerda cerrado; el botón junto al título lo vuelve a abrir.
     otra.tocar({ "data-acc": "cerrar-panel" });
     expect(local.get("flowbrain.sinasociar.panel")).toBe("false");
-    expect(otra.bandeja()).toContain('aria-expanded="false">Agent request (4)</button>');
+    expect(otra.bandeja()).toContain('aria-expanded="false">Requested files (4)</button>');
     otra.tocar({ "data-acc": "panel" });
     expect(local.get("flowbrain.sinasociar.panel")).toBe("true");
     otra.tocar({ "data-acc": "vaciar" });
@@ -193,15 +214,16 @@ describe("pantalla Sin asociar", () => {
     expect(JSON.parse(local.get("flowbrain.sinasociar.pedidos")!)).toEqual([]);
     // En castellano, los mismos textos que «Tests pedidos»; el texto para el agente, en inglés.
     const es = montar(datos(), { lang: "es" });
-    expect(es.lista()).toContain(">Sumar al pedido</button>");
-    expect(es.lista()).toContain(">Sumar la carpeta (3)</button>");
-    expect(es.lista()).toContain(">Sumar los 5 de la lista</button>");
+    expect(es.lista()).toContain(">Pedir</button>");
+    expect(es.lista()).toContain(">Pedir los 3</button>");
+    expect(es.lista()).toContain(">Pedir los 5 de la lista</button>");
     es.tocar({ "data-acc": "sumar", "data-k": "l|" });
     expect(es.lista()).toContain(">✔ En el pedido</button>");
-    expect(es.panel()).toContain("<h2>Pedido al agente</h2>");
+    expect(es.panel()).toContain("<h2>Archivos pedidos</h2>");
     expect(es.panel()).toContain("3 con recomendación · 1 compartido · 1 sin pista");
+    expect(es.panel()).toContain(">Descargar .md</button>");
     expect(es.panel()).toContain(">Vaciar la lista</button>");
-    expect(es.panel()).toContain("Assign these 5 files");
+    expect(es.panel()).toContain("<code>dinero.ts</code> <small>lo importan 2 archivos de Pagos</small>");
   });
 
   it("sin índice, sin funcionalidades o sin nada que asociar explica qué pasa", () => {
@@ -325,7 +347,7 @@ describe("pantalla Sin asociar", () => {
     expect(v.lista()).toContain("There is no code to show for <code>repo-web:src/pagos/nota.ts</code>: the file is not in the clone");
   });
 
-  it("manda la lista del panel como Pedir todos: proveedor y modelo, tandas, avance, Cancelar todo y el resumen; sin agente, solo copia", async () => {
+  it("manda la lista del panel como Pedir todos: proveedor y modelo, tandas, avance, Cancelar todo y el resumen; sin agente, el .md", async () => {
     const pedidos: Array<Record<string, any>> = [];
     let recargas = 0;
     const estado: { trabajos: Array<Record<string, unknown>>; lotes: Array<Record<string, unknown>> } = { trabajos: [{ id: "otro", tipo: "test", lote: "LT", estado: "corriendo", etiqueta: "De otra pantalla", pasos: [] }], lotes: [{ id: "LT", tipo: "test", estado: "corriendo" }] };
@@ -337,7 +359,7 @@ describe("pantalla Sin asociar", () => {
         : { trabajos: [] };
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(j) });
     };
-    const agente = { noDisponible: null, proveedores: [{ id: "claude-code", nombre: "Claude Code", version: "1", modelos: [{ id: "claude-sonnet-5-5", nombre: "Sonnet 5.5" }, { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true }] }] };
+    const agente = { noDisponible: null, proveedores: [{ id: "claude-code", nombre: "Claude Code", version: "1", modelos: [{ id: "claude-sonnet-5-5", nombre: "Sonnet 5.5", costoPorArchivoUsd: 0.03 }, { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true, costoPorArchivoUsd: 0.08 }] }] };
     const local = new Map<string, string>();
     const v = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, recargar: () => void recargas++, local });
     const esperar = async () => { for (let i = 0; i < 4; i++) await new Promise((ok) => setTimeout(ok, 0)); };
@@ -357,20 +379,16 @@ describe("pantalla Sin asociar", () => {
     expect(p).toContain("2 with a recommendation · 1 shared · 1 with no hint");
     // front/repo-web y back/repo-api: dos tandas.
     expect(p).toContain("In 2 batches of up to 30 files of the same repo");
-    expect(p).toContain('data-acc="mandar-lista">Send to the agent (4)</button>');
-    expect(p).toContain('data-acc="copiar-lista">Copy the text</button>');
-    expect(p).toContain("It runs Claude Code (Opus 5.5) in this project. It can only write the brain's feature and library pages and drafts");
-    // Con agente, el texto no se muestra; si el portapapeles no deja copiar, aparece para copiarlo a mano.
-    expect(p).not.toContain("<textarea");
-    v.tocar({ "data-acc": "copiar-lista" });
-    expect(v.panel()).toContain("Could not copy automatically: select the text and copy it.");
-    expect(v.panel()).toContain("Assign these 4 files");
+    expect(p).toContain('data-acc="pedir-todos">Request all (4)</button>');
+    expect(p).toContain('data-acc="descargar-lista">Download .md</button>');
+    // El costo estimado, por archivo y con el modelo elegido (como en «Tests pedidos»).
+    expect(p).toContain("Estimated cost: ≈ US$ 0.32 <small>(approx., with Opus 5.5)</small>");
     // El modelo elegido se recuerda en este navegador.
     v.cambiar("sa-ag-modelo", "claude-sonnet-5-5");
     expect(JSON.parse(local.get("flowbrain.sinasociar.modelo")!)).toEqual({ proveedor: "claude-code", modelo: "claude-sonnet-5-5" });
-    expect(v.panel()).toContain("It runs Claude Code (Sonnet 5.5)");
+    expect(v.panel()).toContain("Estimated cost: ≈ US$ 0.12 <small>(approx., with Sonnet 5.5)</small>");
 
-    v.tocar({ "data-acc": "mandar-lista" });
+    v.tocar({ "data-acc": "pedir-todos" });
     estado.lotes = [{ id: "L1", tipo: "asociar", estado: "corriendo", cerebros: ["front", "back"] }, ...estado.lotes];
     estado.trabajos = [
       { id: "t1", tipo: "asociar", lote: "L1", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: ["Lee src/shared/fecha.ts"], archivos: ["moneda", "fecha"].map((n) => ({ cerebro: "front", archivo: `repo-web:src/shared/${n}.ts` })).concat([{ cerebro: "front", archivo: "repo-web:src/pagos/nota.ts" }]) },
@@ -393,7 +411,7 @@ describe("pantalla Sin asociar", () => {
     // Lo que está en una tanda no se puede quitar, y con un lote en curso no se manda otro ni se vacía.
     expect(p).toContain(">Assigning…</span>");
     expect(p).toMatch(/data-acc="quitar" data-k="back\|repo-api:src\/Util\/Texto.php"[^>]*disabled/);
-    expect(p).toMatch(/data-acc="mandar-lista" disabled/);
+    expect(p).toMatch(/data-acc="pedir-todos" disabled/);
     expect(p).toMatch(/data-acc="vaciar" disabled/);
     expect(p).toContain("A batch is running");
     v.tocar({ "data-acc": "cancelar-lote", "data-k": "L1" });
@@ -434,35 +452,32 @@ describe("pantalla Sin asociar", () => {
     const es = montar(datos(), { lang: "es", edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, local: new Map() });
     await esperar();
     es.tocar({ "data-acc": "sumar", "data-k": "l|" });
-    expect(es.panel()).toContain("Mandar al agente (5)");
+    expect(es.panel()).toContain("Pedir todos (5)");
     expect(es.panel()).toContain("En 2 tandas de hasta 30 archivos de un mismo repo");
     expect(es.panel()).toContain("Costo real: US$ 0.30");
     expect(es.panel()).toContain("2 asociados · 1 sigue sin asociar");
     expect(es.panel()).toContain("Recargar para ver los cambios");
 
-    // Con el servidor pero sin agente: lo dice y ofrece copiar.
+    // Con el servidor pero sin agente: lo dice y ofrece el .md.
     const sin = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente: { noDisponible: "Claude Code (claude) was not found on this machine", proveedores: [] } }, fetch: fetch as never });
     sin.tocar({ "data-acc": "sumar", "data-k": "l|" });
-    expect(sin.panel()).toContain("It can't be sent directly: Claude Code (claude) was not found on this machine. Copy the text and paste it into your agent.");
-    expect(sin.panel()).not.toContain('data-acc="mandar-lista"');
-    expect(sin.panel()).toContain("Assign these 5 files");
+    expect(sin.panel()).toContain("There's no agent installed on this machine: Claude Code (claude) was not found on this machine. Download the .md and give it to your agent");
+    expect(sin.panel()).toMatch(/data-acc="pedir-todos" disabled/);
+    expect(sin.panel()).toContain('data-acc="descargar-lista">Download .md</button>');
   });
 
-  it("el lote lleva toda la lista, sin el tope de 80; el texto para copiar lleva los primeros 80 y lo dice", () => {
+  it("el lote y el .md llevan toda la lista, sin el tope de 80; un modelo sin costo por archivo lo dice", async () => {
     const d = datos();
     (d as Record<string, unknown>).sinAsociar = Array.from({ length: 85 }, (_, i) => ({ a: `${W}src/x/a${i}.ts`, l: "ts", k: "otros", c: 0 }));
-    const v = montar(d, { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: null, proveedores: [{ id: "claude-code", nombre: "Claude Code", modelos: [] }] } } });
+    const v = montar(d, { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: null, proveedores: [{ id: "claude-code", nombre: "Claude Code", modelos: [{ id: "m", nombre: "Otro" }] }] } } });
     v.tocar({ "data-acc": "sumar", "data-k": "l|" });
     const p = v.panel();
-    expect(p).toContain("Send to the agent (85)");
+    expect(p).toContain("Request all (85)");
     expect(p).toContain("In 3 batches");
-    expect(p).toContain("«Copy the text» carries the first 80 of 85");
-    // Sin servidor, el texto (el único camino) lleva 80 y dice cuántos quedan.
-    const est = montar(d);
-    est.tocar({ "data-acc": "sumar", "data-k": "l|" });
-    expect(est.panel()).toContain("«Copy the text» carries the first 80 of 85");
-    expect(est.panel()).toContain("Assign these 80 files");
-    expect(est.panel()).toContain("5 more remain for another batch.");
+    expect(p).toContain("Estimated cost: no estimate for this model: the actual cost shows while it runs");
+    v.tocar({ "data-acc": "descargar-lista" });
+    const md = await v.bajados[0]!.texto();
+    expect(md.match(/^- repo-web:src\/x\/a\d+\.ts/gm)).toHaveLength(85);
   });
 
   it("código compartido: se asocia a una librería del mismo cerebro, o se pide crear una", async () => {

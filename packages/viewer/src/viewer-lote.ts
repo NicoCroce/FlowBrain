@@ -10,7 +10,8 @@
  * - la lista que se va armando y su panel lateral (dec. 227): el botón celeste que suma o saca de la lista
  *   (`botonSumar`, `data-acc="sumar"`, y `marcarBotones` para cambiarlos sin repintar), el botón que abre el panel
  *   (`bandeja`, `data-acc="panel"`), el panel (`aside`, `panel`: título y ✕ `cerrar-panel`, proveedor y modelo, los
- *   totales, los botones, el lote, cada ítem con «Quitar» `quitar` y lo que la pantalla agregue) y `pintarPanel`.
+ *   totales, los botones, el lote, cada ítem con «Quitar» `quitar` y lo que la pantalla agregue), `pintarPanel` y
+ *   `descargar` (el .md de «Descargar .md»).
  *   La lista y si el panel está abierto los guarda cada pantalla en este navegador (localStorage). Lo usan
  *   Especificaciones («Tests pedidos») y Sin asociar («Pedido al agente»): cada una pone sus textos y sus ítems.
  * JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
@@ -127,7 +128,16 @@ export const LOTE_JS = String.raw`
     if (typeof el.scrollTop === "number") el.scrollTop = antes;
     if (raiz && raiz.classList) { if (abierto) raiz.classList.add("es-con-panel"); else raiz.classList.remove("es-con-panel"); }
   }
+  // Baja un archivo de texto (el .md del pedido) con el documento de la pantalla: true si el navegador lo dejó.
+  function descargar(archivo, texto, doc) {
+    try {
+      var blob = new Blob([texto], { type: "text/markdown;charset=utf-8" }), url = URL.createObjectURL(blob), a = doc.createElement("a");
+      a.href = url; a.download = archivo; doc.body.appendChild(a); a.click(); doc.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+      return true;
+    } catch (e) { return false; }
+  }
   window.brainLote = { vivo: vivo, estado: estado, dolares: dolares, tandas: tandas, loteVivo: loteVivo, proveedor: proveedor, modelo: modelo, selector: selector, html: html,
-    botonSumar: botonSumar, marcarBotones: marcarBotones, bandeja: bandeja, aside: aside, panel: panel, pintarPanel: pintarPanel };
+    descargar: descargar, botonSumar: botonSumar, marcarBotones: marcarBotones, bandeja: bandeja, aside: aside, panel: panel, pintarPanel: pintarPanel };
 })();
 `;
