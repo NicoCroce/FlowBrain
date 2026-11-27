@@ -83,6 +83,7 @@ Las **funcionalidades** (qué es una feature, qué reglas de negocio cumple, qu�
 
 - Los archivos nuevos que no pertenecen a ninguna funcionalidad aparecen en `sin_asociar` (y en la pantalla *Unassigned* del visor), con una sugerencia de a cuál asignarlos.
 - `/flowbrain-features` y `/flowbrain-specs` hacen que el agente deduzca o complete funcionalidades y especificaciones como **borradores** en `_drafts/`.
+- Mientras desarrolla, el agente hace lo mismo por su cuenta: el borrador de una funcionalidad nueva ya trae sus casos de uso y especificaciones, y cuando cambia una existente actualiza sus especificaciones (las reglas nuevas como propuestas sin confirmar; una confirmada que el código contradice se avisa, no se cambia).
 - `flowbrain promote` los pasa a `product/` y `technology/`. Si el cerebro deja de compilar con las páginas nuevas, deshace todo.
 - `fidelidad` mide de 0 a 100 qué tan entendido quedó cada archivo o funcionalidad, y qué falta.
 

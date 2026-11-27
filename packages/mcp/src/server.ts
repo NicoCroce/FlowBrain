@@ -113,7 +113,7 @@ export const INSTRUCCIONES = [
   "- Which files belong to no feature and which one each should be assigned to: sin_asociar.",
   "- How reliable what the graph says about a file or a feature is, and what is missing: fidelidad.",
   "Every fact comes with evidence `repo:path#Ln`: open that file before claiming anything. `avisos` (notices) and `truncado` (truncated) mark known gaps: data is missing there, it does not mean nothing happens.",
-  "While developing: the graph only sees committed code, so for uncommitted changes read the code. After adding a feature or files, check sin_asociar and propose a draft page in `_drafts/product/` instead of editing `product/`.",
+  "While developing: the graph only sees committed code, so for uncommitted changes read the code. After adding a feature or files, check sin_asociar and propose a draft page in `_drafts/product/` instead of editing `product/`, with its use cases and specifications (`flowbrain specs --guide`). When an existing feature changes, update its specifications with that guide.",
 ].join("\n");
 
 /** Quita claves con valor undefined (el motor usa exactOptionalPropertyTypes). */

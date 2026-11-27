@@ -83,6 +83,7 @@ Uncommitted work is not visible yet: the graph stays at the previous commit, and
 
 - New files that belong to no feature show up in `sin_asociar` (and in the viewer's *Unassigned* screen), with a suggestion of where to assign them.
 - `/flowbrain-features` and `/flowbrain-specs` have the agent deduce or complete features and specifications as **drafts** in `_drafts/`.
+- While it develops, the agent follows the same path on its own: a new feature's draft already carries its use cases and specifications, and when an existing feature changes it updates its specifications (new rules as unconfirmed proposals; a confirmed one the code contradicts is reported, not changed).
 - `flowbrain promote` moves them into `product/` and `technology/`. If the brain stops compiling with the new pages, it undoes everything.
 - `fidelidad` (fidelity) scores from 0 to 100 how well each file or feature is understood, and what is missing.
 

@@ -513,7 +513,8 @@ $ARGUMENTS
 
 ## Rules
 
-- **Do not modify the project's repositories.** You only edit \`.flowbrain/<brain>/product/feat-*.md\`.
+- **Do not modify the project's repositories.** You only edit \`.flowbrain/<brain>/product/feat-*.md\`, or the draft
+  \`.flowbrain/<brain>/_drafts/product/feat-*.md\` when the feature is new and still a draft (it gets promoted with them).
 - **Do not open real environment files** (\`.env\` and similar).
 - **Everything comes from the code and the tests.** A specification you cannot point to in a file does not go in.
   Whatever looks like a rule but you cannot find where it is fulfilled goes to the page's open questions section.

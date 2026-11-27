@@ -73,5 +73,8 @@ describe("hook SessionEnd", () => {
     expect(b).toContain("`sin_asociar` (`flowbrain unassigned`)");
     expect(b).toContain("_drafts/product/feat-<id>.md");
     expect(b).toContain("`flowbrain promote`");
+    // Una funcionalidad nueva lleva sus especificaciones en el borrador; una que cambia, las actualiza.
+    expect(b).toMatch(/_drafts\/product\/feat-<id>\.md[^\n]*especificaciones[^\n]*specs --guide/);
+    expect(b).toMatch(/existing feature[^\n]*\/flowbrain-specs/);
   });
 });

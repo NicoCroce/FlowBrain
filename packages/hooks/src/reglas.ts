@@ -71,7 +71,8 @@ export function bloqueReglas(ctx?: Contexto | null, repo?: GraphNode | null): st
     "While you develop:",
     "- The graph only sees committed code: the index follows each clone's commit (`flowbrain serve --sync` reindexes when it moves; otherwise `flowbrain sync`). For files you created or changed and have not committed, read the code, not the graph.",
     "- Before changing a method, an endpoint or a table, ask `quien_llama` or `impacto`; it may be used from another repo over HTTP, events or queues.",
-    "- When you add a feature or new files, once they are committed check `sin_asociar` (`flowbrain unassigned`) and say which feature each new file belongs to. For a new feature, propose its page as a draft in `.flowbrain/<brain>/_drafts/product/feat-<id>.md` (or with the `/flowbrain-features` guide). Never edit `product/` or `technology/` directly: the user reviews drafts and moves them with `flowbrain promote`.",
+    "- When you add a feature or new files, once they are committed check `sin_asociar` (`flowbrain unassigned`) and say which feature each new file belongs to. For a new feature, propose its page as a draft in `.flowbrain/<brain>/_drafts/product/feat-<id>.md` (or with the `/flowbrain-features` guide), with its use cases and specifications in the same draft (`casos` and `especificaciones`, following `flowbrain specs --guide` or `/flowbrain-specs`). Never edit `product/` or `technology/` directly: the user reviews drafts and moves them with `flowbrain promote`.",
+    "- When you change what an existing feature does, update its specifications with `/flowbrain-specs` (`flowbrain specs --guide`) limited to that feature: new rules go in as unconfirmed proposals, and a `confirmada` one that the code now contradicts is reported, not changed.",
     "",
   ].join("\n");
 }
