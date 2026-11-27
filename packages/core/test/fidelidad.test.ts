@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConsultaError, crearContexto, crearIndiceCodigo, fidelidad, fidelidadDeArchivos, fidelidadDeFuentes, planDeFidelidad, sinAsociar, type Ficha, type Graph, type GraphEdge, type GraphNode } from "../src/index.js";
+import { ConsultaError, confianzaDe, crearContexto, crearIndiceCodigo, fidelidad, fidelidadDeArchivos, fidelidadDeFuentes, planDeFidelidad, sinAsociar, type Ficha, type Graph, type GraphEdge, type GraphNode } from "../src/index.js";
 
 /**
  * Un back y un front mínimos, armados a mano para que cada archivo tenga una falta distinta y conocida:
@@ -211,11 +211,26 @@ describe("archivos sin asociar", () => {
   });
 
   it("recomienda por quién lo usa, qué usa y, si no hay más, por los vecinos de carpeta", () => {
-    expect(de("src/shared/dinero.ts").recomendada).toEqual({ id: "feat-pagos", motivo: "imported by 2 files of Pagos" });
-    expect(de("src/shared/usa-pagos.ts").recomendada).toEqual({ id: "feat-pagos", motivo: "imports 1 file of Pagos" });
-    expect(de("src/pagos/extra/nota.ts").recomendada).toEqual({ id: "feat-pagos", motivo: "2 files in src/pagos/ belong to Pagos" });
+    // El motivo va en inglés (MCP y pedido al agente) y estructurado (el visor lo dice en su idioma), con su confianza.
+    expect(de("src/shared/dinero.ts").recomendada).toEqual({ id: "feat-pagos", motivo: "imported by 2 files of Pagos", senales: [{ tipo: "lo_usan", cantidad: 2 }], confianza: "alta" });
+    expect(de("src/shared/usa-pagos.ts").recomendada).toEqual({ id: "feat-pagos", motivo: "imports 1 file of Pagos", senales: [{ tipo: "usa", cantidad: 1 }], confianza: "alta" });
+    // Solo vecinos de la carpeta de arriba: dicen dónde está, no qué hace. Confianza baja.
+    expect(de("src/pagos/extra/nota.ts").recomendada).toEqual({ id: "feat-pagos", motivo: "2 files in src/pagos/ belong to Pagos", senales: [{ tipo: "arriba", cantidad: 2, carpeta: "src/pagos" }], confianza: "baja" });
     expect(de("src/sueltos/nada.ts")).toMatchObject({ otras: [], carpetaLibre: true });
     expect(de("src/sueltos/nada.ts").recomendada).toBeUndefined();
+  });
+
+  it("la confianza sale de dónde vienen los votos y de cuánto le saca a la segunda", () => {
+    // Alta: votos directos que solos le ganan a la segunda, y la segunda junta como mucho la mitad.
+    expect(confianzaDe({ directos: 6, puntos: 6 }, undefined)).toBe("alta");
+    expect(confianzaDe({ directos: 6, puntos: 7 }, { puntos: 3.5 })).toBe("alta");
+    // Media: directos, pero la segunda no queda lejos; o los directos solos no le ganan.
+    expect(confianzaDe({ directos: 6, puntos: 6 }, { puntos: 4 })).toBe("media");
+    expect(confianzaDe({ directos: 2, puntos: 5 }, { puntos: 2 })).toBe("media");
+    // Baja: solo vecinos de carpeta, o casi un empate (la segunda junta el 80 % o más).
+    expect(confianzaDe({ directos: 0, puntos: 5 }, undefined)).toBe("baja");
+    expect(confianzaDe({ directos: 6, puntos: 6 }, { puntos: 5 })).toBe("baja");
+    expect(confianzaDe({ directos: 4, puntos: 4 }, { puntos: 4 })).toBe("baja");
   });
 
   it("lo que usan varias funcionalidades por igual es código compartido: no se recomienda una", () => {
@@ -236,6 +251,8 @@ describe("archivos sin asociar", () => {
     const r = sinAsociar(c, { budget_tokens: null }) as unknown as { total: number; conRecomendacion: number; compartidos: number; sinPista: number; carpetas: Array<{ carpeta: string; archivos: number; recomendada?: { id: string; archivos: number }; carpetaLibre: boolean; compartidos?: number }> };
     expect([r.total, r.conRecomendacion, r.compartidos, r.sinPista]).toEqual([6, 3, 1, 2]);
     expect(r.carpetas[0]).toMatchObject({ carpeta: `${A}:src/shared`, archivos: 3, recomendada: { id: "feat-pagos", archivos: 2 }, carpetaLibre: true, compartidos: 1 });
+    // La salida MCP conserva el motivo en texto y suma la confianza.
+    expect((r.carpetas[0] as unknown as { lista: unknown[] }).lista).toContainEqual({ archivo: `${A}:src/shared/dinero.ts`, recomendada: "feat-pagos", motivo: "imported by 2 files of Pagos", confianza: "alta" });
     const solo = sinAsociar(c, { carpeta: "src/pagos", budget_tokens: null }) as unknown as { filtro: { coinciden: number }; carpetas: Array<{ carpeta: string }> };
     expect(solo.filtro).toEqual({ coinciden: 1 });
     expect((sinAsociar(c, { funcionalidad: "ninguna", budget_tokens: null }) as unknown as { filtro: { coinciden: number } }).filtro).toEqual({ coinciden: 3 });

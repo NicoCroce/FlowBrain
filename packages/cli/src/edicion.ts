@@ -96,6 +96,38 @@ export async function detalleDeArchivo(registro: Registro, nombreCerebro: unknow
   return { cerebro: c.nombre, archivo, entradas, funcionalidades, dueñas, http, llamadas };
 }
 
+/** Hasta cuántas líneas y bytes devuelve «Ver código»: lo que pasa se recorta, y la respuesta dice cuánto quedó afuera. */
+export const TOPE_LINEAS_CODIGO = 2000, TOPE_BYTES_CODIGO = 512 * 1024;
+
+/**
+ * El código fuente de un archivo indexado, para «Ver código» (`/api/archivo?...&contenido=1`). Solo lee archivos que
+ * están en el índice del cerebro, desde el clon que se indexó (`raices` de `_build/files`), y nunca fuera de él: un
+ * enlace simbólico no lo saca del repo. Si el clon ya no está o el archivo se borró, lo dice en `error`, no falla.
+ */
+export async function codigoDeArchivo(registro: Registro, nombreCerebro: unknown, idArchivo: unknown) {
+  const c = cerebroDe(registro, nombreCerebro);
+  const ctx = await cargarContexto(c.raiz);
+  const { archivo, repo, ruta } = estructuraDe(ctx, idArchivo);
+  const base = { cerebro: c.nombre, archivo, repo, ruta };
+  const raiz = ctx.codigo!.raices[repo];
+  if (!raiz) return { ...base, error: `the index does not say where the clone of ${repo} is: run flowbrain brains apply ${c.nombre}` };
+  let raizRepo: string, destino: string;
+  try {
+    raizRepo = await realpath(resolve(c.raiz, raiz));
+    destino = await realpath(resolve(raizRepo, ruta));
+  } catch {
+    return { ...base, error: `the file is not in the clone (${join(raiz, ruta)}): it was moved or deleted since it was indexed` };
+  }
+  if (!destino.startsWith(raizRepo + sep)) throw invalido(`the path leaves the repo: ${ruta}`);
+  const buf = await readFile(destino);
+  if (buf.subarray(0, 8000).includes(0)) return { ...base, error: "it is a binary file: there is no text to show" };
+  const todas = buf.subarray(0, TOPE_BYTES_CODIGO).toString("utf8").split(/\r?\n/);
+  if (todas.length > 1 && todas[todas.length - 1] === "") todas.pop();
+  const lineas = todas.slice(0, TOPE_LINEAS_CODIGO);
+  const total = buf.length > TOPE_BYTES_CODIGO ? null : todas.length;
+  return { ...base, lineas, ...(total === null || total > lineas.length ? { recortado: { mostradas: lineas.length, total, bytes: buf.length } } : {}) };
+}
+
 /** Valida una edición contra el índice del cerebro y la escribe. Al sumar código, además recompila. */
 export async function editar(registro: Registro, ed: Edicion): Promise<ResultadoEdicion> {
   const c = cerebroDe(registro, ed?.cerebro);

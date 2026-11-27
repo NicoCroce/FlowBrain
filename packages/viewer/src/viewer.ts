@@ -1,4 +1,4 @@
-import { CIERRE_DEL_PLAN, COMO_RESOLVER, GUIA_TESTS, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type CodigoVisor, type ArchivoSinAsociar, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { CIERRE_DEL_PLAN, COMO_RESOLVER, GUIA_TESTS, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type CodigoVisor, type ArchivoSinAsociar, type SenalDeRecomendacion, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
 import { CONTRATOS_JS } from "./viewer-contratos.js";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
@@ -31,13 +31,18 @@ export interface FidelidadVisor {
   sinAsociar?: ArchivoSinAsociar[];
 }
 
-/** Los archivos sin asociar en formato corto: a: archivo, l: lenguaje, k: capa, g: recomendada [id, motivo], o: otras, m: funcionalidades que lo comparten, cl: carpeta libre. */
+/**
+ * Los archivos sin asociar en formato corto: a: archivo, l: lenguaje, k: capa, g: recomendada [id, motivo en inglés,
+ * confianza, señales], o: otras [id, motivo, señales], m: funcionalidades que lo comparten, cl: carpeta libre. Cada
+ * señal es [tipo, cantidad] o [tipo, cantidad, carpeta]: con ellas el visor dice el motivo en su idioma.
+ */
+const senalesCortas = (xs: SenalDeRecomendacion[]) => xs.map((s) => (s.carpeta ? [s.tipo, s.cantidad, s.carpeta] : [s.tipo, s.cantidad]));
 export function sinAsociarDelVisor(f: FidelidadVisor | undefined) {
   if (!f?.sinAsociar) return null;
   return f.sinAsociar.map((x) => ({
     a: x.archivo, l: x.lenguaje, k: x.capa,
-    ...(x.recomendada ? { g: [x.recomendada.id, x.recomendada.motivo] } : {}),
-    ...(x.otras.length ? { o: x.otras.map((o) => [o.id, o.motivo]) } : {}),
+    ...(x.recomendada ? { g: [x.recomendada.id, x.recomendada.motivo, x.recomendada.confianza, senalesCortas(x.recomendada.senales)] } : {}),
+    ...(x.otras.length ? { o: x.otras.map((o) => [o.id, o.motivo, senalesCortas(o.senales)]) } : {}),
     ...(x.compartido ? { m: x.compartido.funcionalidades } : {}),
     ...(x.carpetaLibre ? { cl: 1 } : {}),
   }));
@@ -454,6 +459,10 @@ button.pestana { border-top: 0; border-left: 0; border-right: 0; background: non
 .sa-que { flex: 1 1 320px; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; font-size: 13px; } .sa-que > div { flex: 1 1 100%; color: var(--claro); } .sa-que small { color: var(--suave); }
 .sa-rec a { color: var(--feat); text-decoration: none; font-weight: 500; } .sa-rec a:hover { text-decoration: underline; }
 .sa-otra { flex: 1 1 100%; max-width: 520px; } .sa-acc { margin-bottom: 8px; }
+.sa-conf { font-size: 11px; padding: 1px 8px; } .sa-lote { margin: 0 0 12px; align-items: center; } .sa-lote small { color: var(--suave); }
+.sa-codigo { flex: 1 1 100%; min-width: 0; gap: 8px; } .sa-codigo-cab { font-size: 12px; color: var(--claro); } .sa-codigo-cab small { color: var(--suave); }
+.sa-pre { margin: 0; max-height: 460px; overflow: auto; padding: 10px 0; border: 1px solid var(--borde); border-radius: 8px; background: var(--campo-fondo); color: var(--claro); font: 400 12px/1.5 var(--mono); white-space: pre; tab-size: 2; }
+.sa-ln { display: inline-block; width: 4.5em; padding-right: 12px; margin-right: 8px; text-align: right; color: var(--suave); border-right: 1px solid var(--borde); user-select: none; }
 #sinasociar .fd-herr select { flex: 0 0 auto; width: auto; max-width: 280px; } #sinasociar .es-cab h3 code { font-size: 14px; }
 .ct-sec > summary { cursor: pointer; list-style-position: outside; } .ct-sec > summary h3 { display: inline; margin: 0; font-size: 15px; } .ct-sec > summary small { margin-left: 6px; color: var(--suave); font-weight: 400; font-variant-numeric: tabular-nums; }
 .ct-sec[open] > summary { margin-bottom: 10px; } .ct-sec li code { overflow-wrap: anywhere; } .ct-sec h4 small { color: var(--suave); font-weight: 400; }

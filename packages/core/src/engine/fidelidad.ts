@@ -75,8 +75,8 @@ export interface ArchivoSinAsociar {
   archivo: string;
   lenguaje: string;
   capa: string;
-  /** La funcionalidad con más indicios, y por qué. Ausente si no hay indicios o si es código compartido. */
-  recomendada?: Recomendacion;
+  /** La funcionalidad con más indicios, por qué y con qué confianza. Ausente si no hay indicios o si es código compartido. */
+  recomendada?: Recomendacion & { confianza: Confianza };
   /** Otras con indicios parecidos (hasta 2), por si la primera no es. */
   otras: Recomendacion[];
   /** Lo usan archivos de dos o más funcionalidades sin que una domine: no es de una sola. */
@@ -87,8 +87,25 @@ export interface ArchivoSinAsociar {
 
 export interface Recomendacion {
   id: string;
+  /** El motivo en inglés, armado de `senales`: lo lee el MCP y va en el pedido para el agente. */
   motivo: string;
+  /** El mismo motivo, estructurado: el visor lo arma en su idioma. Las dos señales más fuertes, de mayor a menor. */
+  senales: SenalDeRecomendacion[];
 }
+
+/**
+ * Un indicio de que el archivo es de la funcionalidad recomendada (la del `id` de la recomendación). `endpoints`:
+ * atiende endpoints que ella llama; `lo_usan`: lo importan archivos suyos; `usa`: importa archivos suyos; `vecinos`:
+ * archivos de su misma carpeta son suyos; `arriba`: archivos de la carpeta de arriba (`carpeta`, sin el repo) son suyos.
+ */
+export interface SenalDeRecomendacion {
+  tipo: "endpoints" | "lo_usan" | "usa" | "vecinos" | "arriba";
+  cantidad: number;
+  carpeta?: string;
+}
+
+/** Qué tan segura es una recomendación: ver `confianzaDe`. */
+export type Confianza = "alta" | "media" | "baja";
 
 /** Una cosa que le falta a un archivo para llegar a 100. */
 export interface Tarea {
@@ -289,12 +306,44 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
 }
 
 const PESO_LO_USAN = 3, PESO_USA = 2, PESO_ENDPOINT = 4, PESO_VECINO = 1, PESO_VECINO_ARRIBA = 0.5, TOPE_VECINOS = 5;
+/** La segunda candidata junta como mucho esta parte de los puntos de la primera: la primera gana clara. */
+const MARGEN_CLARO = 0.5;
+/** La segunda junta esta parte o más: están casi empatadas, el margen es chico. */
+const MARGEN_CHICO = 0.8;
+
+/**
+ * La confianza de una recomendación, según de dónde salen sus votos y cuánto le saca a la segunda:
+ * - `alta`: tiene votos directos (atiende endpoints que la funcionalidad llama, o hay imports en un sentido u otro:
+ *   PESO_ENDPOINT, PESO_LO_USAN, PESO_USA), esos votos solos le ganan a todo lo que junta la segunda, y la segunda
+ *   no pasa de MARGEN_CLARO de sus puntos (o no hay segunda). Es la que se puede aceptar en lote.
+ * - `baja`: solo la votan los vecinos de carpeta (PESO_VECINO o PESO_VECINO_ARRIBA), que dicen dónde está el
+ *   archivo y no qué hace; o la segunda junta MARGEN_CHICO de sus puntos o más (casi un empate).
+ * - `media`: el resto, como votos directos con una segunda que no queda lejos, o directos que solos no alcanzan.
+ */
+export function confianzaDe(primera: { directos: number; puntos: number }, segunda: { puntos: number } | undefined): Confianza {
+  const otra = segunda?.puntos ?? 0;
+  if (!primera.directos || otra >= MARGEN_CHICO * primera.puntos) return "baja";
+  if (primera.directos > otra && otra <= MARGEN_CLARO * primera.puntos) return "alta";
+  return "media";
+}
+
+/** El texto en inglés de una señal, el de siempre para el MCP y el pedido para el agente. */
+function motivoEnIngles(s: SenalDeRecomendacion, feat: string): string {
+  switch (s.tipo) {
+    case "endpoints": return `serves ${cuantos(s.cantidad, "endpoint", "endpoints")} called by ${feat}`;
+    case "lo_usan": return `imported by ${cuantos(s.cantidad, "file", "files")} of ${feat}`;
+    case "usa": return `imports ${cuantos(s.cantidad, "file", "files")} of ${feat}`;
+    case "vecinos": return `${cuantos(s.cantidad, "folder neighbor belongs", "folder neighbors belong")} to ${feat}`;
+    case "arriba": return `${cuantos(s.cantidad, "file", "files")} in ${s.carpeta}/ ${s.cantidad === 1 ? "belongs" : "belong"} to ${feat}`;
+  }
+}
 
 /**
  * A cada archivo sin dueño, la funcionalidad con más indicios. De más fuerte a más débil: atiende un endpoint que una
  * funcionalidad llama; lo importan archivos de una funcionalidad; importa archivos de una funcionalidad; sus vecinos
  * de carpeta (o de la carpeta de arriba) son de una funcionalidad. Si lo usan dos o más funcionalidades y ninguna
- * junta el 60 % de los usos, no se recomienda ninguna: es código compartido.
+ * junta el 60 % de los usos, no se recomienda ninguna: es código compartido. Cada recomendada lleva su confianza
+ * (`confianzaDe`) y su motivo en dos formas: el texto en inglés y las señales, para que el visor lo diga en su idioma.
  */
 function recomendar(ctx: Contexto, sueltos: Array<{ archivo: string; lenguaje: string; capa: string }>, featsDe: Map<string, string[]>): ArchivoSinAsociar[] {
   const ix = ctx.codigo!;
@@ -341,18 +390,21 @@ function recomendar(ctx: Contexto, sueltos: Array<{ archivo: string; lenguaje: s
     for (const [f, n] of porCarpeta.get(arriba ?? "") ?? []) Object.assign(de(f), { arriba: n, carpeta: de(f).carpeta || arriba });
     const corta = (c: string) => c.slice(c.indexOf(":") + 1);
     const candidatas = [...cuenta.entries()]
-      .map(([id, c]) => ({
-        id,
-        puntos: PESO_ENDPOINT * c.endpoints + PESO_LO_USAN * c.loUsan + PESO_USA * c.usa + PESO_VECINO * Math.min(c.vecinos, TOPE_VECINOS) + PESO_VECINO_ARRIBA * Math.min(c.arriba, TOPE_VECINOS),
-        motivo: [
-          ...(c.endpoints ? [`serves ${cuantos(c.endpoints, "endpoint", "endpoints")} called by ${nombre(id)}`] : []),
-          ...(c.loUsan ? [`imported by ${cuantos(c.loUsan, "file", "files")} of ${nombre(id)}`] : []),
-          ...(c.usa ? [`imports ${cuantos(c.usa, "file", "files")} of ${nombre(id)}`] : []),
-          ...(c.vecinos ? [`${cuantos(c.vecinos, "folder neighbor belongs", "folder neighbors belong")} to ${nombre(id)}`] : c.arriba ? [`${cuantos(c.arriba, "file", "files")} in ${corta(arriba!)}/ ${c.arriba === 1 ? "belongs" : "belong"} to ${nombre(id)}`] : []),
-        ]
-          .slice(0, 2)
-          .join("; "),
-      }))
+      .map(([id, c]) => {
+        const senales: SenalDeRecomendacion[] = [
+          ...(c.endpoints ? [{ tipo: "endpoints" as const, cantidad: c.endpoints }] : []),
+          ...(c.loUsan ? [{ tipo: "lo_usan" as const, cantidad: c.loUsan }] : []),
+          ...(c.usa ? [{ tipo: "usa" as const, cantidad: c.usa }] : []),
+          ...(c.vecinos ? [{ tipo: "vecinos" as const, cantidad: c.vecinos }] : c.arriba ? [{ tipo: "arriba" as const, cantidad: c.arriba, carpeta: corta(arriba!) }] : []),
+        ].slice(0, 2);
+        return {
+          id,
+          directos: PESO_ENDPOINT * c.endpoints + PESO_LO_USAN * c.loUsan + PESO_USA * c.usa,
+          puntos: PESO_ENDPOINT * c.endpoints + PESO_LO_USAN * c.loUsan + PESO_USA * c.usa + PESO_VECINO * Math.min(c.vecinos, TOPE_VECINOS) + PESO_VECINO_ARRIBA * Math.min(c.arriba, TOPE_VECINOS),
+          motivo: senales.map((s) => motivoEnIngles(s, nombre(id))).join("; "),
+          senales,
+        };
+      })
       .sort((a, b) => b.puntos - a.puntos || cmp(a.id, b.id));
     const usos = [...cuenta.values()].reduce((n, c) => n + c.loUsan, 0);
     const queLoUsan = [...cuenta.entries()].filter(([, c]) => c.loUsan);
@@ -362,8 +414,8 @@ function recomendar(ctx: Contexto, sueltos: Array<{ archivo: string; lenguaje: s
       archivo,
       lenguaje,
       capa,
-      ...(primera && !compartido ? { recomendada: { id: primera.id, motivo: primera.motivo } } : {}),
-      otras: (compartido ? candidatas : resto).filter((c) => !primera || c.puntos >= 0.4 * primera.puntos).slice(0, 2).map((c) => ({ id: c.id, motivo: c.motivo })),
+      ...(primera && !compartido ? { recomendada: { id: primera.id, motivo: primera.motivo, senales: primera.senales, confianza: confianzaDe(primera, resto[0]) } } : {}),
+      otras: (compartido ? candidatas : resto).filter((c) => !primera || c.puntos >= 0.4 * primera.puntos).slice(0, 2).map((c) => ({ id: c.id, motivo: c.motivo, senales: c.senales })),
       ...(compartido ? { compartido: { funcionalidades: queLoUsan.length } } : {}),
       carpetaLibre: !!propia && !conDueño.has(propia),
     };
@@ -595,7 +647,7 @@ export function sinAsociar(ctx: Contexto, p: SinAsociarParams = {}) {
         ...(id && 2 * n! > xs.length ? { recomendada: { id, nombre: ctx.nodo.get(id)?.nombre ?? id, archivos: n! } } : {}),
         carpetaLibre: xs[0]!.carpetaLibre,
         ...(xs.some((x) => x.compartido) ? { compartidos: xs.filter((x) => x.compartido).length } : {}),
-        lista: xs.slice(0, 8).map((x) => ({ archivo: x.archivo, ...(x.recomendada ? { recomendada: x.recomendada.id, motivo: x.recomendada.motivo } : {}), ...(x.otras.length ? { otras: x.otras.map((o) => o.id) } : {}), ...(x.compartido ? { compartido: `used by ${x.compartido.funcionalidades} features` } : {}) })),
+        lista: xs.slice(0, 8).map((x) => ({ archivo: x.archivo, ...(x.recomendada ? { recomendada: x.recomendada.id, motivo: x.recomendada.motivo, confianza: x.recomendada.confianza } : {}), ...(x.otras.length ? { otras: x.otras.map((o) => o.id) } : {}), ...(x.compartido ? { compartido: `used by ${x.compartido.funcionalidades} features` } : {}) })),
         ...(xs.length > 8 ? { masArchivos: xs.length - 8 } : {}),
       };
     })

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { ConsultaError, leerRegistro, type Registro } from "@flowbrain/core";
 import { aplicarCerebro, htmlDelVisor } from "./cerebros.js";
 import { crearAgente, TIPOS_DE_PEDIDO, type Agente, type ReglaDePedido, type TipoDePedido } from "./agente.js";
-import { detalleDeArchivo, editar, type Edicion } from "./edicion.js";
+import { codigoDeArchivo, detalleDeArchivo, editar, type Edicion } from "./edicion.js";
 import { L } from "./idioma.js";
 
 /**
@@ -110,6 +110,8 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
     if (!url.pathname.startsWith("/api/")) throw new ErrorHttp(404, "not found");
     if (!tokenValido(req)) throw new ErrorHttp(403, "the edit token is missing or is not this session's: reload the page");
     if (req.method === "GET" && url.pathname === "/api/archivo") {
+      // Con contenido=1, el código del archivo («Ver código» de Sin asociar); sin él, lo que se puede corregir (Fidelidad).
+      if (url.searchParams.get("contenido") === "1") return { json: await codigoDeArchivo(registro, url.searchParams.get("cerebro"), url.searchParams.get("archivo")) };
       return { json: await detalleDeArchivo(registro, url.searchParams.get("cerebro"), url.searchParams.get("archivo")) };
     }
     if (req.method === "POST" && url.pathname === "/api/editar") {

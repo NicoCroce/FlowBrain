@@ -130,6 +130,17 @@ describe("flowbrain viewer --serve", () => {
     expect((await pedir("GET", "/api/archivo?cerebro=tienda&archivo=repo-x:no/existe.ts")).estado).toBe(404);
   });
 
+  it("con contenido=1 devuelve el código del archivo, leído del clon indexado («Ver código» de Sin asociar)", async () => {
+    const r = await pedir("GET", `/api/archivo?cerebro=tienda&archivo=${encodeURIComponent(`${R}:src/main.ts`)}&contenido=1`);
+    expect(r.json).toMatchObject({ cerebro: "tienda", archivo: `${R}:src/main.ts`, repo: R, ruta: "src/main.ts" });
+    expect((r.json["lineas"] as string[])[0]).toBe('import { Router, type Request, type Response } from "express";');
+    expect(r.json["lineas"]).toHaveLength(8);
+    expect(r.json["recortado"]).toBeUndefined();
+    // Solo archivos del índice, y con el token de la sesión.
+    expect((await pedir("GET", "/api/archivo?cerebro=tienda&archivo=repo-x:no/existe.ts&contenido=1")).estado).toBe(404);
+    expect((await pedir("GET", `/api/archivo?cerebro=tienda&archivo=${encodeURIComponent(`${R}:src/main.ts`)}&contenido=1`, { token: null })).estado).toBe(403);
+  });
+
   it("declarar las llamadas escribe calls.yaml; entran al índice al reindexar y el archivo llega a 100", async () => {
     const http = await editar({ tipo: "http", linea: 5, metodo: "post", ruta: "/avisos" });
     expect(http.json).toMatchObject({ escrito: "tienda/calls.yaml", cambio: true, faltaReindexar: true, sinAplicar: ["tienda"] });
