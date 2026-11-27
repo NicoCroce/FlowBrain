@@ -28,7 +28,8 @@
  *   `hechos(t)` (las claves que la tanda lleva y las que resolvió: salen de la lista), y `seguimiento` (lo que dice el
  *   lote: `cuantos(t)`, `pidiendo(n, repos)`, `reindexando`, `espera?`, `extraTanda?(t)`, `resumen(ts)`);
  * - `despues?()`: lo que va al final del panel (los resultados de los tests; puede llevar botones `boton(...)`, que el
- *   panel atiende igual que en la pantalla); `bandeja?()`: lo que suma la bandeja («2 para decidir»);
+ *   panel atiende igual que en la pantalla); `bandeja?()`: lo que suma la bandeja («2 para decidir»); `enlace?()`: un
+ *   enlace que va al lado de la bandeja, fuera del botón («3 borradores para revisar», cuando un lote dejó borradores);
  *   `accion?(acc, k, boton)`: los botones propios dentro del panel (true si lo atendió).
  *
  * Un botón de un tipo puede estar en otra pantalla que la que lo registró (la ficha de una funcionalidad pide
@@ -392,9 +393,10 @@ export const PEDIDO_JS = String.raw`
   function htmlBandeja() {
     var n = E.items.length, extras = [];
     ORDEN.forEach(function (t) { var d = def(t), x = d.bandeja ? d.bandeja() : ""; if (x) extras.push(x); });
-    var corriendo = lotesVisibles().some(loteVivo);
-    if (!n && !extras.length && !lotesVisibles().length) return "";
-    return '<button type="button" class="boton es-pedir' + (corriendo ? " pd-corriendo" : "") + '" data-acc="panel" aria-expanded="' + E.panel + '" aria-controls="pedido-panel">' + L("Request", "Pedido") + (n ? " (" + num(n) + ")" : "") + (corriendo ? " · " + L("running", "corriendo") : "") + (extras.length ? " · " + extras.join(" · ") : "") + "</button>";
+    var corriendo = lotesVisibles().some(loteVivo), enlaces = "";
+    ORDEN.forEach(function (t) { var d = def(t), x = d.enlace ? d.enlace() : ""; if (x) enlaces += x; });
+    if (!n && !extras.length && !lotesVisibles().length) return enlaces;
+    return enlaces + '<button type="button" class="boton es-pedir' + (corriendo ? " pd-corriendo" : "") + '" data-acc="panel" aria-expanded="' + E.panel + '" aria-controls="pedido-panel">' + L("Request", "Pedido") + (n ? " (" + num(n) + ")" : "") + (corriendo ? " · " + L("running", "corriendo") : "") + (extras.length ? " · " + extras.join(" · ") : "") + "</button>";
   }
   // Repinta el panel (guardando el scroll) y la bandeja, y deja lugar a la derecha de la página mientras está abierto.
   function pintar() {
@@ -470,7 +472,7 @@ export const PEDIDO_JS = String.raw`
     escuchar: function (f) { OYENTES.push(f); },
     // El agente, para todo el visor.
     agente: AG, proveedores: PROVS, proveedor: proveedor, modelo: modelo, elegir: elegir, selector: selector, llamar: llamar, actualizar: actualizar,
-    trabajos: function () { return TRABAJOS; }, lote: loteDe, tandas: tandas, loteVivo: loteVivo,
+    trabajos: function () { return TRABAJOS; }, lotes: lotesVisibles, lote: loteDe, tandas: tandas, loteVivo: loteVivo,
     // Avisos en el panel (los resultados de un tipo los usan al guardar algo).
     aviso: function (o) { ERROR = o && o.error ? o.error : ""; NOTA = o && o.nota ? o.nota : ""; pintar(); },
     vivo: vivo, estado: estado, dolares: dolares, descargar: descargar

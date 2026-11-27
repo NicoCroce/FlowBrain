@@ -115,7 +115,7 @@ const leerLog = async () => (await readFile(join(dir, "tandas.jsonl"), "utf8")).
 
 describe("tandas de agrupar, escribir y corregir", () => {
   it("juntan lo de una misma funcionalidad y no pasan del máximo (salvo una funcionalidad que sola lo pasa)", () => {
-    expect(TANDA_MAX_PAGINAS).toEqual({ agrupar: 8, escribir: 3, corregir: 10, funcionalidad: 5 });
+    expect(TANDA_MAX_PAGINAS).toEqual({ agrupar: 8, escribir: 3, corregir: 10, funcionalidad: 5, borrador: 8 });
     const xs = ["a", "b", "b", "c", "d", "d", "d", "d", "e"].map((f, i) => ({ funcionalidad: f, i }));
     expect(tandasDePaginas(xs, 3).map((t) => t.map((x) => x.funcionalidad).join(""))).toEqual(["abb", "c", "dddd", "e"]);
   });

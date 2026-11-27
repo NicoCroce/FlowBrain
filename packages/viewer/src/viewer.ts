@@ -1,4 +1,5 @@
 import { CIERRE_DE_DERIVA, CIERRE_DEL_PLAN, COMO_RESOLVER, COMO_RESOLVER_DERIVA, GUIA_TESTS, REGLAS_DE_DERIVA, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type CodigoVisor, type ArchivoSinAsociar, type IgnoradoSinAsociar, type SenalDeRecomendacion, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { BORRADORES_JS } from "./viewer-borradores.js";
 import { CONTRATOS_JS } from "./viewer-contratos.js";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
@@ -456,6 +457,13 @@ button.pestana { border-top: 0; border-left: 0; border-right: 0; background: non
 .es-panel.abierto { display: block; } .es-panel > * + * { margin-top: 12px; }
 .es-panel-cab { display: flex; align-items: center; justify-content: space-between; } .es-panel-cab h2 { margin: 0; font-size: 16px; }
 @media (min-width: 1100px) { body.con-pedido .pagina { padding-right: 460px; } }
+#cabecera nav .nav-cuenta { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--pedir); color: #FFFFFF; font-size: 11px; } #cabecera nav .nav-cuenta:empty { display: none; }
+.bo-item { display: grid; gap: 8px; } .bo-item .fd-acc { flex-wrap: wrap; } .bo-detalle { display: grid; gap: 8px; }
+.bo-diff { margin: 0; padding: 8px 0; border: 1px solid var(--borde); border-radius: 8px; background: #0D1016; font: 12px/1.5 var(--mono); overflow-x: auto; white-space: pre; }
+.bo-l { display: block; padding: 0 10px; } .bo-mas { background: var(--bien-fondo); color: var(--bien); } .bo-menos { background: var(--mal-fondo); color: var(--mal); } .bo-igual { color: var(--medio); } .bo-corte { color: var(--suave); font-style: italic; }
+.bo-cambio h4 { margin: 4px 0 6px; font-size: 13px; font-weight: 500; } .bo-pedir { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; } .bo-pedir .fd-campo { flex: 1 1 320px; } .bo-pedir textarea { width: 100%; box-sizing: border-box; }
+.bo-errores { margin: 4px 0 0; padding-left: 18px; flex-basis: 100%; } .bo-terminal li small { display: block; }
+.pedido-bandeja .bo-enlace { margin-right: 6px; }
 .pedido-bandeja { margin-left: 8px; } .pedido-bandeja:empty { display: none; } .pedido-bandeja .boton { height: 30px; padding: 0 12px; font-size: 12px; white-space: nowrap; }
 .pd-grupo h3 { margin: 4px 0 8px; font-size: 14px; display: flex; align-items: center; gap: 6px; } .es-totales small { text-transform: none; } .pd-total { border-color: var(--pedir-en-lista); }
 .pd-despues { display: grid; gap: 12px; }
@@ -583,7 +591,7 @@ a.nb { text-decoration: none; }
 <body>
 <header id="cabecera">
   <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>FlowBrain</div>
-  <nav ${attr("aria-label", "Sections", "Secciones")}><a href="#/funcionalidades" data-vista="producto" ${dos("Features", "Funcionalidades")}</a><a href="#/pantallas" data-vista="pantallas" ${dos("Screens", "Pantallas")}</a><a href="#/grafo" data-vista="grafo" ${dos("3D map", "Mapa 3D")}</a><a href="#/especificaciones" data-vista="especificaciones" ${dos("Specifications", "Especificaciones")}</a><a href="#/sin-asociar" data-vista="sinasociar" ${dos("Unassigned", "Sin asociar")}</a><a href="#/impacto" data-vista="impacto" ${dos("Impact", "Impacto")}</a><a href="#/contratos" data-vista="contratos" ${dos("Contracts", "Contratos")}</a><a href="#/fidelidad" data-vista="fidelidad" ${dos("Fidelity", "Fidelidad")}</a></nav>
+  <nav ${attr("aria-label", "Sections", "Secciones")}><a href="#/funcionalidades" data-vista="producto" ${dos("Features", "Funcionalidades")}</a><a href="#/pantallas" data-vista="pantallas" ${dos("Screens", "Pantallas")}</a><a href="#/grafo" data-vista="grafo" ${dos("3D map", "Mapa 3D")}</a><a href="#/especificaciones" data-vista="especificaciones" ${dos("Specifications", "Especificaciones")}</a><a href="#/sin-asociar" data-vista="sinasociar" ${dos("Unassigned", "Sin asociar")}</a><a href="#/impacto" data-vista="impacto" ${dos("Impact", "Impacto")}</a><a href="#/contratos" data-vista="contratos" ${dos("Contracts", "Contratos")}</a><a href="#/fidelidad" data-vista="fidelidad" ${dos("Fidelity", "Fidelidad")}</a><a href="#/borradores" data-vista="borradores"><span ${dos("Drafts", "Borradores")}</span><span id="nav-borradores" class="nav-cuenta"></span></a></nav>
   <div id="presets" class="oculto"></div>
   ${SWITCH_IDIOMA}
   <span id="pedido-bandeja" class="pedido-bandeja"></span>
@@ -595,6 +603,7 @@ a.nb { text-decoration: none; }
 <div id="especificaciones" class="pagina oculto"></div>
 <div id="sinasociar" class="pagina oculto"></div>
 <div id="contratos" class="pagina oculto"></div>
+<div id="borradores" class="pagina oculto"></div>
 <div id="app" class="oculto">
   <aside class="m3-panel m3-izq">
     <div class="m3-busca">
@@ -670,6 +679,7 @@ a.nb { text-decoration: none; }
 ${seguroEnScript(ESPECIFICACIONES_JS)}</script>
 <script>${seguroEnScript(SIN_ASOCIAR_JS)}</script>
 <script>${seguroEnScript(CONTRATOS_JS)}</script>
+<script>${seguroEnScript(BORRADORES_JS)}</script>
 <script>${seguroEnScript(MAPA_JS)}</script>
 </body>
 </html>

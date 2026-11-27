@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { ConsultaError, leerRegistro, SIGNALS, type Registro, type Signal } from "@flowbrain/core";
 import { aplicarCerebro, htmlDelVisor } from "./cerebros.js";
 import { CLASES_DE_DERIVA, crearAgente, esTipoDePagina, TIPOS_DE_PEDIDO, type Agente, type ArchivoDeFidelidad, type ClaseDeDeriva, type ProblemaDeDeriva, type ArchivoDePedido, type ItemDePagina, type ReglaDePedido, type TipoDePedido } from "./agente.js";
+import { aceptarBorradores, descartarBorrador, diffDeBorrador, listarBorradores, rutaDeBorrador } from "./borradores.js";
 import { codigoDeArchivo, detalleDeArchivo, editar, type Edicion } from "./edicion.js";
 import { L } from "./idioma.js";
 import { VERSION } from "./init.js";
@@ -98,6 +99,12 @@ async function cuerpoJson(req: IncomingMessage, maximo = MAX_CUERPO): Promise<Re
     throw new ErrorHttp(400, "the body is not a valid JSON object");
   }
 }
+
+const cerebroPedido = (registro: Registro, nombre: unknown) => {
+  const c = typeof nombre === "string" ? registro.cerebro(nombre) : null;
+  if (!c) throw new ErrorHttp(404, `no such brain: ${String(nombre)}`);
+  return c;
+};
 
 /** El servidor, sin escuchar todavía. `carpeta` es la del registro (`.flowbrain`). */
 export function crearServidorVisor(carpeta: string, opciones: { token?: string; agente?: Agente } = {}): ServidorVisor {
@@ -234,17 +241,20 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
         const vistos = new Set<string>();
         const texto = (v: unknown) => typeof v === "string" && /^[^\s|]{1,200}$/.test(v);
         const validos: ItemDePagina[] = items.map((x: Record<string, unknown>) => {
-          const { cerebro, funcionalidad, caso, regla, linea } = x ?? {};
+          const { cerebro, funcionalidad, caso, regla, borrador, linea } = x ?? {};
           // agrupar y escribir: una funcionalidad. corregir: un caso marcado o una regla, de una funcionalidad (uno de los dos).
           // funcionalidad: una funcionalidad a describir o, sin ella, el cerebro al que proponerle las suyas.
           const forma = tipo === "corregir" ? (caso === undefined) !== (regla === undefined) && (caso === undefined || texto(caso)) && (regla === undefined || texto(regla)) : caso === undefined && regla === undefined;
           const propuesta = tipo === "funcionalidad" && funcionalidad === undefined;
-          if (typeof cerebro !== "string" || !registro.cerebro(cerebro) || (!propuesta && !texto(funcionalidad)) || !forma || typeof linea !== "string" || !linea.trim() || linea.length > 4000) throw new ErrorHttp(400, `invalid item: ${JSON.stringify(x).slice(0, 160)}`);
-          const k = `${cerebro}|${String(funcionalidad)}|${String(caso ?? "")}|${String(regla ?? "")}`;
+          // borrador: la ruta del borrador o la nota en `_drafts/` (se comprueba abajo que exista y no se salga).
+          const conBorrador = tipo === "borrador" ? typeof borrador === "string" && borrador.length <= 1000 : borrador === undefined;
+          if (typeof cerebro !== "string" || !registro.cerebro(cerebro) || (!propuesta && !texto(funcionalidad)) || !forma || !conBorrador || typeof linea !== "string" || !linea.trim() || linea.length > 4000) throw new ErrorHttp(400, `invalid item: ${JSON.stringify(x).slice(0, 160)}`);
+          const k = `${cerebro}|${String(funcionalidad)}|${String(caso ?? "")}|${String(regla ?? "")}|${String(borrador ?? "")}`;
           if (vistos.has(k)) throw new ErrorHttp(400, `repeated item: ${k}`);
           vistos.add(k);
-          return { cerebro, funcionalidad: propuesta ? "" : (funcionalidad as string), ...(typeof caso === "string" ? { caso } : {}), ...(typeof regla === "string" ? { regla } : {}), linea };
+          return { cerebro, funcionalidad: propuesta ? "" : (funcionalidad as string), ...(typeof caso === "string" ? { caso } : {}), ...(typeof regla === "string" ? { regla } : {}), ...(typeof borrador === "string" ? { borrador } : {}), linea };
         });
+        for (const x of validos) if (x.borrador !== undefined) await rutaDeBorrador(registro.cerebro(x.cerebro)!.raiz, x.borrador);
         const no = agente.noDisponible();
         if (no) throw new ErrorHttp(409, no);
         return { json: agente.encolarLote({ tipo, items: validos, ...elegido }) };
@@ -281,6 +291,42 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
       const t = typeof id === "string" ? agente.cancelar(id) : null;
       if (!t) throw new ErrorHttp(404, `no such request: ${String(id)}`);
       return { json: t };
+    }
+    // Borradores (dec. 234): lo que espera revisión en `_drafts/` de cada cerebro, qué cambia frente a la página,
+    // aceptarlo (la lógica de `flowbrain promote`) y descartarlo. Solo rutas dentro de `_drafts/`.
+    if (req.method === "GET" && url.pathname === "/api/borradores") {
+      const borradores = [];
+      for (const c of registro.cerebros) borradores.push(...(await listarBorradores(c)));
+      return { json: { borradores } };
+    }
+    if (req.method === "GET" && url.pathname === "/api/borradores/diff") {
+      return { json: await diffDeBorrador(cerebroPedido(registro, url.searchParams.get("cerebro")), url.searchParams.get("origen")) };
+    }
+    if (req.method === "POST" && url.pathname === "/api/borradores/aceptar") {
+      // { borradores: [{ cerebro, origen }] }: uno o la lista filtrada entera. Cada cerebro se promueve junto: si deja
+      // de compilar, se deshace lo suyo y vuelven los errores; los otros cerebros siguen.
+      const { borradores } = await cuerpoJson(req, 2 * 1024 * 1024);
+      if (!Array.isArray(borradores) || !borradores.length || borradores.length > 3000) throw new ErrorHttp(400, "borradores must be a list of 1 to 3000 drafts");
+      const porCerebro = new Map<string, string[]>();
+      for (const b of borradores as Array<Record<string, unknown>>) {
+        const c = cerebroPedido(registro, b?.["cerebro"]);
+        porCerebro.set(c.nombre, [...(porCerebro.get(c.nombre) ?? []), String(b["origen"])]);
+      }
+      return {
+        json: await enCola(async () => {
+          const cerebros = [];
+          for (const [nombre, origenes] of porCerebro) {
+            const r = await aceptarBorradores(registro.cerebro(nombre)!, origenes);
+            cerebros.push({ cerebro: nombre, movidos: r.movidos.map((m) => m.origen), salteados: r.salteados.map((m) => ({ origen: m.origen, motivo: m.motivo })), errores: r.errores });
+          }
+          return { cerebros };
+        }),
+      };
+    }
+    if (req.method === "POST" && url.pathname === "/api/borradores/descartar") {
+      const { cerebro, origen } = await cuerpoJson(req);
+      const c = cerebroPedido(registro, cerebro);
+      return { json: await enCola(() => descartarBorrador(c, origen)) };
     }
     if (req.method === "POST" && url.pathname === "/api/aplicar") {
       const { cerebro } = await cuerpoJson(req);

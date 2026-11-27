@@ -69,7 +69,7 @@ export const MAPA_JS =
   var punto = function (id) { return puntoT(tipo(id)); };
   var entran = {}, salen = {};
   deps.forEach(function (d) { (entran[d[1]] = entran[d[1]] || []).push(d); (salen[d[0]] = salen[d[0]] || []).push(d); });
-  var vistas = { producto: document.getElementById("producto"), impacto: document.getElementById("impacto"), fidelidad: document.getElementById("fidelidad"), especificaciones: document.getElementById("especificaciones"), sinasociar: document.getElementById("sinasociar"), contratos: document.getElementById("contratos"), grafo: document.getElementById("app") };
+  var vistas = { borradores: document.getElementById("borradores"), producto: document.getElementById("producto"), impacto: document.getElementById("impacto"), fidelidad: document.getElementById("fidelidad"), especificaciones: document.getElementById("especificaciones"), sinasociar: document.getElementById("sinasociar"), contratos: document.getElementById("contratos"), grafo: document.getElementById("app") };
 
   // ---------- Impacto ----------
   var raizImpacto = vistas.impacto, copia = "";
@@ -562,6 +562,7 @@ export const MAPA_JS =
     else if (/^\/especificaciones/.test(h)) vista = "especificaciones";
     else if (/^\/sin-asociar/.test(h)) vista = "sinasociar";
     else if (/^\/contratos/.test(h)) vista = "contratos";
+    else if (/^\/borradores/.test(h)) vista = "borradores";
     else if (h === "" && !fichas.length) vista = "grafo";
     else vista = "producto";
     // La navegación entre pantallas se dibuja en el mismo contenedor que las funcionalidades.
@@ -572,6 +573,7 @@ export const MAPA_JS =
     if (vista === "grafo") { V.mostrarMapa(); if ((m = /^\/grafo\/(.+)$/.exec(h))) V.enfocar(m[1]); return; }
     if (vista === "fidelidad") { window.brainFidelidad.mostrar(); window.scrollTo(0, 0); return; }
     if (vista === "contratos") { window.brainContratos.mostrar(); window.scrollTo(0, 0); return; }
+    if (vista === "borradores") { window.brainBorradores.mostrar(); window.scrollTo(0, 0); return; }
     if (vista === "sinasociar") { window.brainSinAsociar.mostrar(); window.scrollTo(0, 0); return; }
     if (vista === "especificaciones") { m = /^\/especificaciones\/(.+)$/.exec(h); window.scrollTo(0, 0); window.brainEspecificaciones.mostrar(m ? m[1] : null); return; }
     if (vista === "impacto" && (m = /^\/n\/(.+)$/.exec(h))) { mostrarFicha(m[1]); window.scrollTo(0, 0); return; }
