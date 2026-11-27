@@ -13,10 +13,10 @@
  *
  * El pedido al agente es la misma experiencia que «Tests pedidos» de Especificaciones (dec. 227): cada archivo tiene
  * «Pedir» (celeste), cada carpeta «Pedir los N» y la lista filtrada «Pedir los N de la lista»; ya sumado dice «✔ En el
- * pedido» y tocarlo lo saca. Lo sumado se junta en el panel lateral compartido (viewer-lote), «Archivos pedidos», que se
- * abre y se cierra junto al título y se recuerda en este navegador (localStorage), igual que la lista. El panel tiene
- * Proveedor y Modelo, el resumen (con recomendación, compartidos, sin pista, costo estimado y tandas), «Pedir todos»,
- * «Descargar .md» y «Vaciar la lista», y una tarjeta por archivo con «Quitar». «Pedir todos» manda el lote
+ * pedido» y tocarlo lo saca. Es el tipo `asociar` del pedido al agente, el componente único del visor (viewer-pedido,
+ * dec. 229): la lista es una sola para todas las pantallas, con su bandeja en la barra superior y su panel lateral
+ * (Proveedor y Modelo, el resumen por tipo con el costo estimado, «Pedir todos», «Descargar .md», «Vaciar la lista» y
+ * una tarjeta por archivo con «Quitar»). Acá se dice qué es un archivo pedido y cómo se lo manda: «Pedir todos» manda el lote
  * (`/api/agente/lote`, tipo `asociar`, con permisos acotados: solo páginas `feat-*` y `lib-*` y borradores en
  * `_drafts/`) con lo que está en la lista, en tandas de hasta 30 por cerebro y repo; ahí mismo se ve el avance,
  * «Cancelar todo» y el resumen. El .md lleva la lista entera para cualquier agente: en la página estática o sin agente
@@ -40,35 +40,21 @@ export const SIN_ASOCIAR_JS = String.raw`
   var CAPA_EN = { entrada: "Entry", logica: "Logic", dominio: "Domain", datos: "Data", interfaz: "Interface", otros: "Other" };
   var CAPA_ES = { entrada: "Entrada", logica: "Lógica", dominio: "Dominio", datos: "Datos", interfaz: "Interfaz", otros: "Otros" };
   var capa = function (k) { return L(CAPA_EN[k], CAPA_ES[k]) || k; };
-  // TOPE_PEDIDO: los que lleva el texto para copiar. TOPE_LOTE y TANDA: los límites del lote del servidor.
-  var PASO = 30, VISIBLES = 8, TOPE_PEDIDO = 80, TOPE_LOTE = 3000, TANDA = 30;
+  // TOPE_PEDIDO: los que lleva el texto para copiar. TANDA: los archivos de una tanda del lote en el servidor.
+  var PASO = 30, VISIBLES = 8, TOPE_PEDIDO = 80, TANDA = 30;
   var S = null, fl = null;
   // PEDIDO: el pedido suelto abierto ({ tipo: feat | lib, xs: los archivos, donde: el archivo de la fila o "lista", copiado, mandando, error }).
   var OTRA = null, MSG = null, PEDIDO = null, ocupado = false, hechos = 0;
-  // Con el visor servido y un agente instalado, el pedido se manda directo; si no, se copia (como en Especificaciones).
-  var AG = !!(ED && ED.agente && !ED.agente.noDisponible);
-  var PROVS = AG && ED.agente.proveedores ? ED.agente.proveedores : [];
+  // El pedido al agente es el componente único del visor (viewer-pedido): la lista, el panel, el lote y el estado del
+  // agente. Con el visor servido y un agente instalado, el pedido se manda directo; si no, se copia.
+  var PD = window.brainPedido;
+  var AG = PD.agente;
   // Los pedidos «asociar» mandados desde esta pestaña (sobreviven a la recarga) y los que ya recargaron la lista al terminar.
   var CLAVE_AGENTE = "flowbrain.sinasociar.agente";
   var AGS = (function () { try { var j = JSON.parse(sessionStorage.getItem(CLAVE_AGENTE) || "{}"); return { mandados: j.mandados || {}, recargados: j.recargados || {} }; } catch (e) { return { mandados: {}, recargados: {} }; } })();
   var guardarAgs = function () { try { sessionStorage.setItem(CLAVE_AGENTE, JSON.stringify(AGS)); } catch (e) { /* sin sessionStorage */ } };
-  // TODOS: los trabajos del agente; TRABAJOS: los pedidos sueltos mandados desde acá; LOTES: los lotes «asociar».
-  var TODOS = [], TRABAJOS = [], LOTES = [], ESPERA = null;
-  // Proveedor y modelo elegidos, y los lotes cuyo resumen se cerró: duran en este navegador (localStorage).
-  var B = function () { return window.brainLote; };
-  var CLAVE_ELEGIDO = "flowbrain.sinasociar.modelo", CLAVE_VISTOS = "flowbrain.sinasociar.lotes";
-  var leerLocal = function (k, por) { try { if (typeof localStorage !== "undefined") { var v = localStorage.getItem(k); if (v !== null) return JSON.parse(v); } } catch (e) { /* sin almacenamiento */ } return por; };
-  var guardarLocal = function (k, v) { try { if (typeof localStorage !== "undefined") localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sin almacenamiento */ } };
-  var ELEGIDO = { proveedor: "", modelo: "" }, sel0 = leerLocal(CLAVE_ELEGIDO, {});
-  if (sel0 && typeof sel0 === "object") ELEGIDO = { proveedor: sel0.proveedor || "", modelo: sel0.modelo || "" };
-  var VISTOS = leerLocal(CLAVE_VISTOS, []); if (!Array.isArray(VISTOS)) VISTOS = [];
-  var OCULTA = {};
-  // La lista del pedido (dec. 227): { k: "cerebro|repo:ruta", cerebro, archivo, nombre, clase, rec, conf, linea }. Dura
-  // en este navegador, igual que si el panel está abierto. PIDIENDO: mandando el lote.
-  var CLAVE_LISTA = "flowbrain.sinasociar.pedidos", CLAVE_PANEL = "flowbrain.sinasociar.panel";
-  var LISTA = leerLocal(CLAVE_LISTA, []); if (!Array.isArray(LISTA)) LISTA = [];
-  LISTA = LISTA.filter(function (x) { return x && typeof x.k === "string" && typeof x.linea === "string"; });
-  var PANEL = false, PANEL_ERROR = "", PIDIENDO = false;
+  // TRABAJOS: los pedidos sueltos mandados desde acá (lo que corre el agente lo trae el componente).
+  var TRABAJOS = [];
   // Marcas «No es de producto» de cada cerebro ({ e: entrada, m: motivo, n: archivos que tapa, c: cerebro }).
   var IGN = D.noProducto ? D.noProducto.slice() : [];
   // NP: archivo con el panel «No es de producto» abierto; LIB: archivo con el selector de librería abierto.
@@ -219,8 +205,8 @@ export const SIN_ASOCIAR_JS = String.raw`
     // Sin agente, copiar es lo único: se copia al abrir. Con agente, copiar queda como botón.
     if (!AG) copiar(textoActual(), function (ok) { if (PEDIDO) { PEDIDO.copiado = ok ? true : "no"; pintarLista(); } });
   }
-  var proveedor = function () { return B().proveedor(PROVS, ELEGIDO); };
-  var modelo = function () { return B().modelo(PROVS, ELEGIDO); };
+  var proveedor = function () { return PD.proveedor(); };
+  var modelo = function () { return PD.modelo(); };
   var copiadoHtml = function () { return PEDIDO.copiado === true ? '<span class="fd-ok">' + L("Copied. Paste it into your agent.", "Copiado. Pegalo en tu agente.") + "</span>" : PEDIDO.copiado === "no" ? '<span class="fd-nota">' + L("Could not copy automatically: select the text and copy it.", "No se pudo copiar solo: seleccioná el texto y copialo.") + "</span>" : ""; };
   // «Proponer funcionalidad nueva» y «Crear librería»: se abre junto a la fila (donde: su archivo) o a la lista que lo pidió.
   function pedido(donde) {
@@ -233,7 +219,7 @@ export const SIN_ASOCIAR_JS = String.raw`
     var recorte = xs.length > TOPE_PEDIDO ? " " + L("It carries the first " + TOPE_PEDIDO + " of " + num(xs.length) + ": send the rest in another request once these are done.", "Lleva los primeros " + TOPE_PEDIDO + " de " + num(xs.length) + ": el resto va en otro pedido cuando terminen estos.") : "";
     var pr = proveedor(), mo = modelo();
     var envio = AG
-      ? B().selector(PROVS, ELEGIDO, "sa-ped", false) + '<div class="fd-hacer"><button type="button" class="boton pri" data-acc="mandar"' + (PEDIDO.mandando || !n ? " disabled" : "") + ">" + (PEDIDO.mandando ? L("Sending…", "Mandando…") : L("Send to the agent", "Mandar al agente") + " (" + plural(n, L("file", "archivo"), L("files", "archivos")) + ")") + "</button>" +
+      ? PD.selector("sa-ped", false) + '<div class="fd-hacer"><button type="button" class="boton pri" data-acc="mandar"' + (PEDIDO.mandando || !n ? " disabled" : "") + ">" + (PEDIDO.mandando ? L("Sending…", "Mandando…") : L("Send to the agent", "Mandar al agente") + " (" + plural(n, L("file", "archivo"), L("files", "archivos")) + ")") + "</button>" +
         '<button type="button" class="boton" data-acc="copiar">' + L("Copy the text", "Copiar el texto") + "</button></div>" +
         '<p class="fd-nota">' + L("It runs " + esc(pr ? pr.nombre : "") + (mo ? " (" + esc(mo.nombre) + ")" : "") + " in this project. It can only write the brain's feature and library pages and drafts in <code>_drafts/</code>, never the repos' code. When it finishes, the page reloads with the list up to date.", "Lo corre " + esc(pr ? pr.nombre : "") + (mo ? " (" + esc(mo.nombre) + ")" : "") + " en este proyecto. Solo puede escribir las páginas de funcionalidades y librerías del cerebro y borradores en <code>_drafts/</code>, nunca el código de los repos. Cuando termina, la página se recarga con la lista al día.") + "</p>"
       : ED
@@ -254,146 +240,90 @@ export const SIN_ASOCIAR_JS = String.raw`
       "<small>" + L("With the files in the list below, filters applied.", "Con los archivos de la lista de abajo, con los filtros aplicados.") + "</small></div>" + pedido("lista");
   }
 
-  // ---------- El pedido al agente: la lista, el panel lateral y el lote (como «Tests pedidos», dec. 227) ----------
+  // ---------- El tipo «asociar» del pedido al agente (viewer-pedido, dec. 229) ----------
+  // El ítem: { tipo: "asociar", k: "cerebro|repo:ruta", cerebro, repo, datos: { k, cerebro, archivo, nombre, clase, rec, conf, linea } }.
   var claveDe = function (x) { return cerebroDe(x) + "|" + local(x.a, x); };
   function entradaDe(x) {
-    return { k: claveDe(x), cerebro: cerebroDe(x), archivo: local(x.a, x), nombre: archivoDe(x.a), clase: clase(x), rec: x.g ? nombre(x.g[0]) : "", conf: confDe(x), linea: lineaDe(x) };
+    var e = { k: claveDe(x), cerebro: cerebroDe(x), archivo: local(x.a, x), nombre: archivoDe(x.a), clase: clase(x), rec: x.g ? nombre(x.g[0]) : "", conf: confDe(x), linea: lineaDe(x) };
+    return { tipo: "asociar", k: e.k, cerebro: e.cerebro, repo: e.archivo.split(":")[0], datos: e };
   }
-  // Lo que ya no está sin asociar (se asoció, se marcó como no de producto) sale de la lista; lo que sigue, se pone al día.
+  // Lo que ya no está sin asociar (se asoció, se marcó como no de producto) sale del pedido; lo que sigue, se pone al día.
   function podarLista() {
     if (!U) return;
     var vigentes = {}; U.forEach(function (x) { vigentes[claveDe(x)] = x; });
-    var antes = LISTA.length;
-    LISTA = LISTA.filter(function (e) { return vigentes[e.k]; }).map(function (e) { return entradaDe(vigentes[e.k]); });
-    return LISTA.length !== antes;
+    PD.podar("asociar", function (it) { return vigentes[it.k] ? entradaDe(vigentes[it.k]) : null; });
   }
-  podarLista();
-  PANEL = leerLocal(CLAVE_PANEL, false) === true && LISTA.length > 0;
-  var guardarLista = function () { guardarLocal(CLAVE_LISTA, LISTA); guardarLocal(CLAVE_PANEL, PANEL); };
-  var enLista = function (k) { return LISTA.some(function (e) { return e.k === k; }); };
   // Lo que suma cada botón celeste, según su data-k: «a|<archivo>», «c|<carpeta>» o «l|» (la lista filtrada).
-  function xsDeBoton(k, carpetasHechas) {
+  function xsDeBoton(k, memo) {
     if (!k || !U) return [];
     if (k.indexOf("a|") === 0) { var x = porArchivo(k.slice(2)); return x ? [x] : []; }
     // La carpeta como se ve: con los filtros aplicados (el botón dice cuántos).
-    if (k.indexOf("c|") === 0) { var cs = carpetasHechas || carpetas(filtrados()); for (var i = 0; i < cs.length; i++) if (cs[i].k === k.slice(2)) return cs[i].xs; return []; }
+    if (k.indexOf("c|") === 0) { var cs = memo ? memo.cs || (memo.cs = carpetas(filtrados())) : carpetas(filtrados()); for (var i = 0; i < cs.length; i++) if (cs[i].k === k.slice(2)) return cs[i].xs; return []; }
     if (k === "l|") return filtrados();
     return [];
   }
-  var todosEnLista = function (xs) { return xs.length > 0 && xs.every(function (x) { return enLista(claveDe(x)); }); };
-  var TEXTOS_SUMAR = {
-    get textoYa() { return L("✔ In the request", "✔ En el pedido"); },
-    get titulo() { return L("Adds it to the requested files: nothing is sent until «Request all», in the panel", "Lo suma a los archivos pedidos: no se manda nada hasta «Pedir todos», en el panel"); },
-    get tituloYa() { return L("Click to remove it from the request", "Tocalo para sacarlo del pedido"); }
-  };
-  var botonSumar = function (k, xs, et) { return B().botonSumar({ k: k, et: et, ya: todosEnLista(xs), textoYa: TEXTOS_SUMAR.textoYa, titulo: TEXTOS_SUMAR.titulo, tituloYa: TEXTOS_SUMAR.tituloYa }); };
-  // Si ya estaba todo, lo saca; si no, suma lo que falta y abre el panel.
-  function sumarOQuitar(xs) {
-    if (!xs.length) return;
-    if (todosEnLista(xs)) {
-      var ks = {}; xs.forEach(function (x) { ks[claveDe(x)] = true; });
-      LISTA = LISTA.filter(function (e) { return !ks[e.k]; });
-    } else {
-      xs.forEach(function (x) { if (!enLista(claveDe(x))) LISTA.push(entradaDe(x)); });
-      PANEL = true;
-    }
-    PANEL_ERROR = "";
-    guardarLista();
-  }
-  // Después de sumar o quitar: sin repintar la lista (no se cierra lo que se estaba mirando), solo los botones y el panel.
-  function alCambiarLista() {
-    var cs = U ? carpetas(filtrados()) : [];
-    if (!B().marcarBotones(raiz, function (k) { var xs = xsDeBoton(k, cs); return xs.length ? todosEnLista(xs) : null; }, TEXTOS_SUMAR)) pintarLista();
-    pintarPanel();
-  }
-  var cuentaClase = function (es, k) { return es.filter(function (e) { return e.clase === k; }).length; };
+  var botonSumar = function (k, xs, et) { return PD.boton({ tipo: "asociar", k: k, et: et, claves: xs.map(claveDe) }); };
+  var cuentaClase = function (es, k) { return es.filter(function (e) { return e.datos.clase === k; }).length; };
   // Cuántas tandas arma el servidor con la lista: por cerebro y repo, de hasta TANDA archivos.
   function tandasDeLista(es) {
     var g = {}, n = 0;
-    es.forEach(function (e) { var k = e.cerebro + "|" + e.archivo.split(":")[0]; g[k] = (g[k] || 0) + 1; });
+    es.forEach(function (e) { var k = e.cerebro + "|" + e.repo; g[k] = (g[k] || 0) + 1; });
     Object.keys(g).forEach(function (k) { n += Math.ceil(g[k] / TANDA); });
     return n;
   }
-  // El panel es el de «Tests pedidos» (viewer-lote): Proveedor y Modelo, el resumen con el costo estimado, «Pedir todos»,
-  // «Descargar .md» y «Vaciar la lista», y una tarjeta por archivo con su motivo.
-  function htmlPanel() {
-    var es = LISTA, n = es.length, LT = AG ? loteActual() : null, enCurso = B().loteVivo(LT, TODOS), pr = proveedor(), mo = modelo();
-    var enTanda = {}; if (enCurso) B().tandas(LT, TODOS).forEach(function (t) { if (vivo(t)) (t.archivos || []).forEach(function (a) { enTanda[a.cerebro + "|" + a.archivo] = true; }); });
-    var porK = {}; if (U) U.forEach(function (x) { porK[claveDe(x)] = x; });
-    var selector = AG && pr
-      ? B().selector(PROVS, ELEGIDO, "sa-ag", enCurso)
-      : '<p class="fd-nota">' + (ED
-        ? L("There's no agent installed on this machine", "No hay ningún agente instalado en esta máquina") + (ED.agente && ED.agente.noDisponible ? ": " + esc(ED.agente.noDisponible) : "") + "."
-        : L("This page is read-only: it can't send the requests.", "Esta página es de solo lectura: no puede mandar los pedidos.")) +
-        L(" Download the .md and give it to your agent (with access to the repos, not a web chat).", " Descargá el .md y dáselo a tu agente (con acceso a los repos, no un chat web).") + "</p>";
-    var lleva = Math.min(n, TOPE_LOTE), costo = mo && typeof mo.costoPorArchivoUsd === "number" ? mo.costoPorArchivoUsd : null;
-    var totales = '<div class="es-totales"><b>' + plural(n, L("file", "archivo"), L("files", "archivos")) + "</b><span>" +
-      L(num(cuentaClase(es, "recomendada")) + " with a recommendation · " + num(cuentaClase(es, "compartido")) + " shared · " + num(cuentaClase(es, "sinpista")) + " with no hint", num(cuentaClase(es, "recomendada")) + " con recomendación · " + plural(cuentaClase(es, "compartido"), "compartido", "compartidos") + " · " + num(cuentaClase(es, "sinpista")) + " sin pista") + "</span>" +
-      (AG && mo ? "<span>" + L("Estimated cost: ", "Costo estimado: ") + (costo === null ? L("no estimate for this model: the actual cost shows while it runs", "sin estimación para este modelo: el costo real se ve mientras corre") : (lleva ? "≈ " + B().dolares(lleva * costo) : B().dolares(0)) + " <small>(" + L("approx., with ", "aprox., con ") + esc(mo.nombre) + ")</small>") + "</span>" : "") +
-      (AG && n ? "<span>" + L("In " + plural(tandasDeLista(es.slice(0, TOPE_LOTE)), "batch", "batches") + " of up to " + TANDA + " files of the same repo", "En " + plural(tandasDeLista(es.slice(0, TOPE_LOTE)), "tanda", "tandas") + " de hasta " + TANDA + " archivos de un mismo repo") + "</span>" : "") + "</div>";
-    var notas = [];
-    if (AG && n > TOPE_LOTE) notas.push(L("A request carries up to " + num(TOPE_LOTE) + " files: it takes the first " + num(TOPE_LOTE) + " of " + num(n) + "; request the rest when it finishes. The .md carries them all.", "Un pedido lleva hasta " + num(TOPE_LOTE) + " archivos: lleva los primeros " + num(TOPE_LOTE) + " de " + num(n) + "; el resto se pide cuando termine. El .md los lleva todos."));
-    if (enCurso) notas.push(L("A batch is running: wait for it to finish, or cancel it below.", "Hay un lote en curso: esperá a que termine, o cancelalo abajo."));
-    return B().panel({
-      titulo: L("Requested files", "Archivos pedidos"), selector: selector, totales: totales,
-      principal: ["pedir-todos", PIDIENDO ? L("Sending…", "Mandando…") : L("Request all", "Pedir todos") + (n ? " (" + num(lleva) + ")" : ""), !AG || !n || enCurso || PIDIENDO],
-      botones: [["descargar-lista", L("Download .md", "Descargar .md"), !n]], vaciar: !n || enCurso,
-      error: PANEL_ERROR, antes: notas.map(function (t) { return '<p class="fd-nota">' + t + "</p>"; }).join(""), lote: htmlLote(),
-      filas: es.map(function (e) {
-        var x = porK[e.k];
-        var chips = e.clase === "recomendada"
-          ? (e.conf ? '<span class="chip' + (e.conf === "alta" ? " es-ok" : e.conf === "media" ? " es-aviso" : "") + '" title="' + esc(confPorQue(e.conf)) + '">' + L(confEt(e.conf) + " confidence", "Confianza " + confEt(e.conf).toLowerCase()) + "</span>" : "") +
-            '<span class="chip" title="' + L("Recommended feature", "Funcionalidad recomendada") + '">→ ' + esc(e.rec) + "</span>"
-          : '<span class="chip">' + (e.clase === "compartido" ? L("Shared code", "Código compartido") : L("No hint", "Sin pista")) + "</span>";
-        var motivo = !x ? "" : x.g ? motivoDe(x.g[0], x.g[1], x.g[3])
-          : x.m ? L("Used by " + x.m + " features and none dominates: it fits a library.", "Lo usan " + x.m + " funcionalidades y ninguna domina: conviene una librería.")
-          : L("Nothing links it to a feature: no imports, no endpoints, no folder neighbors.", "Nada lo une a una funcionalidad: ni imports, ni endpoints, ni vecinos de carpeta.");
-        return { k: e.k, bloqueado: !!enTanda[e.k], html: '<p class="es-texto"><code>' + esc(e.nombre) + "</code>" + (motivo ? " <small>" + esc(motivo) + "</small>" : "") + '</p><div class="chips">' + chips + '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(e.cerebro) + "</span>" +
-          (enTanda[e.k] ? '<span class="chip es-ok">' + L("Assigning…", "Asociándose…") + "</span>" : "") + '</div><small class="es-archivo">' + L("File: ", "Archivo: ") + "<code>" + esc(e.archivo) + "</code></small>" };
-      }),
-      vacio: L("The list is empty. Click «Request» on a file, «Request the N» on a folder or on the filtered list: it's added here, and only «Request all» sends it.", "La lista está vacía. Tocá «Pedir» en un archivo, o «Pedir los N» en una carpeta o en la lista filtrada: se suma acá, y recién «Pedir todos» lo manda.")
-    });
-  }
-  function htmlBandeja() {
-    if (!LISTA.length && !(AG && loteActual())) return "";
-    return B().bandeja(L("Requested files", "Archivos pedidos"), LISTA.length, "", PANEL);
-  }
-  function pintarPanel() {
-    B().pintarPanel(elem("sa-panel"), raiz, PANEL, htmlPanel());
-    var b = elem("sa-bandeja"); if (b) b.innerHTML = htmlBandeja();
-  }
+  PD.registrar("asociar", {
+    get nombre() { return L("Files to assign", "Archivos a asociar"); },
+    unidad: ["file", "files", "archivo", "archivos"],
+    raiz: raiz,
+    claves: function (k, memo) { return xsDeBoton(k, memo).map(claveDe); },
+    items: function (k) { return xsDeBoton(k).map(entradaDe); },
+    repintar: function () { if (U && U.length) pintarLista(); },
+    resumen: function (es) {
+      return [L(num(cuentaClase(es, "recomendada")) + " with a recommendation · " + num(cuentaClase(es, "compartido")) + " shared · " + num(cuentaClase(es, "sinpista")) + " with no hint", num(cuentaClase(es, "recomendada")) + " con recomendación · " + plural(cuentaClase(es, "compartido"), "compartido", "compartidos") + " · " + num(cuentaClase(es, "sinpista")) + " sin pista"),
+        AG && es.length ? L("In " + plural(tandasDeLista(es), "batch", "batches") + " of up to " + TANDA + " files of the same repo", "En " + plural(tandasDeLista(es), "tanda", "tandas") + " de hasta " + TANDA + " archivos de un mismo repo") : ""];
+    },
+    costo: function (mo) { return typeof mo.costoPorArchivoUsd === "number" ? mo.costoPorArchivoUsd : null; },
+    lote: function (es) { return { tipo: "asociar", archivos: es.map(function (e) { return { cerebro: e.datos.cerebro, archivo: e.datos.archivo, linea: e.datos.linea }; }) }; },
+    md: { archivo: "archivos-pedidos.md", texto: function (es) { return mdDeLista(es.map(function (e) { return e.datos; })); } },
+    enTanda: function (t) { return (t.archivos || []).map(function (a) { return a.cerebro + "|" + a.archivo; }); },
+    hechos: function (t) { return (t.asociados || []).map(function (a) { return a.cerebro + "|" + a.archivo; }); },
+    seguimiento: {
+      cuantos: function (t) { return (t.archivos || []).length; },
+      get espera() { return L("Waits for the previous batch of this brain to finish.", "Espera a que termine la tanda anterior de este cerebro."); },
+      get reindexando() { return L("Finishing…", "Terminando…"); },
+      pidiendo: function (n, repos) { return L("Assigning " + plural(n, "file", "files") + " in " + plural(repos, "repo", "repos"), "Asociando " + plural(n, "archivo", "archivos") + " en " + plural(repos, "repo", "repos")); },
+      extraTanda: function (t) {
+        if (PD.vivo(t) || (!t.asociados && !t.siguen)) return "";
+        return "<small>" + cifrasLote((t.asociados || []).length, (t.siguen || []).length) + "</small>" +
+          (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
+      },
+      resumen: function (ts) {
+        var s = cuentaDe(ts, "siguen");
+        return cifrasLote(cuentaDe(ts, "asociados"), s) + (s ? L(" (proposed as a draft, not product, or left: each batch says why; they stay in the list)", " (propuestos como borrador, no son de producto o quedaron: cada tanda dice por qué; siguen en la lista)") : "");
+      }
+    },
+    // La tarjeta de cada archivo: su nombre y motivo, la recomendada con su confianza (o compartido / sin pista) y el cerebro.
+    tarjeta: function (it, enTanda) {
+      var e = it.datos, x = porArchivoDe(e.k);
+      var chips = e.clase === "recomendada"
+        ? (e.conf ? '<span class="chip' + (e.conf === "alta" ? " es-ok" : e.conf === "media" ? " es-aviso" : "") + '" title="' + esc(confPorQue(e.conf)) + '">' + L(confEt(e.conf) + " confidence", "Confianza " + confEt(e.conf).toLowerCase()) + "</span>" : "") +
+          '<span class="chip" title="' + L("Recommended feature", "Funcionalidad recomendada") + '">→ ' + esc(e.rec) + "</span>"
+        : '<span class="chip">' + (e.clase === "compartido" ? L("Shared code", "Código compartido") : L("No hint", "Sin pista")) + "</span>";
+      var motivo = !x ? "" : x.g ? motivoDe(x.g[0], x.g[1], x.g[3])
+        : x.m ? L("Used by " + x.m + " features and none dominates: it fits a library.", "Lo usan " + x.m + " funcionalidades y ninguna domina: conviene una librería.")
+        : L("Nothing links it to a feature: no imports, no endpoints, no folder neighbors.", "Nada lo une a una funcionalidad: ni imports, ni endpoints, ni vecinos de carpeta.");
+      return '<p class="es-texto"><code>' + esc(e.nombre) + "</code>" + (motivo ? " <small>" + esc(motivo) + "</small>" : "") + '</p><div class="chips">' + chips + '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(e.cerebro) + "</span>" +
+        (enTanda ? '<span class="chip es-ok">' + L("Assigning…", "Asociándose…") + "</span>" : "") + '</div><small class="es-archivo">' + L("File: ", "Archivo: ") + "<code>" + esc(e.archivo) + "</code></small>";
+    }
+  });
+  // El archivo sin asociar de una clave del pedido (para el motivo de la tarjeta).
+  function porArchivoDe(k) { if (!U) return null; for (var i = 0; i < U.length; i++) if (claveDe(U[i]) === k) return U[i]; return null; }
+  var cuentaDe = function (ts, k) { return ts.reduce(function (n, t) { return n + (t[k] || []).length; }, 0); };
+  var cifrasLote = function (a, s) { return L(num(a) + " assigned · " + num(s) + " still unassigned", plural(a, "asociado", "asociados") + " · " + num(s) + " " + (s === 1 ? "sigue" : "siguen") + " sin asociar"); };
 
   // ---------- El agente: lo mandado desde acá, su avance y su cancelación ----------
-  function llamar(ruta, cuerpo) {
-    return fetch(ruta, cuerpo ? { method: "POST", headers: { "content-type": "application/json", "x-flowbrain-token": ED.token }, body: JSON.stringify(cuerpo) } : { method: "GET", headers: { "x-flowbrain-token": ED.token } })
-      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || L("the server responded ", "el servidor respondió ") + r.status); return j; }); });
-  }
-  var vivo = function (t) { return B().vivo(t); };
-  function loteActual() {
-    for (var i = 0; i < LOTES.length; i++) if (!OCULTA[LOTES[i].id] && VISTOS.indexOf(LOTES[i].id) < 0) return LOTES[i];
-    return null;
-  }
-  // El lote: los archivos de la lista del panel (hasta TOPE_LOTE), cada uno con la línea que lee el agente.
-  function mandarLote() {
-    var es = LISTA.slice(0, TOPE_LOTE), pr = proveedor(), mo = modelo();
-    if (!es.length || !AG || !pr || PIDIENDO || B().loteVivo(loteActual(), TODOS)) return;
-    PIDIENDO = true; PANEL_ERROR = ""; pintarPanel();
-    llamar("/api/agente/lote", { tipo: "asociar", proveedor: pr.id, modelo: mo ? mo.id : undefined, archivos: es.map(function (e) { return { cerebro: e.cerebro, archivo: e.archivo, linea: e.linea }; }) })
-      .then(function (j) {
-        PIDIENDO = false; OCULTA = {};
-        if (j && j.lote) { LOTES = [j.lote].concat(LOTES.filter(function (l) { return l.id !== j.lote.id; })); TODOS = (j.trabajos || []).concat(TODOS); }
-        pintarPanel(); traerTrabajos();
-      })
-      .catch(function (e) { PIDIENDO = false; PANEL_ERROR = L("It could not be sent: ", "No se pudo mandar: ") + e.message; pintarPanel(); });
-  }
-  // Lo que el agente ya asoció sale de la lista; lo que sigue sin asociar queda, para decidirlo.
-  function limpiarLista() {
-    var hechos = {};
-    LOTES.forEach(function (LT) { B().tandas(LT, TODOS).forEach(function (t) { (t.asociados || []).forEach(function (a) { hechos[a.cerebro + "|" + a.archivo] = true; }); }); });
-    var antes = LISTA.length;
-    LISTA = LISTA.filter(function (e) { return !hechos[e.k]; });
-    if (LISTA.length !== antes) guardarLista();
-  }
+  var llamar = function (ruta, cuerpo) { return PD.llamar(ruta, cuerpo); };
+  var vivo = function (t) { return PD.vivo(t); };
   function mandar() {
     if (!PEDIDO || !AG || PEDIDO.mandando) return;
     var xs = PEDIDO.xs.slice(0, TOPE_PEDIDO);
@@ -408,33 +338,24 @@ export const SIN_ASOCIAR_JS = String.raw`
       .then(function (tr) {
         AGS.mandados[tr.id] = true; guardarAgs();
         PEDIDO = null; TRABAJOS = [tr].concat(TRABAJOS.filter(function (x) { return x.id !== tr.id; }));
-        repintar(); traerTrabajos();
+        repintar(); PD.actualizar();
       })
       .catch(function (e) { if (PEDIDO) { PEDIDO.mandando = false; PEDIDO.error = e.message; pintarLista(); } });
   }
   var recargar = function () { if (typeof window.location !== "undefined" && window.location && window.location.reload) { window.location.reload(); return true; } return false; };
-  function traerTrabajos() {
-    if (!AG) return;
-    if (ESPERA) { clearTimeout(ESPERA); ESPERA = null; }
-    var p;
-    try { p = llamar("/api/agente"); } catch (e) { return; }
-    p.then(function (j) {
-      TODOS = j.trabajos || [];
-      // Los lotes de esta pantalla (los de tests son de Especificaciones) y los pedidos sueltos mandados desde esta pestaña.
-      LOTES = (j.lotes || []).filter(function (l) { return l.tipo === "asociar"; });
-      TRABAJOS = TODOS.filter(function (t) { return t.tipo === "asociar" && !t.lote && AGS.mandados[t.id]; });
-      // Terminó uno mandado desde acá: la página se recarga una vez, con la lista que dejó el agente (ya recompilada).
-      var nuevos = TRABAJOS.filter(function (t) { return t.estado === "terminado" && !AGS.recargados[t.id]; });
-      if (nuevos.length) {
-        nuevos.forEach(function (t) { AGS.recargados[t.id] = true; }); guardarAgs();
-        if (recargar()) return;
-      }
-      limpiarLista();
-      repintar(); pintarPanel();
-      if (TRABAJOS.some(vivo) || LOTES.some(function (l) { return B().loteVivo(l, TODOS); })) ESPERA = setTimeout(traerTrabajos, 2000);
-    }).catch(function () { ESPERA = setTimeout(traerTrabajos, 5000); });
-  }
-  var ESTADOS = function (e) { return B().estado(e); };
+  // Lo que corre el agente lo trae el componente para todo el visor: acá, los pedidos sueltos mandados desde esta pestaña.
+  PD.escuchar(function (ev) {
+    if (ev !== "trabajos") return;
+    TRABAJOS = PD.trabajos().filter(function (t) { return t.tipo === "asociar" && !t.lote && AGS.mandados[t.id]; });
+    // Terminó uno mandado desde acá: la página se recarga una vez, con la lista que dejó el agente (ya recompilada).
+    var nuevos = TRABAJOS.filter(function (t) { return t.estado === "terminado" && !AGS.recargados[t.id]; });
+    if (nuevos.length) {
+      nuevos.forEach(function (t) { AGS.recargados[t.id] = true; }); guardarAgs();
+      if (recargar()) return;
+    }
+    repintar();
+  });
+  var ESTADOS = function (e) { return PD.estado(e); };
   function unTrabajo(t) {
     var e = ESTADOS(t.estado), pasos = t.pasos || [];
     var cambios = (t.cambios || []).map(function (c) { return "<li><b>" + esc(c.repo) + "</b>: " + c.archivos.map(function (a) { return "<code>" + esc(a) + "</code>"; }).join(" ") + "</li>"; }).join("");
@@ -448,30 +369,6 @@ export const SIN_ASOCIAR_JS = String.raw`
       (cambios ? '<div class="es-cambios"><small>' + L("Changed in the repos, uncommitted:", "Cambió en los repos, sin commitear:") + "</small><ul>" + cambios + "</ul></div>" : "") +
       '<div class="fd-acc">' + (vivo(t) ? '<button type="button" class="boton" data-acc="cancelar-agente" data-k="' + esc(t.id) + '">' + L("Cancel", "Cancelar") + "</button>" : '<button type="button" class="boton" data-acc="cerrar-agente" data-k="' + esc(t.id) + '">' + L("Close", "Cerrar") + "</button>") +
       (t.estado === "fallo" || t.estado === "cancelado" ? '<button type="button" class="boton" data-acc="recargar">' + L("Reload to see what it changed", "Recargar para ver lo que cambió") + "</button>" : "") + "</div></li>";
-  }
-  // El lote en curso (o su resumen, hasta cerrarlo): el panel compartido con Especificaciones, contado en archivos.
-  function htmlLote() {
-    var LT = AG ? loteActual() : null;
-    if (!LT) return "";
-    var cuantos = function (t) { return (t.archivos || []).length; };
-    var hechos = function (ts, k) { return ts.reduce(function (n, t) { return n + (t[k] || []).length; }, 0); };
-    var cifras = function (a, s) { return L(num(a) + " assigned · " + num(s) + " still unassigned", plural(a, "asociado", "asociados") + " · " + num(s) + " " + (s === 1 ? "sigue" : "siguen") + " sin asociar"); };
-    return B().html(LT, B().tandas(LT, TODOS), {
-      unidad: ["file", "files", "archivo", "archivos"],
-      cuantos: cuantos,
-      espera: L("Waits for the previous batch of this brain to finish.", "Espera a que termine la tanda anterior de este cerebro."),
-      reindexando: L("Finishing…", "Terminando…"),
-      pidiendo: function (n, repos) { return L("Assigning " + plural(n, "file", "files") + " in " + plural(repos, "repo", "repos"), "Asociando " + plural(n, "archivo", "archivos") + " en " + plural(repos, "repo", "repos")); },
-      extraTanda: function (t) {
-        if (vivo(t) || (!t.asociados && !t.siguen)) return "";
-        return "<small>" + cifras((t.asociados || []).length, (t.siguen || []).length) + "</small>" +
-          (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
-      },
-      resumen: function (ts) {
-        var s = hechos(ts, "siguen");
-        return cifras(hechos(ts, "asociados"), s) + (s ? L(" (proposed as a draft, not product, or left: each batch says why; they stay in the list)", " (propuestos como borrador, no son de producto o quedaron: cada tanda dice por qué; siguen en la lista)") : "");
-      }
-    });
   }
   // Los pedidos sueltos («Proponer funcionalidad», «Crear librería») se ven en la página; el lote, en el panel.
   function htmlAgente() {
@@ -704,12 +601,10 @@ export const SIN_ASOCIAR_JS = String.raw`
   function pintarLista() { var e = elem("sa-lista"); if (e) e.innerHTML = lista(); }
   // Lo que cambia fuera de una acción de la lista (el agente avanza): con la lista vacía no hay #sa-lista, se pinta todo.
   function repintar() { if (U && U.length) pintarLista(); else pintarTodo(); }
-  // Como en Especificaciones: el botón que abre el panel del pedido va junto al título.
-  var titulo = function () { return '<div class="es-titulo"><h1>' + L("Unassigned", "Sin asociar") + '</h1><span id="sa-bandeja">' + htmlBandeja() + "</span></div>"; };
-  var aside = function () { return B().aside("sa-panel", PANEL, L("Requested files", "Archivos pedidos"), htmlPanel()); };
+  var titulo = function () { return '<div class="es-titulo"><h1>' + L("Unassigned", "Sin asociar") + "</h1></div>"; };
   function pintarTodo() {
     // Lo asociado o marcado desde acá sale también del pedido.
-    if (podarLista()) guardarLista();
+    podarLista();
     if (!U) {
       raiz.innerHTML = titulo() + '<p class="aviso">' + L("There is no code index, so there is no telling which files exist. Run <code>flowbrain index</code> on each repo and then <code>flowbrain compile</code> (or <code>flowbrain brains apply</code>).", "No hay índice de código, así que no se sabe qué archivos hay. Corré <code>flowbrain index</code> sobre cada repo y después <code>flowbrain compile</code> (o <code>flowbrain brains apply</code>).") + "</p>";
       return;
@@ -721,12 +616,10 @@ export const SIN_ASOCIAR_JS = String.raw`
     if (!U.length) {
       var ign = totalIgn();
       raiz.innerHTML = titulo() + COMO() + (MSG ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + "</p>" : "") + htmlAgente() + '<p class="aviso">' + (hechos ? L("Done: no unassigned files left.", "Listo: ya no queda ningún archivo sin asociar.") : L("Every file in the index belongs to a feature or library. There is nothing to assign.", "Todos los archivos del índice son de alguna funcionalidad o librería. No hay nada para asociar.")) +
-        (ign ? " " + L(plural(ign, "file is", "files are") + " marked as not product and not listed: see them below.", plural(ign, "archivo está marcado", "archivos están marcados") + " como no de producto y no se " + (ign === 1 ? "lista" : "listan") + ": abajo se ven.") : "") + "</p>" + htmlIgnorados() + aside();
-      if (raiz.classList) { if (PANEL) raiz.classList.add("es-con-panel"); else raiz.classList.remove("es-con-panel"); }
+        (ign ? " " + L(plural(ign, "file is", "files are") + " marked as not product and not listed: see them below.", plural(ign, "archivo está marcado", "archivos están marcados") + " como no de producto y no se " + (ign === 1 ? "lista" : "listan") + ": abajo se ven.") : "") + "</p>" + htmlIgnorados();
       return;
     }
-    raiz.innerHTML = titulo() + COMO() + aviso() + fl.html() + '<div id="sa-lista">' + lista() + "</div>" + aside();
-    if (raiz.classList) { if (PANEL) raiz.classList.add("es-con-panel"); else raiz.classList.remove("es-con-panel"); }
+    raiz.innerHTML = titulo() + COMO() + aviso() + fl.html() + '<div id="sa-lista">' + lista() + "</div>";
   }
   function refrescar(todo) { S.cuantas = PASO; if (PEDIDO) PEDIDO.copiado = false; guardar(); if (todo) pintarTodo(); else pintarLista(); }
   var porArchivo = function (a) { for (var i = 0; i < U.length; i++) if (U[i].a === a) return U[i]; return null; };
@@ -829,14 +722,8 @@ export const SIN_ASOCIAR_JS = String.raw`
     if (!b) return;
     var acc = b.getAttribute("data-acc"), k = b.getAttribute("data-k"), g;
     if (acc === "mas") { S.cuantas += PASO; pintarLista(); return; }
-    // El pedido al agente: la lista y el panel lateral (como «Tests pedidos»).
-    if (acc === "sumar") { sumarOQuitar(xsDeBoton(k)); alCambiarLista(); return; }
-    if (acc === "panel") { PANEL = !PANEL; guardarLista(); pintarPanel(); return; }
-    if (acc === "cerrar-panel") { PANEL = false; guardarLista(); pintarPanel(); return; }
-    if (acc === "quitar") { LISTA = LISTA.filter(function (e) { return e.k !== k; }); guardarLista(); alCambiarLista(); return; }
-    if (acc === "vaciar") { LISTA = []; guardarLista(); alCambiarLista(); return; }
-    if (acc === "pedir-todos") { mandarLote(); return; }
-    if (acc === "descargar-lista") { if (LISTA.length && !B().descargar("archivos-pedidos.md", mdDeLista(LISTA), document)) { PANEL_ERROR = L("It couldn't be downloaded.", "No se pudo descargar."); pintarPanel(); } return; }
+    // Sumar o sacar del pedido al agente (el componente cambia los botones y el panel, sin repintar la lista).
+    if (acc === "pedir") { PD.sumar("asociar", k); return; }
     if (acc === "nueva-feat" || acc === "crear-lib") {
       var cl = acc === "nueva-feat" ? "sinpista" : "compartido", x0 = porArchivo(b.getAttribute("data-a")), todos = !!b.getAttribute("data-todos");
       var xs = todos ? filtrados().filter(function (x) { return clase(x) === cl; }) : x0 ? vecinosDe(x0) : [];
@@ -848,11 +735,9 @@ export const SIN_ASOCIAR_JS = String.raw`
     if (acc === "cerrar-pedido") { PEDIDO = null; pintarLista(); return; }
     if (acc === "copiar") { if (PEDIDO) copiar(textoActual(), function (ok) { if (PEDIDO) { PEDIDO.copiado = ok ? true : "no"; pintarLista(); } }); return; }
     if (acc === "mandar") { mandar(); return; }
-    if (acc === "cancelar-agente") { llamar("/api/agente/cancelar", { id: k }).then(traerTrabajos, traerTrabajos); return; }
+    if (acc === "cancelar-agente") { llamar("/api/agente/cancelar", { id: k }).then(PD.actualizar, PD.actualizar); return; }
     if (acc === "cerrar-agente") { delete AGS.mandados[k]; guardarAgs(); TRABAJOS = TRABAJOS.filter(function (t) { return t.id !== k; }); repintar(); return; }
     if (acc === "recargar") { recargar(); return; }
-    if (acc === "cancelar-lote") { llamar("/api/agente/lote/cancelar", { id: k }).then(traerTrabajos, traerTrabajos); return; }
-    if (acc === "cerrar-lote") { OCULTA[k] = true; VISTOS.push(k); guardarLocal(CLAVE_VISTOS, VISTOS.slice(-60)); pintarPanel(); return; }
     if (acc === "lib") { var la = b.getAttribute("data-a"); LIB = LIB === la ? null : la; pintarLista(); return; }
     if (acc === "asociar-lib") { var sl = elem("sa-lib"); asociar(porArchivo(k), sl ? String(sl.value || "") : ""); return; }
     if (acc === "noprod") { var na = b.getAttribute("data-a"); NP = NP === na ? null : na; pintarLista(); return; }
@@ -877,14 +762,14 @@ export const SIN_ASOCIAR_JS = String.raw`
   raiz.addEventListener("change", function (ev) {
     if (fl && fl.manejar(ev, "change")) return;
     var id = ev.target.id;
-    // Proveedor y modelo: los mismos en el panel (sa-ag) y en el pedido suelto (sa-ped).
-    if (id === "sa-ag-prov" || id === "sa-ped-prov") { ELEGIDO = { proveedor: String(ev.target.value || ""), modelo: "" }; guardarLocal(CLAVE_ELEGIDO, ELEGIDO); pintarLista(); pintarPanel(); }
-    else if (id === "sa-ag-modelo" || id === "sa-ped-modelo") { ELEGIDO.proveedor = proveedor() ? proveedor().id : ""; ELEGIDO.modelo = String(ev.target.value || ""); guardarLocal(CLAVE_ELEGIDO, ELEGIDO); pintarLista(); pintarPanel(); }
+    // Proveedor y modelo del pedido suelto: los mismos del panel del pedido (el componente los guarda).
+    if (id === "sa-ped-prov") PD.elegir(String(ev.target.value || ""), null);
+    else if (id === "sa-ped-modelo") PD.elegir(null, String(ev.target.value || ""));
   });
   raiz.addEventListener("input", function (ev) { if (fl) fl.manejar(ev, "input"); });
 
-  // Con agente: los lotes y lo mandado desde esta pestaña se siguen hasta que terminen, aunque se recargue la página.
-  var primeraVez = true;
-  window.brainSinAsociar = { mostrar: function () { if (primeraVez) { primeraVez = false; traerTrabajos(); } pintarTodo(); } };
+  // Elegir otro proveedor o modelo cambia lo que dice el pedido suelto abierto.
+  PD.escuchar(function (ev) { if (ev === "elegido" && PEDIDO) pintarLista(); });
+  window.brainSinAsociar = { mostrar: function () { pintarTodo(); } };
 })();
 `;

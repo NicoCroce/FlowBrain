@@ -7,6 +7,7 @@
 - «Analizar el proyecto completo» suma un cuarto paso: deduce las especificaciones de cada funcionalidad.
 - Mientras desarrolla, el agente agrega casos de uso y especificaciones al borrador de una funcionalidad nueva y actualiza las de una que cambia.
 - Contratos no se rompe con una llamada ambigua: lista los endpoints candidatos de cada llamada pendiente.
+- El visor tiene un solo pedido al agente: la bandeja «Pedido (N)» en la barra superior, visible desde cualquier pantalla, y un panel que junta tests y archivos por asociar, con el costo estimado de cada tipo y el total. «Pedir todos» manda un lote por tipo. Lo que ya tenías pedido en cada pantalla se conserva.
 
 ## 0.1.1 · 2026-11-25
 

@@ -23,6 +23,18 @@ describe("viewer.html", () => {
     expect(d.tiposIniciales).not.toContain("archivo");
   });
 
+  it("el pedido al agente es uno solo para todo el visor: bandeja en la barra superior, un panel, y antes que las pantallas", async () => {
+    const html = renderViewer(await graph());
+    const cabecera = html.slice(html.indexOf('<header id="cabecera">'), html.indexOf("</header>"));
+    expect(cabecera).toContain('<span id="pedido-bandeja" class="pedido-bandeja"></span>');
+    expect(html.match(/<aside id="pedido-panel"/g)).toHaveLength(1);
+    // Ninguna pantalla trae su propio panel.
+    expect(html).not.toMatch(/id="(es|sa)-panel"|id="(es|sa)-bandeja"/);
+    const pedido = html.indexOf("window.brainPedido = {");
+    expect(pedido).toBeGreaterThan(0);
+    for (const p of ["window.brainEspecificaciones = {", "window.brainSinAsociar = {"]) expect(html.indexOf(p)).toBeGreaterThan(pedido);
+  });
+
   it("escapa nombres que podrían cerrar el script", async () => {
     const g = await graph();
     const malo = { ...g, nodes: g.nodes.map((n, i) => (i === 0 ? { ...n, nombre: "</script><script>alert(1)</script><!--" } : n)) };

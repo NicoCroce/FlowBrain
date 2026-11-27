@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import { GUIA_TESTS } from "@flowbrain/core";
 import { ESPECIFICACIONES_JS } from "../src/viewer-especificaciones.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
-import { LOTE_JS } from "../src/viewer-lote.js";
+import { PEDIDO_JS } from "../src/viewer-pedido.js";
+
+const DEL_PEDIDO = new Set(["panel", "cerrar-panel", "quitar", "vaciar", "pedir-todos", "descargar-lista", "cancelar-lote", "cerrar-lote", "regla-mal", "codigo-mal", "deshacer", "corregir-reglas", "descargar-desarrollo"]);
 
 /** La pantalla Especificaciones, corrida con un DOM mínimo: casos de uso unidos entre cerebros, filtros, lo que falta y "Esto está mal". */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
@@ -32,7 +34,7 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
     createElement: () => ({ href: "", download: "", click() { const h = this.href; descargas.push({ archivo: this.download, texto: () => resolveObjectURL(h)!.text() }); } }),
   };
   new Function("window", "document", "sessionStorage", FILTROS_JS)(window, documento, sessionStorage);
-  new Function("window", LOTE_JS)(window);
+  new Function("window", "document", "localStorage", "fetch", PEDIDO_JS)(window, documento, localStorage, opciones.fetch);
   new Function("window", "document", "sessionStorage", "localStorage", "fetch", ESPECIFICACIONES_JS)(window, documento, sessionStorage, localStorage, opciones.fetch);
   const raiz = el("especificaciones");
   let html = "";
@@ -40,9 +42,8 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
     get: () => html,
     set: (v: string) => {
       html = v;
-      const i = v.indexOf('<div id="es-lista">'), a = v.indexOf('<aside id="es-panel"');
-      el("es-lista").innerHTML = i < 0 ? "" : v.slice(i, a < 0 ? undefined : a);
-      if (a >= 0) el("es-panel").innerHTML = v.slice(v.indexOf(">", a) + 1, v.indexOf("</aside>", a));
+      const i = v.indexOf('<div id="es-lista">');
+      el("es-lista").innerHTML = i < 0 ? "" : v.slice(i);
     },
   });
   window.brainEspecificaciones!.mostrar();
@@ -51,13 +52,15 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
     pagina: () => raiz.innerHTML,
     lista: () => el("es-lista").innerHTML,
     agente: () => el("es-agente").innerHTML,
-    panel: () => el("es-panel").innerHTML,
+    panel: () => el("pedido-panel").innerHTML,
+    bandeja: () => el("pedido-bandeja").innerHTML,
     descargas,
     casos: () => [...el("es-lista").innerHTML.matchAll(/<p class="es-nombre">([^<]+)<\/p>/g)].map((m) => m[1]),
     reglas: () => [...el("es-lista").innerHTML.matchAll(/<p class="es-texto">([^<]+?) <span/g)].map((m) => m[1]),
-    cambiar: (id: string, value: string) => raiz.oyentes["change"]!({ target: { id, value } }),
+    cambiar: (id: string, value: string) => (id.startsWith("pedido-") ? el("pedido-panel") : raiz).oyentes["change"]!({ target: { id, value } }),
     escribir: (value: string, id = "es-q") => { borrador = value; raiz.oyentes["input"]!({ target: { id, value } }); },
-    tocar: (attrs: Record<string, string>) => raiz.oyentes["click"]!({ target: boton(attrs) }),
+    // Los botones del pedido (panel y bandeja) son del componente, igual que los resultados del lote (en el panel).
+    tocar: (attrs: Record<string, string>) => (DEL_PEDIDO.has(attrs["data-acc"] ?? "") ? el(attrs["data-acc"] === "panel" ? "pedido-bandeja" : "pedido-panel") : raiz).oyentes["click"]!({ target: boton(attrs) }),
   };
 }
 
@@ -188,14 +191,16 @@ describe("pantalla Especificaciones", () => {
     // Cuenta las reglas de los casos (la suelta va en "agrupar"): "motivo", de negocio, no tiene test.
     expect(p).toContain("Request the missing tests</b><small>1 business rule untested.");
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
-    expect(v.lista()).toContain('class="boton es-pedir" data-acc="sumar" data-k="test|feat-pagos|pagar"');
+    expect(v.lista()).toContain('class="boton es-pedir" data-acc="pedir" data-tipo="test" data-k="test|feat-pagos|pagar"');
     expect(v.lista()).toContain("Request the missing test</button>");
     expect(v.lista()).toContain("No test verifies it: if someone breaks it, nothing warns you.");
     // Pedir el test no manda nada: suma la regla a la lista y abre el panel.
     expect(v.panel()).toContain("The list is empty");
-    v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
+    v.tocar({ "data-acc": "pedir", "data-k": "test|feat-pagos|pagar" });
     const l = v.lista(), pn = v.panel();
-    expect(l).toContain("✔ In requested tests");
+    expect(l).toContain("✔ In the request");
+    // La bandeja de la barra superior cuenta lo pedido, desde cualquier pantalla.
+    expect(v.bandeja()).toContain(">Request (1)</button>");
     expect(l).not.toContain("Send to the agent");
     expect(pn).toContain("Si el pago falla se muestra el motivo.");
     expect(pn).toContain(">Business<");
@@ -206,7 +211,7 @@ describe("pantalla Especificaciones", () => {
     expect(pn).toContain("<b>1 rule</b>");
     // Sin servidor no se ofrece "No necesita test": no hay dónde guardarlo.
     expect(l).not.toContain('data-acc="manual"');
-    v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
+    v.tocar({ "data-acc": "pedir", "data-k": "test|feat-pagos|pagar" });
     expect(v.panel()).toContain("The list is empty");
   });
 
@@ -247,10 +252,10 @@ describe("pantalla Especificaciones", () => {
   it("sin Claude Code en la máquina, la lista sigue y dice por qué no se manda: se descarga el .md", () => {
     const v = montar(datos(), { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: "no se encontró Claude Code (claude) en esta máquina" } }, fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }) });
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
-    v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
+    v.tocar({ "data-acc": "pedir", "data-k": "test|feat-pagos|pagar" });
     expect(v.panel()).toContain("There's no agent installed on this machine: no se encontró Claude Code");
     expect(v.panel()).toContain("Download the .md");
-    expect(v.panel()).not.toContain('id="es-prov"');
+    expect(v.panel()).not.toContain('id="pedido-prov"');
     expect(v.panel()).toMatch(/data-acc="pedir-todos" disabled/);
   });
 
@@ -259,18 +264,18 @@ describe("pantalla Especificaciones", () => {
     const d = datos();
     const v = montar(d, { local });
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
-    v.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|motivo" });
-    v.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|suelta" });
+    v.tocar({ "data-acc": "pedir", "data-k": "test|front/feat-pagos|motivo" });
+    v.tocar({ "data-acc": "pedir", "data-k": "test|front/feat-pagos|suelta" });
     expect(v.panel()).toContain("<b>2 rules</b>");
     // Recargar la página: la lista vuelve igual, con el panel abierto.
     const w = montar(d, { local });
     expect(w.panel()).toContain("<b>2 rules</b>");
     expect(w.panel()).toContain("El botón de pagar se ve abajo.");
-    w.tocar({ "data-acc": "quitar", "data-k": "front/feat-pagos|suelta" });
+    w.tocar({ "data-acc": "quitar", "data-tipo": "test", "data-k": "front/feat-pagos|suelta" });
     expect(w.panel()).toContain("<b>1 rule</b>");
-    expect(JSON.parse(local.get("flowbrain.especificaciones.pedidos")!)).toHaveLength(1);
+    expect(JSON.parse(local.get("flowbrain.pedido")!).items).toHaveLength(1);
     w.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
-    w.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|suelta" });
+    w.tocar({ "data-acc": "pedir", "data-k": "test|front/feat-pagos|suelta" });
     w.tocar({ "data-acc": "descargar-lista" });
     expect(w.descargas[0]!.archivo).toBe("tests-pedidos.md");
     const md = await w.descargas[0]!.texto();
@@ -289,7 +294,7 @@ describe("pantalla Especificaciones", () => {
     expect(md).toContain("flowbrain specs <feature> --brain <brain>");
     w.tocar({ "data-acc": "vaciar" });
     expect(w.panel()).toContain("The list is empty");
-    expect(JSON.parse(local.get("flowbrain.especificaciones.pedidos")!)).toEqual([]);
+    expect(JSON.parse(local.get("flowbrain.pedido")!).items).toEqual([]);
   });
 
   it("pedir todos: elige proveedor y modelo, estima el costo, manda el lote, muestra el avance y separa lo que volvió", async () => {
@@ -305,8 +310,8 @@ describe("pantalla Especificaciones", () => {
     };
     const v = montar(d, { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: null, proveedores: PROVEEDORES } }, fetch });
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
-    v.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|suelta" });
-    v.tocar({ "data-acc": "sumar", "data-k": "test|front/feat-pagos|motivo" });
+    v.tocar({ "data-acc": "pedir", "data-k": "test|front/feat-pagos|suelta" });
+    v.tocar({ "data-acc": "pedir", "data-k": "test|front/feat-pagos|motivo" });
     let p = v.panel();
     // El selector muestra los proveedores instalados; el modelo por defecto va marcado.
     expect(p).toContain('<option value="claude-code" selected>Claude Code</option>');
@@ -316,7 +321,7 @@ describe("pantalla Especificaciones", () => {
     expect(p).toContain("1 business (they go first) · 1 screen");
     expect(p.indexOf("Si el pago falla")).toBeLessThan(p.indexOf("El botón de pagar"));
     expect(p).toContain("Estimated cost: ≈ US$ 0.80");
-    v.cambiar("es-modelo", "claude-haiku-5-5");
+    v.cambiar("pedido-modelo", "claude-haiku-5-5");
     p = v.panel();
     expect(p).toContain("Estimated cost: ≈ US$ 0.080");
     expect(p).toContain('<option value="claude-haiku-5-5" selected>Haiku 5.5</option>');
@@ -348,7 +353,7 @@ describe("pantalla Especificaciones", () => {
     estado.trabajos = [{ ...(estado.trabajos[0] as object), estado: "terminado", costoUsd: 0.12, resultados: [
       { cerebro: "front", funcionalidad: "feat-pagos", regla: "motivo", resultado: "a", tests: ["repo-web:src/pagos/Error.test.tsx::muestra el motivo"] },
       { cerebro: "front", funcionalidad: "feat-pagos", regla: "suelta", resultado: "c", hoy: "src/pagos/Boton.tsx#L9: el botón se ve arriba", cambio: "Mover el botón abajo.", test: "it('abajo', () => {})" }] }];
-    (v as { cambiar: (a: string, b: string) => void }).cambiar("es-modelo", "claude-haiku-5-5");
+    (v as { cambiar: (a: string, b: string) => void }).cambiar("pedido-modelo", "claude-haiku-5-5");
     // El panel vuelve a pedir el estado cada 2 s; acá se fuerza con otro pedido.
     v.tocar({ "data-acc": "panel", "data-k": "" }); v.tocar({ "data-acc": "panel", "data-k": "" });
     await new Promise((r) => setTimeout(r, 2100));
@@ -410,9 +415,10 @@ describe("pantalla Especificaciones", () => {
     v.tocar({ "data-acc": "abrir", "data-k": "feat-pagos" });
     expect(v.lista()).toContain("1 de 2 reglas sin test");
     expect(v.lista()).toContain("Pedir el test que falta</button>");
-    v.tocar({ "data-acc": "sumar", "data-k": "test|feat-pagos|pagar" });
+    v.tocar({ "data-acc": "pedir", "data-k": "test|feat-pagos|pagar" });
     expect(v.panel()).toContain("<b>1 regla</b>");
-    expect(v.panel()).toContain("Tests pedidos");
+    expect(v.panel()).toContain("Pedido al agente");
+    expect(v.bandeja()).toContain(">Pedido (1)</button>");
     v.tocar({ "data-acc": "pedido", "data-k": "agrupar|" });
     expect(v.pagina()).toContain("Pedido para el agente");
     expect(v.pagina()).toContain("Group into use cases the specifications");

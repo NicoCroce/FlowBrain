@@ -2,7 +2,9 @@ import { resolveObjectURL } from "node:buffer";
 import { describe, expect, it } from "vitest";
 import { SIN_ASOCIAR_JS } from "../src/viewer-sin-asociar.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
-import { LOTE_JS } from "../src/viewer-lote.js";
+import { PEDIDO_JS } from "../src/viewer-pedido.js";
+
+const DEL_PEDIDO = new Set(["panel", "cerrar-panel", "quitar", "vaciar", "pedir-todos", "descargar-lista", "cancelar-lote", "cerrar-lote"]);
 
 /** La pantalla Sin asociar, corrida con un DOM mínimo: qué agrupa, qué recomienda, qué dice cuando no hay nada y qué manda al asociar. */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
@@ -24,10 +26,11 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; l
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   const window = { brainVisor: { D: datos, porId, esc }, brainSinAsociar: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion, ...(opciones.confirmar ? { confirm: opciones.confirmar } : {}), ...(opciones.recargar ? { location: { reload: opciones.recargar } } : {}), ...(opciones.lang ? { brainI18n: { lang: opciones.lang } } : {}) };
   new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
-  new Function("window", LOTE_JS)(window);
-  // «Descargar .md»: como en Especificaciones, el documento guarda lo que se baja.
+  // «Descargar .md»: el documento guarda lo que se baja.
   const bajados: Array<{ nombre: string; texto: () => Promise<string> }> = [];
   const documento = { getElementById: el, body: { appendChild() {}, removeChild() {} }, createElement: () => ({ href: "", download: "", click() { const h = this.href; bajados.push({ nombre: this.download, texto: () => resolveObjectURL(h)!.text() }); } }) };
+  // El pedido al agente: el componente único del visor, con su panel (#pedido-panel) y su bandeja (#pedido-bandeja).
+  new Function("window", "document", "localStorage", "fetch", PEDIDO_JS)(window, documento, localStorage, opciones.fetch);
   new Function("window", "document", "sessionStorage", "localStorage", "fetch", SIN_ASOCIAR_JS)(window, documento, sessionStorage, localStorage, opciones.fetch);
   const raiz = el("sinasociar");
   let html = "";
@@ -37,10 +40,6 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; l
       html = v;
       const i = v.indexOf('<div id="sa-lista">');
       el("sa-lista").innerHTML = i < 0 ? "" : v.slice(i);
-      const p = v.match(/<aside id="sa-panel"[^>]*>([\s\S]*)<\/aside>/);
-      el("sa-panel").innerHTML = p ? p[1]! : "";
-      const b = v.match(/<span id="sa-bandeja">([\s\S]*?)<\/span><\/div>/);
-      el("sa-bandeja").innerHTML = b ? b[1]! : "";
     },
   });
   window.brainSinAsociar!.mostrar();
@@ -48,13 +47,15 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; l
   return {
     pagina: () => raiz.innerHTML,
     lista: () => el("sa-lista").innerHTML,
-    panel: () => el("sa-panel").innerHTML,
-    bandeja: () => el("sa-bandeja").innerHTML,
+    panel: () => el("pedido-panel").innerHTML,
+    panelAbierto: () => (el("pedido-panel") as unknown as { className: string }).className,
+    bandeja: () => el("pedido-bandeja").innerHTML,
     carpetas: () => [...el("sa-lista").innerHTML.matchAll(/<h3><code>([^<]+)<\/code>/g)].map((m) => m[1]),
     archivos: () => [...el("sa-lista").innerHTML.matchAll(/<li class="sa-fila"><div class="sa-que"><code title="[^"]*">([^<]+)<\/code>/g)].map((m) => m[1]),
-    cambiar: (id: string, value: string) => raiz.oyentes["change"]!({ target: { id, value } }),
+    cambiar: (id: string, value: string) => (id.startsWith("pedido-") ? el("pedido-panel") : raiz).oyentes["change"]!({ target: { id, value } }),
     escribir: (value: string) => raiz.oyentes["input"]!({ target: { id: "sa-q", value } }),
-    tocar: (attrs: Record<string, string>) => raiz.oyentes["click"]!({ target: boton(attrs) }),
+    // Los botones del pedido (panel y bandeja) son del componente; los demás, de la pantalla.
+    tocar: (attrs: Record<string, string>) => (DEL_PEDIDO.has(attrs["data-acc"] ?? "") ? el(attrs["data-acc"] === "panel" ? "pedido-bandeja" : "pedido-panel") : raiz).oyentes["click"]!({ target: boton(attrs) }),
     poner: (id: string, value: string) => void (el(id).value = value),
     bajados,
   };
@@ -143,37 +144,38 @@ describe("pantalla Sin asociar", () => {
     const v = montar(datos(), { local });
     // Sin nada sumado no hay botón del panel, y cada fila, carpeta y la lista tienen su «Sumar» celeste.
     expect(v.bandeja()).toBe("");
-    expect(v.lista()).toContain(`data-acc="sumar" data-k="a|${W}src/shared/dinero.ts" data-et="Request" aria-pressed="false"`);
-    expect(v.lista()).toMatch(/class="boton es-pedir" data-acc="sumar" data-k="c\|0\|front\/repo-web:src\/shared"[^>]*>Request the 3<\/button>/);
+    expect(v.lista()).toContain(`data-acc="pedir" data-tipo="asociar" data-k="a|${W}src/shared/dinero.ts" data-et="Request" aria-pressed="false"`);
+    expect(v.lista()).toMatch(/class="boton es-pedir" data-acc="pedir" data-tipo="asociar" data-k="c\|0\|front\/repo-web:src\/shared"[^>]*>Request the 3<\/button>/);
     expect(v.lista()).toContain(">Request the 5 in the list</button>");
     // Un archivo: el botón pasa a «En el pedido» y el panel se abre con él.
-    v.tocar({ "data-acc": "sumar", "data-k": `a|${W}src/shared/dinero.ts` });
-    expect(v.lista()).toMatch(/class="boton es-pedir en-lista" data-acc="sumar" data-k="a\|front\/repo-web:src\/shared\/dinero.ts"[^>]*>✔ In the request<\/button>/);
-    expect(v.panel()).toContain("<h2>Requested files</h2>");
+    v.tocar({ "data-acc": "pedir", "data-k": `a|${W}src/shared/dinero.ts` });
+    expect(v.lista()).toMatch(/class="boton es-pedir en-lista" data-acc="pedir" data-tipo="asociar" data-k="a\|front\/repo-web:src\/shared\/dinero.ts"[^>]*>✔ In the request<\/button>/);
+    // El panel es el del pedido al agente, único para todo el visor.
+    expect(v.panel()).toContain("<h2>Request to the agent</h2>");
     expect(v.panel()).toContain("<b>1 file</b>");
     expect(v.panel()).toContain("→ Pagos</span>");
     expect(v.panel()).toContain(">High confidence</span>");
     // La tarjeta lleva el motivo, como la regla en «Tests pedidos».
     expect(v.panel()).toContain("<code>dinero.ts</code> <small>imported by 2 files of Pagos</small>");
     expect(v.panel()).toContain('<small class="es-archivo">File: <code>repo-web:src/shared/dinero.ts</code></small>');
-    expect(v.bandeja()).toContain('data-acc="panel" aria-expanded="true">Requested files (1)</button>');
+    expect(v.bandeja()).toContain('data-acc="panel" aria-expanded="true" aria-controls="pedido-panel">Request (1)</button>');
     // La carpeta suma los que faltan; tocarla otra vez los saca.
-    v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
+    v.tocar({ "data-acc": "pedir", "data-k": "c|0|front/repo-web:src/shared" });
     expect(v.panel()).toContain("<b>3 files</b>");
     expect(v.panel()).toContain("2 with a recommendation · 1 shared · 0 with no hint");
-    v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
+    v.tocar({ "data-acc": "pedir", "data-k": "c|0|front/repo-web:src/shared" });
     // Con un filtro, la carpeta suma solo lo que se ve (lo que dice el botón): fecha.ts, el único compartido.
     v.tocar({ "data-fl": "sa", "data-grupo": "compartido" });
-    v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
+    v.tocar({ "data-acc": "pedir", "data-k": "c|0|front/repo-web:src/shared" });
     expect(v.panel()).toContain("<b>1 file</b>");
     expect(v.panel()).toContain("<code>fecha.ts</code>");
     v.tocar({ "data-fl": "sa", "data-grupo": "" });
-    v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
+    v.tocar({ "data-acc": "pedir", "data-k": "c|0|front/repo-web:src/shared" });
     expect(v.panel()).toContain("<b>3 files</b>");
-    v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
-    expect(v.panel()).toContain("The list is empty. Click «Request» on a file, «Request the N» on a folder or on the filtered list");
+    v.tocar({ "data-acc": "pedir", "data-k": "c|0|front/repo-web:src/shared" });
+    expect(v.panel()).toContain("The list is empty. Click «Request» on a rule, a file or a folder, on any screen");
     // La lista filtrada entera.
-    v.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    v.tocar({ "data-acc": "pedir", "data-k": "l|" });
     expect(v.panel()).toContain("<b>5 files</b>");
     // Estática: «Pedir todos» no se puede; «Descargar .md» baja la lista (en inglés: es para el modelo) y lo dice.
     const p = v.panel();
@@ -190,14 +192,16 @@ describe("pantalla Sin asociar", () => {
     expect(md).toContain("- repo-api:src/Util/Texto.php (brain back): no hint");
     expect(md).toContain("`flowbrain compile` inside `.flowbrain/<brain>/` (`front`, `back`)");
     // Quitar de a uno.
-    v.tocar({ "data-acc": "quitar", "data-k": "back|repo-api:src/Util/Texto.php" });
+    v.tocar({ "data-acc": "quitar", "data-tipo": "asociar", "data-k": "back|repo-api:src/Util/Texto.php" });
     expect(v.panel()).toContain("<b>4 files</b>");
     expect(v.panel()).not.toContain("Texto.php");
-    // La lista y el panel abierto se recuerdan: otra página, el mismo navegador.
-    expect(JSON.parse(local.get("flowbrain.sinasociar.pedidos")!)).toHaveLength(4);
-    expect(local.get("flowbrain.sinasociar.panel")).toBe("true");
+    // La lista y el panel abierto se recuerdan, en una sola clave: otra página, el mismo navegador.
+    const guardado = () => JSON.parse(local.get("flowbrain.pedido")!) as { items: Array<{ tipo: string; k: string; repo: string }>; panel: boolean };
+    expect(guardado().items).toHaveLength(4);
+    expect(guardado().items[0]).toMatchObject({ tipo: "asociar", k: "front|repo-web:src/shared/dinero.ts", repo: "repo-web" });
+    expect(guardado().panel).toBe(true);
     const otra = montar(datos(), { local });
-    expect(otra.pagina()).toContain('<aside id="sa-panel" class="es-panel abierto"');
+    expect(otra.panelAbierto()).toBe("es-panel abierto");
     expect(otra.panel()).toContain("<b>4 files</b>");
     // Lo que ya no está sin asociar sale del pedido al abrir.
     const d = datos();
@@ -205,21 +209,22 @@ describe("pantalla Sin asociar", () => {
     expect(montar(d, { local }).panel()).toContain("<b>3 files</b>");
     // Cerrar el panel lo recuerda cerrado; el botón junto al título lo vuelve a abrir.
     otra.tocar({ "data-acc": "cerrar-panel" });
-    expect(local.get("flowbrain.sinasociar.panel")).toBe("false");
-    expect(otra.bandeja()).toContain('aria-expanded="false">Requested files (4)</button>');
+    expect(guardado().panel).toBe(false);
+    expect(otra.panelAbierto()).toBe("es-panel");
+    expect(otra.bandeja()).toContain('aria-expanded="false" aria-controls="pedido-panel">Request (4)</button>');
     otra.tocar({ "data-acc": "panel" });
-    expect(local.get("flowbrain.sinasociar.panel")).toBe("true");
+    expect(guardado().panel).toBe(true);
     otra.tocar({ "data-acc": "vaciar" });
     expect(otra.panel()).toContain("The list is empty.");
-    expect(JSON.parse(local.get("flowbrain.sinasociar.pedidos")!)).toEqual([]);
+    expect(guardado().items).toEqual([]);
     // En castellano, los mismos textos que «Tests pedidos»; el texto para el agente, en inglés.
     const es = montar(datos(), { lang: "es" });
     expect(es.lista()).toContain(">Pedir</button>");
     expect(es.lista()).toContain(">Pedir los 3</button>");
     expect(es.lista()).toContain(">Pedir los 5 de la lista</button>");
-    es.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    es.tocar({ "data-acc": "pedir", "data-k": "l|" });
     expect(es.lista()).toContain(">✔ En el pedido</button>");
-    expect(es.panel()).toContain("<h2>Archivos pedidos</h2>");
+    expect(es.panel()).toContain("<h2>Pedido al agente</h2>");
     expect(es.panel()).toContain("3 con recomendación · 1 compartido · 1 sin pista");
     expect(es.panel()).toContain(">Descargar .md</button>");
     expect(es.panel()).toContain(">Vaciar la lista</button>");
@@ -364,14 +369,15 @@ describe("pantalla Sin asociar", () => {
     const v = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, recargar: () => void recargas++, local });
     const esperar = async () => { for (let i = 0; i < 4; i++) await new Promise((ok) => setTimeout(ok, 0)); };
     await esperar();
-    // Al abrir, mira cómo está el agente; los lotes de tests son de Especificaciones y no se muestran acá.
+    // Al abrir, el componente mira cómo está el agente; los pedidos sueltos de otra pantalla no se muestran en esta.
     expect(pedidos[0]).toMatchObject({ url: "/api/agente", metodo: "GET" });
     expect(v.pagina()).not.toContain("De otra pantalla");
+    // Un lote de tests en curso (de Especificaciones) no frena el de archivos: cada tipo manda el suyo.
     // Ya no hay un recuadro del pedido en medio de la página: se suma y se manda desde el panel.
     expect(v.pagina()).not.toContain('data-acc="pedido"');
     // Se suman 4 de los 5: sin dinero.ts.
-    v.tocar({ "data-acc": "sumar", "data-k": "l|" });
-    v.tocar({ "data-acc": "quitar", "data-k": "front|repo-web:src/shared/dinero.ts" });
+    v.tocar({ "data-acc": "pedir", "data-k": "l|" });
+    v.tocar({ "data-acc": "quitar", "data-tipo": "asociar", "data-k": "front|repo-web:src/shared/dinero.ts" });
     let p = v.panel();
     expect(p).toContain('<option value="claude-code" selected>Claude Code</option>');
     expect(p).toContain('<option value="claude-opus-5-5" selected>Opus 5.5 (default)</option>');
@@ -383,9 +389,9 @@ describe("pantalla Sin asociar", () => {
     expect(p).toContain('data-acc="descargar-lista">Download .md</button>');
     // El costo estimado, por archivo y con el modelo elegido (como en «Tests pedidos»).
     expect(p).toContain("Estimated cost: ≈ US$ 0.32 <small>(approx., with Opus 5.5)</small>");
-    // El modelo elegido se recuerda en este navegador.
-    v.cambiar("sa-ag-modelo", "claude-sonnet-5-5");
-    expect(JSON.parse(local.get("flowbrain.sinasociar.modelo")!)).toEqual({ proveedor: "claude-code", modelo: "claude-sonnet-5-5" });
+    // El modelo elegido se recuerda en este navegador, en la clave del pedido.
+    v.cambiar("pedido-modelo", "claude-sonnet-5-5");
+    expect(JSON.parse(local.get("flowbrain.pedido")!).elegido).toEqual({ proveedor: "claude-code", modelo: "claude-sonnet-5-5" });
     expect(v.panel()).toContain("Estimated cost: ≈ US$ 0.12 <small>(approx., with Sonnet 5.5)</small>");
 
     v.tocar({ "data-acc": "pedir-todos" });
@@ -410,7 +416,7 @@ describe("pantalla Sin asociar", () => {
     expect(p).toContain('data-acc="cancelar-lote" data-k="L1">Cancel all</button>');
     // Lo que está en una tanda no se puede quitar, y con un lote en curso no se manda otro ni se vacía.
     expect(p).toContain(">Assigning…</span>");
-    expect(p).toMatch(/data-acc="quitar" data-k="back\|repo-api:src\/Util\/Texto.php"[^>]*disabled/);
+    expect(p).toMatch(/data-acc="quitar" data-tipo="asociar" data-k="back\|repo-api:src\/Util\/Texto.php"[^>]*disabled/);
     expect(p).toMatch(/data-acc="pedir-todos" disabled/);
     expect(p).toMatch(/data-acc="vaciar" disabled/);
     expect(p).toContain("A batch is running");
@@ -432,13 +438,13 @@ describe("pantalla Sin asociar", () => {
     expect(p).toContain("Asocié 2; dejé nota.ts: no sé de quién es.");
     expect(p).toContain('data-acc="recargar">Reload to see the changes</button>');
     expect(p).toContain("<b>2 files</b>");
-    expect(JSON.parse(local.get("flowbrain.sinasociar.pedidos")!).map((e: { k: string }) => e.k)).toEqual(["front|repo-web:src/pagos/nota.ts", "back|repo-api:src/Util/Texto.php"]);
+    expect(JSON.parse(local.get("flowbrain.pedido")!).items.map((e: { k: string }) => e.k)).toEqual(["front|repo-web:src/pagos/nota.ts", "back|repo-api:src/Util/Texto.php"]);
     expect(recargas).toBe(0);
     otra.tocar({ "data-acc": "recargar" });
     expect(recargas).toBe(1);
     otra.tocar({ "data-acc": "cerrar-lote", "data-k": "L1" });
-    expect(otra.panel()).not.toContain("es-lote");
-    expect(JSON.parse(local.get("flowbrain.sinasociar.lotes")!)).toEqual(["L1"]);
+    expect(otra.panel()).not.toContain('<section class="es-lote" data-tipo="asociar"');
+    expect(JSON.parse(local.get("flowbrain.pedido")!).ocultos).toEqual(["L1"]);
 
     // «Proponer funcionalidad nueva» sigue siendo un pedido suelto, junto a su fila, con el modelo elegido.
     otra.tocar({ "data-acc": "nueva-feat", "data-a": "back/repo-api:src/Util/Texto.php" });
@@ -451,7 +457,7 @@ describe("pantalla Sin asociar", () => {
     // En castellano, el mismo panel.
     const es = montar(datos(), { lang: "es", edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, local: new Map() });
     await esperar();
-    es.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    es.tocar({ "data-acc": "pedir", "data-k": "l|" });
     expect(es.panel()).toContain("Pedir todos (5)");
     expect(es.panel()).toContain("En 2 tandas de hasta 30 archivos de un mismo repo");
     expect(es.panel()).toContain("Costo real: US$ 0.30");
@@ -460,7 +466,7 @@ describe("pantalla Sin asociar", () => {
 
     // Con el servidor pero sin agente: lo dice y ofrece el .md.
     const sin = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente: { noDisponible: "Claude Code (claude) was not found on this machine", proveedores: [] } }, fetch: fetch as never });
-    sin.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    sin.tocar({ "data-acc": "pedir", "data-k": "l|" });
     expect(sin.panel()).toContain("There's no agent installed on this machine: Claude Code (claude) was not found on this machine. Download the .md and give it to your agent");
     expect(sin.panel()).toMatch(/data-acc="pedir-todos" disabled/);
     expect(sin.panel()).toContain('data-acc="descargar-lista">Download .md</button>');
@@ -470,7 +476,7 @@ describe("pantalla Sin asociar", () => {
     const d = datos();
     (d as Record<string, unknown>).sinAsociar = Array.from({ length: 85 }, (_, i) => ({ a: `${W}src/x/a${i}.ts`, l: "ts", k: "otros", c: 0 }));
     const v = montar(d, { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: null, proveedores: [{ id: "claude-code", nombre: "Claude Code", modelos: [{ id: "m", nombre: "Otro" }] }] } } });
-    v.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    v.tocar({ "data-acc": "pedir", "data-k": "l|" });
     const p = v.panel();
     expect(p).toContain("Request all (85)");
     expect(p).toContain("In 3 batches");

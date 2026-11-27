@@ -1,0 +1,276 @@
+import { resolveObjectURL } from "node:buffer";
+import { describe, expect, it } from "vitest";
+import { PEDIDO_JS } from "../src/viewer-pedido.js";
+
+/** El pedido al agente, el componente único del visor, con un DOM mínimo y dos tipos de prueba registrados. */
+type Oyente = (ev: { target: Record<string, unknown> }) => void;
+type Item = { tipo: string; k: string; cerebro: string; repo: string | null; datos: Record<string, unknown> };
+interface Pedido {
+  registrar(tipo: string, def: Record<string, unknown>): void;
+  boton(o: { tipo: string; k: string; et: string; claves?: string[] }): string;
+  sumar(tipo: string, k: string): void;
+  esta(tipo: string, k: string): boolean;
+  items(tipo: string): Item[];
+  podar(tipo: string, fn: (x: Item) => Item | null): void;
+  escuchar(f: (ev: string) => void): void;
+}
+
+function montar(opciones: { local?: Map<string, string>; agente?: boolean; fetch?: (url: string, init: { method: string; body?: string }) => Promise<unknown>; lang?: "es" } = {}) {
+  const local = opciones.local ?? new Map<string, string>();
+  const localStorage = { getItem: (k: string) => local.get(k) ?? null, setItem: (k: string, v: string) => void local.set(k, v), removeItem: (k: string) => void local.delete(k) };
+  const elementos = new Map<string, { innerHTML: string; className: string; oyentes: Record<string, Oyente>; addEventListener(t: string, f: Oyente): void }>();
+  const el = (id: string) => {
+    if (!elementos.has(id)) {
+      const e = { innerHTML: "", className: "", oyentes: {} as Record<string, Oyente>, addEventListener(t: string, f: Oyente) { e.oyentes[t] = f; } };
+      elementos.set(id, e);
+    }
+    return elementos.get(id)!;
+  };
+  const bajados: Array<{ nombre: string; texto: () => Promise<string> }> = [];
+  const clases = new Set<string>();
+  const documento = {
+    getElementById: el,
+    body: { appendChild() {}, removeChild() {}, classList: { add: (c: string) => void clases.add(c), remove: (c: string) => void clases.delete(c) } },
+    createElement: () => ({ href: "", download: "", click() { const h = this.href; bajados.push({ nombre: this.download, texto: () => resolveObjectURL(h)!.text() }); } }),
+  };
+  const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  const agente = { noDisponible: null, proveedores: [{ id: "claude-code", nombre: "Claude Code", modelos: [{ id: "opus", nombre: "Opus", porDefecto: true, costoPorReglaUsd: 0.4, costoPorArchivoUsd: 0.1 }, { id: "otro", nombre: "Otro" }] }] };
+  const window = { brainVisor: { esc }, FLOWBRAIN_EDICION: opciones.agente ? { token: "t", agente } : null, brainI18n: opciones.lang ? { lang: opciones.lang } : undefined, brainPedido: null as unknown as Pedido };
+  new Function("window", "document", "localStorage", "fetch", PEDIDO_JS)(window, documento, localStorage, opciones.fetch);
+  const P = window.brainPedido;
+  const boton = (attrs: Record<string, string>) => ({ closest: () => ({ getAttribute: (k: string) => attrs[k] ?? null }) });
+  return {
+    P,
+    panel: () => el("pedido-panel").innerHTML,
+    abierto: () => el("pedido-panel").className === "es-panel abierto" && clases.has("con-pedido"),
+    bandeja: () => el("pedido-bandeja").innerHTML,
+    tocar: (attrs: Record<string, string>) => el(attrs["data-acc"] === "panel" ? "pedido-bandeja" : "pedido-panel").oyentes["click"]!({ target: boton(attrs) }),
+    cambiar: (id: string, value: string) => el("pedido-panel").oyentes["change"]!({ target: { id, value } }),
+    guardado: () => JSON.parse(local.get("flowbrain.pedido")!) as { items: Item[]; panel: boolean; elegido: Record<string, string>; ocultos: string[] },
+    bajados,
+  };
+}
+
+// Dos tipos de prueba: reglas (como Especificaciones) y archivos (como Sin asociar). Cada botón «k» suma sus ítems.
+const regla = (id: string, cerebro = "web"): Item => ({ tipo: "test", k: `${cerebro}/feat|${id}`, cerebro, repo: "repo-web", datos: { regla: id, texto: `La regla ${id}` } });
+const archivo = (ruta: string): Item => ({ tipo: "asociar", k: `web|repo-web:${ruta}`, cerebro: "web", repo: "repo-web", datos: { archivo: `repo-web:${ruta}` } });
+const BOTONES: Record<string, Item[]> = { r1: [regla("r1")], caso: [regla("r1"), regla("r2")], a: [archivo("src/a.ts")], carpeta: [archivo("src/a.ts"), archivo("src/b.ts"), archivo("src/c.ts")] };
+function registrar(P: Pedido) {
+  P.registrar("test", {
+    nombre: "Tests", unidad: ["rule", "rules", "regla", "reglas"],
+    claves: (k: string) => (BOTONES[k] ?? []).filter((x) => x.tipo === "test").map((x) => x.k),
+    items: (k: string) => (BOTONES[k] ?? []).filter((x) => x.tipo === "test"),
+    tarjeta: (it: Item, enTanda: boolean) => `<p>${String(it.datos["texto"])}</p>${enTanda ? "<i>en tanda</i>" : ""}`,
+    resumen: (xs: Item[]) => [`${xs.length} de negocio`],
+    costo: (mo: { costoPorReglaUsd?: number }) => mo.costoPorReglaUsd ?? null,
+    lote: (xs: Item[]) => ({ tipo: "test", reglas: xs.map((x) => ({ regla: x.datos["regla"] })) }),
+    md: { archivo: "tests-pedidos.md", texto: (xs: Item[]) => `# Tests\n${xs.map((x) => `- ${String(x.datos["regla"])}`).join("\n")}\n` },
+    clave: (it: Item) => String(it.datos["regla"]),
+    enTanda: (t: { reglas?: string[] }) => t.reglas ?? [],
+    hechos: (t: { resultados?: string[] }) => t.resultados ?? [],
+    seguimiento: { cuantos: (t: { reglas?: string[] }) => (t.reglas ?? []).length, reindexando: "Reindexando", pidiendo: (n: number) => `Pidiendo ${n} reglas`, resumen: () => "listo" },
+    despues: () => "<p>Resultados de los tests</p>",
+    bandeja: () => "1 to decide",
+  });
+  P.registrar("asociar", {
+    nombre: "Files to assign", unidad: ["file", "files", "archivo", "archivos"],
+    claves: (k: string) => (BOTONES[k] ?? []).filter((x) => x.tipo === "asociar").map((x) => x.k),
+    items: (k: string) => (BOTONES[k] ?? []).filter((x) => x.tipo === "asociar"),
+    tarjeta: (it: Item) => `<code>${String(it.datos["archivo"])}</code>`,
+    costo: (mo: { costoPorArchivoUsd?: number }) => mo.costoPorArchivoUsd ?? null,
+    lote: (xs: Item[]) => ({ tipo: "asociar", archivos: xs.map((x) => ({ archivo: x.datos["archivo"] })) }),
+    md: { archivo: "archivos-pedidos.md", texto: (xs: Item[]) => `# Files\n${xs.map((x) => `- ${String(x.datos["archivo"])}`).join("\n")}\n` },
+    enTanda: () => [], hechos: (t: { asociados?: string[] }) => t.asociados ?? [],
+    seguimiento: { cuantos: () => 1, reindexando: "", pidiendo: (n: number) => `Asociando ${n}`, resumen: () => "ok" },
+  });
+}
+const esperar = async () => { for (let i = 0; i < 6; i++) await new Promise((ok) => setTimeout(ok, 0)); };
+
+describe("el pedido al agente (componente único)", () => {
+  it("una sola lista para todos los tipos: el botón celeste, la bandeja con el contador y el panel agrupado por tipo", () => {
+    const v = montar();
+    registrar(v.P);
+    // Sin nada pedido, la bandeja solo aparece si un tipo tiene algo que decir («1 to decide»); el botón dice lo suyo.
+    expect(v.bandeja()).toContain(">Request · 1 to decide</button>");
+    expect(montar().bandeja()).toBe("");
+    expect(v.P.boton({ tipo: "test", k: "caso", et: "Request the test" })).toContain('data-acc="pedir" data-tipo="test" data-k="caso" data-et="Request the test" aria-pressed="false"');
+    v.P.sumar("test", "r1");
+    // Ya pedido: el mismo botón dice «✔ In the request»; el del caso entero no, porque le falta r2.
+    expect(v.P.boton({ tipo: "test", k: "r1", et: "Request" })).toContain('aria-pressed="true" title="Click to remove it from the request">✔ In the request</button>');
+    expect(v.P.boton({ tipo: "test", k: "caso", et: "Request" })).toContain('aria-pressed="false"');
+    v.P.sumar("asociar", "carpeta");
+    v.P.sumar("test", "caso");
+    expect(v.abierto()).toBe(true);
+    // La bandeja suma todo y lo que agrega cada tipo.
+    expect(v.bandeja()).toBe('<button type="button" class="boton es-pedir" data-acc="panel" aria-expanded="true" aria-controls="pedido-panel">Request (5) · 1 to decide</button>');
+    const p = v.panel();
+    expect(p).toContain("<h2>Request to the agent</h2>");
+    expect(p).toContain("<b>2 rules</b><small>Tests</small><span>2 de negocio</span>");
+    expect(p).toContain("<b>3 files</b><small>Files to assign</small>");
+    expect(p).toContain('<section class="pd-grupo" data-tipo="test"><h3>Tests <span class="chip">2</span></h3>');
+    expect(p).toContain('<code>repo-web:src/b.ts</code></div><button type="button" class="boton chico" data-acc="quitar" data-tipo="asociar" data-k="web|repo-web:src/b.ts"');
+    expect(p).toContain("<p>Resultados de los tests</p>");
+    // Sin servidor: no se manda, se baja el .md.
+    expect(p).toContain("This page is read-only");
+    expect(p).toMatch(/data-acc="pedir-todos" disabled>Request all \(5\)<\/button>/);
+    // Tocar otra vez un botón ya pedido lo saca; «Quitar» saca uno; «Vaciar» todo.
+    v.P.sumar("test", "caso");
+    expect(v.P.items("test")).toEqual([]);
+    v.tocar({ "data-acc": "quitar", "data-tipo": "asociar", "data-k": "web|repo-web:src/b.ts" });
+    expect(v.P.items("asociar").map((x) => x.k)).toEqual(["web|repo-web:src/a.ts", "web|repo-web:src/c.ts"]);
+    expect(v.guardado().items).toHaveLength(2);
+    v.tocar({ "data-acc": "vaciar" });
+    expect(v.panel()).toContain("The list is empty. Click «Request» on a rule, a file or a folder, on any screen");
+    // En castellano.
+    const es = montar({ lang: "es" });
+    registrar(es.P);
+    es.P.sumar("asociar", "a");
+    expect(es.bandeja()).toContain(">Pedido (1) · 1 to decide</button>");
+    expect(es.panel()).toContain("<h2>Pedido al agente</h2>");
+    expect(es.panel()).toContain("<b>1 archivo</b>");
+    expect(es.P.boton({ tipo: "asociar", k: "a", et: "Pedir" })).toContain(">✔ En el pedido</button>");
+  });
+
+  it("dura en una sola clave, sigue al recargar y se abre y se cierra desde la bandeja", () => {
+    const local = new Map<string, string>();
+    const v = montar({ local });
+    registrar(v.P);
+    v.P.sumar("test", "r1");
+    v.P.sumar("asociar", "a");
+    expect([...local.keys()]).toEqual(["flowbrain.pedido"]);
+    expect(v.guardado()).toMatchObject({ panel: true, items: [{ tipo: "test", k: "web/feat|r1", cerebro: "web", repo: "repo-web" }, { tipo: "asociar", k: "web|repo-web:src/a.ts" }] });
+    // Otra página, el mismo navegador: la lista vuelve, aunque el tipo todavía no esté registrado.
+    const w = montar({ local });
+    expect(w.bandeja()).toContain(">Request (2)</button>");
+    registrar(w.P);
+    expect(w.P.esta("test", "web/feat|r1")).toBe(true);
+    w.tocar({ "data-acc": "cerrar-panel" });
+    expect(w.abierto()).toBe(false);
+    expect(w.guardado().panel).toBe(false);
+    w.tocar({ "data-acc": "panel" });
+    expect(w.abierto()).toBe(true);
+    // Podar: la pantalla saca lo que ya no está pendiente (se asoció en otro lado) y pone al día el resto.
+    w.P.podar("asociar", () => null);
+    expect(w.guardado().items.map((x) => x.tipo)).toEqual(["test"]);
+  });
+
+  it("pasa las listas de antes (una por pantalla) a la clave nueva, sin perder nada, y borra las viejas", () => {
+    const local = new Map<string, string>([
+      ["flowbrain.especificaciones.pedidos", JSON.stringify([{ k: "web/feat-pagos|motivo", cerebro: "web", funcionalidad: "feat-pagos", regla: "motivo", tipo: "negocio", texto: "El motivo", archivos: [], repo: "repo-web", linea: "- Brain web…" }, { roto: true }])],
+      ["flowbrain.especificaciones.panel", "false"],
+      ["flowbrain.especificaciones.agente", JSON.stringify({ proveedor: "claude-code", modelo: "otro" })],
+      ["flowbrain.especificaciones.lotes", JSON.stringify(["L0", "oculto:L1"])],
+      ["flowbrain.sinasociar.pedidos", JSON.stringify([{ k: "web|repo-web:src/a.ts", cerebro: "web", archivo: "repo-web:src/a.ts", nombre: "a.ts", clase: "sinpista", linea: "- repo-web:src/a.ts" }])],
+      ["flowbrain.sinasociar.panel", "true"],
+      ["flowbrain.sinasociar.lotes", JSON.stringify(["L2"])],
+      ["flowbrain.especificaciones.cerebros", JSON.stringify(["web"])],
+    ]);
+    const v = montar({ local, agente: true });
+    const g = v.guardado();
+    expect(g.items).toEqual([
+      { tipo: "test", k: "web/feat-pagos|motivo", cerebro: "web", repo: "repo-web", datos: expect.objectContaining({ regla: "motivo", texto: "El motivo" }) },
+      { tipo: "asociar", k: "web|repo-web:src/a.ts", cerebro: "web", repo: "repo-web", datos: expect.objectContaining({ nombre: "a.ts" }) },
+    ]);
+    expect(g.panel).toBe(true);
+    expect(g.elegido).toEqual({ proveedor: "claude-code", modelo: "otro" });
+    expect(g.ocultos).toEqual(["L1", "L2"]);
+    // Las claves del pedido de antes se borran; lo que no es del pedido (los cerebros elegidos) queda.
+    expect([...local.keys()].sort()).toEqual(["flowbrain.especificaciones.cerebros", "flowbrain.pedido"]);
+    expect(v.bandeja()).toContain(">Request (2)</button>");
+    // Una vez migrado, no se vuelve a migrar.
+    local.set("flowbrain.sinasociar.pedidos", JSON.stringify([{ k: "otro", linea: "x" }]));
+    expect(montar({ local }).guardado().items).toHaveLength(2);
+  });
+
+  it("con agente: estima el costo total, Pedir todos manda un lote por tipo y sigue cada uno; lo resuelto sale de la lista", async () => {
+    const llamadas: Array<{ url: string; cuerpo: Record<string, any> | null }> = [];
+    const estado: { trabajos: Array<Record<string, unknown>>; lotes: Array<Record<string, unknown>> } = { trabajos: [], lotes: [] };
+    const fetch = (url: string, init: { method: string; body?: string }) => {
+      const cuerpo = init.body ? (JSON.parse(init.body) as Record<string, any>) : null;
+      llamadas.push({ url, cuerpo });
+      const j = url === "/api/agente/lote" ? { lote: { id: cuerpo!["tipo"] === "test" ? "LT" : "LA", tipo: cuerpo!["tipo"], estado: "corriendo" }, trabajos: [] } : url === "/api/agente" ? estado : {};
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(j) });
+    };
+    const local = new Map<string, string>();
+    const v = montar({ agente: true, fetch, local });
+    registrar(v.P);
+    const avisos: string[] = [];
+    v.P.escuchar((ev) => avisos.push(ev));
+    await esperar();
+    v.P.sumar("test", "caso");
+    v.P.sumar("asociar", "a");
+    let p = v.panel();
+    expect(p).toContain('<select id="pedido-modelo">');
+    // Por tipo y en total: 2 reglas a 0.40 y 1 archivo a 0.10.
+    expect(p).toContain("Estimated cost: ≈ US$ 0.80 <small>(approx., with Opus)</small>");
+    expect(p).toContain("Estimated cost: ≈ US$ 0.10 <small>(approx., with Opus)</small>");
+    expect(p).toContain("<b>Total: 3 items</b><span>Estimated cost: ≈ US$ 0.90</span>");
+    expect(p).toContain('data-acc="pedir-todos">Request all (3)</button>');
+    // Un modelo sin estimación lo dice, y el total avisa que falta.
+    v.cambiar("pedido-modelo", "otro");
+    expect(v.guardado().elegido).toEqual({ proveedor: "claude-code", modelo: "otro" });
+    expect(avisos).toContain("elegido");
+    expect(v.panel()).toContain("no estimate for this model");
+    expect(v.panel()).toContain(" (plus what has no estimate)");
+    v.cambiar("pedido-modelo", "opus");
+
+    v.tocar({ "data-acc": "pedir-todos" });
+    estado.lotes = [{ id: "LT", tipo: "test", estado: "corriendo" }, { id: "LA", tipo: "asociar", estado: "corriendo" }];
+    estado.trabajos = [
+      { id: "t1", lote: "LT", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: ["Corre los tests"], reglas: ["r1", "r2"] },
+      { id: "a1", lote: "LA", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: [] },
+    ];
+    await esperar();
+    const lotes = llamadas.filter((x) => x.url === "/api/agente/lote").map((x) => x.cuerpo);
+    expect(lotes).toEqual([
+      { tipo: "test", reglas: [{ regla: "r1" }, { regla: "r2" }], proveedor: "claude-code", modelo: "opus" },
+      { tipo: "asociar", archivos: [{ archivo: "repo-web:src/a.ts" }], proveedor: "claude-code", modelo: "opus" },
+    ]);
+    p = v.panel();
+    expect(p).toContain('<section class="es-lote" data-tipo="test"><div class="es-cab"><h3>Pidiendo 2 reglas</h3>');
+    expect(p).toContain("<h3>Asociando 1</h3>");
+    expect(p).toContain("Corre los tests");
+    // Lo que va en una tanda no se quita; con los dos lotes en curso no se manda otro.
+    expect(p).toContain("<i>en tanda</i>");
+    expect(p).toMatch(/data-acc="quitar" data-tipo="test" data-k="web\/feat\|r1"[^>]*disabled/);
+    expect(p).toMatch(/data-acc="pedir-todos" disabled/);
+    expect(v.bandeja()).toContain("Request (3) · running");
+
+    // Terminan: r1 se resolvió, r2 no volvió; el archivo se asoció.
+    estado.lotes = [{ id: "LT", tipo: "test", estado: "terminado" }, { id: "LA", tipo: "asociar", estado: "terminado" }];
+    estado.trabajos = [{ ...estado.trabajos[0], estado: "terminado", costoUsd: 0.5, resultados: ["r1"] }, { ...estado.trabajos[1], estado: "terminado", asociados: ["web|repo-web:src/a.ts"] }];
+    v.tocar({ "data-acc": "cancelar-lote", "data-k": "LT" });
+    await esperar();
+    expect(llamadas.find((x) => x.url === "/api/agente/lote/cancelar")!.cuerpo).toEqual({ id: "LT" });
+    p = v.panel();
+    expect(p).toContain("Finished · Tests");
+    expect(p).toContain("Actual cost: US$ 0.50");
+    expect(v.P.items("test").map((x) => x.k)).toEqual(["web/feat|r2"]);
+    expect(v.P.items("asociar")).toEqual([]);
+    expect(avisos).toContain("trabajos");
+    expect(avisos).toContain("lista");
+    // Lo que queda se puede volver a pedir; cerrar un resumen lo oculta (y se recuerda).
+    expect(p).toContain('data-acc="pedir-todos">Request all (1)</button>');
+    v.tocar({ "data-acc": "cerrar-lote", "data-k": "LT" });
+    expect(v.panel()).not.toContain('data-tipo="test"><div class="es-cab"><h3>Finished');
+    expect(v.guardado().ocultos).toEqual(["LT"]);
+    // Una tanda limpia la lista una sola vez: si se vuelve a pedir r1, queda.
+    v.P.sumar("test", "r1");
+    v.P.sumar("test", "r1");
+    v.P.sumar("test", "r1");
+    await esperar();
+    expect(v.P.esta("test", "web/feat|r1")).toBe(true);
+  });
+
+  it("el .md lleva cada tipo; con un solo tipo, su archivo", async () => {
+    const v = montar();
+    registrar(v.P);
+    v.P.sumar("asociar", "a");
+    v.tocar({ "data-acc": "descargar-lista" });
+    expect(v.bajados[0]!.nombre).toBe("archivos-pedidos.md");
+    v.P.sumar("test", "r1");
+    v.tocar({ "data-acc": "descargar-lista" });
+    expect(v.bajados[1]!.nombre).toBe("flowbrain-request.md");
+    expect(await v.bajados[1]!.texto()).toBe("# Tests\n- r1\n\n---\n\n# Files\n- repo-web:src/a.ts\n");
+  });
+});

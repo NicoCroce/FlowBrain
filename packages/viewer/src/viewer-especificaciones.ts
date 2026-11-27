@@ -15,11 +15,12 @@ export const ESPECIFICACIONES_JS = String.raw`
   var CEREBROS = D.cerebros || [];
   var FICHAS = D.funcionalidades || [];
   var ED = window.FLOWBRAIN_EDICION || null;
-  // Con el visor servido y Claude Code instalado, los pedidos se mandan directo al agente; si no, se copian.
-  var AG = !!(ED && ED.agente && !ED.agente.noDisponible);
-  // Los proveedores de agente instalados en la máquina, cada uno con sus modelos (el marcado por defecto, porDefecto).
-  var PROVS = AG && ED.agente.proveedores ? ED.agente.proveedores : [];
-  var TRABAJOS = [], LOTES = [], ESPERA = null;
+  // El pedido al agente es el componente único del visor (viewer-pedido): la lista, el panel, el lote y el estado del
+  // agente. Con el visor servido y un agente instalado, los pedidos se mandan directo; si no, se copian.
+  var PD = window.brainPedido;
+  var AG = PD.agente;
+  // TRABAJOS: lo que corre el agente (lo trae el componente para todo el visor).
+  var TRABAJOS = [];
   // Idioma (dec. 214): L(inglés, castellano) al pintar; sin window.brainI18n (los tests), inglés.
   var L = function (en, es) { return window.brainI18n && window.brainI18n.lang === "es" ? es : en; };
   var num = function (n) { return Number(n).toLocaleString(window.brainI18n && window.brainI18n.lang === "es" ? "es" : "en"); };
@@ -249,8 +250,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     PEDIDOS[k] = [tipo, items];
     // Pedir un test no manda nada: suma la regla a la lista de «Tests pedidos» (celeste, la acción de la pantalla).
     if (tipo === "test") {
-      var yaEsta = items.length > 0 && items.every(function (it) { return enLista(it[1].id + "|" + it[0].id); });
-      return B().botonSumar({ k: k, et: etiqueta, ya: yaEsta, textoYa: TEXTOS_SUMAR.textoYa, titulo: TEXTOS_SUMAR.titulo, tituloYa: TEXTOS_SUMAR.tituloYa });
+      return PD.boton({ tipo: "test", k: k, et: etiqueta });
     }
     if (AG) etiqueta = etiqueta.replace(/^Copiar pedido/, "Pedírselo al agente").replace(/^Copy request/, "Send request");
     // Pedir un test es la acción de la pantalla: va en celeste, para encontrarla de un vistazo.
@@ -504,10 +504,9 @@ export const ESPECIFICACIONES_JS = String.raw`
       ? '<p class="aviso">' + L("There are no use cases or written rules yet", "Todavía no hay casos de uso ni reglas escritas") + (SEL.length ? L(" in ", " en ") + esc(SEL.join(", ")) : "") + L(". They're saved in each feature's page and the agent deduces them: copy the request below and paste it, or run <code>/flowbrain-specs</code>.", ". Se guardan en la página de cada funcionalidad y las deduce el agente: copiá el pedido de abajo y pegáselo, o corré <code>/flowbrain-specs</code>.") + "</p>"
       : "";
     PEDIDOS = {};
-    var cabeza = '<div class="es-titulo"><h1>' + L("Specifications", "Especificaciones") + '</h1><span id="es-bandeja">' + htmlBandeja() + "</span></div>" + COMO() + aviso() + (CON_FICHAS.length > 1 ? selectorDeCerebros() : "") + queHacer() +
+    var cabeza = '<div class="es-titulo"><h1>' + L("Specifications", "Especificaciones") + "</h1></div>" + COMO() + aviso() + (CON_FICHAS.length > 1 ? selectorDeCerebros() : "") + queHacer() +
       '<section id="es-agente" class="' + (AG && sueltos().length ? "es-agente" : "") + '" aria-live="polite">' + htmlAgente() + "</section>" + (hay ? fl.html() + (todosLosCasos().length ? "" : '<p class="fd-nota">' + L("There are no use cases yet: the numbers count rules.", "Todavía no hay casos de uso: los números cuentan reglas.") + "</p>") : "") + nada;
-    raiz.innerHTML = cabeza + '<div id="es-lista">' + lista() + '</div>' + B().aside("es-panel", PANEL, L("Requested tests", "Tests pedidos"), htmlPanel());
-    if (raiz.classList) { if (PANEL) raiz.classList.add("es-con-panel"); else raiz.classList.remove("es-con-panel"); }
+    raiz.innerHTML = cabeza + '<div id="es-lista">' + lista() + "</div>";
     if (FOCO) { var s = elem("es-" + FOCO); FOCO = null; if (s && s.scrollIntoView) s.scrollIntoView(); }
   }
   function refrescar(todo) { guardar(); if (todo) pintarTodo(); else pintarLista(); }
@@ -545,68 +544,34 @@ export const ESPECIFICACIONES_JS = String.raw`
     });
   }
 
-  // ---------- Tests pedidos: la lista, el panel lateral y el lote ----------
-  // «Pedir el test» (de una regla, de la fila de un cerebro o de un caso) suma reglas a la lista; nada se manda hasta
-  // «Pedir todos». La lista se guarda en este navegador (localStorage) y sobrevive a recargar la página.
-  var CLAVE_LISTA = "flowbrain.especificaciones.pedidos", CLAVE_AGENTE = "flowbrain.especificaciones.agente", CLAVE_PANEL = "flowbrain.especificaciones.panel", CLAVE_VISTOS = "flowbrain.especificaciones.lotes";
-  var LISTA = [], PANEL = false, ELEGIDO = { proveedor: "", modelo: "" }, VISTOS = [], DECIDIDAS = {}, PANEL_ERROR = "", PANEL_NOTA = "", PIDIENDO = false, OCULTA_ESTA_VEZ = {};
-  var leerLocal = function (k, por) { try { if (typeof localStorage !== "undefined") { var v = localStorage.getItem(k); if (v !== null) return JSON.parse(v); } } catch (e) { /* sin almacenamiento */ } return por; };
-  var guardarLocal = function (k, v) { try { if (typeof localStorage !== "undefined") localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sin almacenamiento */ } };
-  LISTA = leerLocal(CLAVE_LISTA, []); if (!Array.isArray(LISTA)) LISTA = [];
-  LISTA = LISTA.filter(function (x) { return x && typeof x.k === "string" && typeof x.linea === "string"; });
-  PANEL = leerLocal(CLAVE_PANEL, false) === true && LISTA.length > 0;
-  VISTOS = leerLocal(CLAVE_VISTOS, []); if (!Array.isArray(VISTOS)) VISTOS = [];
-  var sel0 = leerLocal(CLAVE_AGENTE, {}); if (sel0 && typeof sel0 === "object") ELEGIDO = { proveedor: sel0.proveedor || "", modelo: sel0.modelo || "" };
-  var guardarLista = function () { guardarLocal(CLAVE_LISTA, LISTA); guardarLocal(CLAVE_PANEL, PANEL); };
-  var enLista = function (k) { return LISTA.some(function (x) { return x.k === k; }); };
+  // ---------- Tests pedidos: el tipo «test» del pedido al agente (viewer-pedido, dec. 229) ----------
+  // «Pedir el test» (de una regla, de la fila de un cerebro o de un caso) suma reglas al pedido; nada se manda hasta
+  // «Pedir todos». La lista, el panel, el lote y su avance son del componente; acá, qué es una regla y qué volvió.
+  // DECIDIDAS: lo que se decidió de cada hallazgo sin recargar. CORRIGIENDO: mandando «Pedir la corrección».
+  var DECIDIDAS = {}, CORRIGIENDO = false;
   var claveDeEntrada = function (x) { return x.cerebro + "|" + x.funcionalidad + "|" + x.regla; };
-  // El panel del lote (selector, tandas, resumen y sus botones) es el compartido con Sin asociar (viewer-lote).
-  var B = function () { return window.brainLote; };
-  var dolares = function (n) { return B().dolares(n); };
 
   // La regla como se la lee el agente (cerebro, funcionalidad, caso, id, tipo, texto y el archivo que la cumple): solo en inglés.
   function lineaDeRegla(x) {
     return "- Brain " + x.cerebro + ", " + x.funcionalidad + " (" + x.funcNombre + ")" + (x.caso ? ", use case " + x.caso + " (" + x.casoNombre + ")" : "") + ", rule " + x.regla + " [" + x.tipo + "]: " + x.texto +
       (x.archivos.length ? " Fulfilled by: " + x.archivos.join(", ") + "." : " It doesn't say which file fulfills it: find it first.");
   }
+  // El ítem del pedido: { tipo: "test", k: "<ficha>|<regla>", cerebro, repo, datos: la regla como la muestra la tarjeta }.
   function entradaDe(e, f) {
     var C = casoDeRegla(f, e), archivos = e.archivos.map(function (a) { return local(a, f.id); }), repo = archivos.length ? archivos[0].split(":")[0] : "";
     var x = { k: f.id + "|" + e.id, cerebro: cerebroDe(f.id), funcionalidad: local(f.id, f.id), funcNombre: nombre(f.id), regla: e.id, tipo: e.tipo, texto: e.texto, caso: C ? C.id : "", casoNombre: C ? C.nombre : "", archivos: archivos, repo: /^repo-/.test(repo) ? repo : null };
     x.linea = lineaDeRegla(x);
-    return x;
+    return { tipo: "test", k: x.k, cerebro: x.cerebro, repo: x.repo, datos: x };
   }
   // Las de negocio primero: son las que más cuesta que se rompan sin aviso.
-  var ordenadas = function () { return LISTA.slice().sort(function (a, b) { return (a.tipo === "negocio" ? 0 : 1) - (b.tipo === "negocio" ? 0 : 1); }); };
-  // Lo que dice el botón celeste (compartido con Sin asociar, viewer-lote): getters, en el idioma de ese momento.
-  var TEXTOS_SUMAR = {
-    get textoYa() { return L("✔ In requested tests", "✔ En tests pedidos"); },
-    get titulo() { return L("Adds the rule to the requested tests list: nothing is sent until «Request all»", "Suma la regla a la lista de tests pedidos: no se manda nada hasta «Pedir todos»"); },
-    get tituloYa() { return L("Click to remove it from the list", "Tocalo para sacarla de la lista"); }
-  };
-  function botonesDePedido() {
-    B().marcarBotones(raiz, function (k) {
-      var p = PEDIDOS[k];
-      return p ? p[1].length > 0 && p[1].every(function (it) { return enLista(it[1].id + "|" + it[0].id); }) : null;
-    }, TEXTOS_SUMAR);
-  }
-  function sumarOQuitar(items) {
-    var todas = items.length > 0 && items.every(function (it) { return enLista(it[1].id + "|" + it[0].id); });
-    if (todas) {
-      var ks = items.map(function (it) { return it[1].id + "|" + it[0].id; });
-      LISTA = LISTA.filter(function (x) { return ks.indexOf(x.k) < 0; });
-    } else {
-      items.forEach(function (it) { if (!enLista(it[1].id + "|" + it[0].id)) LISTA.push(entradaDe(it[0], it[1])); });
-      PANEL = true;
-    }
-    guardarLista();
-  }
-  var proveedorElegido = function () { return B().proveedor(PROVS, ELEGIDO); };
-  var modeloElegido = function () { return B().modelo(PROVS, ELEGIDO); };
+  var negocioPrimero = function (a, b) { return (a.tipo === "negocio" ? 0 : 1) - (b.tipo === "negocio" ? 0 : 1); };
+  // Las reglas de un botón «Pedir el test»: las de su regla, la fila de un cerebro o el caso entero.
+  var reglasDelBoton = function (k) { var p = PEDIDOS[k]; return p && p[0] === "test" ? p[1] : []; };
 
   // ---- el .md: lo que se le pasa a cualquier agente con acceso al repo ----
   // Son instrucciones para el modelo, como la guía que trae (FLOWBRAIN_GUIA_TESTS): solo en inglés.
-  function mdDeLista() {
-    var xs = ordenadas(), porRepo = {}, orden = [], guia = String(window.FLOWBRAIN_GUIA_TESTS || "").replace(/^---\n[\s\S]*?\n---\n/, "");
+  function mdDeLista(xs) {
+    var porRepo = {}, orden = [], guia = String(window.FLOWBRAIN_GUIA_TESTS || "").replace(/^---\n[\s\S]*?\n---\n/, "");
     xs.forEach(function (x) { var r = x.repo || "brain " + x.cerebro; if (!porRepo[r]) { porRepo[r] = []; orden.push(r); } porRepo[r].push(x); });
     var cerebros = []; xs.forEach(function (x) { if (cerebros.indexOf(x.cerebro) < 0) cerebros.push(x.cerebro); });
     var neg = xs.filter(function (x) { return x.tipo === "negocio"; }).length;
@@ -627,7 +592,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       "4. Don't modify the product code or leave a failing test in the repo. Don't commit: the changes stay for review.", "");
     return out.join("\n");
   }
-  var descargar = function (archivo, texto) { return B().descargar(archivo, texto, document); };
+  var descargar = function (archivo, texto) { return PD.descargar(archivo, texto); };
 
 
   // ---- lo que quedó sin resolver con un test: hallazgos (c y d) ----
@@ -636,7 +601,7 @@ export const ESPECIFICACIONES_JS = String.raw`
   function hallazgos() {
     var por = {}, orden = [];
     FICHAS.forEach(function (f) { specs(f).forEach(function (e) { if (e.hallazgo) { var k = f.id + "|" + e.id; por[k] = { k: k, f: f, e: e, h: e.hallazgo }; orden.push(k); } }); });
-    var LT = loteActual();
+    var LT = PD.lote("test");
     if (LT) TRABAJOS.forEach(function (t) {
       if (t.lote !== LT.id) return;
       (t.resultados || []).forEach(function (r) {
@@ -677,73 +642,32 @@ export const ESPECIFICACIONES_JS = String.raw`
   function decidir(k, decision) {
     var hs = hallazgos(), x = null; hs.forEach(function (y) { if (y.k === k) x = y; });
     if (!x || ocupado || !ED) return;
-    ocupado = true; PANEL_ERROR = ""; PANEL_NOTA = L("Saving the decision in the page of " + cerebroDe(x.f.id) + "…", "Guardando la decisión en la página de " + cerebroDe(x.f.id) + "…"); pintarPanel();
+    ocupado = true; PD.aviso({ nota: L("Saving the decision in the page of " + cerebroDe(x.f.id) + "…", "Guardando la decisión en la página de " + cerebroDe(x.f.id) + "…") });
     pedir({ tipo: "decision", cerebro: cerebroDe(x.f.id), funcionalidad: local(x.f.id, x.f.id), id: x.e.id, decision: decision || null }).then(function () {
-      ocupado = false; PANEL_NOTA = ""; DECIDIDAS[k] = decision || "";
+      ocupado = false; DECIDIDAS[k] = decision || "";
       if (x.e.hallazgo) { if (decision) x.e.hallazgo.decision = decision; else delete x.e.hallazgo.decision; }
-      pintarPanel();
-    }).catch(function (err) { ocupado = false; PANEL_NOTA = ""; PANEL_ERROR = err.message; pintarPanel(); });
+      PD.aviso(null);
+    }).catch(function (err) { ocupado = false; PD.aviso({ error: err.message }); });
   }
   function corregirReglas() {
     var hs = reglaMal(hallazgos());
-    if (!hs.length || !AG || PIDIENDO) return;
+    if (!hs.length || !AG || CORRIGIENDO) return;
     var cerebros = []; hs.forEach(function (x) { var c = cerebroDe(x.f.id); if (cerebros.indexOf(c) < 0) cerebros.push(c); });
     var texto = ["Fix the text of these FlowBrain rules: the agent that tried to test them found that the code does something else, and a person decided the rule is wrong, not the code. Do it " + GUIA + ". Fix the text of each rule (or delete it, if it no longer holds) according to what the code does today and delete its finding (hallazgo). Don't change the product code.", ""];
     hs.forEach(function (x) { texto.push("- Brain " + cerebroDe(x.f.id) + ", " + local(x.f.id, x.f.id) + ", rule " + x.e.id + ": «" + x.e.texto + "». The code today: " + (x.h.hoy || x.h.cambio)); });
-    PIDIENDO = true; PANEL_ERROR = ""; pintarPanel();
-    pedirAgente("/api/agente", { tipo: "corregir", pedido: texto.join("\n"), etiqueta: L("Fix " + plural(hs.length, "rule", "rules") + " (the rule is wrong)", "Corregir " + plural(hs.length, "regla", "reglas") + " (la regla está mal)"), cerebros: cerebros, proveedor: proveedorElegido().id, modelo: modeloElegido().id }).then(function () {
-      PIDIENDO = false; traerTrabajos();
-    }).catch(function (err) { PIDIENDO = false; PANEL_ERROR = err.message; pintarPanel(); });
+    CORRIGIENDO = true; PD.aviso(null);
+    PD.llamar("/api/agente", { tipo: "corregir", pedido: texto.join("\n"), etiqueta: L("Fix " + plural(hs.length, "rule", "rules") + " (the rule is wrong)", "Corregir " + plural(hs.length, "regla", "reglas") + " (la regla está mal)"), cerebros: cerebros, proveedor: PD.proveedor().id, modelo: PD.modelo().id }).then(function () {
+      CORRIGIENDO = false; PD.actualizar();
+    }).catch(function (err) { CORRIGIENDO = false; PD.aviso({ error: err.message }); });
   }
 
-  // ---- el lote ----
-  var vivoT = function (t) { return B().vivo(t); };
-  function loteActual() {
-    for (var i = 0; i < LOTES.length; i++) if (!OCULTA_ESTA_VEZ[LOTES[i].id] && VISTOS.indexOf("oculto:" + LOTES[i].id) < 0) return LOTES[i];
-    return null;
-  }
-  var tandasDe = function (LT) { return B().tandas(LT, TRABAJOS); };
-  var loteVivo = function (LT) { return B().loteVivo(LT, TRABAJOS); };
-  function pedirTodos() {
-    var xs = ordenadas(), pr = proveedorElegido(), mo = modeloElegido();
-    if (!xs.length || !AG || !pr || !mo || PIDIENDO || loteVivo(loteActual())) return;
-    PIDIENDO = true; PANEL_ERROR = ""; pintarPanel();
-    pedirAgente("/api/agente/lote", { proveedor: pr.id, modelo: mo.id, reglas: xs.map(function (x) { return { cerebro: x.cerebro, funcionalidad: x.funcionalidad, regla: x.regla, repo: x.repo, linea: lineaDeRegla(x) }; }) }).then(function (j) {
-      PIDIENDO = false; if (j && j.lote) OCULTA_ESTA_VEZ = {}; traerTrabajos();
-    }).catch(function (err) { PIDIENDO = false; PANEL_ERROR = err.message; pintarPanel(); });
-  }
-  // Lo que ya tiene resultado sale de la lista: pasó a Verificadas, Para decidir o Para desarrollo. Lo que no volvió, queda para reintentar.
-  function limpiarListaDelLote(LT) {
-    if (VISTOS.indexOf(LT.id) >= 0) return;
-    var hechas = {};
-    tandasDe(LT).forEach(function (t) { (t.resultados || []).forEach(function (r) { hechas[claveDeEntrada(r)] = true; }); });
-    VISTOS.push(LT.id); guardarLocal(CLAVE_VISTOS, VISTOS.slice(-30));
-    var antes = LISTA.length;
-    LISTA = LISTA.filter(function (x) { return !hechas[claveDeEntrada(x)]; });
-    if (LISTA.length !== antes) guardarLista();
-  }
-  function resumenDeLote(LT, ts) {
+  // ---- lo que volvió del lote ----
+  function resumenDeLote(ts) {
     var rs = []; ts.forEach(function (t) { rs = rs.concat(t.resultados || []); });
     var n = function (r) { return rs.filter(function (x) { return x.resultado === r; }).length; };
     var sin = 0; ts.forEach(function (t) { sin += (t.sinResultado || []).length; });
     var costo = 0; ts.forEach(function (t) { costo += t.costoUsd || 0; });
     return { rs: rs, a: n("a"), b: n("b"), c: n("c"), d: n("d"), sin: sin, costo: costo, fallaron: ts.filter(function (t) { return t.estado === "fallo"; }).length, cancelaron: ts.filter(function (t) { return t.estado === "cancelado"; }).length };
-  }
-  function htmlLote() {
-    var LT = loteActual(); if (!LT) return "";
-    return B().html(LT, tandasDe(LT), {
-      unidad: ["rule", "rules", "regla", "reglas"],
-      cuantos: function (t) { return (t.reglas || []).length; },
-      reindexando: L("Updating the index so the new tests count…", "Actualizando el índice para que los tests nuevos cuenten…"),
-      pidiendo: function (n, repos) { return L("Requesting " + plural(n, "rule", "rules") + " in " + plural(repos, "repo", "repos") + " at once", "Pidiendo " + plural(n, "regla", "reglas") + " en " + plural(repos, "repo", "repos") + " a la vez"); },
-      extraTanda: function (t) { return (t.sinResultado || []).length ? '<p class="fd-nota">' + L("No result: ", "Sin resultado: ") + pl(t.sinResultado.length, "rule", "rules", "regla", "reglas") + L(". They stay in the list to request them again. ", ". Siguen en la lista para pedirlas de nuevo. ") + esc(t.sinResultado[0].motivo) + "</p>" : ""; },
-      resumen: function (ts) {
-        var R = resumenDeLote(LT, ts);
-        return L(R.a + " verified with a new test · " + R.b + " already covered · " + R.c + " with code that doesn't fulfill it · " + R.d + " that can't be tested without touching code",
-          R.a + " verificadas con un test nuevo · " + R.b + " ya cubiertas · " + R.c + " con el código que no la cumple · " + R.d + " que no se pueden testear sin tocar código") +
-          (R.sin ? " · " + L(R.sin + " without a result", R.sin + " sin resultado") : "");
-      }
-    });
   }
   function htmlHallazgo(x, conBotones) {
     var h = x.h, ca = casoDeRegla(x.f, x.e), d = x.decision;
@@ -757,7 +681,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       (h.test ? '<details class="tf"><summary>' + L("The test that proves it", "El test que lo demuestra") + '</summary><pre class="es-test">' + esc(h.test) + "</pre></details>" : "") + botones + "</li>";
   }
   function htmlResultados() {
-    var hs = hallazgos(), LT = loteActual(), ts = LT ? tandasDe(LT) : [], R = LT ? resumenDeLote(LT, ts) : null;
+    var hs = hallazgos(), LT = PD.lote("test"), ts = LT ? PD.tandas(LT) : [], R = LT ? resumenDeLote(ts) : null;
     var verif = R ? R.rs.filter(function (r) { return r.resultado === "a" || r.resultado === "b"; }) : [];
     var dec = paraDecidir(hs), mal = reglaMal(hs), des = paraDesarrollo(hs), out = "";
     var seccion = function (titulo, n, ayuda, cuerpo, acc) { return '<section class="es-res"><div class="es-cab"><h3>' + titulo + ' <span class="chip">' + n + "</span></h3>" + (acc || "") + "</div>" + (ayuda ? "<small>" + ayuda + "</small>" : "") + cuerpo + "</section>"; };
@@ -765,73 +689,76 @@ export const ESPECIFICACIONES_JS = String.raw`
       verif.length ? '<ul class="lista">' + verif.map(function (r) { var par = buscarRegla(claveDeFicha(r.cerebro, r.funcionalidad, r.regla)); return '<li class="es-verif"><p class="es-texto">' + esc(par ? par[0].texto : r.regla) + ' <span class="chip">' + (r.resultado === "a" ? L("New test", "Test nuevo") : L("Already had a test", "Ya tenía test")) + "</span></p><small>" + (r.tests || []).map(function (t) { return "<code>" + esc(t) + "</code>"; }).join(" ") + "</small></li>"; }).join("") + "</ul>" : "<p><small>" + L("None in this request.", "Ninguna en este pedido.") + "</small></p>");
     if (dec.length || R) out += seccion(L("To decide", "Para decidir"), dec.length, L("The code doesn't fulfill the rule. Is the rule wrong or is the code wrong?", "El código no cumple la regla. ¿Está mal la regla o está mal el código?"), dec.length ? '<ul class="lista">' + dec.map(function (x) { return htmlHallazgo(x, true); }).join("") + "</ul>" : "<p><small>" + L("Nothing to decide.", "Nada por decidir.") + "</small></p>");
     if (mal.length) out += seccion(L("The rule gets fixed", "La regla se corrige"), mal.length, L("You said the rule is wrong: the agent fixes it with <code>/flowbrain-specs</code>.", "Dijiste que la regla está mal: la corrige el agente con <code>/flowbrain-specs</code>."), '<ul class="lista">' + mal.map(function (x) { return htmlHallazgo(x, false); }).join("") + "</ul>",
-      AG ? '<button type="button" class="boton" data-acc="corregir-reglas"' + (PIDIENDO ? " disabled" : "") + ">" + L("Request the fix", "Pedir la corrección") + "</button>" : "");
+      AG ? '<button type="button" class="boton" data-acc="corregir-reglas"' + (CORRIGIENDO ? " disabled" : "") + ">" + L("Request the fix", "Pedir la corrección") + "</button>" : "");
     if (des.length || R) out += seccion(L("For development", "Para desarrollo"), des.length, L("The code is wrong, or it can't be tested without touching it. The agent never changes the product code.", "El código está mal, o no se puede testear sin tocarlo. El agente nunca cambia el código del producto."), des.length ? '<ul class="lista">' + des.map(function (x) { return htmlHallazgo(x, false); }).join("") + "</ul>" : "<p><small>" + L("Nothing for development.", "Nada para desarrollo.") + "</small></p>",
       des.length ? '<button type="button" class="boton" data-acc="descargar-desarrollo">' + L("Download .md for tickets", "Descargar .md para tickets") + "</button>" : "");
     return out;
   }
-  function htmlPanel() {
-    var xs = ordenadas(), neg = xs.filter(function (x) { return x.tipo === "negocio"; }).length, pr = proveedorElegido(), mo = modeloElegido(), LT = loteActual(), vivo = loteVivo(LT);
-    var enTanda = {}; if (vivo) tandasDe(LT).forEach(function (t) { if (vivoT(t)) (t.reglas || []).forEach(function (r) { enTanda[claveDeEntrada(r)] = true; }); });
-    var estimado = mo ? xs.length * mo.costoPorReglaUsd : 0;
-    var selector = AG && pr
-      ? B().selector(PROVS, ELEGIDO, "es", vivo)
-      : '<p class="fd-nota">' + (ED ? L("There's no agent installed on this machine", "No hay ningún agente instalado en esta máquina") + (ED.agente && ED.agente.noDisponible ? ": " + esc(ED.agente.noDisponible) : "") + "." : L("This page is read-only: it can't send the requests.", "Esta página es de solo lectura: no puede mandar los pedidos.")) + L(" Download the .md and give it to your agent (with access to the repo, not a web chat).", " Descargá el .md y dáselo a tu agente (con acceso al repo, no un chat web).") + "</p>";
-    var totales = '<div class="es-totales"><b>' + pl(xs.length, "rule", "rules", "regla", "reglas") + "</b><span>" + L(neg + " business (they go first) · " + (xs.length - neg) + " screen", neg + " de negocio (van primero) · " + (xs.length - neg) + " de pantalla") + "</span>" +
-      (AG && mo ? "<span>" + L("Estimated cost: ", "Costo estimado: ") + (xs.length ? "≈ " + dolares(estimado) : dolares(0)) + " <small>(" + L("approx., with ", "aprox., con ") + esc(mo.nombre) + ")</small></span>" : "") + "</div>";
-    // El panel es el compartido con Sin asociar (viewer-lote): acá van las reglas, sus botones y los resultados.
-    return B().panel({
-      titulo: L("Requested tests", "Tests pedidos"), selector: selector, totales: totales,
-      principal: ["pedir-todos", PIDIENDO ? L("Sending…", "Mandando…") : L("Request all", "Pedir todos") + (xs.length ? " (" + xs.length + ")" : ""), !AG || !xs.length || vivo || PIDIENDO],
-      botones: [["descargar-lista", L("Download .md", "Descargar .md"), !xs.length]], vaciar: !xs.length || vivo,
-      error: PANEL_ERROR, nota: PANEL_NOTA, lote: htmlLote(),
-      filas: xs.map(function (x) {
-        return { k: x.k, bloqueado: !!enTanda[claveDeEntrada(x)], html: '<p class="es-texto">' + esc(x.texto) + '</p><div class="chips"><span class="chip ' + (x.tipo === "negocio" ? "es-neg" : "") + '" title="' + esc(QUE_ES[x.tipo] || "") + '">' + (x.tipo === "negocio" ? L("Business", "De negocio") : L("Screen", "De pantalla")) + "</span>" +
+  // El tipo «test» en el pedido al agente: cómo se ve cada regla, cómo se la manda y lo que vuelve.
+  PD.registrar("test", {
+    get nombre() { return L("Tests", "Tests"); },
+    unidad: ["rule", "rules", "regla", "reglas"],
+    raiz: raiz,
+    claves: function (k) { return reglasDelBoton(k).map(function (it) { return it[1].id + "|" + it[0].id; }); },
+    items: function (k) { return reglasDelBoton(k).map(function (it) { return entradaDe(it[0], it[1]); }); },
+    repintar: function () { pintarLista(); },
+    orden: function (a, b) { return negocioPrimero(a.datos, b.datos); },
+    resumen: function (its) { var neg = its.filter(function (it) { return it.datos.tipo === "negocio"; }).length; return [L(neg + " business (they go first) · " + (its.length - neg) + " screen", neg + " de negocio (van primero) · " + (its.length - neg) + " de pantalla")]; },
+    costo: function (mo) { return typeof mo.costoPorReglaUsd === "number" ? mo.costoPorReglaUsd : null; },
+    lote: function (its) { return { tipo: "test", reglas: its.map(function (it) { var x = it.datos; return { cerebro: x.cerebro, funcionalidad: x.funcionalidad, regla: x.regla, repo: x.repo, linea: lineaDeRegla(x) }; }) }; },
+    md: { archivo: "tests-pedidos.md", texto: function (its) { return mdDeLista(its.map(function (it) { return it.datos; })); } },
+    // En una tanda, la regla se reconoce por cerebro, funcionalidad y regla: lo que tiene resultado sale de la lista.
+    clave: function (it) { return claveDeEntrada(it.datos); },
+    enTanda: function (t) { return (t.reglas || []).map(claveDeEntrada); },
+    hechos: function (t) { return (t.resultados || []).map(claveDeEntrada); },
+    seguimiento: {
+      cuantos: function (t) { return (t.reglas || []).length; },
+      get reindexando() { return L("Updating the index so the new tests count…", "Actualizando el índice para que los tests nuevos cuenten…"); },
+      pidiendo: function (n, repos) { return L("Requesting " + plural(n, "rule", "rules") + " in " + plural(repos, "repo", "repos") + " at once", "Pidiendo " + plural(n, "regla", "reglas") + " en " + plural(repos, "repo", "repos") + " a la vez"); },
+      extraTanda: function (t) { return (t.sinResultado || []).length ? '<p class="fd-nota">' + L("No result: ", "Sin resultado: ") + pl(t.sinResultado.length, "rule", "rules", "regla", "reglas") + L(". They stay in the list to request them again. ", ". Siguen en la lista para pedirlas de nuevo. ") + esc(t.sinResultado[0].motivo) + "</p>" : ""; },
+      resumen: function (ts) {
+        var R = resumenDeLote(ts);
+        return L(R.a + " verified with a new test · " + R.b + " already covered · " + R.c + " with code that doesn't fulfill it · " + R.d + " that can't be tested without touching code",
+          R.a + " verificadas con un test nuevo · " + R.b + " ya cubiertas · " + R.c + " con el código que no la cumple · " + R.d + " que no se pueden testear sin tocar código") +
+          (R.sin ? " · " + L(R.sin + " without a result", R.sin + " sin resultado") : "");
+      }
+    },
+    tarjeta: function (it, enTanda) {
+      var x = it.datos;
+      return '<p class="es-texto">' + esc(x.texto) + '</p><div class="chips"><span class="chip ' + (x.tipo === "negocio" ? "es-neg" : "") + '" title="' + esc(QUE_ES[x.tipo] || "") + '">' + (x.tipo === "negocio" ? L("Business", "De negocio") : L("Screen", "De pantalla")) + "</span>" +
           (x.caso ? '<span class="chip" title="' + L("Use case", "Caso de uso") + '">' + esc(x.casoNombre) + "</span>" : '<span class="chip">' + L("No use case", "Sin caso de uso") + "</span>") + '<span class="chip" title="' + L("Feature", "Funcionalidad") + '">' + esc(x.funcNombre) + '</span><span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span>" +
-          (enTanda[claveDeEntrada(x)] ? '<span class="chip es-ok">' + L("Requesting…", "Pidiéndose…") + "</span>" : "") + "</div>" +
-          '<small class="es-archivo">' + (x.archivos.length ? L("Fulfilled by: ", "La cumple: ") + x.archivos.map(function (a) { return "<code>" + esc(a.replace(/#L\d+$/, "")) + "</code>"; }).join(" ") : L("Doesn't say which file fulfills it", "No dice qué archivo la cumple")) + "</small>" };
-      }),
-      vacio: L("The list is empty. Click «Request the test» on a rule, on a brain's row or on a whole use case: it's added here, and only «Request all» sends it.", "La lista está vacía. Tocá «Pedir el test» en una regla, en la fila de un cerebro o en un caso entero: se suma acá, y recién «Pedir todos» lo manda."),
-      despues: htmlResultados()
-    });
-  }
-  function pintarPanel() {
-    B().pintarPanel(elem("es-panel"), raiz, PANEL, htmlPanel());
-    var b = elem("es-bandeja"); if (b) b.innerHTML = htmlBandeja();
-  }
-  function htmlBandeja() {
-    var hs = hallazgos(), n = LISTA.length, pend = paraDecidir(hs).length;
-    if (!n && !hs.length && !loteActual()) return "";
-    return B().bandeja(L("Requested tests", "Tests pedidos"), n, pend ? L(pend + " to decide", pend + " para decidir") : "", PANEL);
-  }
+          (enTanda ? '<span class="chip es-ok">' + L("Requesting…", "Pidiéndose…") + "</span>" : "") + "</div>" +
+          '<small class="es-archivo">' + (x.archivos.length ? L("Fulfilled by: ", "La cumple: ") + x.archivos.map(function (a) { return "<code>" + esc(a.replace(/#L\d+$/, "")) + "</code>"; }).join(" ") : L("Doesn't say which file fulfills it", "No dice qué archivo la cumple")) + "</small>";
+    },
+    // Los resultados del último lote: verificadas, para decidir, la regla se corrige y para desarrollo.
+    despues: function () { return htmlResultados(); },
+    bandeja: function () { var pend = paraDecidir(hallazgos()).length; return pend ? L(pend + " to decide", pend + " para decidir") : ""; },
+    accion: function (acc, k) {
+      if (acc === "regla-mal") decidir(k, "regla_mal");
+      else if (acc === "codigo-mal") decidir(k, "codigo_mal");
+      else if (acc === "deshacer") decidir(k, null);
+      else if (acc === "corregir-reglas") corregirReglas();
+      else if (acc === "descargar-desarrollo") { if (!descargar(L("for-development.md", "para-desarrollo.md"), mdDesarrollo())) PD.aviso({ error: L("It couldn't be downloaded.", "No se pudo descargar.") }); }
+      else return false;
+      return true;
+    }
+  });
+  // Lo que corre el agente lo trae el componente: acá, los pedidos sueltos («El agente») y lo que volvió del lote.
+  PD.escuchar(function (ev) { if (ev === "trabajos") { TRABAJOS = PD.trabajos(); pintarAgente(); } });
 
   // ---------- El agente: mandar pedidos y ver cómo van ----------
-  function pedirAgente(ruta, cuerpo) {
-    return fetch(ruta, cuerpo ? { method: "POST", headers: { "content-type": "application/json", "x-flowbrain-token": ED.token }, body: JSON.stringify(cuerpo) } : { headers: { "x-flowbrain-token": ED.token } })
-      .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || L("the server responded ", "el servidor respondió ") + r.status); return j; }); });
-  }
+  var pedirAgente = function (ruta, cuerpo) { return PD.llamar(ruta, cuerpo); };
   function mandar(k) {
     var p = PEDIDOS[k];
     if (!p || !AG || !PEDIDO || PEDIDO.k !== k || PEDIDO.mandado) return;
     PEDIDO.mandado = true; PEDIDO.error = null; pintarTodo();
-    pedirAgente("/api/agente", { tipo: p[0], pedido: textoDelPedido(p[0], p[1]), etiqueta: etiquetaDelPedido(p[0], p[1]), cerebros: cerebrosDelPedido(p[0], p[1]), proveedor: proveedorElegido() ? proveedorElegido().id : undefined, modelo: modeloElegido() ? modeloElegido().id : undefined }).then(function () {
-      PEDIDO = null; traerTrabajos(); pintarTodo();
+    pedirAgente("/api/agente", { tipo: p[0], pedido: textoDelPedido(p[0], p[1]), etiqueta: etiquetaDelPedido(p[0], p[1]), cerebros: cerebrosDelPedido(p[0], p[1]), proveedor: PD.proveedor() ? PD.proveedor().id : undefined, modelo: PD.modelo() ? PD.modelo().id : undefined }).then(function () {
+      PEDIDO = null; PD.actualizar(); pintarTodo();
       var a = elem("es-agente"); if (a && a.scrollIntoView) a.scrollIntoView();
     }).catch(function (e) { if (PEDIDO && PEDIDO.k === k) { PEDIDO.mandado = false; PEDIDO.error = e.message; pintarTodo(); } });
   }
   var vivo = function (t) { return t.estado === "en_cola" || t.estado === "corriendo"; };
-  function traerTrabajos() {
-    if (!AG) return;
-    pedirAgente("/api/agente").then(function (j) {
-      // Los lotes «asociar» son de la pantalla Sin asociar.
-      TRABAJOS = j.trabajos || []; LOTES = (j.lotes || []).filter(function (l) { return !l.tipo || l.tipo === "test"; });
-      LOTES.forEach(function (LT) { if (!loteVivo(LT)) limpiarListaDelLote(LT); });
-      pintarAgente();
-      if (ESPERA) { clearTimeout(ESPERA); ESPERA = null; }
-      if (TRABAJOS.some(vivo) || LOTES.some(loteVivo)) ESPERA = setTimeout(traerTrabajos, 2000);
-    }).catch(function () { ESPERA = setTimeout(traerTrabajos, 5000); });
-  }
-  var estadoTrabajo = function (e) { return B().estado(e); };
+  var estadoTrabajo = function (e) { return PD.estado(e); };
   function unTrabajo(t) {
     var e = estadoTrabajo(t.estado);
     var pasos = t.pasos || [], ultimos = pasos.slice(-4);
@@ -852,7 +779,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     if (!AG || !sueltos().length) return "";
     return "<h2>" + L("The agent", "El agente") + '</h2><ul class="lista">' + sueltos().map(unTrabajo).join("") + "</ul>";
   }
-  function pintarAgente() { var a = elem("es-agente"); if (a) { a.innerHTML = htmlAgente(); a.className = sueltos().length && AG ? "es-agente" : ""; } pintarPanel(); }
+  function pintarAgente() { var a = elem("es-agente"); if (a) { a.innerHTML = htmlAgente(); a.className = sueltos().length && AG ? "es-agente" : ""; } }
   function buscarRegla(k) { var out = null; FICHAS.forEach(function (f) { specs(f).forEach(function (e) { if (clave(f, e) === k) out = [e, f]; }); }); return out; }
   function ponerManual(k, motivo) {
     var ef = buscarRegla(k);
@@ -918,28 +845,9 @@ export const ESPECIFICACIONES_JS = String.raw`
       return;
     }
     if (acc === "mandar") { mandar(k); return; }
-    if (acc === "sumar") {
-      var ps = PEDIDOS[k];
-      if (!ps) return;
-      sumarOQuitar(ps[1]);
-      // Sin repintar la lista: así no se cierran las reglas que se estaban mirando. Solo cambian los botones y el panel.
-      if (raiz.querySelectorAll) { botonesDePedido(); pintarPanel(); } else pintarTodo();
-      return;
-    }
-    if (acc === "panel") { PANEL = !PANEL; guardarLista(); pintarPanel(); return; }
-    if (acc === "cerrar-panel") { PANEL = false; guardarLista(); pintarPanel(); return; }
-    if (acc === "quitar") { LISTA = LISTA.filter(function (x) { return x.k !== k; }); guardarLista(); if (raiz.querySelectorAll) { botonesDePedido(); pintarPanel(); } else pintarTodo(); return; }
-    if (acc === "vaciar") { LISTA = []; guardarLista(); if (raiz.querySelectorAll) { botonesDePedido(); pintarPanel(); } else pintarTodo(); return; }
-    if (acc === "pedir-todos") { pedirTodos(); return; }
-    if (acc === "descargar-lista") { if (!descargar("tests-pedidos.md", mdDeLista())) { PANEL_ERROR = L("It couldn't be downloaded: copy the list from the served viewer.", "No se pudo descargar: copiá la lista desde el visor servido."); pintarPanel(); } return; }
-    if (acc === "descargar-desarrollo") { if (!descargar(L("for-development.md", "para-desarrollo.md"), mdDesarrollo())) { PANEL_ERROR = L("It couldn't be downloaded.", "No se pudo descargar."); pintarPanel(); } return; }
-    if (acc === "cancelar-lote") { pedirAgente("/api/agente/lote/cancelar", { id: k }).then(traerTrabajos, function () { traerTrabajos(); }); return; }
-    if (acc === "cerrar-lote") { OCULTA_ESTA_VEZ[k] = true; VISTOS.push("oculto:" + k); guardarLocal(CLAVE_VISTOS, VISTOS.slice(-60)); pintarPanel(); return; }
-    if (acc === "regla-mal") { decidir(k, "regla_mal"); return; }
-    if (acc === "codigo-mal") { decidir(k, "codigo_mal"); return; }
-    if (acc === "deshacer") { decidir(k, null); return; }
-    if (acc === "corregir-reglas") { corregirReglas(); return; }
-    if (acc === "cancelar-agente") { pedirAgente("/api/agente/cancelar", { id: k }).then(traerTrabajos, function () { traerTrabajos(); }); return; }
+    // Sumar o sacar del pedido: el componente cambia los botones sin repintar (no se cierra lo que se estaba mirando).
+    if (acc === "pedir") { PD.sumar("test", k); return; }
+    if (acc === "cancelar-agente") { pedirAgente("/api/agente/cancelar", { id: k }).then(PD.actualizar, PD.actualizar); return; }
     if (acc === "recargar") { if (typeof location !== "undefined") location.reload(); return; }
   }
   raiz.addEventListener("click", function (ev) {
@@ -959,14 +867,10 @@ export const ESPECIFICACIONES_JS = String.raw`
   });
   raiz.addEventListener("change", function (ev) {
     if (fl.manejar(ev, "change")) return;
-    if (ev.target.id === "es-prov") { ELEGIDO = { proveedor: ev.target.value, modelo: "" }; guardarLocal(CLAVE_AGENTE, ELEGIDO); pintarPanel(); }
-    else if (ev.target.id === "es-modelo") { ELEGIDO.proveedor = proveedorElegido() ? proveedorElegido().id : ""; ELEGIDO.modelo = ev.target.value; guardarLocal(CLAVE_AGENTE, ELEGIDO); pintarPanel(); }
   });
 
-  var primeraVez = true;
   window.brainEspecificaciones = {
     mostrar: function (feat) {
-      if (primeraVez) { primeraVez = false; traerTrabajos(); }
       if (feat) { var k = local(feat, feat); fl.limpiar(true); S.abiertas[k] = true; FOCO = k; guardar(); }
       pintarTodo();
     }

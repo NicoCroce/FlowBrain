@@ -3,7 +3,7 @@ import { CONTRATOS_JS } from "./viewer-contratos.js";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
 import { FILTROS_JS } from "./viewer-filtros.js";
-import { LOTE_JS } from "./viewer-lote.js";
+import { PEDIDO_JS } from "./viewer-pedido.js";
 import { mapa3dDelGrafo } from "./mapa3d.js";
 import { GRAFO3D_JS } from "./viewer-3d.js";
 import { MAPA_JS } from "./viewer-mapa.js";
@@ -445,10 +445,13 @@ button.pestana { border-top: 0; border-left: 0; border-right: 0; background: non
 .es-falta { color: var(--mal); border-color: var(--mal-borde); } .es-ok { color: var(--bien); border-color: var(--bien-borde); } .es-aviso { color: var(--atencion); border-color: var(--atencion-borde); } .es-cerebro { color: var(--medio); }
 .es-titulo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; } .es-titulo h1 { margin: 0; }
 .boton.es-pedir.en-lista { background: var(--pedir-en-lista); border-color: var(--pedir-en-lista); }
-.es-panel { display: none; position: fixed; top: 56px; right: 0; bottom: 0; width: min(440px, 100vw); overflow-y: auto; padding: 16px; background: var(--panel); border-left: 1px solid var(--borde2, var(--borde)); box-shadow: -8px 0 24px rgba(0, 0, 0, .35); z-index: 30; }
+.es-panel { display: none; position: fixed; top: var(--alto-cabecera, 56px); right: 0; bottom: 0; width: min(440px, 100vw); overflow-y: auto; padding: 16px; background: var(--panel); border-left: 1px solid var(--borde2, var(--borde)); box-shadow: -8px 0 24px rgba(0, 0, 0, .35); z-index: 30; }
 .es-panel.abierto { display: block; } .es-panel > * + * { margin-top: 12px; }
 .es-panel-cab { display: flex; align-items: center; justify-content: space-between; } .es-panel-cab h2 { margin: 0; font-size: 16px; }
-@media (min-width: 1100px) { #especificaciones.es-con-panel, #sinasociar.es-con-panel { padding-right: 460px; } }
+@media (min-width: 1100px) { body.con-pedido .pagina { padding-right: 460px; } }
+.pedido-bandeja { margin-left: 8px; } .pedido-bandeja:empty { display: none; } .pedido-bandeja .boton { height: 30px; padding: 0 12px; font-size: 12px; white-space: nowrap; }
+.pd-grupo h3 { margin: 4px 0 8px; font-size: 14px; display: flex; align-items: center; gap: 6px; } .es-totales small { text-transform: none; } .pd-total { border-color: var(--pedir-en-lista); }
+.pd-despues { display: grid; gap: 12px; }
 .es-agsel { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .es-agsel label { display: grid; gap: 4px; font-size: 12px; color: var(--suave); } .es-agsel select { width: 100%; }
 .es-totales { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); font-size: 13px; } .es-totales b { font-size: 15px; } .es-totales span { color: var(--suave); } .es-totales small { color: var(--suave); }
 .es-pedidos { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -576,7 +579,9 @@ a.nb { text-decoration: none; }
   <nav ${attr("aria-label", "Sections", "Secciones")}><a href="#/funcionalidades" data-vista="producto" ${dos("Features", "Funcionalidades")}</a><a href="#/pantallas" data-vista="pantallas" ${dos("Screens", "Pantallas")}</a><a href="#/grafo" data-vista="grafo" ${dos("3D map", "Mapa 3D")}</a><a href="#/especificaciones" data-vista="especificaciones" ${dos("Specifications", "Especificaciones")}</a><a href="#/sin-asociar" data-vista="sinasociar" ${dos("Unassigned", "Sin asociar")}</a><a href="#/impacto" data-vista="impacto" ${dos("Impact", "Impacto")}</a><a href="#/contratos" data-vista="contratos" ${dos("Contracts", "Contratos")}</a><a href="#/fidelidad" data-vista="fidelidad" ${dos("Fidelity", "Fidelidad")}</a></nav>
   <div id="presets" class="oculto"></div>
   ${SWITCH_IDIOMA}
+  <span id="pedido-bandeja" class="pedido-bandeja"></span>
 </header>
+<aside id="pedido-panel" class="es-panel" ${attr("aria-label", "Request to the agent", "Pedido al agente")}></aside>
 <div id="producto" class="pagina"></div>
 <div id="impacto" class="pagina oculto"></div>
 <div id="fidelidad" class="pagina oculto"></div>
@@ -650,7 +655,7 @@ a.nb { text-decoration: none; }
 <script>${seguroEnScript(IDIOMA_JS)}</script>
 <script>${seguroEnScript(GRAFO3D_JS)}</script>
 <script>${seguroEnScript(FILTROS_JS)}</script>
-<script>${seguroEnScript(LOTE_JS)}</script>
+<script>${seguroEnScript(PEDIDO_JS)}</script>
 <script>${seguroEnScript(PRODUCTO_JS)}</script>
 <script>${seguroEnScript(PANTALLAS_JS)}</script>
 <script>${seguroEnScript(FIDELIDAD_JS)}</script>
