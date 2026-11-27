@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConsultaError, leerRegistro, type Registro } from "@flowbrain/core";
 import { aplicarCerebro, htmlDelVisor } from "./cerebros.js";
-import { crearAgente, TIPOS_DE_PEDIDO, type Agente, type ReglaDePedido, type TipoDePedido } from "./agente.js";
+import { crearAgente, TIPOS_DE_PEDIDO, type Agente, type ArchivoDePedido, type ReglaDePedido, type TipoDePedido } from "./agente.js";
 import { codigoDeArchivo, detalleDeArchivo, editar, type Edicion } from "./edicion.js";
 import { L } from "./idioma.js";
 import { VERSION } from "./init.js";
@@ -112,7 +112,7 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
     cola = r.catch(() => undefined);
     return r;
   };
-  // Los pedidos que la página le manda al agente (pantalla Especificaciones). Lo que el agente resuelve se anota por
+  // Los pedidos que la página le manda al agente (pantallas Especificaciones y Sin asociar). Lo que el agente resuelve se anota por
   // la misma cola de ediciones, y al terminar un lote se actualiza el índice del cerebro.
   const agente = opciones.agente ?? crearAgente(() => leerRegistro(carpeta), {
     aplicar: async (ed) => enCola(async () => editar(await leerRegistro(carpeta), ed)),
@@ -161,18 +161,39 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
     }
     if (req.method === "GET" && url.pathname === "/api/agente") return { json: { noDisponible: agente.noDisponible(), proveedores: agente.proveedores(), trabajos: agente.lista(), lotes: agente.lotes() } };
     if (req.method === "POST" && url.pathname === "/api/agente/lote") {
+      // Un lote: reglas a testear (Especificaciones, `tipo` test o sin tipo) o archivos a asociar (Sin asociar). Los dos,
+      // con los mismos límites: hasta 3000 y 2 MB.
       const b = await cuerpoJson(req, 2 * 1024 * 1024);
-      const reglas = b["reglas"], proveedor = b["proveedor"], modelo = b["modelo"];
+      const tipo = b["tipo"] ?? "test", proveedor = b["proveedor"], modelo = b["modelo"];
+      if (tipo !== "test" && tipo !== "asociar") throw new ErrorHttp(400, `unknown batch type: ${String(tipo)}`);
+      if ((proveedor !== undefined && typeof proveedor !== "string") || (modelo !== undefined && typeof modelo !== "string")) throw new ErrorHttp(400, "proveedor and modelo must be text");
+      const elegido = { ...(proveedor ? { proveedor } : {}), ...(modelo ? { modelo } : {}) };
+      if (tipo === "asociar") {
+        const archivos = b["archivos"];
+        if (!Array.isArray(archivos) || !archivos.length || archivos.length > 3000) throw new ErrorHttp(400, "archivos must be a list of 1 to 3000 files");
+        const vistos = new Set<string>();
+        const validos: ArchivoDePedido[] = archivos.map((x: Record<string, unknown>) => {
+          const { cerebro, archivo, linea } = x ?? {};
+          // `repo-x:ruta`, de una línea: el repo sale de ahí y arma las tandas.
+          if (typeof cerebro !== "string" || !registro.cerebro(cerebro) || typeof archivo !== "string" || !/^[^:\s]+:[^\n]+$/.test(archivo) || archivo.length > 1000 || typeof linea !== "string" || !linea.trim() || linea.length > 4000) throw new ErrorHttp(400, `invalid file: ${JSON.stringify(x).slice(0, 160)}`);
+          if (vistos.has(`${cerebro}|${archivo}`)) throw new ErrorHttp(400, `repeated file: ${cerebro} ${archivo}`);
+          vistos.add(`${cerebro}|${archivo}`);
+          return { cerebro, archivo, linea };
+        });
+        const no = agente.noDisponible();
+        if (no) throw new ErrorHttp(409, no);
+        return { json: agente.encolarLote({ tipo: "asociar", archivos: validos, ...elegido }) };
+      }
+      const reglas = b["reglas"];
       if (!Array.isArray(reglas) || !reglas.length || reglas.length > 3000) throw new ErrorHttp(400, "reglas must be a list of 1 to 3000 rules");
       const validas: ReglaDePedido[] = reglas.map((x: Record<string, unknown>) => {
         const { cerebro, funcionalidad, regla, repo, linea } = x ?? {};
         if (typeof cerebro !== "string" || !registro.cerebro(cerebro) || typeof funcionalidad !== "string" || typeof regla !== "string" || typeof linea !== "string" || !linea.trim() || linea.length > 4000 || (repo !== null && repo !== undefined && typeof repo !== "string")) throw new ErrorHttp(400, `invalid rule: ${JSON.stringify(x).slice(0, 160)}`);
         return { cerebro, funcionalidad, regla, repo: typeof repo === "string" ? repo : null, linea };
       });
-      if ((proveedor !== undefined && typeof proveedor !== "string") || (modelo !== undefined && typeof modelo !== "string")) throw new ErrorHttp(400, "proveedor and modelo must be text");
       const no = agente.noDisponible();
       if (no) throw new ErrorHttp(409, no);
-      return { json: agente.encolarLote({ reglas: validas, ...(proveedor ? { proveedor } : {}), ...(modelo ? { modelo } : {}) }) };
+      return { json: agente.encolarLote({ reglas: validas, ...elegido }) };
     }
     if (req.method === "POST" && url.pathname === "/api/agente/lote/cancelar") {
       const { id } = await cuerpoJson(req);

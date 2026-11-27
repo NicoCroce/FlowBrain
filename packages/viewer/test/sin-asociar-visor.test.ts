@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { SIN_ASOCIAR_JS } from "../src/viewer-sin-asociar.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
+import { LOTE_JS } from "../src/viewer-lote.js";
 
 /** La pantalla Sin asociar, corrida con un DOM mínimo: qué agrupa, qué recomienda, qué dice cuando no hay nada y qué manda al asociar. */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
-function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; lang?: "es"; confirmar?: (texto: string) => boolean; recargar?: () => void; fetch?: (url: string, init: { method: string; body: string; headers: Record<string, string> }) => Promise<unknown> } = {}) {
+function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; lang?: "es"; confirmar?: (texto: string) => boolean; recargar?: () => void; local?: Map<string, string>; fetch?: (url: string, init: { method: string; body: string; headers: Record<string, string> }) => Promise<unknown> } = {}) {
   const guardado = new Map<string, string>();
   const sessionStorage = { getItem: (k: string) => guardado.get(k) ?? null, setItem: (k: string, v: string) => void guardado.set(k, v) };
+  const local = opciones.local ?? new Map<string, string>();
+  const localStorage = { getItem: (k: string) => local.get(k) ?? null, setItem: (k: string, v: string) => void local.set(k, v) };
   const elementos = new Map<string, { innerHTML: string; value?: string; oyentes: Record<string, Oyente>; addEventListener(t: string, f: Oyente): void }>();
   const el = (id: string) => {
     if (!elementos.has(id)) {
@@ -20,7 +23,8 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; l
   const esc = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
   const window = { brainVisor: { D: datos, porId, esc }, brainSinAsociar: null as null | { mostrar(): void }, FLOWBRAIN_EDICION: opciones.edicion, ...(opciones.confirmar ? { confirm: opciones.confirmar } : {}), ...(opciones.recargar ? { location: { reload: opciones.recargar } } : {}), ...(opciones.lang ? { brainI18n: { lang: opciones.lang } } : {}) };
   new Function("window", "document", "sessionStorage", FILTROS_JS)(window, { getElementById: el }, sessionStorage);
-  new Function("window", "document", "sessionStorage", "fetch", SIN_ASOCIAR_JS)(window, { getElementById: el }, sessionStorage, opciones.fetch);
+  new Function("window", LOTE_JS)(window);
+  new Function("window", "document", "sessionStorage", "localStorage", "fetch", SIN_ASOCIAR_JS)(window, { getElementById: el }, sessionStorage, localStorage, opciones.fetch);
   const raiz = el("sinasociar");
   let html = "";
   Object.defineProperty(raiz, "innerHTML", {
@@ -259,42 +263,111 @@ describe("pantalla Sin asociar", () => {
     expect(v.lista()).toContain("There is no code to show for <code>repo-web:src/pagos/nota.ts</code>: the file is not in the clone");
   });
 
-  it("manda el pedido al agente con su avance y su cancelación, y al terminar recarga la lista; sin agente o estática, solo copia", async () => {
-    const pedidos: Array<Record<string, unknown>> = [];
-    let estado = "corriendo";
+  it("manda el lote al agente como Pedir todos: proveedor y modelo, tandas, avance, Cancelar todo y el resumen; sin agente o estática, solo copia", async () => {
+    const pedidos: Array<Record<string, any>> = [];
     let recargas = 0;
+    const estado: { trabajos: Array<Record<string, unknown>>; lotes: Array<Record<string, unknown>> } = { trabajos: [{ id: "otro", tipo: "test", lote: "LT", estado: "corriendo", etiqueta: "De otra pantalla", pasos: [] }], lotes: [{ id: "LT", tipo: "test", estado: "corriendo" }] };
     const fetch = (url: string, init: { method: string; body?: string; headers: Record<string, string> }) => {
       pedidos.push({ url, metodo: init.method, ...(init.body ? (JSON.parse(init.body) as Record<string, unknown>) : {}) });
-      const j = url === "/api/agente" && init.method === "GET"
-        ? { trabajos: [{ id: "t1", tipo: "asociar", estado, etiqueta: "Assign 5 unassigned files", pasos: ["Reads src/shared/fecha.ts"], cambios: [] }, { id: "otro", tipo: "test", estado: "corriendo", etiqueta: "De otra pantalla", pasos: [] }] }
-        : url === "/api/agente" ? { id: "t1", tipo: "asociar", estado: "en_cola", etiqueta: "Assign 5 unassigned files", pasos: [], cambios: [] }
-        : { id: "t1", estado: "cancelado" };
+      const j = url === "/api/agente" && init.method === "GET" ? estado
+        : url === "/api/agente/lote" ? { lote: { id: "L1", tipo: "asociar", estado: "corriendo", cerebros: ["front", "back"] }, trabajos: [] }
+        : url === "/api/agente" ? { id: "s1", tipo: "asociar", estado: "en_cola", etiqueta: "Propose a feature for 1 file", pasos: [], cambios: [] }
+        : { trabajos: [] };
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(j) });
     };
     const agente = { noDisponible: null, proveedores: [{ id: "claude-code", nombre: "Claude Code", version: "1", modelos: [{ id: "claude-sonnet-5-5", nombre: "Sonnet 5.5" }, { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true }] }] };
-    const v = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, recargar: () => void recargas++ });
+    const local = new Map<string, string>();
+    const v = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, recargar: () => void recargas++, local });
     const esperar = async () => { for (let i = 0; i < 4; i++) await new Promise((ok) => setTimeout(ok, 0)); };
+    await esperar();
+    // Al abrir, mira cómo está el agente; los lotes de tests son de Especificaciones y no se muestran acá.
+    expect(pedidos[0]).toMatchObject({ url: "/api/agente", metodo: "GET" });
+    expect(v.lista()).not.toContain("De otra pantalla");
     expect(v.pagina()).toContain('data-acc="pedido">Send to the agent…</button>');
     v.tocar({ "data-acc": "pedido" });
-    expect(v.lista()).toContain('data-acc="mandar">Send to the agent (5 files)</button>');
-    expect(v.lista()).toContain('data-acc="copiar">Copy the text</button>');
-    expect(v.lista()).toContain("It runs Claude Code (Opus 5.5) in this project. It can only write the brain's feature and library pages and drafts");
+    let l = v.lista();
+    expect(l).toContain('<option value="claude-code" selected>Claude Code</option>');
+    expect(l).toContain('<option value="claude-opus-5-5" selected>Opus 5.5 (default)</option>');
+    expect(l).toContain("<b>5 files</b>");
+    expect(l).toContain("3 with a recommendation · 1 shared · 1 with no hint");
+    // front/repo-web y back/repo-api: dos tandas.
+    expect(l).toContain("In 2 batches");
+    expect(l).toContain('data-acc="mandar">Send to the agent (5 files)</button>');
+    expect(l).toContain('data-acc="copiar">Copy the text</button>');
+    expect(l).toContain("It runs Claude Code (Opus 5.5) in this project. It can only write the brain's feature and library pages and drafts");
+    // El modelo elegido se recuerda en este navegador.
+    v.cambiar("sa-ag-modelo", "claude-sonnet-5-5");
+    expect(JSON.parse(local.get("flowbrain.sinasociar.modelo")!)).toEqual({ proveedor: "claude-code", modelo: "claude-sonnet-5-5" });
+    expect(v.lista()).toContain("It runs Claude Code (Sonnet 5.5)");
+    expect(montar(datos(), { edicion: { token: "s", sinAplicar: [], agente }, local }).pagina()).toBeDefined();
+
     v.tocar({ "data-acc": "mandar" });
+    estado.lotes = [{ id: "L1", tipo: "asociar", estado: "corriendo", cerebros: ["front", "back"] }, ...estado.lotes];
+    estado.trabajos = [
+      { id: "t1", tipo: "asociar", lote: "L1", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: ["Lee src/shared/fecha.ts"], archivos: [1, 2, 3, 4].map((i) => ({ cerebro: "front", archivo: `repo-web:x${i}` })) },
+      { id: "t2", tipo: "asociar", lote: "L1", repo: "repo-api", tanda: { n: 1, de: 1 }, estado: "en_cola", pasos: [], archivos: [{ cerebro: "back", archivo: "repo-api:src/Util/Texto.php" }] },
+      ...estado.trabajos,
+    ];
     await esperar();
-    expect(pedidos[0]).toMatchObject({ url: "/api/agente", metodo: "POST", tipo: "asociar", cerebros: ["front", "back"], proveedor: "claude-code", modelo: "claude-opus-5-5", etiqueta: "Assign 5 unassigned files" });
-    expect(String(pedidos[0]!["pedido"])).toContain("Assign these 5 files");
-    // Se sigue el avance: solo lo mandado desde acá, no los pedidos de otras pantallas.
-    expect(pedidos[1]).toMatchObject({ url: "/api/agente", metodo: "GET" });
-    expect(v.lista()).toContain("Working…");
-    expect(v.lista()).toContain("Reads src/shared/fecha.ts");
-    expect(v.lista()).not.toContain("De otra pantalla");
-    expect(v.lista()).not.toContain("<h2>Request for the agent</h2>");
-    // Cancelar va al servidor; cuando el trabajo termina, la página se recarga una sola vez.
-    estado = "terminado";
-    v.tocar({ "data-acc": "cancelar-agente", "data-k": "t1" });
+    const post = pedidos.find((x) => x.url === "/api/agente/lote")!;
+    expect(post).toMatchObject({ tipo: "asociar", proveedor: "claude-code", modelo: "claude-sonnet-5-5" });
+    expect(post["archivos"]).toHaveLength(5);
+    expect(post["archivos"][0]).toEqual({ cerebro: "front", archivo: "repo-web:src/shared/dinero.ts", linea: "- repo-web:src/shared/dinero.ts (brain front): recommended feat-pagos (imported by 2 files of Pagos); others: feat-envios" });
+    expect(post["archivos"].map((a: { cerebro: string }) => a.cerebro)).toContain("back");
+    l = v.lista();
+    expect(l).toContain("Assigning 5 files in 2 repos");
+    expect(l).toContain("0 of 2 batches");
+    expect(l).toContain("Lee src/shared/fecha.ts");
+    expect(l).toContain("Waits for the previous batch of this brain to finish.");
+    expect(l).toContain('data-acc="cancelar-lote" data-k="L1">Cancel all</button>');
+    expect(l).not.toContain("<h2>Request for the agent</h2>");
+    // Con un lote en curso no se manda otro.
+    v.tocar({ "data-acc": "pedido" });
+    expect(v.lista()).toMatch(/data-acc="mandar" disabled/);
+    expect(v.lista()).toContain("Another batch is running");
+    v.tocar({ "data-acc": "pedido" });
+    v.tocar({ "data-acc": "cancelar-lote", "data-k": "L1" });
     await esperar();
-    expect(pedidos[2]).toMatchObject({ url: "/api/agente/cancelar", id: "t1" });
+    expect(pedidos.find((x) => x.url === "/api/agente/lote/cancelar")).toMatchObject({ id: "L1" });
+
+    // Se sigue aunque se recargue: otra página, el mismo navegador, lo ve al abrir.
+    estado.lotes[0]!["estado"] = "terminado";
+    estado.trabajos[0] = { ...estado.trabajos[0], estado: "terminado", costoUsd: 0.3, resultado: "Asocié 3; dejé x4: es un script.", asociados: [1, 2, 3].map((i) => ({ cerebro: "front", archivo: `repo-web:x${i}` })), siguen: [{ cerebro: "front", archivo: "repo-web:x4" }] };
+    estado.trabajos[1] = { ...estado.trabajos[1], estado: "cancelado" };
+    const otra = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, recargar: () => void recargas++, local });
+    await esperar();
+    l = otra.lista();
+    expect(l).toContain("Finished");
+    expect(l).toContain("2 of 2 batches");
+    expect(l).toContain("Actual cost: US$ 0.30");
+    expect(l).toContain("3 assigned · 1 still unassigned (proposed as a draft, not product, or left: each batch says why) · 1 batch canceled.");
+    expect(l).toContain("Asocié 3; dejé x4: es un script.");
+    expect(l).toContain('data-acc="recargar">Reload to see the changes</button>');
+    // No recarga sola: como en Especificaciones, se recarga con el botón.
+    expect(recargas).toBe(0);
+    otra.tocar({ "data-acc": "recargar" });
     expect(recargas).toBe(1);
+    otra.tocar({ "data-acc": "cerrar-lote", "data-k": "L1" });
+    expect(otra.lista()).not.toContain("es-lote");
+    expect(JSON.parse(local.get("flowbrain.sinasociar.lotes")!)).toEqual(["L1"]);
+
+    // «Proponer funcionalidad nueva» sigue siendo un pedido suelto, con el modelo elegido.
+    otra.tocar({ "data-acc": "nueva-feat", "data-a": "back/repo-api:src/Util/Texto.php" });
+    expect(otra.lista()).toContain('<select id="sa-ag-modelo">');
+    otra.tocar({ "data-acc": "mandar" });
+    await esperar();
+    expect(pedidos.filter((x) => x.url === "/api/agente" && x.metodo === "POST").pop()).toMatchObject({ tipo: "asociar", cerebros: ["back"], modelo: "claude-sonnet-5-5" });
+
+    // En castellano, el mismo panel.
+    const es = montar(datos(), { lang: "es", edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, local: new Map() });
+    await esperar();
+    es.tocar({ "data-acc": "pedido" });
+    expect(es.lista()).toContain("Mandar al agente (5 archivos)");
+    expect(es.lista()).toContain("En 2 tandas");
+    expect(es.lista()).toContain("Costo real: US$ 0.30");
+    expect(es.lista()).toContain("3 asociados · 1 sigue sin asociar");
+    expect(es.lista()).toContain("Recargar para ver los cambios");
+    expect(es.lista()).toContain("3 con recomendación · 1 compartido · 1 sin pista");
 
     // Con el servidor pero sin agente: lo dice y ofrece copiar. Estática: copiar es lo único, y explica por qué.
     const sin = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente: { noDisponible: "Claude Code (claude) was not found on this machine", proveedores: [] } }, fetch: fetch as never });
@@ -307,16 +380,21 @@ describe("pantalla Sin asociar", () => {
     expect(est.lista()).not.toContain('data-acc="mandar"');
   });
 
-  it("el pedido respeta el tope de 80 archivos y dice cuántos quedan para otro", () => {
+  it("el lote lleva toda la lista, sin el tope de 80; el texto para copiar lleva los primeros 80", () => {
     const d = datos();
     (d as Record<string, unknown>).sinAsociar = Array.from({ length: 85 }, (_, i) => ({ a: `${W}src/x/a${i}.ts`, l: "ts", k: "otros", c: 0 }));
     const v = montar(d, { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: null, proveedores: [{ id: "claude-code", nombre: "Claude Code", modelos: [] }] } } });
     v.tocar({ "data-acc": "pedido" });
     const l = v.lista();
-    expect(l).toContain("Send to the agent (80 files)");
-    expect(l).toContain("It carries the first 80 of 85: send the rest in another request once these are done.");
-    expect(l).toContain("Assign these 80 files");
-    expect(l).toContain("5 more remain for another batch.");
+    expect(l).toContain("Send to the agent (85 files)");
+    expect(l).toContain("In 3 batches");
+    expect(l).toContain("«Copy the text» copies the first 80");
+    // Sin servidor, el texto (el único camino) lleva 80 y dice cuántos quedan.
+    const est = montar(d);
+    est.tocar({ "data-acc": "pedido" });
+    expect(est.lista()).toContain("It carries the first 80 of 85");
+    expect(est.lista()).toContain("Assign these 80 files");
+    expect(est.lista()).toContain("5 more remain for another batch.");
   });
 
   it("código compartido: se asocia a una librería del mismo cerebro, o se pide crear una", async () => {

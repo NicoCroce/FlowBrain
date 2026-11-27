@@ -11,9 +11,13 @@
  * pedido al agente. «Ver código» muestra el archivo con `/api/archivo?…&contenido=1`: sin servidor no aparece y el
  * aviso de solo lectura dice por qué.
  *
- * El pedido para el agente se manda desde acá (`/api/agente`, tipo `asociar`, con permisos acotados: solo páginas
- * `feat-*` y `lib-*` y borradores en `_drafts/`), con su progreso y su cancelación, y al terminar la página se recarga
- * con la lista nueva; copiarlo sigue disponible, y en la página estática es lo único. El código compartido se asocia a
+ * «Mandar al agente» funciona como «Pedir todos» de Especificaciones: un lote (`/api/agente/lote`, tipo `asociar`, con
+ * permisos acotados: solo páginas `feat-*` y `lib-*` y borradores en `_drafts/`) con todos los archivos de la lista
+ * filtrada, que el servidor reparte en tandas de hasta 30 por cerebro y repo. Se elige Proveedor y Modelo (se recuerda
+ * en este navegador) y se ve el mismo panel del lote (viewer-lote): «X de N tandas», «Cancelar todo», el resumen
+ * (cuántos se asociaron y cuántos siguen), «Recargar para ver los cambios» y «Cerrar el resumen». El lote se sigue
+ * aunque se recargue la página. Copiar el texto sigue disponible (los primeros 80), y en la página estática o sin
+ * agente es lo único. «Proponer funcionalidad nueva» y «Crear librería» siguen siendo un pedido suelto (`/api/agente`). El código compartido se asocia a
  * una librería (`lib`) o se pide crear una; lo que no tiene pista se pide como funcionalidad nueva o se marca «No es de
  * producto» (`not-product.yaml` del cerebro, con su motivo), que se deshace desde «Marcados como no de producto».
  */
@@ -30,7 +34,8 @@ export const SIN_ASOCIAR_JS = String.raw`
   var CAPA_EN = { entrada: "Entry", logica: "Logic", dominio: "Domain", datos: "Data", interfaz: "Interface", otros: "Other" };
   var CAPA_ES = { entrada: "Entrada", logica: "Lógica", dominio: "Dominio", datos: "Datos", interfaz: "Interfaz", otros: "Otros" };
   var capa = function (k) { return L(CAPA_EN[k], CAPA_ES[k]) || k; };
-  var PASO = 30, VISIBLES = 8, TOPE_PEDIDO = 80;
+  // TOPE_PEDIDO: los que lleva el texto para copiar. TOPE_LOTE y TANDA: los límites del lote del servidor.
+  var PASO = 30, VISIBLES = 8, TOPE_PEDIDO = 80, TOPE_LOTE = 3000, TANDA = 30;
   var S = null, fl = null;
   // PEDIDO: el pedido abierto ({ tipo: asociar | feat | lib, xs: los archivos, o null para la lista filtrada, copiado, mandando, error }).
   var OTRA = null, MSG = null, PEDIDO = null, ocupado = false, hechos = 0;
@@ -41,7 +46,17 @@ export const SIN_ASOCIAR_JS = String.raw`
   var CLAVE_AGENTE = "flowbrain.sinasociar.agente";
   var AGS = (function () { try { var j = JSON.parse(sessionStorage.getItem(CLAVE_AGENTE) || "{}"); return { mandados: j.mandados || {}, recargados: j.recargados || {} }; } catch (e) { return { mandados: {}, recargados: {} }; } })();
   var guardarAgs = function () { try { sessionStorage.setItem(CLAVE_AGENTE, JSON.stringify(AGS)); } catch (e) { /* sin sessionStorage */ } };
-  var TRABAJOS = [], ESPERA = null;
+  // TODOS: los trabajos del agente; TRABAJOS: los pedidos sueltos mandados desde acá; LOTES: los lotes «asociar».
+  var TODOS = [], TRABAJOS = [], LOTES = [], ESPERA = null;
+  // Proveedor y modelo elegidos, y los lotes cuyo resumen se cerró: duran en este navegador (localStorage).
+  var B = function () { return window.brainLote; };
+  var CLAVE_ELEGIDO = "flowbrain.sinasociar.modelo", CLAVE_VISTOS = "flowbrain.sinasociar.lotes";
+  var leerLocal = function (k, por) { try { if (typeof localStorage !== "undefined") { var v = localStorage.getItem(k); if (v !== null) return JSON.parse(v); } } catch (e) { /* sin almacenamiento */ } return por; };
+  var guardarLocal = function (k, v) { try { if (typeof localStorage !== "undefined") localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* sin almacenamiento */ } };
+  var ELEGIDO = { proveedor: "", modelo: "" }, sel0 = leerLocal(CLAVE_ELEGIDO, {});
+  if (sel0 && typeof sel0 === "object") ELEGIDO = { proveedor: sel0.proveedor || "", modelo: sel0.modelo || "" };
+  var VISTOS = leerLocal(CLAVE_VISTOS, []); if (!Array.isArray(VISTOS)) VISTOS = [];
+  var OCULTA = {};
   // Marcas «No es de producto» de cada cerebro ({ e: entrada, m: motivo, n: archivos que tapa, c: cerebro }).
   var IGN = D.noProducto ? D.noProducto.slice() : [];
   // NP: archivo con el panel «No es de producto» abierto; LIB: archivo con el selector de librería abierto.
@@ -174,21 +189,47 @@ export const SIN_ASOCIAR_JS = String.raw`
     // Sin agente, copiar es lo único: se copia al abrir. Con agente, copiar queda como botón.
     if (!AG) copiar(textoActual(), function (ok) { if (PEDIDO) { PEDIDO.copiado = ok ? true : "no"; pintarLista(); } });
   }
-  var proveedor = function () { return PROVS[0] || null; };
-  var modelo = function () { var p = proveedor(); if (!p) return null; for (var i = 0; i < p.modelos.length; i++) if (p.modelos[i].porDefecto) return p.modelos[i]; return p.modelos[0] || null; };
+  var proveedor = function () { return B().proveedor(PROVS, ELEGIDO); };
+  var modelo = function () { return B().modelo(PROVS, ELEGIDO); };
+  // Cuántas tandas arma el servidor: por cerebro y repo, de hasta TANDA archivos.
+  function tandasEstimadas(xs) {
+    var g = {}, n = 0;
+    xs.forEach(function (x) { var k = cerebroDe(x) + "|" + repoDe(x.a, x); g[k] = (g[k] || 0) + 1; });
+    Object.keys(g).forEach(function (k) { n += Math.ceil(g[k] / TANDA); });
+    return n;
+  }
+  var copiadoHtml = function () { return PEDIDO.copiado === true ? '<span class="fd-ok">' + L("Copied. Paste it into your agent.", "Copiado. Pegalo en tu agente.") + "</span>" : PEDIDO.copiado === "no" ? '<span class="fd-nota">' + L("Could not copy automatically: select the text and copy it.", "No se pudo copiar solo: seleccioná el texto y copialo.") + "</span>" : ""; };
+  // Con agente, «Mandar al agente» es un lote con toda la lista filtrada, como «Pedir todos» de Especificaciones.
+  function pedidoLote() {
+    var todos = xsDelPedido(), xs = todos.slice(0, TOPE_LOTE), n = xs.length, enCurso = B().loteVivo(loteActual(), TODOS), pr = proveedor(), mo = modelo();
+    var cuenta = function (k) { return xs.filter(function (x) { return clase(x) === k; }).length; };
+    var titulo = L("Request for the agent", "Pedido para el agente");
+    return '<div class="fd-plan sa-pedido"><div class="es-cab"><h2>' + titulo + '</h2><button type="button" class="boton chico" data-acc="cerrar-pedido" aria-label="' + L("Close the request", "Cerrar el pedido") + '">✕</button></div>' +
+      '<p class="fd-nota">' + L("Sends the files in the list below, each with its recommendation, in batches of up to " + TANDA + " files of the same repo. The batches of a brain go one after another; different brains, at the same time. The agent opens each file, decides and assigns it.", "Manda los archivos de la lista de abajo, cada uno con su recomendación, en tandas de hasta " + TANDA + " archivos de un mismo repo. Las tandas de un cerebro van una detrás de otra; las de cerebros distintos, a la vez. El agente abre cada archivo, decide y lo asocia.") +
+      (todos.length > TOPE_LOTE ? " " + L("A request carries up to " + num(TOPE_LOTE) + " files: it takes the first " + num(TOPE_LOTE) + " of " + num(todos.length) + "; send the rest when it finishes.", "Un pedido lleva hasta " + num(TOPE_LOTE) + " archivos: lleva los primeros " + num(TOPE_LOTE) + " de " + num(todos.length) + "; el resto va cuando termine.") : "") + "</p>" +
+      B().selector(PROVS, ELEGIDO, "sa-ag", enCurso) +
+      '<div class="es-totales"><b>' + plural(n, L("file", "archivo"), L("files", "archivos")) + "</b><span>" + L(num(cuenta("recomendada")) + " with a recommendation · " + num(cuenta("compartido")) + " shared · " + num(cuenta("sinpista")) + " with no hint", num(cuenta("recomendada")) + " con recomendación · " + plural(cuenta("compartido"), "compartido", "compartidos") + " · " + num(cuenta("sinpista")) + " sin pista") + "</span>" +
+      "<span>" + L("In " + plural(tandasEstimadas(xs), "batch", "batches"), "En " + plural(tandasEstimadas(xs), "tanda", "tandas")) + "</span></div>" +
+      '<div class="fd-acc"><button type="button" class="boton pri" data-acc="mandar"' + (PEDIDO.mandando || !n || enCurso ? " disabled" : "") + ">" + (PEDIDO.mandando ? L("Sending…", "Mandando…") : L("Send to the agent", "Mandar al agente") + " (" + plural(n, L("file", "archivo"), L("files", "archivos")) + ")") + "</button>" +
+      '<button type="button" class="boton" data-acc="copiar">' + L("Copy the text", "Copiar el texto") + "</button></div>" +
+      (enCurso ? '<p class="fd-nota">' + L("Another batch is running: wait for it to finish, or cancel it above.", "Hay otro lote en curso: esperá a que termine, o cancelalo arriba.") + "</p>" : "") +
+      '<p class="fd-nota">' + L("It runs " + esc(pr ? pr.nombre : "") + (mo ? " (" + esc(mo.nombre) + ")" : "") + " in this project. It can only write the brain's feature and library pages and drafts in <code>_drafts/</code>, never the repos' code. You see the progress above; when it finishes, reload to see the list up to date. «Copy the text» copies the first " + TOPE_PEDIDO + ", to paste into another agent.", "Lo corre " + esc(pr ? pr.nombre : "") + (mo ? " (" + esc(mo.nombre) + ")" : "") + " en este proyecto. Solo puede escribir las páginas de funcionalidades y librerías del cerebro y borradores en <code>_drafts/</code>, nunca el código de los repos. Ves el avance arriba; cuando termina, recargá para ver la lista al día. «Copiar el texto» copia los primeros " + TOPE_PEDIDO + ", para pegarlos en otro agente.") + "</p>" +
+      (PEDIDO.error ? '<p class="fd-msg error">' + L("It could not be sent: ", "No se pudo mandar: ") + esc(PEDIDO.error) + "</p>" : "") + copiadoHtml() + "</div>";
+  }
   function pedido() {
     if (!PEDIDO) return "";
+    if (AG && PEDIDO.tipo === "asociar") return pedidoLote();
     var xs = xsDelPedido(), n = Math.min(xs.length, TOPE_PEDIDO), t = PEDIDO.tipo;
     var titulo = t === "feat" ? L("Propose a new feature", "Proponer funcionalidad nueva") : t === "lib" ? L("Create a library", "Crear librería") : L("Request for the agent", "Pedido para el agente");
     var que = t === "feat"
       ? L("The agent opens these " + plural(n, "file", "files") + " and writes a draft feature with them in <code>_drafts/product/</code>, with its use cases and specifications. A person reviews and promotes it: until then the files stay here.", "El agente abre " + (n === 1 ? "este archivo" : "estos " + num(n) + " archivos") + " y escribe un borrador de funcionalidad con " + (n === 1 ? "él" : "ellos") + " en <code>_drafts/product/</code>, con sus casos de uso y especificaciones. Una persona lo revisa y lo promueve: hasta entonces siguen acá.")
       : t === "lib"
       ? L("The agent adds these " + plural(n, "shared file", "shared files") + " to a library that fits, or writes a draft library in <code>_drafts/</code>. A person reviews and promotes the draft: until then they stay here.", "El agente suma " + (n === 1 ? "este archivo compartido" : "estos " + num(n) + " archivos compartidos") + " a una librería que encaje, o escribe un borrador de librería en <code>_drafts/</code>. Una persona revisa y promueve el borrador: hasta entonces siguen acá.")
-      : L("Brings the files in the list below (up to " + TOPE_PEDIDO + "), each with its recommendation: the agent opens each file, decides and assigns them.", "Trae los archivos de la lista de abajo (hasta " + TOPE_PEDIDO + "), cada uno con su recomendación: el agente abre cada archivo, decide y los asocia.");
+      : L("Brings the files in the list below (up to " + TOPE_PEDIDO + "), each with its recommendation: paste it into your agent; it opens each file, decides and assigns them.", "Trae los archivos de la lista de abajo (hasta " + TOPE_PEDIDO + "), cada uno con su recomendación: pegalo en tu agente; abre cada archivo, decide y los asocia.");
     var recorte = xs.length > TOPE_PEDIDO ? " " + L("It carries the first " + TOPE_PEDIDO + " of " + num(xs.length) + ": send the rest in another request once these are done.", "Lleva los primeros " + TOPE_PEDIDO + " de " + num(xs.length) + ": el resto va en otro pedido cuando terminen estos.") : "";
     var pr = proveedor(), mo = modelo();
     var envio = AG
-      ? '<div class="fd-hacer"><button type="button" class="boton pri" data-acc="mandar"' + (PEDIDO.mandando || !n ? " disabled" : "") + ">" + (PEDIDO.mandando ? L("Sending…", "Mandando…") : L("Send to the agent", "Mandar al agente") + " (" + plural(n, L("file", "archivo"), L("files", "archivos")) + ")") + "</button>" +
+      ? B().selector(PROVS, ELEGIDO, "sa-ag", false) + '<div class="fd-hacer"><button type="button" class="boton pri" data-acc="mandar"' + (PEDIDO.mandando || !n ? " disabled" : "") + ">" + (PEDIDO.mandando ? L("Sending…", "Mandando…") : L("Send to the agent", "Mandar al agente") + " (" + plural(n, L("file", "archivo"), L("files", "archivos")) + ")") + "</button>" +
         '<button type="button" class="boton" data-acc="copiar">' + L("Copy the text", "Copiar el texto") + "</button></div>" +
         '<p class="fd-nota">' + L("It runs " + esc(pr ? pr.nombre : "") + (mo ? " (" + esc(mo.nombre) + ")" : "") + " in this project. It can only write the brain's feature and library pages and drafts in <code>_drafts/</code>, never the repos' code. When it finishes, the page reloads with the list up to date.", "Lo corre " + esc(pr ? pr.nombre : "") + (mo ? " (" + esc(mo.nombre) + ")" : "") + " en este proyecto. Solo puede escribir las páginas de funcionalidades y librerías del cerebro y borradores en <code>_drafts/</code>, nunca el código de los repos. Cuando termina, la página se recarga con la lista al día.") + "</p>"
       : ED
@@ -197,8 +238,7 @@ export const SIN_ASOCIAR_JS = String.raw`
     return '<div class="fd-plan sa-pedido"><div class="es-cab"><h2>' + titulo + '</h2><button type="button" class="boton chico" data-acc="cerrar-pedido" aria-label="' + L("Close the request", "Cerrar el pedido") + '">✕</button></div>' +
       '<p class="fd-nota">' + que + recorte + "</p>" + envio +
       (PEDIDO.error ? '<p class="fd-msg error">' + L("It could not be sent: ", "No se pudo mandar: ") + esc(PEDIDO.error) + "</p>" : "") +
-      '<textarea class="fd-texto" readonly rows="10" aria-label="' + titulo + '">' + esc(textoActual()) + "</textarea>" +
-      (PEDIDO.copiado === true ? '<span class="fd-ok">' + L("Copied. Paste it into your agent.", "Copiado. Pegalo en tu agente.") + "</span>" : PEDIDO.copiado === "no" ? '<span class="fd-nota">' + L("Could not copy automatically: select the text and copy it.", "No se pudo copiar solo: seleccioná el texto y copialo.") + "</span>" : "") + "</div>";
+      '<textarea class="fd-texto" readonly rows="10" aria-label="' + titulo + '">' + esc(textoActual()) + "</textarea>" + copiadoHtml() + "</div>";
   }
   // Pedidos que cubren la lista filtrada entera: los de código compartido y los sin pista, de a todos juntos.
   function pedidosDeLista(xs) {
@@ -215,9 +255,27 @@ export const SIN_ASOCIAR_JS = String.raw`
     return fetch(ruta, cuerpo ? { method: "POST", headers: { "content-type": "application/json", "x-flowbrain-token": ED.token }, body: JSON.stringify(cuerpo) } : { method: "GET", headers: { "x-flowbrain-token": ED.token } })
       .then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || L("the server responded ", "el servidor respondió ") + r.status); return j; }); });
   }
-  var vivo = function (t) { return t.estado === "en_cola" || t.estado === "corriendo"; };
+  var vivo = function (t) { return B().vivo(t); };
+  function loteActual() {
+    for (var i = 0; i < LOTES.length; i++) if (!OCULTA[LOTES[i].id] && VISTOS.indexOf(LOTES[i].id) < 0) return LOTES[i];
+    return null;
+  }
+  // El lote: todos los archivos de la lista filtrada (hasta TOPE_LOTE), cada uno con la línea que lee el agente.
+  function mandarLote() {
+    var xs = xsDelPedido().slice(0, TOPE_LOTE), pr = proveedor(), mo = modelo();
+    if (!xs.length || !pr || PEDIDO.mandando || B().loteVivo(loteActual(), TODOS)) return;
+    PEDIDO.mandando = true; PEDIDO.error = null; pintarLista();
+    llamar("/api/agente/lote", { tipo: "asociar", proveedor: pr.id, modelo: mo ? mo.id : undefined, archivos: xs.map(function (x) { return { cerebro: cerebroDe(x), archivo: local(x.a, x), linea: lineaDe(x) }; }) })
+      .then(function (j) {
+        PEDIDO = null; OCULTA = {};
+        if (j && j.lote) { LOTES = [j.lote].concat(LOTES.filter(function (l) { return l.id !== j.lote.id; })); TODOS = (j.trabajos || []).concat(TODOS); }
+        repintar(); traerTrabajos();
+      })
+      .catch(function (e) { if (PEDIDO) { PEDIDO.mandando = false; PEDIDO.error = e.message; pintarLista(); } });
+  }
   function mandar() {
     if (!PEDIDO || !AG || PEDIDO.mandando) return;
+    if (PEDIDO.tipo === "asociar") { mandarLote(); return; }
     var xs = xsDelPedido().slice(0, TOPE_PEDIDO);
     if (!xs.length) return;
     var cerebros = [];
@@ -239,8 +297,13 @@ export const SIN_ASOCIAR_JS = String.raw`
   function traerTrabajos() {
     if (!AG) return;
     if (ESPERA) { clearTimeout(ESPERA); ESPERA = null; }
-    llamar("/api/agente").then(function (j) {
-      TRABAJOS = (j.trabajos || []).filter(function (t) { return t.tipo === "asociar" && AGS.mandados[t.id]; });
+    var p;
+    try { p = llamar("/api/agente"); } catch (e) { return; }
+    p.then(function (j) {
+      TODOS = j.trabajos || [];
+      // Los lotes de esta pantalla (los de tests son de Especificaciones) y los pedidos sueltos mandados desde esta pestaña.
+      LOTES = (j.lotes || []).filter(function (l) { return l.tipo === "asociar"; });
+      TRABAJOS = TODOS.filter(function (t) { return t.tipo === "asociar" && !t.lote && AGS.mandados[t.id]; });
       // Terminó uno mandado desde acá: la página se recarga una vez, con la lista que dejó el agente (ya recompilada).
       var nuevos = TRABAJOS.filter(function (t) { return t.estado === "terminado" && !AGS.recargados[t.id]; });
       if (nuevos.length) {
@@ -248,13 +311,10 @@ export const SIN_ASOCIAR_JS = String.raw`
         if (recargar()) return;
       }
       repintar();
-      if (TRABAJOS.some(vivo)) ESPERA = setTimeout(traerTrabajos, 2000);
+      if (TRABAJOS.some(vivo) || LOTES.some(function (l) { return B().loteVivo(l, TODOS); })) ESPERA = setTimeout(traerTrabajos, 2000);
     }).catch(function () { ESPERA = setTimeout(traerTrabajos, 5000); });
   }
-  var ESTADOS = function (e) {
-    var T = { en_cola: [L("Queued", "En cola"), "na"], corriendo: [L("Working…", "Trabajando…"), "na"], terminado: [L("Finished", "Terminó"), "ok"], fallo: [L("Failed", "Falló"), "no"], cancelado: [L("Canceled", "Cancelado"), "na"] };
-    return T[e] || [e, "na"];
-  };
+  var ESTADOS = function (e) { return B().estado(e); };
   function unTrabajo(t) {
     var e = ESTADOS(t.estado), pasos = t.pasos || [];
     var cambios = (t.cambios || []).map(function (c) { return "<li><b>" + esc(c.repo) + "</b>: " + c.archivos.map(function (a) { return "<code>" + esc(a) + "</code>"; }).join(" ") + "</li>"; }).join("");
@@ -269,9 +329,33 @@ export const SIN_ASOCIAR_JS = String.raw`
       '<div class="fd-acc">' + (vivo(t) ? '<button type="button" class="boton" data-acc="cancelar-agente" data-k="' + esc(t.id) + '">' + L("Cancel", "Cancelar") + "</button>" : '<button type="button" class="boton" data-acc="cerrar-agente" data-k="' + esc(t.id) + '">' + L("Close", "Cerrar") + "</button>") +
       (t.estado === "fallo" || t.estado === "cancelado" ? '<button type="button" class="boton" data-acc="recargar">' + L("Reload to see what it changed", "Recargar para ver lo que cambió") + "</button>" : "") + "</div></li>";
   }
+  // El lote en curso (o su resumen, hasta cerrarlo): el panel compartido con Especificaciones, contado en archivos.
+  function htmlLote() {
+    var LT = AG ? loteActual() : null;
+    if (!LT) return "";
+    var cuantos = function (t) { return (t.archivos || []).length; };
+    var hechos = function (ts, k) { return ts.reduce(function (n, t) { return n + (t[k] || []).length; }, 0); };
+    var cifras = function (a, s) { return L(num(a) + " assigned · " + num(s) + " still unassigned", plural(a, "asociado", "asociados") + " · " + num(s) + " " + (s === 1 ? "sigue" : "siguen") + " sin asociar"); };
+    return '<div class="sa-agente">' + B().html(LT, B().tandas(LT, TODOS), {
+      unidad: ["file", "files", "archivo", "archivos"],
+      cuantos: cuantos,
+      espera: L("Waits for the previous batch of this brain to finish.", "Espera a que termine la tanda anterior de este cerebro."),
+      reindexando: L("Finishing…", "Terminando…"),
+      pidiendo: function (n, repos) { return L("Assigning " + plural(n, "file", "files") + " in " + plural(repos, "repo", "repos"), "Asociando " + plural(n, "archivo", "archivos") + " en " + plural(repos, "repo", "repos")); },
+      extraTanda: function (t) {
+        if (vivo(t) || (!t.asociados && !t.siguen)) return "";
+        return "<small>" + cifras((t.asociados || []).length, (t.siguen || []).length) + "</small>" +
+          (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
+      },
+      resumen: function (ts) {
+        var s = hechos(ts, "siguen");
+        return cifras(hechos(ts, "asociados"), s) + (s ? L(" (proposed as a draft, not product, or left: each batch says why)", " (propuestos como borrador, no son de producto o quedaron: cada tanda dice por qué)") : "");
+      }
+    }) + "</div>";
+  }
   function htmlAgente() {
-    if (!AG || !TRABAJOS.length) return "";
-    return '<div class="sa-agente"><h2>' + L("The agent", "El agente") + '</h2><ul class="lista">' + TRABAJOS.map(unTrabajo).join("") + "</ul></div>";
+    if (!AG || !TRABAJOS.length) return htmlLote();
+    return htmlLote() + '<div class="sa-agente"><h2>' + L("The agent", "El agente") + '</h2><ul class="lista">' + TRABAJOS.map(unTrabajo).join("") + "</ul></div>";
   }
 
   // ---------- No es de producto ----------
@@ -632,6 +716,8 @@ export const SIN_ASOCIAR_JS = String.raw`
     if (acc === "cancelar-agente") { llamar("/api/agente/cancelar", { id: k }).then(traerTrabajos, traerTrabajos); return; }
     if (acc === "cerrar-agente") { delete AGS.mandados[k]; guardarAgs(); TRABAJOS = TRABAJOS.filter(function (t) { return t.id !== k; }); repintar(); return; }
     if (acc === "recargar") { recargar(); return; }
+    if (acc === "cancelar-lote") { llamar("/api/agente/lote/cancelar", { id: k }).then(traerTrabajos, traerTrabajos); return; }
+    if (acc === "cerrar-lote") { OCULTA[k] = true; VISTOS.push(k); guardarLocal(CLAVE_VISTOS, VISTOS.slice(-60)); repintar(); return; }
     if (acc === "lib") { var la = b.getAttribute("data-a"); LIB = LIB === la ? null : la; pintarLista(); return; }
     if (acc === "asociar-lib") { var sl = elem("sa-lib"); asociar(porArchivo(k), sl ? String(sl.value || "") : ""); return; }
     if (acc === "noprod") { var na = b.getAttribute("data-a"); NP = NP === na ? null : na; pintarLista(); return; }
@@ -653,11 +739,16 @@ export const SIN_ASOCIAR_JS = String.raw`
       return;
     }
   });
-  raiz.addEventListener("change", function (ev) { if (fl) fl.manejar(ev, "change"); });
+  raiz.addEventListener("change", function (ev) {
+    if (fl && fl.manejar(ev, "change")) return;
+    var id = ev.target.id;
+    if (id === "sa-ag-prov") { ELEGIDO = { proveedor: String(ev.target.value || ""), modelo: "" }; guardarLocal(CLAVE_ELEGIDO, ELEGIDO); pintarLista(); }
+    else if (id === "sa-ag-modelo") { ELEGIDO.proveedor = proveedor() ? proveedor().id : ""; ELEGIDO.modelo = String(ev.target.value || ""); guardarLocal(CLAVE_ELEGIDO, ELEGIDO); pintarLista(); }
+  });
   raiz.addEventListener("input", function (ev) { if (fl) fl.manejar(ev, "input"); });
 
-  window.brainSinAsociar = { mostrar: pintarTodo };
-  // Con agente: lo mandado desde esta pestaña (aunque se haya recargado) se sigue hasta que termine.
-  if (AG && Object.keys(AGS.mandados).length) traerTrabajos();
+  // Con agente: los lotes y lo mandado desde esta pestaña se siguen hasta que terminen, aunque se recargue la página.
+  var primeraVez = true;
+  window.brainSinAsociar = { mostrar: function () { if (primeraVez) { primeraVez = false; traerTrabajos(); } pintarTodo(); } };
 })();
 `;

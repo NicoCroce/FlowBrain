@@ -560,7 +560,9 @@ export const ESPECIFICACIONES_JS = String.raw`
   var guardarLista = function () { guardarLocal(CLAVE_LISTA, LISTA); guardarLocal(CLAVE_PANEL, PANEL); };
   var enLista = function (k) { return LISTA.some(function (x) { return x.k === k; }); };
   var claveDeEntrada = function (x) { return x.cerebro + "|" + x.funcionalidad + "|" + x.regla; };
-  var dolares = function (n) { return "US$ " + (n < 0.1 ? n.toFixed(3) : n.toFixed(2)); };
+  // El panel del lote (selector, tandas, resumen y sus botones) es el compartido con Sin asociar (viewer-lote).
+  var B = function () { return window.brainLote; };
+  var dolares = function (n) { return B().dolares(n); };
 
   // La regla como se la lee el agente (cerebro, funcionalidad, caso, id, tipo, texto y el archivo que la cumple): solo en inglés.
   function lineaDeRegla(x) {
@@ -597,16 +599,8 @@ export const ESPECIFICACIONES_JS = String.raw`
     }
     guardarLista();
   }
-  function proveedorElegido() {
-    for (var i = 0; i < PROVS.length; i++) if (PROVS[i].id === ELEGIDO.proveedor) return PROVS[i];
-    return PROVS[0] || null;
-  }
-  function modeloElegido() {
-    var p = proveedorElegido(); if (!p) return null;
-    for (var i = 0; i < p.modelos.length; i++) if (p.modelos[i].id === ELEGIDO.modelo) return p.modelos[i];
-    for (var j = 0; j < p.modelos.length; j++) if (p.modelos[j].porDefecto) return p.modelos[j];
-    return p.modelos[0] || null;
-  }
+  var proveedorElegido = function () { return B().proveedor(PROVS, ELEGIDO); };
+  var modeloElegido = function () { return B().modelo(PROVS, ELEGIDO); };
 
   // ---- el .md: lo que se le pasa a cualquier agente con acceso al repo ----
   // Son instrucciones para el modelo, como la guía que trae (FLOWBRAIN_GUIA_TESTS): solo en inglés.
@@ -708,13 +702,13 @@ export const ESPECIFICACIONES_JS = String.raw`
   }
 
   // ---- el lote ----
-  var vivoT = function (t) { return t.estado === "en_cola" || t.estado === "corriendo"; };
+  var vivoT = function (t) { return B().vivo(t); };
   function loteActual() {
     for (var i = 0; i < LOTES.length; i++) if (!OCULTA_ESTA_VEZ[LOTES[i].id] && VISTOS.indexOf("oculto:" + LOTES[i].id) < 0) return LOTES[i];
     return null;
   }
-  var tandasDe = function (LT) { return TRABAJOS.filter(function (t) { return t.lote === LT.id; }).sort(function (a, b) { return a.repo < b.repo ? -1 : a.repo > b.repo ? 1 : a.tanda.n - b.tanda.n; }); };
-  var loteVivo = function (LT) { return !!LT && (LT.estado !== "terminado" || tandasDe(LT).some(vivoT)); };
+  var tandasDe = function (LT) { return B().tandas(LT, TRABAJOS); };
+  var loteVivo = function (LT) { return B().loteVivo(LT, TRABAJOS); };
   function pedirTodos() {
     var xs = ordenadas(), pr = proveedorElegido(), mo = modeloElegido();
     if (!xs.length || !AG || !pr || !mo || PIDIENDO || loteVivo(loteActual())) return;
@@ -740,35 +734,21 @@ export const ESPECIFICACIONES_JS = String.raw`
     var costo = 0; ts.forEach(function (t) { costo += t.costoUsd || 0; });
     return { rs: rs, a: n("a"), b: n("b"), c: n("c"), d: n("d"), sin: sin, costo: costo, fallaron: ts.filter(function (t) { return t.estado === "fallo"; }).length, cancelaron: ts.filter(function (t) { return t.estado === "cancelado"; }).length };
   }
-  function htmlTanda(t) {
-    var e = estadoTrabajo(t.estado), pasos = (t.pasos || []).slice(-2);
-    var cuantas = (t.reglas || []).length;
-    return '<li class="es-tanda"><div class="es-cab"><span>' + (t.tanda.de > 1 ? L("Batch " + t.tanda.n + " of " + t.tanda.de, "Tanda " + t.tanda.n + " de " + t.tanda.de) : L("One batch", "Una tanda")) + " · " + pl(cuantas, "rule", "rules", "regla", "reglas") + '</span><span class="fd-es ' + e[1] + '">' + e[0] + "</span></div>" +
-      (vivoT(t) && pasos.length ? '<ul class="es-pasos">' + pasos.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
-      (t.estado === "en_cola" ? "<small>" + L("Waits for the previous batch of this repo to finish.", "Espera a que termine la tanda anterior de este repo.") + "</small>" : "") +
-      (t.error ? '<p class="fd-msg error">' + esc(t.error) + "</p>" : "") +
-      ((t.sinResultado || []).length ? '<p class="fd-nota">' + L("No result: ", "Sin resultado: ") + pl(t.sinResultado.length, "rule", "rules", "regla", "reglas") + L(". They stay in the list to request them again. ", ". Siguen en la lista para pedirlas de nuevo. ") + esc(t.sinResultado[0].motivo) + "</p>" : "") + "</li>";
-  }
   function htmlLote() {
     var LT = loteActual(); if (!LT) return "";
-    var ts = tandasDe(LT), vivo = loteVivo(LT), R = resumenDeLote(LT, ts), hechas = ts.filter(function (t) { return !vivoT(t); }).length;
-    var porRepo = {}, repos = []; ts.forEach(function (t) { if (!porRepo[t.repo]) { porRepo[t.repo] = []; repos.push(t.repo); } porRepo[t.repo].push(t); });
-    var cuerpo = repos.map(function (r) { return '<div class="es-repo"><h4>' + esc(r) + "</h4><ul>" + porRepo[r].map(htmlTanda).join("") + "</ul></div>"; }).join("");
-    var nReglas = ts.reduce(function (n, t) { return n + (t.reglas || []).length; }, 0);
-    var cab = vivo
-      ? (LT.estado === "reindexando" ? L("Updating the index so the new tests count…", "Actualizando el índice para que los tests nuevos cuenten…")
-        : L("Requesting " + plural(nReglas, "rule", "rules") + " in " + plural(repos.length, "repo", "repos") + " at once", "Pidiendo " + plural(nReglas, "regla", "reglas") + " en " + plural(repos.length, "repo", "repos") + " a la vez"))
-      : L("Finished", "Terminó");
-    var fin = !vivo
-      ? '<div class="es-fin"><b>' + L("Actual cost: ", "Costo real: ") + dolares(R.costo) + "</b><span>" +
-        L(R.a + " verified with a new test · " + R.b + " already covered · " + R.c + " with code that doesn't fulfill it · " + R.d + " that can't be tested without touching code",
+    return B().html(LT, tandasDe(LT), {
+      unidad: ["rule", "rules", "regla", "reglas"],
+      cuantos: function (t) { return (t.reglas || []).length; },
+      reindexando: L("Updating the index so the new tests count…", "Actualizando el índice para que los tests nuevos cuenten…"),
+      pidiendo: function (n, repos) { return L("Requesting " + plural(n, "rule", "rules") + " in " + plural(repos, "repo", "repos") + " at once", "Pidiendo " + plural(n, "regla", "reglas") + " en " + plural(repos, "repo", "repos") + " a la vez"); },
+      extraTanda: function (t) { return (t.sinResultado || []).length ? '<p class="fd-nota">' + L("No result: ", "Sin resultado: ") + pl(t.sinResultado.length, "rule", "rules", "regla", "reglas") + L(". They stay in the list to request them again. ", ". Siguen en la lista para pedirlas de nuevo. ") + esc(t.sinResultado[0].motivo) + "</p>" : ""; },
+      resumen: function (ts) {
+        var R = resumenDeLote(LT, ts);
+        return L(R.a + " verified with a new test · " + R.b + " already covered · " + R.c + " with code that doesn't fulfill it · " + R.d + " that can't be tested without touching code",
           R.a + " verificadas con un test nuevo · " + R.b + " ya cubiertas · " + R.c + " con el código que no la cumple · " + R.d + " que no se pueden testear sin tocar código") +
-        (R.sin ? " · " + L(R.sin + " without a result", R.sin + " sin resultado") : "") + (R.fallaron ? " · " + pl(R.fallaron, "batch failed", "batches failed", "tanda falló", "tandas fallaron") : "") + (R.cancelaron ? " · " + pl(R.cancelaron, "batch canceled", "batches canceled", "tanda cancelada", "tandas canceladas") : "") + ".</span>" +
-        (LT.error ? '<p class="fd-msg error">' + esc(LT.error) + "</p>" : "") + "</div>"
-      : '<div class="es-fin"><span>' + L("Cost so far: ", "Costo hasta ahora: ") + dolares(R.costo) + "</span></div>";
-    return '<section class="es-lote"><div class="es-cab"><h3>' + cab + '</h3><span class="fd-es ' + (vivo ? "na" : R.fallaron ? "no" : "ok") + '">' + L(hechas + " of " + ts.length + " batches", hechas + " de " + ts.length + " tandas") + "</span></div>" +
-      '<progress max="' + Math.max(1, ts.length) + '" value="' + hechas + '"></progress>' + cuerpo + fin +
-      '<div class="fd-acc">' + (vivo ? '<button type="button" class="boton" data-acc="cancelar-lote" data-k="' + esc(LT.id) + '">' + L("Cancel all", "Cancelar todo") + "</button>" : '<button type="button" class="boton" data-acc="recargar">' + L("Reload to see the changes", "Recargar para ver los cambios") + '</button><button type="button" class="boton" data-acc="cerrar-lote" data-k="' + esc(LT.id) + '">' + L("Close the summary", "Cerrar el resumen") + "</button>") + "</div></section>";
+          (R.sin ? " · " + L(R.sin + " without a result", R.sin + " sin resultado") : "");
+      }
+    });
   }
   function htmlHallazgo(x, conBotones) {
     var h = x.h, ca = casoDeRegla(x.f, x.e), d = x.decision;
@@ -800,8 +780,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     var enTanda = {}; if (vivo) tandasDe(LT).forEach(function (t) { if (vivoT(t)) (t.reglas || []).forEach(function (r) { enTanda[claveDeEntrada(r)] = true; }); });
     var estimado = mo ? xs.length * mo.costoPorReglaUsd : 0;
     var selector = AG && pr
-      ? '<div class="es-agsel"><label>' + L("Provider", "Proveedor") + '<select id="es-prov"' + (vivo ? " disabled" : "") + ">" + PROVS.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === pr.id ? " selected" : "") + ">" + esc(p.nombre) + "</option>"; }).join("") + "</select></label>" +
-        "<label>" + L("Model", "Modelo") + '<select id="es-modelo"' + (vivo ? " disabled" : "") + ">" + pr.modelos.map(function (m) { return '<option value="' + esc(m.id) + '"' + (mo && m.id === mo.id ? " selected" : "") + ">" + esc(m.nombre) + (m.porDefecto ? L(" (default)", " (por defecto)") : "") + "</option>"; }).join("") + "</select></label></div>"
+      ? B().selector(PROVS, ELEGIDO, "es", vivo)
       : '<p class="fd-nota">' + (ED ? L("There's no agent installed on this machine", "No hay ningún agente instalado en esta máquina") + (ED.agente && ED.agente.noDisponible ? ": " + esc(ED.agente.noDisponible) : "") + "." : L("This page is read-only: it can't send the requests.", "Esta página es de solo lectura: no puede mandar los pedidos.")) + L(" Download the .md and give it to your agent (with access to the repo, not a web chat).", " Descargá el .md y dáselo a tu agente (con acceso al repo, no un chat web).") + "</p>";
     var totales = '<div class="es-totales"><b>' + pl(xs.length, "rule", "rules", "regla", "reglas") + "</b><span>" + L(neg + " business (they go first) · " + (xs.length - neg) + " screen", neg + " de negocio (van primero) · " + (xs.length - neg) + " de pantalla") + "</span>" +
       (AG && mo ? "<span>" + L("Estimated cost: ", "Costo estimado: ") + (xs.length ? "≈ " + dolares(estimado) : dolares(0)) + " <small>(" + L("approx., with ", "aprox., con ") + esc(mo.nombre) + ")</small></span>" : "") + "</div>";
@@ -852,17 +831,15 @@ export const ESPECIFICACIONES_JS = String.raw`
   function traerTrabajos() {
     if (!AG) return;
     pedirAgente("/api/agente").then(function (j) {
-      TRABAJOS = j.trabajos || []; LOTES = j.lotes || [];
+      // Los lotes «asociar» son de la pantalla Sin asociar.
+      TRABAJOS = j.trabajos || []; LOTES = (j.lotes || []).filter(function (l) { return !l.tipo || l.tipo === "test"; });
       LOTES.forEach(function (LT) { if (!loteVivo(LT)) limpiarListaDelLote(LT); });
       pintarAgente();
       if (ESPERA) { clearTimeout(ESPERA); ESPERA = null; }
       if (TRABAJOS.some(vivo) || LOTES.some(loteVivo)) ESPERA = setTimeout(traerTrabajos, 2000);
     }).catch(function () { ESPERA = setTimeout(traerTrabajos, 5000); });
   }
-  var estadoTrabajo = function (e) {
-    var T = { en_cola: [L("Queued", "En cola"), "na"], corriendo: [L("Working…", "Trabajando…"), "na"], terminado: [L("Finished", "Terminó"), "ok"], fallo: [L("Failed", "Falló"), "no"], cancelado: [L("Canceled", "Cancelado"), "na"] };
-    return T[e] || [e, "na"];
-  };
+  var estadoTrabajo = function (e) { return B().estado(e); };
   function unTrabajo(t) {
     var e = estadoTrabajo(t.estado);
     var pasos = t.pasos || [], ultimos = pasos.slice(-4);
@@ -878,7 +855,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       (t.estado === "terminado" || t.estado === "fallo" ? '<button type="button" class="boton" data-acc="recargar">' + L("Reload to see the changes", "Recargar para ver los cambios") + "</button>" : "") + "</div></li>";
   }
   // Las tandas de «Pedir todos» se ven en el panel «Tests pedidos»; acá, los pedidos sueltos.
-  var sueltos = function () { return TRABAJOS.filter(function (t) { return !t.lote; }); };
+  var sueltos = function () { return TRABAJOS.filter(function (t) { return !t.lote && t.tipo !== "asociar"; }); };
   function htmlAgente() {
     if (!AG || !sueltos().length) return "";
     return "<h2>" + L("The agent", "El agente") + '</h2><ul class="lista">' + sueltos().map(unTrabajo).join("") + "</ul>";

@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { ConsultaError, TEST_REF, type Registro } from "@flowbrain/core";
+import { cargarContexto, ConsultaError, fidelidadDeArchivos, TEST_REF, type Registro } from "@flowbrain/core";
 import { compileDirConVisor } from "@flowbrain/viewer";
 import type { Edicion } from "./edicion.js";
 import { GUIA_ESPECIFICACIONES, GUIA_TESTS } from "./guia.js";
@@ -17,10 +17,15 @@ export { HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento };
  *
  * Hay dos formas de pedir:
  * - un pedido suelto (`encolar`): va de a uno, en cola;
- * - un lote de reglas a testear (`encolarLote`): se reparte por repo, los repos corren en paralelo y cada uno va en
- *   tandas de 10 a 15 reglas, una detrás de otra. Una tanda que falla no frena a las demás. Cada tanda responde, regla
- *   por regla, uno de cuatro resultados y el servidor lo anota en las páginas (las tandas no editan páginas: dos repos
- *   en paralelo no se pisan).
+ * - un lote (`encolarLote`), de dos clases:
+ *   - `test` (pantalla Especificaciones): reglas a testear. Se reparte por repo, los repos corren en paralelo y cada
+ *     uno va en tandas de 10 a 15 reglas, una detrás de otra. Cada tanda responde, regla por regla, uno de cuatro
+ *     resultados y el servidor lo anota en las páginas (las tandas no editan páginas: dos repos en paralelo no se pisan).
+ *   - `asociar` (pantalla Sin asociar): archivos sin funcionalidad. Las tandas (hasta 30 archivos de un mismo repo)
+ *     editan las páginas `feat-*`/`lib-*` del cerebro, así que las de un cerebro van una detrás de otra y los cerebros,
+ *     en paralelo. Al terminar cada tanda el servidor compila el cerebro y mide cuáles de sus archivos dejaron de
+ *     estar sin asociar: eso es lo que cuenta el resumen, no lo que diga el agente.
+ *   En los dos, una tanda que falla no frena a las demás, y se cancela el lote entero o una tanda.
  */
 
 export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir" | "asociar";
@@ -108,6 +113,15 @@ export interface ReglaDePedido {
   linea: string;
 }
 
+/** Un archivo de un lote «asociar»: el id local (`repo-x:ruta`) y la línea que lee el agente, con su recomendación. */
+export interface ArchivoDePedido {
+  cerebro: string;
+  archivo: string;
+  linea: string;
+}
+
+export type TipoDeLote = "test" | "asociar";
+
 export interface Trabajo {
   id: string;
   tipo: TipoDePedido;
@@ -140,10 +154,15 @@ export interface Trabajo {
   resultados?: ResultadoDeRegla[];
   /** Reglas pedidas de las que no volvió un resultado válido: quedan en la lista para reintentar. */
   sinResultado?: Array<{ cerebro: string; funcionalidad: string; regla: string; motivo: string }>;
+  /** Tanda de un lote «asociar»: los archivos pedidos, y después de compilar, cuáles ya tienen dueño y cuáles siguen sin asociar. */
+  archivos?: Array<{ cerebro: string; archivo: string }>;
+  asociados?: Array<{ cerebro: string; archivo: string }>;
+  siguen?: Array<{ cerebro: string; archivo: string }>;
 }
 
 export interface Lote {
   id: string;
+  tipo: TipoDeLote;
   creado: number;
   cerebros: string[];
   /** `reindexando`: las tandas terminaron y se actualiza el índice para que los tests nuevos cuenten. */
@@ -161,10 +180,12 @@ export interface ProveedorVisible {
 const MAX_PASOS = 60;
 const MAX_TRABAJOS = 400;
 const TANDA_MAX = 15;
+/** Archivos por tanda de un lote «asociar»: leer y decidir un archivo cuesta menos que testear una regla. */
+export const TANDA_MAX_ASOCIAR = 30;
 
-/** Cuántas reglas lleva cada tanda: lo más parejo posible y nunca más de 15. */
-export function tamanioDeTanda(n: number): number {
-  return Math.ceil(n / Math.max(1, Math.ceil(n / TANDA_MAX)));
+/** Cuántos lleva cada tanda: lo más parejo posible y nunca más de `max` (15 reglas, o 30 archivos). */
+export function tamanioDeTanda(n: number, max = TANDA_MAX): number {
+  return Math.ceil(n / Math.max(1, Math.ceil(n / max)));
 }
 
 /** El texto que recibe el agente: la guía del tipo de pedido, con el pedido en lugar de `$ARGUMENTS`. */
@@ -181,6 +202,18 @@ export function pedidoDeTanda(reglas: ReglaDePedido[], repo: string, n: number, 
     "Each rule ends in one of the four outcomes (a, b, c, d) from the guide. At the end, answer with the guide's `flowbrain-resultados` block, with one entry per rule (cerebro, funcionalidad and regla exactly as they appear below).",
     "",
     ...reglas.map((r) => r.linea),
+  ].join("\n");
+}
+
+/** El pedido de una tanda «asociar»: los archivos de un repo, con su recomendación. El agente edita las páginas. */
+export function pedidoDeTandaAsociar(archivos: ArchivoDePedido[], repo: string, cerebro: string, n: number, de: number): string {
+  return [
+    `Assign ${archivos.length === 1 ? "this file" : `these ${archivos.length} files`} of ${repo} (brain ${cerebro}${de > 1 ? `, batch ${n} of ${de}` : ""}) to their feature in FlowBrain. Today they belong to no feature or library.`,
+    "To assign one: add repo:path to the codigo list in the frontmatter of the feature's page (the brain's product/feat-*.md) and compile. If a whole folder belongs to the same feature, add the folder.",
+    "The recommendation is a hint: open the file before deciding. Shared code does not go to a feature: add it to the codigo of a lib page or leave it unassigned. If no feature covers it, propose a new one as a draft (_drafts/product/feat-<id>.md). Tests, configuration, scripts and generated files are not product: leave them and list them.",
+    "Other batches of this request cover the rest of the files: only handle these. The server compiles the brain when you finish and counts what is still unassigned.",
+    "",
+    ...archivos.map((a) => a.linea),
   ].join("\n");
 }
 
@@ -228,8 +261,8 @@ export interface Agente {
   /** Los proveedores instalados en la máquina, con sus modelos. */
   proveedores(): ProveedorVisible[];
   encolar(p: { tipo: TipoDePedido; pedido: string; etiqueta: string; cerebros: string[]; proveedor?: string; modelo?: string }): Trabajo;
-  /** Reparte las reglas por repo (en paralelo) y cada repo en tandas. */
-  encolarLote(p: { reglas: ReglaDePedido[]; proveedor?: string; modelo?: string }): { lote: Lote; trabajos: Trabajo[] };
+  /** `test`: reparte las reglas por repo (en paralelo) y cada repo en tandas. `asociar`: los archivos por cerebro (en paralelo) y por repo, en tandas. */
+  encolarLote(p: ({ tipo?: "test"; reglas: ReglaDePedido[] } | { tipo: "asociar"; archivos: ArchivoDePedido[] }) & { proveedor?: string; modelo?: string }): { lote: Lote; trabajos: Trabajo[] };
   lista(): Trabajo[];
   lotes(): Lote[];
   cancelar(id: string): Trabajo | null;
@@ -429,7 +462,37 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     if (errores.length && !t.resultados.length) t.error = errores[0] ?? "invalid answer";
   }
 
+  /** Una tanda «asociar»: corre el agente, compila el cerebro y mide cuáles de sus archivos ya tienen dueño. */
+  async function correrTandaAsociar(t: Trabajo, repoRuta: string | undefined) {
+    try {
+      const reg = await lanzar(t, repoRuta);
+      // Aun cancelada pudo haber escrito algo: se compila y se mide igual.
+      for (const nombre of t.cerebros) {
+        const c = reg.cerebro(nombre);
+        if (!c) continue;
+        try {
+          await compileDirConVisor(c.raiz);
+          const quedan = new Set(fidelidadDeArchivos(await cargarContexto(c.raiz)).sinAsociar.map((a) => a.archivo));
+          const suyos = (t.archivos ?? []).filter((a) => a.cerebro === nombre);
+          t.asociados = [...(t.asociados ?? []), ...suyos.filter((a) => !quedan.has(a.archivo))];
+          t.siguen = [...(t.siguen ?? []), ...suyos.filter((a) => quedan.has(a.archivo))];
+        } catch (e) {
+          t.error = `${t.error ? `${t.error}. ` : ""}${nombre} does not compile: ${(e as Error).message.split("\n")[0]}`;
+        }
+      }
+    } catch (e) {
+      t.error = `${t.error ? `${t.error}. ` : ""}${(e as Error).message}`;
+    }
+    t.terminado = Date.now();
+    if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.asociados?.length ? "fallo" : "terminado";
+  }
+
   async function terminarLote(l: Lote) {
+    // Cada tanda «asociar» ya compiló su cerebro: no hay tests nuevos que indexar.
+    if (l.tipo === "asociar") {
+      l.estado = "terminado";
+      return;
+    }
     l.estado = "reindexando";
     for (const c of l.cerebros) {
       try {
@@ -462,42 +525,57 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     encolarLote(p) {
       const no = noDisponible();
       if (no) throw new Error(no);
-      if (!p.reglas.length) throw new ConsultaError("parametro_invalido", "there are no rules to request");
+      const asociar = p.tipo === "asociar";
+      const items: Array<ReglaDePedido | (ArchivoDePedido & { repo: string })> = p.tipo === "asociar" ? p.archivos.map((a) => ({ ...a, repo: a.archivo.split(":")[0]! })) : p.reglas;
+      if (!items.length) throw new ConsultaError("parametro_invalido", asociar ? "there are no files to request" : "there are no rules to request");
       const { a, modelo } = elegir(p.proveedor, p.modelo);
-      const cerebros = [...new Set(p.reglas.map((r) => r.cerebro))];
-      const lote: Lote = { id: randomBytes(6).toString("hex"), creado: Date.now(), cerebros, estado: "corriendo" };
+      const cerebros = [...new Set(items.map((r) => r.cerebro))];
+      const lote: Lote = { id: randomBytes(6).toString("hex"), tipo: asociar ? "asociar" : "test", creado: Date.now(), cerebros, estado: "corriendo" };
       lotes.push(lote);
-      const porRepo = new Map<string, ReglaDePedido[]>();
-      for (const r of p.reglas) porRepo.set(r.repo ?? `brain ${r.cerebro}`, [...(porRepo.get(r.repo ?? `brain ${r.cerebro}`) ?? []), r]);
+      // Cada cadena corre sus tandas de a una; las cadenas, en paralelo. Tests: una cadena por repo (las tandas no editan
+      // páginas). Asociar: una por cerebro (las tandas editan sus páginas), con las tandas armadas por repo.
+      const repoDe = (r: (typeof items)[number]) => r.repo ?? `brain ${r.cerebro}`;
+      const cadenaDe = (r: (typeof items)[number]) => (asociar ? `brain ${r.cerebro}` : repoDe(r));
+      const grupos = new Map<string, { cadena: string; repo: string; cerebro: string; xs: typeof items }>();
+      for (const r of items) {
+        const k = `${cadenaDe(r)}\u0000${repoDe(r)}`;
+        if (!grupos.has(k)) grupos.set(k, { cadena: cadenaDe(r), repo: repoDe(r), cerebro: r.cerebro, xs: [] });
+        grupos.get(k)!.xs.push(r);
+      }
       const hechos: Trabajo[] = [];
-      const cadenas: Array<{ repo: string; ts: Trabajo[] }> = [];
-      for (const [repo, reglas] of porRepo) {
-        const tam = tamanioDeTanda(reglas.length);
-        const de = Math.ceil(reglas.length / tam);
-        const ts: Trabajo[] = [];
+      const cadenas = new Map<string, Array<{ t: Trabajo; repo: string }>>();
+      for (const g of grupos.values()) {
+        const tam = tamanioDeTanda(g.xs.length, asociar ? TANDA_MAX_ASOCIAR : TANDA_MAX);
+        const de = Math.ceil(g.xs.length / tam);
         for (let n = 1; n <= de; n++) {
-          const parte = reglas.slice((n - 1) * tam, n * tam);
-          const t = nuevo({
-            tipo: "test", etiqueta: `${repo}${de > 1 ? ` · batch ${n} of ${de}` : ""} · ${parte.length} ${parte.length === 1 ? "rule" : "rules"}`,
-            pedido: pedidoDeTanda(parte, repo, n, de), cerebros: [...new Set(parte.map((r) => r.cerebro))], proveedor: a.id, ...(modelo ? { modelo } : {}),
-            lote: lote.id, repo, tanda: { n, de }, reglas: parte.map((r) => ({ cerebro: r.cerebro, funcionalidad: r.funcionalidad, regla: r.regla })),
-          });
+          const parte = g.xs.slice((n - 1) * tam, n * tam);
+          const base = { proveedor: a.id, ...(modelo ? { modelo } : {}), lote: lote.id, repo: g.repo, tanda: { n, de } };
+          const t = asociar
+            ? nuevo({
+              ...base, tipo: "asociar", etiqueta: `${g.repo}${de > 1 ? ` · batch ${n} of ${de}` : ""} · ${parte.length} ${parte.length === 1 ? "file" : "files"}`,
+              pedido: pedidoDeTandaAsociar(parte as ArchivoDePedido[], g.repo, g.cerebro, n, de), cerebros: [g.cerebro],
+              archivos: (parte as ArchivoDePedido[]).map((x) => ({ cerebro: x.cerebro, archivo: x.archivo })),
+            })
+            : nuevo({
+              ...base, tipo: "test", etiqueta: `${g.repo}${de > 1 ? ` · batch ${n} of ${de}` : ""} · ${parte.length} ${parte.length === 1 ? "rule" : "rules"}`,
+              pedido: pedidoDeTanda(parte as ReglaDePedido[], g.repo, n, de), cerebros: [...new Set(parte.map((r) => r.cerebro))],
+              reglas: (parte as ReglaDePedido[]).map((r) => ({ cerebro: r.cerebro, funcionalidad: r.funcionalidad, regla: r.regla })),
+            });
           adaptadorDe.set(t.id, a);
           trabajos.push(t);
-          ts.push(t);
           hechos.push(t);
+          cadenas.set(g.cadena, [...(cadenas.get(g.cadena) ?? []), { t, repo: g.repo }]);
         }
-        cadenas.push({ repo, ts });
       }
       podar();
-      // Los repos corren en paralelo; dentro de cada uno, una tanda después de otra (dos agentes en el mismo repo se pisarían).
+      // Dentro de una cadena, una tanda después de otra (dos agentes en el mismo repo, o en las mismas páginas, se pisarían).
       void (async () => {
         const reg = await registro();
-        await Promise.all(cadenas.map(async ({ repo, ts }) => {
-          const ruta = reg.cerebros.flatMap((c) => c.repos).find((r) => r.id === repo)?.ruta;
-          for (const t of ts) {
+        const rutaDe = (repo: string) => reg.cerebros.flatMap((c) => c.repos).find((r) => r.id === repo)?.ruta;
+        await Promise.all([...cadenas.values()].map(async (ts) => {
+          for (const { t, repo } of ts) {
             if (t.estado === "cancelado") continue;
-            await correrTanda(t, ruta);
+            await (asociar ? correrTandaAsociar(t, rutaDe(repo)) : correrTanda(t, rutaDe(repo)));
           }
         }));
         await terminarLote(lote);

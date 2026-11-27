@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { GUIA_TESTS } from "@flowbrain/core";
 import { ESPECIFICACIONES_JS } from "../src/viewer-especificaciones.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
+import { LOTE_JS } from "../src/viewer-lote.js";
 
 /** La pantalla Especificaciones, corrida con un DOM mínimo: casos de uso unidos entre cerebros, filtros, lo que falta y "Esto está mal". */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
@@ -31,6 +32,7 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
     createElement: () => ({ href: "", download: "", click() { const h = this.href; descargas.push({ archivo: this.download, texto: () => resolveObjectURL(h)!.text() }); } }),
   };
   new Function("window", "document", "sessionStorage", FILTROS_JS)(window, documento, sessionStorage);
+  new Function("window", LOTE_JS)(window);
   new Function("window", "document", "sessionStorage", "localStorage", "fetch", ESPECIFICACIONES_JS)(window, documento, sessionStorage, localStorage, opciones.fetch);
   const raiz = el("especificaciones");
   let html = "";

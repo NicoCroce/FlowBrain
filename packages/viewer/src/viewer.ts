@@ -3,6 +3,7 @@ import { CONTRATOS_JS } from "./viewer-contratos.js";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
 import { FILTROS_JS } from "./viewer-filtros.js";
+import { LOTE_JS } from "./viewer-lote.js";
 import { mapa3dDelGrafo } from "./mapa3d.js";
 import { GRAFO3D_JS } from "./viewer-3d.js";
 import { MAPA_JS } from "./viewer-mapa.js";
@@ -649,6 +650,7 @@ a.nb { text-decoration: none; }
 <script>${seguroEnScript(IDIOMA_JS)}</script>
 <script>${seguroEnScript(GRAFO3D_JS)}</script>
 <script>${seguroEnScript(FILTROS_JS)}</script>
+<script>${seguroEnScript(LOTE_JS)}</script>
 <script>${seguroEnScript(PRODUCTO_JS)}</script>
 <script>${seguroEnScript(PANTALLAS_JS)}</script>
 <script>${seguroEnScript(FIDELIDAD_JS)}</script>

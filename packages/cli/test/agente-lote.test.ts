@@ -110,7 +110,7 @@ afterAll(async () => {
 
 describe("tandas", () => {
   it("reparte lo más parejo posible, sin pasar de 15", () => {
-    expect([1, 10, 15, 16, 20, 30, 31, 45].map(tamanioDeTanda)).toEqual([1, 10, 15, 8, 10, 15, 11, 15]);
+    expect([1, 10, 15, 16, 20, 30, 31, 45].map((n) => tamanioDeTanda(n))).toEqual([1, 10, 15, 8, 10, 15, 11, 15]);
   });
   it("lee el bloque de resultados y descarta lo que no sirve", () => {
     const ok = '```flowbrain-resultados\n[{"cerebro":"c","funcionalidad":"feat-x","regla":"r","resultado":"A","tests":["repo-a:src/x.test.ts::va"]},{"cerebro":"c","funcionalidad":"feat-x","regla":"s","resultado":"c"},{"cerebro":"c","funcionalidad":"feat-x","regla":"t","resultado":"a","tests":["suelto"]}]\n```';
