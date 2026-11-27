@@ -19,6 +19,7 @@ export * from "./componentes.js";
 export * from "./registro.js";
 export * from "./engine/cerebros.js";
 export * from "./llamadas.js";
+export * from "./no-producto.js";
 export * from "./engine/cobertura.js";
 export * from "./engine/fidelidad.js";
 export * from "./edicion.js";

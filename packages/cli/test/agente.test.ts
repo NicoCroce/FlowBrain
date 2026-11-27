@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { leerRegistro } from "@flowbrain/core";
-import { crearAgente, HERRAMIENTAS_PROHIBIDAS, indicacionesDelPedido, pasosDeEvento } from "../src/agente.js";
+import { crearAgente, HERRAMIENTAS_PROHIBIDAS, indicacionesDelPedido, pasosDeEvento, permisosDelPedido } from "../src/agente.js";
+import { claudeCode } from "../src/proveedores.js";
 import { ejecutar } from "../src/main.js";
 import { crearServidorVisor, type ServidorVisor } from "../src/servidor-visor.js";
 
@@ -114,6 +115,36 @@ describe("el agente del visor", () => {
     expect((await pedir("POST", "/api/agente/cancelar", { id: r.json["id"] })).json["estado"]).toBe("cancelado");
     expect((await esperar(r.json["id"] as string))["estado"]).toBe("cancelado");
     expect((await pedir("POST", "/api/agente/cancelar", { id: "no-existe" })).estado).toBe(404);
+  }, 30_000);
+
+  it("un pedido asociar (Sin asociar) corre con permisos acotados: solo páginas feat y lib y borradores, sin tests", async () => {
+    const r = await pedir("POST", "/api/agente", { tipo: "asociar", pedido: "Assign these 2 files to their feature in FlowBrain.", etiqueta: "Asociar 2 archivos", cerebros: ["tienda"] });
+    expect(r.estado).toBe(200);
+    const t = await esperar(r.json["id"] as string);
+    expect(t).toMatchObject({ tipo: "asociar", etiqueta: "Asociar 2 archivos" });
+    const lineas = (await readFile(join(dir, "llamadas.jsonl"), "utf8")).trim().split("\n");
+    const { args } = JSON.parse(lineas[lineas.length - 1]!) as { args: string[] };
+    const prompt = args[args.indexOf("-p") + 1]!;
+    expect(prompt).toContain("Assign these 2 files to their feature in FlowBrain.");
+    expect(prompt).toContain("This request can only write");
+    expect(prompt).not.toContain("$ARGUMENTS");
+    // Sin acceptEdits: lo que no está permitido se rechaza solo.
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("default");
+    const raiz = (await import("node:path")).resolve(join(reg, "tienda"));
+    expect(args).toContain(`Edit(/${join(raiz, "_drafts", "**")})`);
+    expect(args).toContain(`Write(/${join(raiz, "product", "feat-*.md")})`);
+    expect(args).toContain(`Edit(/${join(raiz, "technology", "lib-*.md")})`);
+    expect(args).not.toContain("Edit");
+    expect(args).not.toContain("Write");
+    expect(args).toContain("Bash(flowbrain compile:*)");
+    expect(args).not.toContain("Bash(npx vitest:*)");
+    expect(args).not.toContain("Bash(flowbrain:*)");
+    for (const p of HERRAMIENTAS_PROHIBIDAS) expect(args).toContain(p);
+    // Los otros tipos siguen con los permisos de siempre.
+    expect(permisosDelPedido("test", ["/b"])).toEqual({});
+    const comun = claudeCode("claude").armar({ prompt: "x", cwd: "/p", carpetasExtra: [] }).args;
+    expect(comun[comun.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
+    expect(comun).toContain("Edit");
   }, 30_000);
 
   it("sin Claude Code lo dice, y la guía de cada tipo de pedido es la que corresponde", async () => {

@@ -398,7 +398,7 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
     "sin_asociar",
     {
       description:
-        "Index files that belong to no feature or library, grouped by folder, with the recommended feature for each one and the reason (it serves an endpoint that feature calls, it is imported by or imports files of it, or its folder neighbors belong to it). It marks shared code (used by several features) and folders that can be assigned as a whole. Use it to complete the feature catalog.",
+        "Index files that belong to no feature or library, grouped by folder, with the recommended feature for each one and the reason (it serves an endpoint that feature calls, it is imported by or imports files of it, or its folder neighbors belong to it). It marks shared code (used by several features) and folders that can be assigned as a whole. Files a person marked as not product code (tests, configuration, scripts, generated; the brain's not-product.yaml) are not listed: `ignorados` says how many and `noProducto` which entries. Use it to complete the feature catalog.",
       inputSchema: {
         carpeta: z.string().min(1).optional().describe("only those in this folder or its subfolders (repo:path or path)"),
         funcionalidad: z.string().min(1).optional().describe("only those with this feature recommended; \"ninguna\" for those without a hint"),

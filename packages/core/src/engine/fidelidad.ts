@@ -1,5 +1,6 @@
 import { cmp } from "../canonical.js";
 import { capaDe, ES_TEST, type Ficha } from "../funcionalidades.js";
+import type { MarcaNoProducto } from "../no-producto.js";
 import { dentroDe, type Contrato, type Graph } from "../schema.js";
 import { ajustarLista, crearIndiceCodigo, pantallasSinLlamadas } from "./codigo.js";
 import { crearContexto, type Contexto } from "./contexto.js";
@@ -165,6 +166,16 @@ export interface OpcionesFidelidad {
    * entendida (no se sabe si hay otro cerebro que la atienda).
    */
   cruzadas?: ReadonlySet<string>;
+  /**
+   * Lo que una persona marcó como no de producto (`not-product.yaml`). Sin él, el del contexto (`cargarContexto` lo
+   * lee); quien arma el contexto desde `_build` lo pasa acá.
+   */
+  noProducto?: readonly MarcaNoProducto[];
+}
+
+/** Una marca «No es de producto» con cuántos archivos sin dueño cubre hoy (0: ya no tapa nada, se puede sacar). */
+export interface IgnoradoSinAsociar extends MarcaNoProducto {
+  archivos: number;
 }
 
 /** Un contexto con índice de código desde los contenidos de `_build`, para quien no tiene uno armado (el visor). */
@@ -176,7 +187,7 @@ export function fidelidadDeFuentes(graph: Graph, fichas: Ficha[], archivos: stri
 }
 
 /** Puntaje de cada archivo del índice que se puede medir, y cuáles no se pudieron medir. Sin filtros ni recortes. */
-export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad = {}): { archivos: FidelidadArchivo[]; inciertos: ArchivoIncierto[]; sinAsociar: ArchivoSinAsociar[] } {
+export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad = {}): { archivos: FidelidadArchivo[]; inciertos: ArchivoIncierto[]; sinAsociar: ArchivoSinAsociar[]; noProducto: IgnoradoSinAsociar[] } {
   const ix = ctx.codigo;
   if (!ix) throw new ConsultaError("parametro_invalido", "there is no code index: run `flowbrain index <repo>` and `flowbrain compile`");
   const archivoDe = (k: string) => k.slice(0, k.lastIndexOf("#"));
@@ -187,6 +198,10 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
     ...ctx.graph.nodes.filter((n) => n.tipo === "lib").flatMap((n) => ((n.atributos["codigo"] as string[] | undefined) ?? []).map((c) => ({ id: n.id, codigo: c, feat: false }))),
   ];
   const hayFuncionalidades = ix.fichas.size > 0;
+  // Lo marcado como no de producto no se lista como sin asociar: no tiene por qué ser de una funcionalidad.
+  const marcas = opciones.noProducto ?? ctx.noProducto ?? [];
+  const tapados = new Map(marcas.map((m) => [m.entrada, 0]));
+  const marcaDe = (archivo: string) => marcas.find((m) => dentroDe(archivo, m.entrada));
 
   // Llamadas HTTP que no se unieron a nada, por archivo.
   const pendientes = new Map<string, { conRuta: number; sinDestino: number[]; sinRuta: number[] }>();
@@ -235,8 +250,10 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
     if (ES_TEST.test(ruta)) continue;
     const suyos = dueños.filter((x) => dentroDe(archivo, x.codigo));
     const lenguaje = (ctx.nodo.get(archivo)?.atributos["lenguaje"] as string | undefined) ?? EXT.exec(ruta)?.[1]?.toLowerCase() ?? "otro";
+    const marca = suyos.length || !hayFuncionalidades ? undefined : marcaDe(archivo);
+    if (marca) tapados.set(marca.entrada, tapados.get(marca.entrada)! + 1);
     if (suyos.length) featsDe.set(archivo, [...new Set(suyos.filter((x) => x.feat).map((x) => x.id))].sort(cmp));
-    else if (hayFuncionalidades) sueltos.push({ archivo, lenguaje, capa: capaDe(ruta) });
+    else if (hayFuncionalidades && !marca) sueltos.push({ archivo, lenguaje, capa: capaDe(ruta) });
     const signals: FidelidadArchivo["signals"] = {};
     const faltas: string[] = [];
     const tareas: Tarea[] = [];
@@ -299,10 +316,11 @@ export function fidelidadDeArchivos(ctx: Contexto, opciones: OpcionesFidelidad =
       suma += PESOS[s] * (v.ok / v.total);
       peso += PESOS[s];
     }
-    archivos.push({ archivo, puntaje: Math.round((100 * suma) / peso), lenguaje, capa: capaDe(ruta), funcionalidades: featsDe.get(archivo) ?? [], signals, faltas, tareas, ...(!suyos.length && hayFuncionalidades ? { sinAsociar: true as const } : {}) });
+    archivos.push({ archivo, puntaje: Math.round((100 * suma) / peso), lenguaje, capa: capaDe(ruta), funcionalidades: featsDe.get(archivo) ?? [], signals, faltas, tareas, ...(!suyos.length && hayFuncionalidades && !marca ? { sinAsociar: true as const } : {}) });
   }
 
-  return { archivos, inciertos, sinAsociar: recomendar(ctx, sueltos, featsDe) };
+  const noProducto = marcas.map((m) => ({ ...m, archivos: tapados.get(m.entrada) ?? 0 })).sort((a, b) => cmp(a.entrada, b.entrada));
+  return { archivos, inciertos, sinAsociar: recomendar(ctx, sueltos, featsDe), noProducto };
 }
 
 const PESO_LO_USAN = 3, PESO_USA = 2, PESO_ENDPOINT = 4, PESO_VECINO = 1, PESO_VECINO_ARRIBA = 0.5, TOPE_VECINOS = 5;
@@ -609,15 +627,19 @@ export interface SinAsociarParams {
   budget_tokens?: number | null;
 }
 
+/** Dónde viven las marcas «No es de producto» (`ARCHIVO_NO_PRODUCTO`), dicho para el modelo. */
+const ARCHIVO_NO_PRODUCTO_TXT = "the brain's not-product.yaml";
+
 export const COMO_ASOCIAR =
-  "To assign: add `repo:path` (the file, or the folder if `carpetaLibre`) to the `codigo` list in the frontmatter of the feature page and compile. The recommendation is a hint: open the file before deciding. `compartido` (shared) code does not go to a feature: it goes to the `codigo` of a `lib` page (common code) or stays unassigned. If no feature covers it, propose a new one with `flowbrain feature --guide`.";
+  "To assign: add `repo:path` (the file, or the folder if `carpetaLibre`) to the `codigo` list in the frontmatter of the feature page and compile. The recommendation is a hint: open the file before deciding. `compartido` (shared) code does not go to a feature: it goes to the `codigo` of a `lib` page (common code) or stays unassigned. If no feature covers it, propose a new one with `flowbrain feature --guide`. If it is not product code (tests, configuration, scripts, generated), add it to the `no_producto` list of the brain's `not-product.yaml` (`entrada: repo:path`, `motivo: test | config | script | generado | otro`) so it stops being listed.";
 
 /**
  * Archivos que no son de ninguna funcionalidad ni librería, agrupados por carpeta, con la funcionalidad que se le
  * recomienda a cada grupo y por qué. Es la lista de trabajo para completar el catálogo de funcionalidades.
  */
 export function sinAsociar(ctx: Contexto, p: SinAsociarParams = {}) {
-  const { sinAsociar: todos } = fidelidadDeArchivos(ctx);
+  const { sinAsociar: todos, noProducto } = fidelidadDeArchivos(ctx);
+  const ignorados = noProducto.reduce((n, m) => n + m.archivos, 0);
   if (!ctx.codigo!.fichas.size) return { herramienta: "sin_asociar", total: 0, carpetas: [], avisos: ["the brain has no features: there is nothing to assign to. First run `flowbrain feature --guide`"] };
   const q = p.carpeta?.replace(/\/+$/, "");
   let feat: string | null = null;
@@ -662,7 +684,13 @@ export function sinAsociar(ctx: Contexto, p: SinAsociarParams = {}) {
     ...(q || p.funcionalidad ? { filtro: { coinciden: filtrados.length } } : {}),
     carpetas: carpetas.slice(0, limite),
     ...(carpetas.length > limite ? { carpetasOmitidas: carpetas.length - limite } : {}),
-    avisos: todos.length ? [COMO_ASOCIAR] : ["every file in the index belongs to some feature or library"],
+    // Lo marcado como no de producto (`not-product.yaml`): no se lista, pero se dice cuánto es y se puede deshacer.
+    ignorados,
+    ...(noProducto.length ? { noProducto: noProducto.map((m) => ({ entrada: m.entrada, motivo: m.motivo, archivos: m.archivos })) } : {}),
+    avisos: [
+      ...(todos.length ? [COMO_ASOCIAR] : [ignorados ? "every other file in the index belongs to some feature or library" : "every file in the index belongs to some feature or library"]),
+      ...(noProducto.length ? [`${ignorados} ${ignorados === 1 ? "file is" : "files are"} not listed because ${noProducto.length === 1 ? "an entry" : `${noProducto.length} entries`} of ${ARCHIVO_NO_PRODUCTO_TXT} ${noProducto.length === 1 ? "marks it" : "mark them"} as not product code (tests, configuration, scripts, generated); see \`noProducto\`. To list them again, remove the entry (or use «Undo» in the viewer)`] : []),
+    ],
   };
   return ajustarLista(r, "carpetas", p.budget_tokens);
 }

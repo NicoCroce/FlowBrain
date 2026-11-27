@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { avisar, compileDir, contextoDeFuentes, type Progreso, deriva, fidelidadDeArchivos, simbolosDelVisor, type CodigoVisor, type Contrato, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
+import { avisar, cargarNoProducto, compileDir, contextoDeFuentes, type Progreso, deriva, fidelidadDeArchivos, simbolosDelVisor, type CodigoVisor, type Contrato, type Cruce, type ResumenConexion, type TrazasCruzadas, type Salidas } from "@flowbrain/core";
 import { renderViewerCerebros, type CerebroVisor, type PorPaquetes } from "./cerebros.js";
 import { renderViewer, type DerivaVisor, type FidelidadVisor } from "./viewer.js";
 
@@ -32,7 +32,7 @@ export const compileDirConVisor = (raiz: string, progreso?: Progreso) =>
     }
     avisar(progreso, { etapa: "fidelidad" });
     const ctx = contextoDeFuentes(s.graph, s.funcionalidades, archivos, extracciones, contratos.map((c) => JSON.parse(c) as Contrato));
-    const fidelidad = fidelidadDeArchivos(ctx);
+    const fidelidad = fidelidadDeArchivos(ctx, { noProducto: await cargarNoProducto(raiz) });
     const derivaVisor = deriva(ctx, { budget_tokens: null }) as unknown as DerivaVisor;
     avisar(progreso, { etapa: "visor" });
     return visor(s, fidelidad, derivaVisor, simbolosDelVisor(ctx));

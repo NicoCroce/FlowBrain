@@ -111,6 +111,8 @@ export function datosDeCerebros(cerebros: CerebroVisor[], cruces: Cruce[], conex
     deriva: partes.some((p) => p.deriva) ? partes.flatMap((p, i) => (p.deriva ?? []).map((d) => ({ ...d, c: i }))) : null,
     // Sin asociar de todos los cerebros, cada uno con el suyo (`c`); `null` si ninguno tiene índice de código.
     sinAsociar: partes.some((p) => p.sinAsociar) ? partes.flatMap((p, i) => (p.sinAsociar ?? []).map((a) => ({ ...a, c: i }))) : null,
+    // Las marcas «No es de producto» de cada cerebro, con el suyo (`c`).
+    noProducto: partes.some((p) => p.noProducto) ? partes.flatMap((p, i) => (p.noProducto ?? []).map((a) => ({ ...a, c: i }))) : null,
     // Los símbolos de todos los cerebros en una lista: los índices de cada uno se corren por los de los anteriores.
     codigo: partes.some((p) => p.codigo) ? unirCodigo(partes.map((p) => p.codigo)) : null,
     conexiones,

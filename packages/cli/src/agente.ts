@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { dirname, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { ConsultaError, TEST_REF, type Registro } from "@flowbrain/core";
 import { compileDirConVisor } from "@flowbrain/viewer";
 import type { Edicion } from "./edicion.js";
@@ -23,8 +23,61 @@ export { HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento };
  *   en paralelo no se pisan).
  */
 
-export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir";
-export const TIPOS_DE_PEDIDO: readonly TipoDePedido[] = ["test", "agrupar", "escribir", "corregir"];
+export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir" | "asociar";
+export const TIPOS_DE_PEDIDO: readonly TipoDePedido[] = ["test", "agrupar", "escribir", "corregir", "asociar"];
+
+/**
+ * Guía de un pedido «asociar» (pantalla Sin asociar): asociar archivos a su funcionalidad o librería, o proponer un
+ * borrador nuevo. Va con permisos acotados (`permisosDelPedido`): solo escribe las páginas `feat-*` y `lib-*` del
+ * cerebro (lo mismo que escribe «Asociar») y borradores en `_drafts/`; nunca el código de los repos.
+ */
+export const GUIA_ASOCIAR = `You are going to complete this project's feature catalog in FlowBrain: assign files that today belong to no
+feature or library, or propose the drafts that are missing.
+
+$ARGUMENTS
+
+## Rules
+
+- **Do not modify the project's repositories.** This request can only write, inside each brain folder
+  (\`.flowbrain/<brain>/\`): the \`codigo\` list of \`product/feat-*.md\` and \`technology/lib-*.md\` pages that already
+  exist, and new drafts in \`_drafts/\`. Any other write will be refused.
+- **Do not open real environment files** (\`.env\` and similar). No network.
+- **Open each file before deciding.** The recommendation is a hint, not a fact. When you cannot tell, leave it and say
+  why in your answer.
+- To assign: add \`repo:path\` (the file, or its folder when the whole folder belongs to it) to the \`codigo\` list in
+  the frontmatter of the page. Do not touch the rest of the page.
+- A new feature goes as a draft: \`.flowbrain/<brain>/_drafts/product/feat-<id>.md\`, with \`tipo: feat\`, a business
+  \`nombre\`, a one-line \`resumen\`, its \`codigo\`, its use cases and specifications (\`flowbrain specs --guide\` explains
+  them; mark them as proposed). A new library goes as a draft: \`.flowbrain/<brain>/_drafts/<repo-id>/technology/lib-<id>.md\`
+  with \`tipo: lib\`, \`nombre\`, \`resumen\` and its \`codigo\`. A person reviews and promotes them
+  (\`flowbrain promote <id> --write\`): do not promote them yourself.
+- Tests, configuration, scripts and generated files are not product: do not assign them; list them in your answer so
+  the person marks them as «Not product» in the viewer.
+- Reply in the user's language, briefly.
+
+## Steps
+
+1. For each file, read it and, if needed, \`flowbrain feature <id> --brain <brain>\` for the candidate feature.
+2. Edit the pages (or write the drafts). After editing pages of a brain, run \`flowbrain compile\` inside
+   \`.flowbrain/<brain>/\`; if it does not compile, fix your edit.
+3. \`flowbrain unassigned --brain <brain>\` shows what is still unassigned.
+4. Report: what you assigned and where, the drafts you wrote, and what you left and why.
+`;
+
+/** Comandos que puede correr un pedido «asociar»: leer FlowBrain y compilar; nada de tests ni de promover. */
+const COMANDOS_ASOCIAR = ["flowbrain compile", "flowbrain unassigned", "flowbrain feature", "flowbrain status", "flowbrain brains", "flowbrain screen", "flowbrain connections", "flowbrain specs --guide", "cd", "ls", "git status", "git diff"];
+
+/**
+ * Los permisos de un pedido. Sin `escritura`, los de siempre (`POLITICA`: edita dentro del proyecto y corre tests).
+ * Un pedido «asociar» solo puede escribir las páginas `feat-*` y `lib-*` de sus cerebros y borradores en `_drafts/`.
+ */
+export function permisosDelPedido(tipo: TipoDePedido, raices: string[]): { escritura?: string[]; comandos?: string[] } {
+  if (tipo !== "asociar") return {};
+  return {
+    escritura: raices.flatMap((r) => [join(r, "_drafts", "**"), join(r, "product", "feat-*.md"), join(r, "technology", "lib-*.md")]),
+    comandos: COMANDOS_ASOCIAR,
+  };
+}
 
 /** Cómo termina cada regla de un pedido de tests: a y b la verifican; c y d son hallazgos que no se resuelven con un test. */
 export type ResultadoDeTest = "a" | "b" | "c" | "d";
@@ -116,7 +169,7 @@ export function tamanioDeTanda(n: number): number {
 
 /** El texto que recibe el agente: la guía del tipo de pedido, con el pedido en lugar de `$ARGUMENTS`. */
 export function indicacionesDelPedido(tipo: TipoDePedido, pedido: string): string {
-  const guia = (tipo === "test" ? GUIA_TESTS : GUIA_ESPECIFICACIONES).replace(/^---\n[\s\S]*?\n---\n/, "");
+  const guia = (tipo === "test" ? GUIA_TESTS : tipo === "asociar" ? GUIA_ASOCIAR : GUIA_ESPECIFICACIONES).replace(/^---\n[\s\S]*?\n---\n/, "");
   return guia.replace("$ARGUMENTS", `What the person asks for, from the FlowBrain viewer:\n\n${pedido.trim()}\n`);
 }
 
@@ -257,7 +310,8 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     const repos = soloRepo ? [soloRepo] : todos;
     const antes = new Map(repos.map((r) => [r, estadoGit(r)]));
     const afuera = todos.filter((r) => !resolve(r).startsWith(cwd + sep));
-    const { comando, args } = a.armar({ prompt: indicacionesDelPedido(t.tipo, t.pedido), ...(t.modelo ? { modelo: t.modelo } : {}), cwd, carpetasExtra: afuera });
+    const raices = t.cerebros.map((n) => reg.cerebro(n)?.raiz).filter((r): r is string => !!r).map((r) => resolve(r));
+    const { comando, args } = a.armar({ prompt: indicacionesDelPedido(t.tipo, t.pedido), ...(t.modelo ? { modelo: t.modelo } : {}), cwd, carpetasExtra: afuera, ...permisosDelPedido(t.tipo, raices) });
     await new Promise<void>((listo) => {
       const p = spawn(comando, args, { cwd, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FLOWBRAIN_ROOT: reg.carpeta } });
       procesos.set(t.id, p);

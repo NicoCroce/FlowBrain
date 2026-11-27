@@ -4,6 +4,7 @@ import { cmp } from "../canonical.js";
 import type { Salidas } from "../compile.js";
 import { MARCA_FIN, MARCA_INICIO } from "../render.js";
 import type { Ficha } from "../funcionalidades.js";
+import { cargarNoProducto, type MarcaNoProducto } from "../no-producto.js";
 import type { Contrato, Graph, GraphEdge, GraphNode } from "../schema.js";
 import { actualizarHeads, crearIndiceCodigo, type IndiceCodigo } from "./codigo.js";
 
@@ -20,6 +21,8 @@ export interface Contexto {
   codigo: IndiceCodigo | null;
   /** Notas pendientes de revisión (`_drafts/notes/<id>.md`), por nombre de archivo: lo que alguien vio que contradice al brain. */
   notas: Map<string, string[]>;
+  /** Lo marcado como no de producto (`not-product.yaml`): no se lista como sin asociar. Ausente: nada marcado. */
+  noProducto?: MarcaNoProducto[];
 }
 
 /** Nombre de archivo de las notas de un nodo: su id con lo que no es letra, número o guion pasado a `_`. */
@@ -98,5 +101,6 @@ export async function cargarContexto(raiz: string): Promise<Contexto> {
     const lineas = (await readFile(join(dirNotas, n), "utf8")).split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim());
     if (lineas.length) notas.set(n.slice(0, -3), lineas);
   }
-  return crearContexto(graph, contratos, prosa, codigo, notas);
+  const noProducto = await cargarNoProducto(raiz);
+  return { ...crearContexto(graph, contratos, prosa, codigo, notas), ...(noProducto.length ? { noProducto } : {}) };
 }

@@ -260,4 +260,27 @@ describe("archivos sin asociar", () => {
     expect(() => sinAsociar(c, { funcionalidad: "no-existe" })).toThrow(ConsultaError);
     expect((fidelidad(c) as unknown as { avisos: string[] }).avisos.join(" ")).toContain("6 files belong to no feature or library");
   });
+
+  it("lo marcado «No es de producto» deja de listarse, se cuenta aparte y una marca sin archivos se sigue viendo", () => {
+    const noProducto = [{ entrada: `${A}:src/sueltos`, motivo: "script" as const }, { entrada: `${A}:src/vecinos/a.ts`, motivo: "config" as const }, { entrada: `${A}:src/pagos/cobrar.ts`, motivo: "otro" as const }];
+    const r = fidelidadDeArchivos(c, { noProducto });
+    expect(r.sinAsociar.map((x) => x.archivo.slice(A.length + 1))).toEqual(["src/pagos/extra/nota.ts", "src/shared/dinero.ts", "src/shared/fecha.ts", "src/shared/usa-pagos.ts"]);
+    // Un archivo con dueño no se tapa: la marca de cobrar.ts no cuenta nada (los tests ya estaban fuera).
+    expect(r.noProducto).toEqual([
+      { entrada: `${A}:src/pagos/cobrar.ts`, motivo: "otro", archivos: 0 },
+      { entrada: `${A}:src/sueltos`, motivo: "script", archivos: 1 },
+      { entrada: `${A}:src/vecinos/a.ts`, motivo: "config", archivos: 1 },
+    ]);
+    // El contexto cargado de disco trae las marcas (cargarContexto); la consulta las cuenta y lo dice.
+    const conMarcas = { ...c, noProducto };
+    const q = sinAsociar(conMarcas, { budget_tokens: null }) as unknown as { total: number; sinPista: number; ignorados: number; noProducto: unknown[]; avisos: string[] };
+    expect([q.total, q.sinPista, q.ignorados]).toEqual([4, 0, 2]);
+    expect(q.noProducto).toHaveLength(3);
+    expect(q.avisos.join(" ")).toContain("2 files are not listed because 3 entries of the brain's not-product.yaml mark them as not product code");
+    expect((fidelidad(conMarcas) as unknown as { avisos: string[] }).avisos.join(" ")).toContain("4 files belong to no feature or library");
+    // Sin marcas: ignorados 0 y sin la lista.
+    const sin = sinAsociar(c, { budget_tokens: null }) as unknown as { ignorados: number; noProducto?: unknown };
+    expect(sin.ignorados).toBe(0);
+    expect(sin.noProducto).toBeUndefined();
+  });
 });

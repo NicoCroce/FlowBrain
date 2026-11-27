@@ -221,6 +221,45 @@ describe("flowbrain viewer --serve", () => {
     expect(await readFile(ruta, "utf8")).not.toContain("manual:");
   }, 60_000);
 
+  it("No es de producto: escribe not-product.yaml, recompila (el visor y sin_asociar lo cuentan) y se deshace", async () => {
+    const ruta = join(reg, "tienda/not-product.yaml");
+    const marcar = (cuerpo: Record<string, unknown>) => pedir("POST", "/api/editar", { cuerpo: { cerebro: "tienda", tipo: "no_producto", archivo: AVISOS, ...cuerpo } });
+    // Solo el archivo o una carpeta que lo contiene, con un motivo conocido.
+    expect((await marcar({ entrada: `${R}:otra`, motivo: "script" })).estado).toBe(400);
+    expect((await marcar({ entrada: `${R}:src`, motivo: "porque sí" })).estado).toBe(400);
+    expect((await marcar({ entrada: `${R}:src`, motivo: 3 })).estado).toBe(400);
+    expect((await marcar({ archivo: `${R}:no-existe.ts`, entrada: `${R}:no-existe.ts`, motivo: "otro" })).estado).toBe(404);
+    const r = await marcar({ entrada: `${R}:src`, motivo: "config" });
+    expect(r.estado).toBe(200);
+    expect(r.json).toMatchObject({ cambio: true, escrito: "tienda/not-product.yaml", faltaReindexar: false });
+    expect(await readFile(ruta, "utf8")).toContain(`  - entrada: "${R}:src"\n    motivo: config\n    origen: persona\n`);
+    // El contexto de disco y el visor recompilado traen la marca (src/ ya tiene dueño: no tapa ningún archivo sin asociar).
+    const q = JSON.parse((await ejecutar(["unassigned", "--root", join(reg, "tienda")], {}, dir)).stdout) as { ignorados: number; noProducto: unknown[] };
+    expect(q.noProducto).toEqual([{ entrada: `${R}:src`, motivo: "config", archivos: 0 }]);
+    expect(q.ignorados).toBe(0);
+    expect(await readFile(join(reg, "tienda/_build/viewer.html"), "utf8")).toContain(`"noProducto":[{"e":"${R}:src","m":"config","n":0}]`);
+    expect((await marcar({ entrada: `${R}:src`, motivo: "config" })).json).toMatchObject({ cambio: false });
+    // Deshacer: con motivo nulo, sin archivo.
+    const d = await pedir("POST", "/api/editar", { cuerpo: { cerebro: "tienda", tipo: "no_producto", entrada: `${R}:src`, motivo: null } });
+    expect(d.json).toMatchObject({ cambio: true });
+    expect(await readFile(ruta, "utf8")).not.toContain("entrada:");
+    expect(await readFile(join(reg, "tienda/_build/viewer.html"), "utf8")).toContain('"noProducto":[]');
+  }, 60_000);
+
+  it("asocia código compartido a una librería: escribe el codigo de su página lib", async () => {
+    const { compileDirConVisor } = await import("@flowbrain/viewer");
+    const ruta = join(reg, "tienda/technology/lib-comun.md");
+    await mkdir(dirname(ruta), { recursive: true });
+    await writeFile(ruta, ["---", "id: lib-comun", "tipo: lib", 'nombre: "Común"', 'resumen: "Código que usan varias funcionalidades."', "---", "# Común", ""].join("\n"));
+    await compileDirConVisor(join(reg, "tienda"));
+    const r = await pedir("POST", "/api/editar", { cuerpo: { cerebro: "tienda", tipo: "funcionalidad", archivo: AVISOS, funcionalidad: "lib-comun" } });
+    expect(r.estado).toBe(200);
+    expect(r.json).toMatchObject({ cambio: true, escrito: "tienda/technology/lib-comun.md" });
+    expect(await readFile(ruta, "utf8")).toContain(`codigo:\n  - ${AVISOS}\n---`);
+    // Otro tipo de página no: solo funcionalidades y librerías declaran código.
+    expect((await pedir("POST", "/api/editar", { cuerpo: { cerebro: "tienda", tipo: "funcionalidad", archivo: AVISOS, funcionalidad: R } })).estado).toBe(404);
+  }, 60_000);
+
   it("nunca escribe fuera de la carpeta del cerebro", async () => {
     const base = join(reg, "tienda");
     await expect(rutaDentro(base, "../flowbrain.yaml")).rejects.toThrow(/leaves the brain folder/);

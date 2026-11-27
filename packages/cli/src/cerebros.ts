@@ -1,6 +1,6 @@
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, resolve } from "node:path";
-import { ARCHIVO_REGISTRO, avisar, type Progreso, cerebroLiviano, cmp, contextoDeFuentes, contratoDeEndpoint, deriva, derivaCruzadaDe, fidelidadDeArchivos, simbolosDelVisor, CompileError, crucesDelRegistro, usosEntreCerebros, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Contrato, type Cruce, type Ficha, type Graph, type Registro } from "@flowbrain/core";
+import { ARCHIVO_REGISTRO, avisar, cargarNoProducto, type Progreso, cerebroLiviano, cmp, contextoDeFuentes, contratoDeEndpoint, deriva, derivaCruzadaDe, fidelidadDeArchivos, simbolosDelVisor, CompileError, crucesDelRegistro, usosEntreCerebros, esRegistro, leerRegistro, MAX_CEREBROS, resumenConexiones, trazasCruzadas, type Cerebro, type FuenteTraza, type CerebroLiviano, type Contrato, type Cruce, type MarcaNoProducto, type Ficha, type Graph, type Registro } from "@flowbrain/core";
 import { draftDir } from "@flowbrain/indexer";
 import { escribirIndex, fusionar, IGNORAR, indexar, leerRepo, PARSERS, slug } from "@flowbrain/parsers";
 import { compileDirConVisor, visorDeCerebros, type CerebroVisor } from "@flowbrain/viewer";
@@ -353,7 +353,7 @@ export async function htmlDelVisor(registro: Registro): Promise<string | null> {
   const visibles: CerebroVisor[] = [];
   const fuentes: FuenteTraza[] = [];
   const livianos = new Map<string, CerebroLiviano>();
-  const conIndice: Array<{ visible: CerebroVisor; funcionalidades: Ficha[]; extracciones: string[]; archivos: string[]; contratos: Contrato[] }> = [];
+  const conIndice: Array<{ visible: CerebroVisor; funcionalidades: Ficha[]; extracciones: string[]; archivos: string[]; contratos: Contrato[]; noProducto: MarcaNoProducto[] }> = [];
   for (const c of registro.cerebros) {
     let graph: Graph;
     try {
@@ -372,7 +372,7 @@ export async function htmlDelVisor(registro: Registro): Promise<string | null> {
     fuentes.push({ nombre: c.nombre, graph, extracciones, archivos });
     const dirC = join(c.raiz, "_build/contracts");
     const contratos = await Promise.all((await readdir(dirC).catch(() => [] as string[])).filter((n) => n.endsWith(".json")).sort(cmp).map(async (n) => JSON.parse(await readFile(join(dirC, n), "utf8")) as Contrato));
-    if (archivos.length) conIndice.push({ visible, funcionalidades, extracciones, archivos, contratos });
+    if (archivos.length) conIndice.push({ visible, funcionalidades, extracciones, archivos, contratos, noProducto: await cargarNoProducto(c.raiz) });
   }
   if (!visibles.length) return null;
   const todos = crucesDelRegistro([...livianos.values()], registro.comunicados, registro.conexiones, registro.internas);
@@ -385,7 +385,7 @@ export async function htmlDelVisor(registro: Registro): Promise<string | null> {
     // Unida cuenta la que cruza a otro cerebro y la que el registro declara interna del propio servicio.
     const cruzadas = new Set([...cruces.filter((k) => k.desde.cerebro === x.visible.nombre).map((k) => k.desde.evidencia), ...todos.internas.filter((k) => k.cerebro === x.visible.nombre).map((k) => k.evidencia)]);
     const ctx = contextos.get(x.visible.nombre)!;
-    x.visible.fidelidad = fidelidadDeArchivos(ctx, { cruzadas });
+    x.visible.fidelidad = fidelidadDeArchivos(ctx, { cruzadas, noProducto: x.noProducto });
     x.visible.codigo = simbolosDelVisor(ctx);
     // Y su deriva, con la misma regla: lo que atiende o llama otro cerebro comunicado no es deriva.
     const vecinos = visibles.map((v) => v.nombre).filter((n) => n !== x.visible.nombre && registro.comunicados(x.visible.nombre, n));

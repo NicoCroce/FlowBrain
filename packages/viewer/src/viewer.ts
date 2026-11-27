@@ -1,4 +1,4 @@
-import { CIERRE_DEL_PLAN, COMO_RESOLVER, GUIA_TESTS, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type CodigoVisor, type ArchivoSinAsociar, type SenalDeRecomendacion, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
+import { CIERRE_DEL_PLAN, COMO_RESOLVER, GUIA_TESTS, dependenciasDelGrafo, REGLAS_DEL_PLAN, type ArchivoIncierto, type CodigoVisor, type ArchivoSinAsociar, type IgnoradoSinAsociar, type SenalDeRecomendacion, type Ficha, type FidelidadArchivo, type Graph } from "@flowbrain/core";
 import { CONTRATOS_JS } from "./viewer-contratos.js";
 import { ESPECIFICACIONES_JS } from "./viewer-especificaciones.js";
 import { FIDELIDAD_JS } from "./viewer-fidelidad.js";
@@ -29,6 +29,14 @@ export interface FidelidadVisor {
   inciertos: ArchivoIncierto[];
   /** Archivos sin funcionalidad ni librería, con la recomendada. Ausente en quien arma la fidelidad a mano. */
   sinAsociar?: ArchivoSinAsociar[];
+  /** Las marcas «No es de producto» con cuántos archivos tapa cada una. */
+  noProducto?: IgnoradoSinAsociar[];
+}
+
+/** Las marcas «No es de producto» en formato corto: e: entrada, m: motivo, n: archivos sin dueño que tapa hoy. */
+export function noProductoDelVisor(f: FidelidadVisor | undefined) {
+  if (!f?.sinAsociar) return null;
+  return (f.noProducto ?? []).map((x) => ({ e: x.entrada, m: x.motivo, n: x.archivos }));
 }
 
 /**
@@ -111,6 +119,7 @@ export function datosDelVisor(graph: Graph, funcionalidades: Ficha[] = [], fidel
   return {
     fidelidad: fidelidadDelVisor(fidelidad),
     sinAsociar: sinAsociarDelVisor(fidelidad),
+    noProducto: noProductoDelVisor(fidelidad),
     // Una entrada por cerebro; `null` si no hay índice de código (sin él no se sabe qué se llama).
     deriva: deriva ? [derivaDelVisor(deriva)!] : null,
     dependencias: dependenciasDelGrafo(graph, funcionalidades),

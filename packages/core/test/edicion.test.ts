@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agregarCodigoAPagina, agregarDeclaracion, cambiarEstadoDeEspecificacion, leerLlamadasDeclaradas } from "../src/index.js";
+import { agregarCodigoAPagina, leerNoProducto, marcarNoProducto, agregarDeclaracion, cambiarEstadoDeEspecificacion, leerLlamadasDeclaradas } from "../src/index.js";
 
 const PAGINA = `---
 id: feat-pedidos
@@ -70,5 +70,33 @@ describe("confirmar una especificación", () => {
     expect(() => cambiarEstadoDeEspecificacion("p.md", CON, "otra", "confirmada")).toThrow(/has no specification with id otra/);
     expect(() => cambiarEstadoDeEspecificacion("p.md", PAGINA, "sin-stock", "confirmada")).toThrow(/has no specification/);
     expect(() => cambiarEstadoDeEspecificacion("p.md", CON, "sin-stock", "lista")).toThrow(/unknown estado/);
+  });
+});
+
+describe("marcar como no de producto (not-product.yaml)", () => {
+  it("agrega, cambia el motivo y saca la marca sin tocar los comentarios; sin cambios no escribe", () => {
+    const a = marcarNoProducto(null, "repo-x:scripts", "script");
+    expect(a.cambio).toBe(true);
+    expect(a.contenido).toContain("# Files that are not product code");
+    expect(leerNoProducto(a.contenido).marcas).toEqual([{ entrada: "repo-x:scripts", motivo: "script", origen: "persona" }]);
+    expect(a.contenido).toContain('entrada: "repo-x:scripts"');
+    expect(marcarNoProducto(a.contenido, "repo-x:scripts", "script")).toEqual({ contenido: a.contenido, cambio: false });
+    const b = marcarNoProducto(a.contenido, "repo-x:src/gen/api.ts", "generado");
+    const c = marcarNoProducto(b.contenido, "repo-x:scripts", "config");
+    expect(leerNoProducto(c.contenido).marcas.map((m) => [m.entrada, m.motivo])).toEqual([["repo-x:scripts", "config"], ["repo-x:src/gen/api.ts", "generado"]]);
+    const d = marcarNoProducto(c.contenido, "repo-x:scripts", null);
+    expect(d.cambio).toBe(true);
+    expect(d.contenido).toContain("# Files that are not product code");
+    expect(leerNoProducto(d.contenido).marcas.map((m) => m.entrada)).toEqual(["repo-x:src/gen/api.ts"]);
+    expect(marcarNoProducto(d.contenido, "repo-x:scripts", null).cambio).toBe(false);
+    expect(() => marcarNoProducto(null, "../fuera", "otro")).toThrow(/invalid entry/);
+    expect(() => marcarNoProducto(null, "repo-x:a", "porque sí")).toThrow(/unknown motivo/);
+  });
+
+  it("al leer descarta lo mal formado y dice por qué", () => {
+    const r = leerNoProducto("no_producto:\n  - entrada: repo-x:a\n  - entrada: nada\n  - entrada: repo-x:b\n    motivo: raro\n  - entrada: repo-x:a\n    motivo: test\n");
+    expect(r.marcas).toEqual([{ entrada: "repo-x:a", motivo: "otro" }]);
+    expect(r.rechazadas).toHaveLength(2);
+    expect(leerNoProducto("no_producto: [").rechazadas[0]).toMatch(/invalid YAML/);
   });
 });

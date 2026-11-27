@@ -1,6 +1,6 @@
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { agregarCodigoAPagina, agregarDeclaracion, anotarResultados, cambiarEstadoDeEspecificacion, decidirHallazgo, type ResultadoDeRegla, marcarProblemaDeCaso, marcarPruebaManual, ARCHIVO_LLAMADAS, cargarContexto, cmp, ConsultaError, dentroDe, type Cerebro, type Contexto, type Registro } from "@flowbrain/core";
+import { agregarCodigoAPagina, ARCHIVO_NO_PRODUCTO, marcarNoProducto, agregarDeclaracion, anotarResultados, cambiarEstadoDeEspecificacion, decidirHallazgo, type ResultadoDeRegla, marcarProblemaDeCaso, marcarPruebaManual, ARCHIVO_LLAMADAS, cargarContexto, cmp, ConsultaError, dentroDe, type Cerebro, type Contexto, type Registro } from "@flowbrain/core";
 import { compileDirConVisor } from "@flowbrain/viewer";
 
 /**
@@ -11,8 +11,13 @@ import { compileDirConVisor } from "@flowbrain/viewer";
  */
 
 export type Edicion =
-  /** Sumar el archivo (o una carpeta que lo contiene) al `codigo` de una funcionalidad. */
+  /** Sumar el archivo (o una carpeta que lo contiene) al `codigo` de una funcionalidad o de una librería (`lib-*`). */
   | { tipo: "funcionalidad"; cerebro: string; archivo: string; funcionalidad: string; entrada?: string }
+  /**
+   * Marcar el archivo (o una carpeta que lo contiene, en `entrada`) como no de producto, con el motivo, en
+   * `not-product.yaml`; con `motivo` nulo se saca la marca de `entrada` (deshacer: ahí `archivo` no hace falta).
+   */
+  | { tipo: "no_producto"; cerebro: string; entrada: string; motivo: string | null; archivo?: string }
   /** Declarar la ruta de una llamada HTTP que el índice vio sin poder rutear. */
   | { tipo: "http"; cerebro: string; archivo: string; linea: number; metodo: string; ruta: string }
   /** Declarar a qué método va una llamada que el índice no pudo atribuir. */
@@ -222,11 +227,38 @@ export async function editar(registro: Registro, ed: Edicion): Promise<Resultado
     };
   }
 
+  if (ed.tipo === "no_producto") {
+    if (typeof ed.entrada !== "string" || (ed.motivo !== null && typeof ed.motivo !== "string")) throw invalido("the entry is missing, or the reason is not text");
+    if (ed.motivo !== null) {
+      // Marcar: solo un archivo del índice o una carpeta que lo contiene, como al asociar.
+      const { archivo } = estructuraDe(ctx, ed.archivo);
+      if (!dentroDe(archivo, ed.entrada)) throw invalido(`${ed.entrada} is neither ${archivo} nor a folder that contains it`);
+    }
+    const destino = await rutaDentro(c.raiz, ARCHIVO_NO_PRODUCTO);
+    let r: { contenido: string; cambio: boolean };
+    try {
+      r = marcarNoProducto(await readFile(destino, "utf8").catch(() => null), ed.entrada, ed.motivo);
+    } catch (err) {
+      throw invalido((err as Error).message);
+    }
+    if (r.cambio) {
+      await writeFile(destino, r.contenido, "utf8");
+      await compileDirConVisor(c.raiz);
+    }
+    return {
+      escrito: rel(destino),
+      cambio: r.cambio,
+      faltaReindexar: false,
+      mensaje: !r.cambio ? "Nothing changed: it was already like that." : ed.motivo !== null ? `${ed.entrada} is marked as not product code: Unassigned no longer lists it. Brain ${c.nombre} was recompiled.` : `${ed.entrada} is no longer marked: Unassigned lists it again. Brain ${c.nombre} was recompiled.`,
+    };
+  }
+
   const { e, archivo, repo } = estructuraDe(ctx, ed.archivo);
 
   if (ed.tipo === "funcionalidad") {
     const n = typeof ed.funcionalidad === "string" ? ctx.nodo.get(ed.funcionalidad) : undefined;
-    if (!n || n.tipo !== "feat" || !n.pagina) throw new ConsultaError("nodo_inexistente", `no such feature (or it has no page): ${String(ed.funcionalidad)}`);
+    // Una funcionalidad, o una librería para el código compartido: las dos declaran lo suyo en `codigo`.
+    if (!n || (n.tipo !== "feat" && n.tipo !== "lib") || !n.pagina) throw new ConsultaError("nodo_inexistente", `no such feature or library (or it has no page): ${String(ed.funcionalidad)}`);
     const entrada = ed.entrada ?? archivo;
     // Solo el archivo o una carpeta que lo contiene: nada que no tenga que ver con lo que se está corrigiendo.
     if (typeof entrada !== "string" || !dentroDe(archivo, entrada)) throw invalido(`${String(entrada)} is neither ${archivo} nor a folder that contains it`);

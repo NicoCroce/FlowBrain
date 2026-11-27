@@ -48,6 +48,12 @@ export interface OrdenDeAgente {
   cwd: string;
   /** Repos que están fuera de `cwd` y tiene que poder leer y escribir. */
   carpetasExtra: string[];
+  /**
+   * Permisos acotados de un pedido (`permisosDelPedido`): rutas absolutas (globs) donde puede editar y escribir, y los
+   * únicos comandos que puede correr. Sin ellos, los de `POLITICA`.
+   */
+  escritura?: string[];
+  comandos?: string[];
 }
 
 /** Lo que dice una línea de la salida del agente, ya en llano. */
@@ -116,6 +122,19 @@ export const HERRAMIENTAS_PERMITIDAS = [
   "Read", "Glob", "Grep", "Edit", "MultiEdit", "Write", "TodoWrite",
   ...POLITICA.comandosPermitidos.map((c) => `Bash(${c}:*)`),
 ];
+/**
+ * Las herramientas de Claude Code para una orden: con `escritura`, editar y escribir solo en esas rutas (`//ruta`
+ * absoluta) y correr solo `comandos`; sin, las de siempre. Con permisos acotados no van en modo `acceptEdits`, que
+ * aceptaría cualquier edición dentro de la carpeta: lo que no está permitido se rechaza solo (`-p` no pregunta).
+ */
+export function herramientasDe(o: Pick<OrdenDeAgente, "escritura" | "comandos">): { permitidas: string[]; modo: string } {
+  if (!o.escritura) return { permitidas: HERRAMIENTAS_PERMITIDAS, modo: "acceptEdits" };
+  const abs = (r: string) => `/${r.startsWith("/") ? r : `/${r}`}`;
+  return {
+    permitidas: ["Read", "Glob", "Grep", "TodoWrite", ...o.escritura.flatMap((r) => [`Edit(${abs(r)})`, `MultiEdit(${abs(r)})`, `Write(${abs(r)})`]), ...(o.comandos ?? []).map((c) => `Bash(${c}:*)`)],
+    modo: "default",
+  };
+}
 export const HERRAMIENTAS_PROHIBIDAS = [...POLITICA.comandosProhibidos.map((c) => `Bash(${c}:*)`), ...POLITICA.archivosProhibidos.map((a) => `Read(${a})`), "WebFetch", "WebSearch"];
 
 /**
@@ -148,8 +167,8 @@ export function claudeCode(comando = process.env["FLOWBRAIN_AGENTE"] ?? "claude"
         "-p", o.prompt,
         "--output-format", "stream-json", "--verbose",
         ...(o.modelo ? ["--model", o.modelo] : []),
-        "--permission-mode", "acceptEdits",
-        "--allowedTools", ...HERRAMIENTAS_PERMITIDAS,
+        "--permission-mode", herramientasDe(o).modo,
+        "--allowedTools", ...herramientasDe(o).permitidas,
         "--disallowedTools", ...HERRAMIENTAS_PROHIBIDAS,
         ...(o.carpetasExtra.length ? ["--add-dir", ...o.carpetasExtra] : []),
       ],
