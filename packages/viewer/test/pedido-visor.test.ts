@@ -119,6 +119,9 @@ describe("el pedido al agente (componente único)", () => {
     v.tocar({ "data-acc": "quitar", "data-tipo": "asociar", "data-k": "web|repo-web:src/b.ts" });
     expect(v.P.items("asociar").map((x) => x.k)).toEqual(["web|repo-web:src/a.ts", "web|repo-web:src/c.ts"]);
     expect(v.guardado().items).toHaveLength(2);
+    // Un botón «Pedir» pintado dentro del panel (lo que un tipo pone al final) suma igual que en la pantalla.
+    v.tocar({ "data-acc": "pedir", "data-tipo": "test", "data-k": "r1" });
+    expect(v.P.items("test").map((x) => x.k)).toEqual(["web/feat|r1"]);
     v.tocar({ "data-acc": "vaciar" });
     expect(v.panel()).toContain("The list is empty. Click «Request» on a rule, a file or a folder, on any screen");
     // En castellano.

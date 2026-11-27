@@ -26,8 +26,9 @@
  * - el seguimiento: `clave?(item)` (con qué se reconoce el ítem en una tanda; por defecto `k`), `enTanda(t)` y
  *   `hechos(t)` (las claves que la tanda lleva y las que resolvió: salen de la lista), y `seguimiento` (lo que dice el
  *   lote: `cuantos(t)`, `pidiendo(n, repos)`, `reindexando`, `espera?`, `extraTanda?(t)`, `resumen(ts)`);
- * - `despues?()`: lo que va al final del panel (los resultados de los tests); `bandeja?()`: lo que suma la bandeja
- *   («2 para decidir»); `accion?(acc, k, boton)`: los botones propios dentro del panel (true si lo atendió).
+ * - `despues?()`: lo que va al final del panel (los resultados de los tests; puede llevar botones `boton(...)`, que el
+ *   panel atiende igual que en la pantalla); `bandeja?()`: lo que suma la bandeja («2 para decidir»);
+ *   `accion?(acc, k, boton)`: los botones propios dentro del panel (true si lo atendió).
  *
  * Lo que va al modelo, solo en inglés (dec. 214). JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
@@ -415,6 +416,8 @@ export const PEDIDO_JS = String.raw`
     if (acc === "panel") { abrir(!E.panel); return; }
     if (acc === "cerrar-panel") { abrir(false); return; }
     if (acc === "quitar") { quitar(b.getAttribute("data-tipo"), k); return; }
+    // Un botón «Pedir» pintado dentro del panel (en lo que un tipo pone al final, como «Pedir la corrección»).
+    if (acc === "pedir") { sumar(b.getAttribute("data-tipo"), k); return; }
     if (acc === "vaciar") { vaciar(); return; }
     if (acc === "pedir-todos") { pedirTodos(); return; }
     if (acc === "descargar-lista") { var m = md(); if (m && !descargar(m.archivo, m.texto)) { ERROR = L("It couldn't be downloaded.", "No se pudo descargar."); pintar(); } return; }

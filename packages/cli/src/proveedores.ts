@@ -24,6 +24,12 @@ export interface ModeloDeAgente {
    * sin escribir ni correr tests. Estimación inicial (dec. 227), a ajustar con el costo real que muestra cada lote.
    */
   costoPorArchivoUsd: number;
+  /**
+   * Dólares por ítem de un pedido sobre las especificaciones (dec. 230), aproximado: agrupar las reglas sueltas de una
+   * funcionalidad (ordenar lo escrito), escribir los casos y reglas de una funcionalidad (leer su código y sus tests) y
+   * corregir un caso marcado o una regla. Estimación inicial, a ajustar con el costo real que muestra cada lote.
+   */
+  costoPorPaginaUsd: { agrupar: number; escribir: number; corregir: number };
 }
 
 /** Lo que FlowBrain le permite a cualquier agente. */
@@ -161,10 +167,10 @@ export function claudeCode(comando = process.env["FLOWBRAIN_AGENTE"] ?? "claude"
       return visto;
     },
     modelos: () => [
-      { id: "claude-fable-5-2", nombre: "Fable 5.2", costoPorReglaUsd: 0.9, costoPorArchivoUsd: 0.2 },
-      { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true, costoPorReglaUsd: 0.4, costoPorArchivoUsd: 0.08 },
-      { id: "claude-sonnet-5-5", nombre: "Sonnet 5.5", costoPorReglaUsd: 0.15, costoPorArchivoUsd: 0.03 },
-      { id: "claude-haiku-5-5", nombre: "Haiku 5.5", costoPorReglaUsd: 0.04, costoPorArchivoUsd: 0.01 },
+      { id: "claude-fable-5-2", nombre: "Fable 5.2", costoPorReglaUsd: 0.9, costoPorArchivoUsd: 0.2, costoPorPaginaUsd: { agrupar: 0.35, escribir: 2.7, corregir: 0.55 } },
+      { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true, costoPorReglaUsd: 0.4, costoPorArchivoUsd: 0.08, costoPorPaginaUsd: { agrupar: 0.15, escribir: 1.2, corregir: 0.25 } },
+      { id: "claude-sonnet-5-5", nombre: "Sonnet 5.5", costoPorReglaUsd: 0.15, costoPorArchivoUsd: 0.03, costoPorPaginaUsd: { agrupar: 0.06, escribir: 0.45, corregir: 0.09 } },
+      { id: "claude-haiku-5-5", nombre: "Haiku 5.5", costoPorReglaUsd: 0.04, costoPorArchivoUsd: 0.01, costoPorPaginaUsd: { agrupar: 0.015, escribir: 0.12, corregir: 0.025 } },
     ],
     armar: (o) => ({
       comando,

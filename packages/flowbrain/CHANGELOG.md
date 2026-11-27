@@ -8,6 +8,7 @@
 - Mientras desarrolla, el agente agrega casos de uso y especificaciones al borrador de una funcionalidad nueva y actualiza las de una que cambia.
 - Contratos no se rompe con una llamada ambigua: lista los endpoints candidatos de cada llamada pendiente.
 - El visor tiene un solo pedido al agente: la bandeja «Pedido (N)» en la barra superior, visible desde cualquier pantalla, y un panel que junta tests y archivos por asociar, con el costo estimado de cada tipo y el total. «Pedir todos» manda un lote por tipo. Lo que ya tenías pedido en cada pantalla se conserva.
+- En Especificaciones, «Agrupar en casos de uso», «Escribir casos de uso» y las correcciones (casos marcados como mal y reglas que están mal) ya no abren un recuadro para copiar: se suman al mismo pedido y se mandan en lote con «Pedir todos». El agente solo puede editar las páginas de las funcionalidades, y el visor saca de la lista lo que quedó resuelto.
 
 ## 0.1.1 · 2026-11-25
 

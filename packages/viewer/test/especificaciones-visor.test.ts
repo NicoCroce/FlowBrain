@@ -51,7 +51,6 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; f
   return {
     pagina: () => raiz.innerHTML,
     lista: () => el("es-lista").innerHTML,
-    agente: () => el("es-agente").innerHTML,
     panel: () => el("pedido-panel").innerHTML,
     bandeja: () => el("pedido-bandeja").innerHTML,
     descargas,
@@ -128,7 +127,7 @@ describe("pantalla Especificaciones", () => {
     v.tocar({ "data-acc": "todas" });
     v.tocar({ "data-acc": "grupo", "data-k": "problema" });
     expect(v.casos()).toEqual(["Pagar el carrito"]);
-    expect(v.lista()).toContain("Copy request for the agent");
+    expect(v.lista()).toContain("Request the fix");
     v.tocar({ "data-acc": "grupo", "data-k": "sintest" });
     expect(v.casos()).toEqual(["Pagar el carrito"]);
     expect(v.reglas()).toContain("El botón de pagar se ve abajo.");
@@ -169,17 +168,36 @@ describe("pantalla Especificaciones", () => {
     expect(JSON.parse(local.get("flowbrain.especificaciones.cerebros")!)).toEqual([]);
   });
 
-  it("arma los pedidos para el agente: agrupar, escribir y corregir", () => {
+  it("agrupar, escribir y corregir se suman al pedido único: tarjeta, «Quitar», .md en inglés y nada de recuadros", async () => {
     const v = montar(datos());
-    v.tocar({ "data-acc": "pedido", "data-k": "agrupar|" });
-    expect(v.pagina()).toContain("Group into use cases the specifications");
-    expect(v.pagina()).toContain("- feat-pagos (Pagos): 1 specification in front.");
-    expect(v.pagina()).toContain("It couldn't be copied automatically");
-    v.tocar({ "data-acc": "pedido", "data-k": "escribir|" });
-    expect(v.lista()).toContain("- feat-envios (Envíos), brain front: 1 test case.");
+    expect(v.pagina()).toContain('data-acc="pedir" data-tipo="agrupar" data-k="agrupar|"');
+    v.tocar({ "data-acc": "pedir", "data-k": "agrupar|" });
+    let p = v.panel();
+    expect(p).toContain("<b>1 feature</b>");
+    expect(p).toContain('<p class="es-texto">Pagos</p>');
+    expect(p).toContain('data-acc="quitar" data-tipo="agrupar" data-k="front/feat-pagos"');
+    v.tocar({ "data-acc": "pedir", "data-k": "escribir|" });
+    expect(v.lista()).toContain('data-k="escribir|" data-et="Request them all" aria-pressed="true"');
     v.tocar({ "data-acc": "grupo", "data-k": "problema" });
-    v.tocar({ "data-acc": "pedido", "data-k": "corregir|" });
-    expect(v.lista()).toContain("- feat-pagos / pagar (Pagar el carrito), brain back: falta el reintento");
+    v.tocar({ "data-acc": "pedir", "data-k": "corregir|" });
+    p = v.panel();
+    for (const t of ["Group into use cases", "Write use cases", "Fixes", "Marked as wrong", "«falta el reintento»", "Envíos"]) expect(p).toContain(t);
+    expect(v.bandeja()).toContain(">Request (3)</button>");
+    // El pedido ya no se muestra en un recuadro para copiar: va en el .md (y en el lote), en inglés.
+    expect(v.pagina()).not.toContain("<textarea");
+    v.tocar({ "data-acc": "descargar-lista" });
+    const md = await v.descargas.pop()!.texto();
+    expect(md).toContain("Group into use cases the specifications");
+    expect(md).toContain("- feat-pagos (Pagos), brain front: 1 specification without a use case.");
+    expect(md).toContain("- feat-envios (Envíos), brain front: 1 test case.");
+    expect(md).toContain("- feat-pagos / pagar (Pagar el carrito), brain back: falta el reintento");
+    expect(md).toContain("flowbrain specs <feature> --brain <brain>");
+    // Tocar otra vez lo saca; «Quitar» también.
+    v.tocar({ "data-acc": "pedir", "data-k": "corregir|" });
+    expect(v.panel()).not.toContain("Fixes");
+    v.tocar({ "data-acc": "quitar", "data-tipo": "agrupar", "data-k": "front/feat-pagos" });
+    expect(v.panel()).not.toContain("Group into use cases");
+    expect(v.bandeja()).toContain(">Request (1)</button>");
   });
 
   it("dice qué te toca hacer y arma el pedido de tests, de una regla, de un cerebro o del caso entero", () => {
@@ -246,7 +264,7 @@ describe("pantalla Especificaciones", () => {
 
   const PROVEEDORES = [{ id: "claude-code", nombre: "Claude Code", version: "9.9.9", modelos: [
     { id: "claude-fable-5-2", nombre: "Fable 5.2", costoPorReglaUsd: 0.9 }, { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true, costoPorReglaUsd: 0.4 },
-    { id: "claude-sonnet-5-5", nombre: "Sonnet 5.5", costoPorReglaUsd: 0.15 }, { id: "claude-haiku-5-5", nombre: "Haiku 5.5", costoPorReglaUsd: 0.04 }] }];
+    { id: "claude-sonnet-5-5", nombre: "Sonnet 5.5", costoPorReglaUsd: 0.15 }, { id: "claude-haiku-5-5", nombre: "Haiku 5.5", costoPorReglaUsd: 0.04, costoPorPaginaUsd: { agrupar: 0.015, escribir: 0.12, corregir: 0.025 } }] }];
   const tick = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0)); };
 
   it("sin Claude Code en la máquina, la lista sigue y dice por qué no se manda: se descarga el .md", () => {
@@ -396,15 +414,23 @@ describe("pantalla Especificaciones", () => {
     await tick();
     p = v.panel();
     expect(p).toContain("The rule gets fixed");
-    expect(p).toContain("Request the fix");
-    v.tocar({ "data-acc": "corregir-reglas" });
+    expect(p).toContain('data-acc="pedir" data-tipo="corregir" data-k="corregir|reglas" data-et="Request the fix"');
+    // «Pedir la corrección» se suma al pedido como cualquier otro: desde el mismo panel.
+    v.tocar({ "data-acc": "pedir", "data-k": "corregir|reglas" });
+    p = v.panel();
+    expect(p).toContain("The rule is wrong");
+    expect(p).toContain("The code today: src/pagos/Boton.tsx#L9: el botón se ve arriba");
+    expect(p).toContain("Estimated cost: ≈ US$ 0.025");
+    expect(p).toContain("✔ In the request");
+    v.tocar({ "data-acc": "pedir-todos" });
     await tick();
-    const corr = llamadas.find((x) => x.cuerpo?.["tipo"] === "corregir")!;
-    expect(corr.cuerpo).toMatchObject({ cerebros: ["front"], proveedor: "claude-code", modelo: "claude-haiku-5-5" });
-    expect(String(corr.cuerpo!["pedido"])).toContain("rule suelta");
+    const corr = llamadas.find((x) => x.url === "/api/agente/lote" && x.cuerpo?.["tipo"] === "corregir")!;
+    expect(corr.cuerpo).toMatchObject({ proveedor: "claude-code", modelo: "claude-haiku-5-5", items: [{ cerebro: "front", funcionalidad: "feat-pagos", regla: "suelta" }] });
+    expect(String(corr.cuerpo!["items"][0].linea)).toContain("rule suelta: «El botón de pagar se ve abajo.». The code today: src/pagos/Boton.tsx#L9");
+    expect(llamadas.some((x) => x.url === "/api/agente" && x.cuerpo)).toBe(false);
   }, 15_000);
 
-  it("en castellano (brainI18n.lang = es) dice lo mismo en castellano; los pedidos al agente siguen en inglés", () => {
+  it("en castellano (brainI18n.lang = es) dice lo mismo en castellano; los pedidos al agente siguen en inglés", async () => {
     const v = montar(datos(), { lang: "es" });
     const p = v.pagina();
     expect(p).toContain("<h1>Especificaciones</h1>");
@@ -419,9 +445,11 @@ describe("pantalla Especificaciones", () => {
     expect(v.panel()).toContain("<b>1 regla</b>");
     expect(v.panel()).toContain("Pedido al agente");
     expect(v.bandeja()).toContain(">Pedido (1)</button>");
-    v.tocar({ "data-acc": "pedido", "data-k": "agrupar|" });
-    expect(v.pagina()).toContain("Pedido para el agente");
-    expect(v.pagina()).toContain("Group into use cases the specifications");
+    v.tocar({ "data-acc": "pedir", "data-k": "agrupar|" });
+    expect(v.panel()).toContain("Agrupar en casos de uso");
+    expect(v.panel()).toContain("1 regla sin caso de uso");
+    v.tocar({ "data-acc": "descargar-lista" });
+    expect(await v.descargas.pop()!.texto()).toContain("Group into use cases the specifications");
   });
 
   it("sin nada escrito o sin funcionalidades explica qué hacer", () => {

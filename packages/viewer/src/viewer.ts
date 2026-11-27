@@ -437,8 +437,7 @@ button.pestana { border-top: 0; border-left: 0; border-right: 0; background: non
 .es-regla .fd-acc { margin-top: 8px; }
 .boton.es-pedir { background: var(--pedir); border-color: var(--pedir); color: #FFFFFF; } .boton.es-pedir:hover { background: var(--pedir-hover); border-color: var(--pedir-hover); }
 .es-verifica { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; } .es-verifica .boton { margin-left: auto; }
-.es-agente { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--primario); border-radius: 12px; background: var(--tarjeta); }
-.es-agente h2 { margin: 0 0 10px; } .es-trabajo { display: grid; gap: 6px; }
+.es-trabajo { display: grid; gap: 6px; }
 .es-trabajo .es-cab { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .es-pasos { margin: 0; padding-left: 18px; font-size: 12px; color: var(--suave); } .es-pasos li { overflow-wrap: anywhere; }
 .es-resultado { white-space: pre-wrap; font-size: 13px; } .es-cambios ul { margin: 4px 0 0; padding-left: 18px; font-size: 12px; } .boton.chico { height: 26px; padding: 0 10px; font-size: 12px; }

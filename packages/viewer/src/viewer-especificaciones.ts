@@ -16,9 +16,8 @@ export const ESPECIFICACIONES_JS = String.raw`
   var FICHAS = D.funcionalidades || [];
   var ED = window.FLOWBRAIN_EDICION || null;
   // El pedido al agente es el componente único del visor (viewer-pedido): la lista, el panel, el lote y el estado del
-  // agente. Con el visor servido y un agente instalado, los pedidos se mandan directo; si no, se copian.
+  // agente. Con el visor servido y un agente instalado, los pedidos se mandan en lote; si no, se descarga el .md.
   var PD = window.brainPedido;
-  var AG = PD.agente;
   // TRABAJOS: lo que corre el agente (lo trae el componente para todo el visor).
   var TRABAJOS = [];
   // Idioma (dec. 214): L(inglés, castellano) al pintar; sin window.brainI18n (los tests), inglés.
@@ -44,8 +43,8 @@ export const ESPECIFICACIONES_JS = String.raw`
     if (fl) fl.guardar();
     try { if (typeof localStorage !== "undefined") localStorage.setItem(CLAVE_CEREBROS, JSON.stringify(SEL)); } catch (e) { /* sin almacenamiento */ }
   };
-  // MSG: { k: clave del caso, texto, error }. EDITA: clave del caso que se está marcando. PEDIDO: { k, copiado }.
-  var MSG = null, EDITA = null, BORRADOR = "", PEDIDO = null, ocupado = false, FOCO = null;
+  // MSG: { k: clave del caso, texto, error }. EDITA: clave del caso que se está marcando.
+  var MSG = null, EDITA = null, BORRADOR = "", ocupado = false, FOCO = null;
   // MANUAL: clave de la regla ("<ficha>|<regla>") con el formulario "No necesita test" abierto; su motivo, en MOTIVO.
   var MANUAL = null, MOTIVO = "";
 
@@ -212,76 +211,98 @@ export const ESPECIFICACIONES_JS = String.raw`
   S = fl.S();
   var filtrosActivos = fl.activos;
 
-  // ---------- Pedidos para el agente ----------
+  // ---------- Pedidos para el agente: los botones «Pedir» ----------
+  // Cada botón suma ítems a la lista única del pedido (viewer-pedido, dec. 229); nada se manda hasta «Pedir todos».
+  // Su clave empieza por el tipo ("test|…", "agrupar|…", "escribir|…", "corregir|…"). PEDIDOS: lo que suma cada botón
+  // pintado, { tipo, xs (lo de la pantalla), entradas (los ítems del pedido, armados la primera vez que hacen falta) }.
+  var PEDIDOS = {};
+  function botonPedido(k, tipo, xs, etiqueta) {
+    PEDIDOS[k] = { tipo: tipo, xs: xs, entradas: null };
+    return PD.boton({ tipo: tipo, k: k, et: etiqueta });
+  }
+  var delBoton = function (k) {
+    var p = PEDIDOS[k];
+    if (!p) return [];
+    if (!p.entradas) p.entradas = ENTRADAS[p.tipo](p.xs);
+    return p.entradas;
+  };
   // Los pedidos son instrucciones para el modelo: solo en inglés (dec. 214).
   var GUIA = "following the flowbrain specs --guide guide (in Claude Code: /flowbrain-specs)";
   // Plural en inglés con el número sin formato de idioma: el texto para el modelo no cambia con el switch.
   var plEn = function (n, uno, varios) { return n + " " + (n === 1 ? uno : varios); };
   function casoDeRegla(f, e) { var out = null; (f.casos || []).forEach(function (c) { if (c.especificaciones.indexOf(e.id) >= 0) out = c; }); return out; }
-  function textoDelPedido(tipo, items) {
-    var out;
+  // Un ítem de agrupar, escribir o corregir: { tipo, k, cerebro, repo: null, datos }. datos lleva la funcionalidad (id
+  // local), el caso o la regla (corregir), lo que muestra la tarjeta y la línea que lee el agente (en inglés).
+  var item = function (tipo, k, x) { x.k = k; return { tipo: tipo, k: k, cerebro: x.cerebro, repo: null, datos: x }; };
+  var ENTRADAS = {
+    // [[e, f]]: reglas sin test.
+    test: function (xs) { return xs.map(function (it) { return entradaDe(it[0], it[1]); }); },
+    // [P]: de cada funcionalidad, un ítem por cerebro elegido con reglas sin caso.
+    agrupar: function (Ps) {
+      var out = [];
+      Ps.forEach(function (P) {
+        P.fichas.forEach(function (f) {
+          var c = cerebroDe(f.id), n = 0;
+          if (!elegido(c)) return;
+          P.sueltas.forEach(function (x) { if (x.f === f) n++; });
+          if (n) out.push(item("agrupar", f.id, { cerebro: c, funcionalidad: local(f.id, f.id), nombre: P.nombre, n: n, linea: "- " + P.id + " (" + P.nombre + "), brain " + c + ": " + plEn(n, "specification", "specifications") + " without a use case." }));
+        });
+      });
+      return out;
+    },
+    // [P]: de cada funcionalidad sin nada escrito, un ítem por cerebro elegido, con cuántos casos de test tiene.
+    escribir: function (Ps) {
+      var out = [];
+      Ps.forEach(function (P) {
+        P.fichas.filter(function (f) { return elegido(cerebroDe(f.id)); }).forEach(function (f) {
+          var n = totalCasos(f), c = cerebroDe(f.id);
+          out.push(item("escribir", f.id, { cerebro: c, funcionalidad: local(f.id, f.id), nombre: P.nombre, n: n, linea: "- " + P.id + " (" + P.nombre + "), brain " + c + ": " + (n ? plEn(n, "test case", "test cases") : "no tests: derive them from the code") + "." }));
+        });
+      });
+      return out;
+    },
+    // [[P, C]] (casos marcados como mal: un ítem por cerebro con la marca) o hallazgos con «la regla está mal».
+    corregir: function (xs) {
+      var out = [];
+      xs.forEach(function (x) {
+        if (x.h) {
+          var c = cerebroDe(x.f.id), fl = local(x.f.id, x.f.id);
+          out.push(item("corregir", x.f.id + "|regla|" + x.e.id, { cerebro: c, funcionalidad: fl, nombre: nombre(x.f.id), regla: x.e.id, texto: x.e.texto, hoy: x.h.hoy || x.h.cambio || "",
+            linea: "- " + fl + " (" + nombre(x.f.id) + "), brain " + c + ", rule " + x.e.id + ": «" + x.e.texto + "». The code today: " + (x.h.hoy || x.h.cambio) }));
+          return;
+        }
+        var P = x[0], C = x[1];
+        C.problemas.forEach(function (pr) {
+          var p = null; C.todas.forEach(function (q) { if (q.cerebro === pr.cerebro) p = q; });
+          if (!p) return;
+          out.push(item("corregir", p.f.id + "|caso|" + C.id, { cerebro: pr.cerebro, funcionalidad: local(p.f.id, p.f.id), nombre: P.nombre, caso: C.id, casoNombre: C.nombre, problema: pr.texto,
+            linea: "- " + P.id + " / " + C.id + " (" + C.nombre + "), brain " + pr.cerebro + ": " + pr.texto }));
+        });
+      });
+      return out;
+    }
+  };
+  // En una tanda, cada ítem se reconoce por cerebro, funcionalidad y, en corregir, el caso o la regla.
+  var claveDePagina = function (x) { return x.cerebro + "|" + x.funcionalidad + (x.caso ? "|caso|" + x.caso : x.regla ? "|regla|" + x.regla : ""); };
+  // El .md de agrupar, escribir o corregir: lo que se le pasa a cualquier agente con acceso a los repos (en inglés).
+  var CABEZA = {
+    agrupar: function () { return "Group into use cases the specifications that are not in any use case yet, " + GUIA + ". The same use case in another brain keeps the same id. Don't change the text of the specifications."; },
+    escribir: function (n) { return "Write the use cases and specifications of " + (n === 1 ? "this FlowBrain feature" : "these " + n + " FlowBrain features") + " " + GUIA + "."; },
+    corregir: function () { return "Fix these FlowBrain use cases that I marked as wrong, " + GUIA + ". After fixing each one, delete its problema field from the page."; },
+    reglas: function () { return "Fix the text of these FlowBrain rules: the agent that tried to test them found that the code does something else, and a person decided the rule is wrong, not the code. Do it " + GUIA + ". Fix the text of each rule (or delete it, if it no longer holds) according to what the code does today and delete its finding (hallazgo). Don't change the product code."; }
+  };
+  function mdDePaginas(tipo, its) {
+    var xs = its.map(function (it) { return it.datos; }), out = [];
+    var bloque = function (cabeza, ys) { if (ys.length) out.push(cabeza, ""); ys.forEach(function (y) { out.push(y.linea); }); if (ys.length) out.push(""); };
     if (tipo === "corregir") {
-      out = ["Fix these FlowBrain use cases that I marked as wrong, " + GUIA + ". After fixing each one, delete its problem field from the page.", ""];
-      items.forEach(function (it) { porTexto(it[1].problemas).forEach(function (pr) { out.push("- " + it[0].id + " / " + it[1].id + " (" + it[1].nombre + "), " + (pr[1].length > 1 ? "brains " : "brain ") + pr[1].join(", ") + ": " + pr[0]); }); });
-    } else if (tipo === "agrupar") {
-      out = ["Group into use cases the specifications that are not in any use case yet, " + GUIA + ". The same use case in another brain keeps the same id. Don't change the text of the specifications.", ""];
-      items.forEach(function (P) {
-        var porCerebro = {};
-        P.sueltas.forEach(function (x) { var c = cerebroDe(x.f.id); if (elegido(c)) porCerebro[c] = (porCerebro[c] || 0) + 1; });
-        out.push("- " + P.id + " (" + P.nombre + "): " + Object.keys(porCerebro).map(function (c) { return plEn(porCerebro[c], "specification", "specifications") + " in " + c; }).join(", ") + ".");
-      });
+      bloque(CABEZA.corregir(), xs.filter(function (x) { return !x.regla; }));
+      bloque(CABEZA.reglas(), xs.filter(function (x) { return x.regla; }));
     } else {
-      out = ["Write the use cases and specifications of " + (items.length === 1 ? "this FlowBrain feature" : "these " + items.length + " FlowBrain features") + " " + GUIA + ".", ""];
-      items.forEach(function (P) {
-        P.fichas.filter(function (f) { return elegido(cerebroDe(f.id)); }).forEach(function (f) { var n = totalCasos(f); out.push("- " + P.id + " (" + P.nombre + "), brain " + cerebroDe(f.id) + ": " + (n ? plEn(n, "test case", "test cases") : "no tests: derive them from the code") + "."); });
-      });
+      var feats = {}; xs.forEach(function (x) { feats[x.funcionalidad] = true; });
+      bloque(CABEZA[tipo](Object.keys(feats).length), xs);
     }
-    out.push("", "When done, compile each brain and check with flowbrain specs <feature> --brain <brain> that no broken references remain.");
+    out.push("When done, compile each brain and check with flowbrain specs <feature> --brain <brain> that no broken references remain.", "");
     return out.join("\n");
-  }
-  function copiar(texto, listo) {
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(texto).then(function () { listo(true); }, function () { listo(false); }); return; }
-    } catch (e) { /* sin portapapeles */ }
-    listo(false);
-  }
-  var PEDIDOS = {};
-  function botonPedido(k, tipo, items, etiqueta) {
-    PEDIDOS[k] = [tipo, items];
-    // Pedir un test no manda nada: suma la regla a la lista de «Tests pedidos» (celeste, la acción de la pantalla).
-    if (tipo === "test") {
-      return PD.boton({ tipo: "test", k: k, et: etiqueta });
-    }
-    if (AG) etiqueta = etiqueta.replace(/^Copiar pedido/, "Pedírselo al agente").replace(/^Copy request/, "Send request");
-    // Pedir un test es la acción de la pantalla: va en celeste, para encontrarla de un vistazo.
-    return '<button type="button" class="boton' + (tipo === "test" ? " es-pedir" : "") + '" data-acc="pedido" data-k="' + esc(k) + '">' + (PEDIDO && PEDIDO.k === k ? L("Hide request", "Ocultar pedido") : etiqueta) + "</button>";
-  }
-  function cajaDelPedido(k) {
-    if (!PEDIDO || PEDIDO.k !== k || !PEDIDOS[k] || PEDIDOS[k][0] === "test") return "";
-    var por = !ED ? L("To send it straight to the agent, open the viewer from the menu («Open the viewer») or with <code>flowbrain viewer --serve</code>.", "Para mandarlo directo al agente, abrí el visor desde el menú («Abrir el visor») o con <code>flowbrain viewer --serve</code>.")
-      : ED.agente && ED.agente.noDisponible ? L("It can't be sent directly: ", "No se puede mandar directo: ") + esc(ED.agente.noDisponible) + "." : "";
-    var botones = AG
-      ? '<div class="fd-acc"><button type="button" class="boton pri" data-acc="mandar" data-k="' + esc(k) + '"' + (PEDIDO.mandado ? " disabled" : "") + ">" + (PEDIDO.mandado ? L("Sent", "Mandado") : L("Send to the agent", "Mandar al agente")) + '</button><button type="button" class="boton" data-acc="copiar" data-k="' + esc(k) + '">' + L("Copy", "Copiar") + "</button></div>" +
-        "<small>" + L("Claude Code does it on this machine, in the project folder: it writes and runs the tests, but doesn't commit. It uses your Claude plan. You see the progress above, in «The agent».", "Lo hace Claude Code en esta máquina, en la carpeta del proyecto: escribe y corre los tests, pero no commitea. Usa tu plan de Claude. Ves el avance arriba, en «El agente».") + "</small>"
-      : "";
-    return '<div class="fd-plan"><h2>' + L("Request for the agent", "Pedido para el agente") + "</h2>" +
-      '<textarea class="fd-texto" readonly rows="8" aria-label="' + L("Request for the agent", "Pedido para el agente") + '">' + esc(textoDelPedido(PEDIDOS[k][0], PEDIDOS[k][1])) + "</textarea>" + botones +
-      (PEDIDO.copiado === true ? '<span class="fd-ok">' + L("Copied. Paste it into your agent.", "Copiado. Pegalo en tu agente.") + "</span>" : PEDIDO.copiado === "no" ? '<span class="fd-nota">' + L("It couldn't be copied automatically: select the text and copy it.", "No se pudo copiar solo: seleccioná el texto y copialo.") + "</span>" : "") +
-      (PEDIDO.error ? '<p class="fd-msg error">' + esc(PEDIDO.error) + "</p>" : "") + (por ? '<p class="fd-nota">' + por + "</p>" : "") + "</div>";
-  }
-  // Qué cerebros toca un pedido y cómo se llama en la lista del agente.
-  function cerebrosDelPedido(tipo, items) {
-    var out = [], suma = function (c) { if (c && out.indexOf(c) < 0) out.push(c); };
-    items.forEach(function (it) {
-      if (tipo === "corregir") it[1].todas.forEach(function (p) { suma(p.cerebro); });
-      else it.fichas.forEach(function (f) { if (elegido(cerebroDe(f.id))) suma(cerebroDe(f.id)); });
-    });
-    return out;
-  }
-  function etiquetaDelPedido(tipo, items) {
-    if (tipo === "corregir") return L("Fix ", "Corregir ") + pl(items.length, "marked use case", "marked use cases", "caso marcado", "casos marcados");
-    var que = items.length === 1 ? items[0].nombre : pl(items.length, "feature", "features", "funcionalidad", "funcionalidades");
-    return (tipo === "agrupar" ? L("Group into use cases: ", "Agrupar en casos de uso: ") : L("Write use cases: ", "Escribir casos de uso: ")) + que;
   }
 
   // ---------- Una regla (dentro de un caso o suelta) ----------
@@ -295,7 +316,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       : e.manual ? '<span class="es-manual">' + L("Tested by hand: ", "Se prueba a mano: ") + esc(e.manual) + "</span>" + (ED ? ' <button type="button" class="boton chico" data-acc="automatico" data-k="' + esc(k) + '"' + (ocupado ? " disabled" : "") + ">" + L("Ask for a test", "Pedirle un test") + "</button>" : "")
       : '<span class="es-mal">' + L("No test verifies it: if someone breaks it, nothing warns you.", "Ningún test la verifica: si alguien la rompe, nada avisa.") + "</span>";
     var acciones = !e.tests.length && !e.manual && MANUAL !== k
-      ? '<div class="fd-acc">' + botonPedido("test|" + k, "test", [[e, f]], L("Request the test", "Pedir el test")) + (ED ? '<button type="button" class="boton" data-acc="manual" data-k="' + esc(k) + '"' + (ocupado ? " disabled" : "") + ">" + L("Doesn't need a test", "No necesita test") + "</button>" : "") + "</div>" + cajaDelPedido("test|" + k)
+      ? '<div class="fd-acc">' + botonPedido("test|" + k, "test", [[e, f]], L("Request the test", "Pedir el test")) + (ED ? '<button type="button" class="boton" data-acc="manual" data-k="' + esc(k) + '"' + (ocupado ? " disabled" : "") + ">" + L("Doesn't need a test", "No necesita test") + "</button>" : "") + "</div>"
       : "";
     var form = MANUAL === k
       ? '<div class="es-form"><label for="es-motivo">' + L("Why it doesn't need an automated test", "Por qué no necesita un test automático") + '</label><input id="es-motivo" type="text" maxlength="300" placeholder="' + L("Tested by hand on the phone before each release", "Se prueba a mano en el celular antes de cada versión") + '" value="' + esc(MOTIVO) + '">' +
@@ -356,10 +377,9 @@ export const ESPECIFICACIONES_JS = String.raw`
     var faltan = [];
     C.patas.forEach(function (p) { p.reglas.forEach(function (e) { if (sinVerificar(e)) faltan.push([e, p.f]); }); });
     var pedirTodos = faltan.length ? botonPedido("test|" + C.k, "test", faltan, faltan.length === 1 ? L("Request the missing test", "Pedir el test que falta") : L("Request the " + faltan.length + " missing tests", "Pedir los " + faltan.length + " tests que faltan")) : "";
-    var cajas = cajaDelPedido("test|" + C.k) + C.patas.map(function (p) { return cajaDelPedido("test|" + C.k + "|" + p.cerebro); }).join("");
     return '<li class="es-caso" id="es-caso-' + esc(C.k) + '"><div class="es-cabeza"><div><p class="es-nombre">' + esc(C.nombre) + "</p>" + (C.quien ? "<small>" + L("Who: ", "Quién: ") + esc(C.quien) + "</small>" : "") + "</div>" +
       '<div class="es-acciones"><span class="fd-es ' + est.cls + '" title="' + esc(est.que) + '">' + (C.estado === "cumplido" ? "✔ " : "✘ ") + est.txt + "</span>" + pedirTodos + accion + "</div></div>" +
-      marca + form + msg + cajas +
+      marca + form + msg +
       (C.ocultas ? '<p class="es-ocultas"><small>' + pl(C.ocultas, "more brain", "more brains", "cerebro más", "cerebros más") + L(" outside the chosen ones: ", " fuera de los elegidos: ") + esc(C.todas.filter(function (p) { return !elegido(p.cerebro); }).map(function (p) { return p.cerebro; }).join(", ")) + ".</small></p>" : "") +
       '<table class="es-patas"><thead><tr><th scope="col">' + L("Brain", "Cerebro") + '</th><th scope="col">' + L("Fulfilled by", "Lo cumple") + '</th><th scope="col">' + L("Verified by", "Lo verifica") + "</th></tr></thead><tbody>" + C.patas.map(function (p) { return filaDeCerebro(p, C, faltan.length); }).join("") + "</tbody></table>" +
       (reglas.length ? '<details class="tf es-reglas"><summary>' + pl(reglas.length, "rule", "rules", "regla", "reglas") + ": " + esc(reglas.slice(0, 3).map(function (r) { return r[0].texto.replace(/\.$/, ""); }).join(" · ")) + (reglas.length > 3 ? " …" : "") + "</summary>" +
@@ -392,8 +412,8 @@ export const ESPECIFICACIONES_JS = String.raw`
     var cuerpo = "";
     if (abierta) {
       var bloqueSueltas = sueltas.length
-        ? '<div class="es-sueltas"><div class="es-cab"><h4>' + pl(sueltas.length, "rule without a use case", "rules without a use case", "regla sin caso de uso", "reglas sin caso de uso") + "</h4>" + botonPedido("agrupar|" + P.id, "agrupar", [P], L("Copy request for the agent", "Copiar pedido para el agente")) + "</div>" +
-          "<p><small>" + L("The agent hasn't grouped them yet into what someone does with the product. Ask it and they show up above as use cases.", "El agente todavía no las agrupó en lo que alguien hace con el producto. Pedíselo y aparecen arriba como casos de uso.") + "</small></p>" + cajaDelPedido("agrupar|" + P.id) +
+        ? '<div class="es-sueltas"><div class="es-cab"><h4>' + pl(sueltas.length, "rule without a use case", "rules without a use case", "regla sin caso de uso", "reglas sin caso de uso") + "</h4>" + botonPedido("agrupar|" + P.id, "agrupar", [P], L("Request grouping them", "Pedir que las agrupe")) + "</div>" +
+          "<p><small>" + L("The agent hasn't grouped them yet into what someone does with the product. Ask it and they show up above as use cases.", "El agente todavía no las agrupó en lo que alguien hace con el producto. Pedíselo y aparecen arriba como casos de uso.") + "</small></p>" +
           '<ul class="lista">' + sueltas.map(function (x) { return unaRegla(x.e, x.f, P.cerebros.length > 1); }).join("") + "</ul></div>"
         : "";
       cuerpo = '<div class="es-cuerpo">' + (P.resumen ? '<p class="es-resumen">' + esc(P.resumen) + ' <a href="#/f/' + esc(P.fichas[0].id) + '">' + L("See the feature", "Ver la funcionalidad") + "</a></p>" : "") +
@@ -409,12 +429,12 @@ export const ESPECIFICACIONES_JS = String.raw`
     if (!lista.length) return "";
     var tc = function (P) { return P.fichas.reduce(function (n, f) { return n + totalCasos(f); }, 0); };
     var orden = lista.slice().sort(function (a, b) { return tc(b) - tc(a) || (a.nombre.toLowerCase() < b.nombre.toLowerCase() ? -1 : 1); });
-    return '<section class="es-feat"><div class="es-cab"><h3>' + L("No use cases or rules (", "Sin casos de uso ni reglas (") + lista.length + ")</h3>" + botonPedido("escribir|", "escribir", orden, L("Copy request for all", "Copiar pedido para todas")) + "</div>" +
-      "<p><small>" + L("Nobody has written yet what can be done with these features. The agent deduces it from the code and the tests; the ones with more tests go first.", "Nadie escribió todavía qué se puede hacer con estas funcionalidades. Las deduce el agente del código y de los tests; las que más tests tienen van primero.") + "</small></p>" + cajaDelPedido("escribir|") +
+    return '<section class="es-feat"><div class="es-cab"><h3>' + L("No use cases or rules (", "Sin casos de uso ni reglas (") + lista.length + ")</h3>" + botonPedido("escribir|", "escribir", orden, L("Request them all", "Pedir todas")) + "</div>" +
+      "<p><small>" + L("Nobody has written yet what can be done with these features. The agent deduces it from the code and the tests; the ones with more tests go first.", "Nadie escribió todavía qué se puede hacer con estas funcionalidades. Las deduce el agente del código y de los tests; las que más tests tienen van primero.") + "</small></p>" +
       '<ul class="lista">' + orden.map(function (P) {
         var n = tc(P);
         return '<li class="es-fila"><span><a href="#/f/' + esc(P.fichas[0].id) + '">' + esc(P.nombre) + "</a> <small>" + (n ? pl(n, "test case", "test cases", "caso de test", "casos de test") : L("no tests", "sin tests")) + " · " + esc(P.cerebros.join(", ")) + "</small></span>" +
-          botonPedido("escribir|" + P.id, "escribir", [P], L("Copy request", "Copiar pedido")) + cajaDelPedido("escribir|" + P.id) + "</li>";
+          botonPedido("escribir|" + P.id, "escribir", [P], L("Request", "Pedir")) + "</li>";
       }).join("") + "</ul></section>";
   }
 
@@ -450,7 +470,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     var vacias = sinFiltro ? visibles().filter(function (P) { return !conSpecs(P); }) : [];
     if (!filas.length && !vacias.length) return fl.vacio(items());
     var corregir = S.grupo === "problema" && xs.some(function (it) { return it.C; })
-      ? '<div class="es-sueltas"><div class="es-cab"><p>' + L("Pass what you marked to the agent so it fixes it.", "Pasale al agente lo que marcaste para que lo corrija.") + "</p>" + botonPedido("corregir|", "corregir", todosLosCasos().filter(function (x) { return x[1].problemas.length; }), L("Copy request for the agent", "Copiar pedido para el agente")) + "</div>" + cajaDelPedido("corregir|") + "</div>"
+      ? '<div class="es-sueltas"><div class="es-cab"><p>' + L("Pass what you marked to the agent so it fixes it.", "Pasale al agente lo que marcaste para que lo corrija.") + "</p>" + botonPedido("corregir|", "corregir", todosLosCasos().filter(function (x) { return x[1].problemas.length; }), L("Request the fix", "Pedir la corrección")) + "</div></div>"
       : "";
     var todasAbiertas = filas.length && filas.every(function (x) { return S.abiertas[x[0].id]; });
     return (filas.length ? fl.resultado(xs, L(" in ", " en ") + pl(filas.length, "feature", "features", "funcionalidad", "funcionalidades") + L(". What's missing most, first.", ". Lo que más falta, primero."), '<button type="button" class="boton" data-acc="todas">' + (todasAbiertas ? L("Collapse all", "Plegar todas") : L("Expand all", "Desplegar todas")) + "</button>") : "") +
@@ -466,7 +486,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       out += '<div class="aviso es-agrupar" id="es-agrupar"><p>' + L(
         (cs ? "There " + (n === 1 ? "is " : "are ") : "There are no use cases yet: there " + (n === 1 ? "is " : "are ")) + plural(n, "written rule", "written rules") + " the agent didn't group into use cases" + (cs ? "" : " (what someone does: «Vote for the best player of the match»)") + ". Ask it to group them; it doesn't change what's written, it only organizes it.",
         (cs ? "Hay " : "Todavía no hay casos de uso: hay ") + plural(n, "regla escrita", "reglas escritas") + " que el agente no agrupó en casos de uso" + (cs ? "" : " (lo que alguien hace: «Votar al mejor jugador del partido»)") + ". Pedile que las agrupe; no cambia lo escrito, solo lo ordena.") + "</p>" +
-        botonPedido("agrupar|", "agrupar", conSueltas, L("Copy request to group them all", "Copiar pedido para agrupar todas")) + cajaDelPedido("agrupar|") + "</div>";
+        botonPedido("agrupar|", "agrupar", conSueltas, L("Request grouping them all", "Pedir que agrupe todas")) + "</div>";
     }
     return out;
   }
@@ -501,11 +521,10 @@ export const ESPECIFICACIONES_JS = String.raw`
     }
     var hay = todosLosCasos().length || todasSueltas().length;
     var nada = !hay
-      ? '<p class="aviso">' + L("There are no use cases or written rules yet", "Todavía no hay casos de uso ni reglas escritas") + (SEL.length ? L(" in ", " en ") + esc(SEL.join(", ")) : "") + L(". They're saved in each feature's page and the agent deduces them: copy the request below and paste it, or run <code>/flowbrain-specs</code>.", ". Se guardan en la página de cada funcionalidad y las deduce el agente: copiá el pedido de abajo y pegáselo, o corré <code>/flowbrain-specs</code>.") + "</p>"
+      ? '<p class="aviso">' + L("There are no use cases or written rules yet", "Todavía no hay casos de uso ni reglas escritas") + (SEL.length ? L(" in ", " en ") + esc(SEL.join(", ")) : "") + L(". They're saved in each feature's page and the agent deduces them: request them below («Request») and send them from the request panel, or run <code>/flowbrain-specs</code>.", ". Se guardan en la página de cada funcionalidad y las deduce el agente: pedilas abajo («Pedir») y mandalas desde el panel del pedido, o corré <code>/flowbrain-specs</code>.") + "</p>"
       : "";
-    PEDIDOS = {};
     var cabeza = '<div class="es-titulo"><h1>' + L("Specifications", "Especificaciones") + "</h1></div>" + COMO() + aviso() + (CON_FICHAS.length > 1 ? selectorDeCerebros() : "") + queHacer() +
-      '<section id="es-agente" class="' + (AG && sueltos().length ? "es-agente" : "") + '" aria-live="polite">' + htmlAgente() + "</section>" + (hay ? fl.html() + (todosLosCasos().length ? "" : '<p class="fd-nota">' + L("There are no use cases yet: the numbers count rules.", "Todavía no hay casos de uso: los números cuentan reglas.") + "</p>") : "") + nada;
+      (hay ? fl.html() + (todosLosCasos().length ? "" : '<p class="fd-nota">' + L("There are no use cases yet: the numbers count rules.", "Todavía no hay casos de uso: los números cuentan reglas.") + "</p>") : "") + nada;
     raiz.innerHTML = cabeza + '<div id="es-lista">' + lista() + "</div>";
     if (FOCO) { var s = elem("es-" + FOCO); FOCO = null; if (s && s.scrollIntoView) s.scrollIntoView(); }
   }
@@ -534,7 +553,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       ocupado = false; EDITA = null; BORRADOR = "";
       ITEMS = null; PRODUCTO = elegir(armar());
       MSG = { k: k, texto: texto
-        ? L("Marked as wrong in " + hechos.join(", ") + ". The agent fixes it with /flowbrain-specs; copy the request from «Marked as wrong».", "Quedó marcado como mal en " + hechos.join(", ") + ". El agente lo corrige con /flowbrain-specs; copiá el pedido desde «Marcados como mal».")
+        ? L("Marked as wrong in " + hechos.join(", ") + ". The agent fixes it with /flowbrain-specs: request the fix from «Marked as wrong».", "Quedó marcado como mal en " + hechos.join(", ") + ". El agente lo corrige con /flowbrain-specs: pedí la corrección desde «Marcados como mal».")
         : L("The mark was removed in " + hechos.join(", ") + ".", "Se le sacó la marca en " + hechos.join(", ") + ".") };
       pintarTodo();
     }).catch(function (e) {
@@ -547,8 +566,8 @@ export const ESPECIFICACIONES_JS = String.raw`
   // ---------- Tests pedidos: el tipo «test» del pedido al agente (viewer-pedido, dec. 229) ----------
   // «Pedir el test» (de una regla, de la fila de un cerebro o de un caso) suma reglas al pedido; nada se manda hasta
   // «Pedir todos». La lista, el panel, el lote y su avance son del componente; acá, qué es una regla y qué volvió.
-  // DECIDIDAS: lo que se decidió de cada hallazgo sin recargar. CORRIGIENDO: mandando «Pedir la corrección».
-  var DECIDIDAS = {}, CORRIGIENDO = false;
+  // DECIDIDAS: lo que se decidió de cada hallazgo sin recargar.
+  var DECIDIDAS = {};
   var claveDeEntrada = function (x) { return x.cerebro + "|" + x.funcionalidad + "|" + x.regla; };
 
   // La regla como se la lee el agente (cerebro, funcionalidad, caso, id, tipo, texto y el archivo que la cumple): solo en inglés.
@@ -565,8 +584,6 @@ export const ESPECIFICACIONES_JS = String.raw`
   }
   // Las de negocio primero: son las que más cuesta que se rompan sin aviso.
   var negocioPrimero = function (a, b) { return (a.tipo === "negocio" ? 0 : 1) - (b.tipo === "negocio" ? 0 : 1); };
-  // Las reglas de un botón «Pedir el test»: las de su regla, la fila de un cerebro o el caso entero.
-  var reglasDelBoton = function (k) { var p = PEDIDOS[k]; return p && p[0] === "test" ? p[1] : []; };
 
   // ---- el .md: lo que se le pasa a cualquier agente con acceso al repo ----
   // Son instrucciones para el modelo, como la guía que trae (FLOWBRAIN_GUIA_TESTS): solo en inglés.
@@ -649,18 +666,6 @@ export const ESPECIFICACIONES_JS = String.raw`
       PD.aviso(null);
     }).catch(function (err) { ocupado = false; PD.aviso({ error: err.message }); });
   }
-  function corregirReglas() {
-    var hs = reglaMal(hallazgos());
-    if (!hs.length || !AG || CORRIGIENDO) return;
-    var cerebros = []; hs.forEach(function (x) { var c = cerebroDe(x.f.id); if (cerebros.indexOf(c) < 0) cerebros.push(c); });
-    var texto = ["Fix the text of these FlowBrain rules: the agent that tried to test them found that the code does something else, and a person decided the rule is wrong, not the code. Do it " + GUIA + ". Fix the text of each rule (or delete it, if it no longer holds) according to what the code does today and delete its finding (hallazgo). Don't change the product code.", ""];
-    hs.forEach(function (x) { texto.push("- Brain " + cerebroDe(x.f.id) + ", " + local(x.f.id, x.f.id) + ", rule " + x.e.id + ": «" + x.e.texto + "». The code today: " + (x.h.hoy || x.h.cambio)); });
-    CORRIGIENDO = true; PD.aviso(null);
-    PD.llamar("/api/agente", { tipo: "corregir", pedido: texto.join("\n"), etiqueta: L("Fix " + plural(hs.length, "rule", "rules") + " (the rule is wrong)", "Corregir " + plural(hs.length, "regla", "reglas") + " (la regla está mal)"), cerebros: cerebros, proveedor: PD.proveedor().id, modelo: PD.modelo().id }).then(function () {
-      CORRIGIENDO = false; PD.actualizar();
-    }).catch(function (err) { CORRIGIENDO = false; PD.aviso({ error: err.message }); });
-  }
-
   // ---- lo que volvió del lote ----
   function resumenDeLote(ts) {
     var rs = []; ts.forEach(function (t) { rs = rs.concat(t.resultados || []); });
@@ -689,7 +694,7 @@ export const ESPECIFICACIONES_JS = String.raw`
       verif.length ? '<ul class="lista">' + verif.map(function (r) { var par = buscarRegla(claveDeFicha(r.cerebro, r.funcionalidad, r.regla)); return '<li class="es-verif"><p class="es-texto">' + esc(par ? par[0].texto : r.regla) + ' <span class="chip">' + (r.resultado === "a" ? L("New test", "Test nuevo") : L("Already had a test", "Ya tenía test")) + "</span></p><small>" + (r.tests || []).map(function (t) { return "<code>" + esc(t) + "</code>"; }).join(" ") + "</small></li>"; }).join("") + "</ul>" : "<p><small>" + L("None in this request.", "Ninguna en este pedido.") + "</small></p>");
     if (dec.length || R) out += seccion(L("To decide", "Para decidir"), dec.length, L("The code doesn't fulfill the rule. Is the rule wrong or is the code wrong?", "El código no cumple la regla. ¿Está mal la regla o está mal el código?"), dec.length ? '<ul class="lista">' + dec.map(function (x) { return htmlHallazgo(x, true); }).join("") + "</ul>" : "<p><small>" + L("Nothing to decide.", "Nada por decidir.") + "</small></p>");
     if (mal.length) out += seccion(L("The rule gets fixed", "La regla se corrige"), mal.length, L("You said the rule is wrong: the agent fixes it with <code>/flowbrain-specs</code>.", "Dijiste que la regla está mal: la corrige el agente con <code>/flowbrain-specs</code>."), '<ul class="lista">' + mal.map(function (x) { return htmlHallazgo(x, false); }).join("") + "</ul>",
-      AG ? '<button type="button" class="boton" data-acc="corregir-reglas"' + (CORRIGIENDO ? " disabled" : "") + ">" + L("Request the fix", "Pedir la corrección") + "</button>" : "");
+      botonPedido("corregir|reglas", "corregir", mal, L("Request the fix", "Pedir la corrección")));
     if (des.length || R) out += seccion(L("For development", "Para desarrollo"), des.length, L("The code is wrong, or it can't be tested without touching it. The agent never changes the product code.", "El código está mal, o no se puede testear sin tocarlo. El agente nunca cambia el código del producto."), des.length ? '<ul class="lista">' + des.map(function (x) { return htmlHallazgo(x, false); }).join("") + "</ul>" : "<p><small>" + L("Nothing for development.", "Nada para desarrollo.") + "</small></p>",
       des.length ? '<button type="button" class="boton" data-acc="descargar-desarrollo">' + L("Download .md for tickets", "Descargar .md para tickets") + "</button>" : "");
     return out;
@@ -699,8 +704,8 @@ export const ESPECIFICACIONES_JS = String.raw`
     get nombre() { return L("Tests", "Tests"); },
     unidad: ["rule", "rules", "regla", "reglas"],
     raiz: raiz,
-    claves: function (k) { return reglasDelBoton(k).map(function (it) { return it[1].id + "|" + it[0].id; }); },
-    items: function (k) { return reglasDelBoton(k).map(function (it) { return entradaDe(it[0], it[1]); }); },
+    claves: function (k) { return delBoton(k).map(function (it) { return it.k; }); },
+    items: delBoton,
     repintar: function () { pintarLista(); },
     orden: function (a, b) { return negocioPrimero(a.datos, b.datos); },
     resumen: function (its) { var neg = its.filter(function (it) { return it.datos.tipo === "negocio"; }).length; return [L(neg + " business (they go first) · " + (its.length - neg) + " screen", neg + " de negocio (van primero) · " + (its.length - neg) + " de pantalla")]; },
@@ -737,49 +742,94 @@ export const ESPECIFICACIONES_JS = String.raw`
       if (acc === "regla-mal") decidir(k, "regla_mal");
       else if (acc === "codigo-mal") decidir(k, "codigo_mal");
       else if (acc === "deshacer") decidir(k, null);
-      else if (acc === "corregir-reglas") corregirReglas();
       else if (acc === "descargar-desarrollo") { if (!descargar(L("for-development.md", "para-desarrollo.md"), mdDesarrollo())) PD.aviso({ error: L("It couldn't be downloaded.", "No se pudo descargar.") }); }
       else return false;
       return true;
     }
   });
-  // Lo que corre el agente lo trae el componente: acá, los pedidos sueltos («El agente») y lo que volvió del lote.
-  PD.escuchar(function (ev) { if (ev === "trabajos") { TRABAJOS = PD.trabajos(); pintarAgente(); } });
+  // ---------- Agrupar, escribir y corregir: tipos del pedido al agente (dec. 230) ----------
+  // Igual que los tests: «Pedir» suma al pedido y «Pedir todos» los manda en lote; el servidor los reparte en tandas,
+  // compila y mira en las páginas qué quedó resuelto (eso sale de la lista; lo demás queda para pedirlo de nuevo).
+  var cifrasPaginas = function (r, q) { return L(num(r) + " resolved · " + num(q) + " left", num(r) + " resueltos · " + num(q) + " quedan"); };
+  var cuentaDe = function (ts, campo) { return ts.reduce(function (n, t) { return n + (t[campo] || []).length; }, 0); };
+  var chipCerebro = function (x) { return '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span>"; };
+  var chipTanda = function (enTanda, en, es) { return enTanda ? '<span class="chip es-ok">' + L(en, es) + "</span>" : ""; };
+  function registrarPaginas(tipo, d) {
+    PD.registrar(tipo, {
+      get nombre() { return d.nombre(); },
+      unidad: d.unidad,
+      raiz: raiz,
+      claves: function (k) { return delBoton(k).map(function (it) { return it.k; }); },
+      items: delBoton,
+      repintar: function () { pintarLista(); },
+      resumen: d.resumen,
+      orden: d.orden,
+      costo: function (mo) { var c = mo.costoPorPaginaUsd; return c && typeof c[tipo] === "number" ? c[tipo] : null; },
+      lote: function (its) {
+        return { tipo: tipo, items: its.map(function (it) {
+          var x = it.datos, o = { cerebro: x.cerebro, funcionalidad: x.funcionalidad, linea: x.linea };
+          if (x.caso) o.caso = x.caso; if (x.regla) o.regla = x.regla;
+          return o;
+        }) };
+      },
+      md: { archivo: d.archivo, texto: function (its) { return mdDePaginas(tipo, its); } },
+      clave: function (it) { return claveDePagina(it.datos); },
+      enTanda: function (t) { return (t.items || []).map(claveDePagina); },
+      hechos: function (t) { return (t.resueltos || []).map(claveDePagina); },
+      seguimiento: {
+        cuantos: function (t) { return (t.items || []).length; },
+        get espera() { return L("Waits for the previous batch to finish: they edit the same pages.", "Espera a que termine la tanda anterior: editan las mismas páginas."); },
+        get reindexando() { return L("Finishing…", "Terminando…"); },
+        pidiendo: d.pidiendo,
+        extraTanda: function (t) {
+          if (PD.vivo(t) || (!t.resueltos && !t.quedan)) return "";
+          return "<small>" + cifrasPaginas((t.resueltos || []).length, (t.quedan || []).length) + "</small>" +
+            (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
+        },
+        resumen: function (ts) {
+          var q = cuentaDe(ts, "quedan");
+          return cifrasPaginas(cuentaDe(ts, "resueltos"), q) + (q ? L(" (each batch says why; they stay in the list to request them again)", " (cada tanda dice por qué; siguen en la lista para pedirlos de nuevo)") : "");
+        }
+      },
+      tarjeta: d.tarjeta
+    });
+  }
+  var FEAT = ["feature", "features", "funcionalidad", "funcionalidades"];
+  registrarPaginas("agrupar", {
+    nombre: function () { return L("Group into use cases", "Agrupar en casos de uso"); },
+    unidad: FEAT, archivo: "agrupar-casos.md",
+    resumen: function (its) { var n = its.reduce(function (s, it) { return s + it.datos.n; }, 0); return [pl(n, "rule without a use case", "rules without a use case", "regla sin caso de uso", "reglas sin caso de uso")]; },
+    pidiendo: function (n) { return L("Grouping the rules of " + plural(n, "feature", "features"), "Agrupando las reglas de " + plural(n, "funcionalidad", "funcionalidades")); },
+    tarjeta: function (it, enTanda) {
+      var x = it.datos;
+      return '<p class="es-texto">' + esc(x.nombre) + '</p><div class="chips"><span class="chip es-aviso">' + pl(x.n, "rule without a use case", "rules without a use case", "regla sin caso de uso", "reglas sin caso de uso") + "</span>" + chipCerebro(x) + chipTanda(enTanda, "Grouping…", "Agrupándose…") + "</div>";
+    }
+  });
+  registrarPaginas("escribir", {
+    nombre: function () { return L("Write use cases", "Escribir casos de uso"); },
+    unidad: FEAT, archivo: "escribir-casos.md",
+    orden: function (a, b) { return b.datos.n - a.datos.n; },
+    resumen: function (its) { var sin = its.filter(function (it) { return !it.datos.n; }).length; return [L("The ones with more tests go first", "Las que más tests tienen van primero"), sin ? pl(sin, "without tests: deduced from the code", "without tests: deduced from the code", "sin tests: se deduce del código", "sin tests: se deducen del código") : ""]; },
+    pidiendo: function (n) { return L("Writing the use cases of " + plural(n, "feature", "features"), "Escribiendo los casos de uso de " + plural(n, "funcionalidad", "funcionalidades")); },
+    tarjeta: function (it, enTanda) {
+      var x = it.datos;
+      return '<p class="es-texto">' + esc(x.nombre) + '</p><div class="chips"><span class="chip">' + (x.n ? pl(x.n, "test case", "test cases", "caso de test", "casos de test") : L("No tests", "Sin tests")) + "</span>" + chipCerebro(x) + chipTanda(enTanda, "Writing…", "Escribiéndose…") + "</div>";
+    }
+  });
+  registrarPaginas("corregir", {
+    nombre: function () { return L("Fixes", "Correcciones"); },
+    unidad: ["fix", "fixes", "corrección", "correcciones"], archivo: "corregir.md",
+    resumen: function (its) { var r = its.filter(function (it) { return it.datos.regla; }).length; return [pl(its.length - r, "use case marked as wrong", "use cases marked as wrong", "caso marcado como mal", "casos marcados como mal") + " · " + pl(r, "rule that is wrong", "rules that are wrong", "regla que está mal", "reglas que están mal")]; },
+    pidiendo: function (n) { return L("Fixing " + plural(n, "use case or rule", "use cases and rules"), "Corrigiendo " + plural(n, "caso o regla", "casos y reglas")); },
+    tarjeta: function (it, enTanda) {
+      var x = it.datos;
+      return '<p class="es-texto">' + esc(x.regla ? x.texto : x.casoNombre) + '</p><div class="chips"><span class="chip es-falta">' + (x.regla ? L("The rule is wrong", "La regla está mal") : L("Marked as wrong", "Marcado como mal")) + '</span><span class="chip" title="' + L("Feature", "Funcionalidad") + '">' + esc(x.nombre) + "</span>" + chipCerebro(x) + chipTanda(enTanda, "Fixing…", "Corrigiéndose…") + "</div>" +
+        "<small>" + (x.regla ? L("The code today: ", "Hoy el código: ") + esc(x.hoy) : "«" + esc(x.problema) + "»") + "</small>";
+    }
+  });
+  // Lo que corre el agente lo trae el componente: acá, para los resultados del lote de tests (hallazgos).
+  PD.escuchar(function (ev) { if (ev === "trabajos") TRABAJOS = PD.trabajos(); });
 
-  // ---------- El agente: mandar pedidos y ver cómo van ----------
-  var pedirAgente = function (ruta, cuerpo) { return PD.llamar(ruta, cuerpo); };
-  function mandar(k) {
-    var p = PEDIDOS[k];
-    if (!p || !AG || !PEDIDO || PEDIDO.k !== k || PEDIDO.mandado) return;
-    PEDIDO.mandado = true; PEDIDO.error = null; pintarTodo();
-    pedirAgente("/api/agente", { tipo: p[0], pedido: textoDelPedido(p[0], p[1]), etiqueta: etiquetaDelPedido(p[0], p[1]), cerebros: cerebrosDelPedido(p[0], p[1]), proveedor: PD.proveedor() ? PD.proveedor().id : undefined, modelo: PD.modelo() ? PD.modelo().id : undefined }).then(function () {
-      PEDIDO = null; PD.actualizar(); pintarTodo();
-      var a = elem("es-agente"); if (a && a.scrollIntoView) a.scrollIntoView();
-    }).catch(function (e) { if (PEDIDO && PEDIDO.k === k) { PEDIDO.mandado = false; PEDIDO.error = e.message; pintarTodo(); } });
-  }
-  var vivo = function (t) { return t.estado === "en_cola" || t.estado === "corriendo"; };
-  var estadoTrabajo = function (e) { return PD.estado(e); };
-  function unTrabajo(t) {
-    var e = estadoTrabajo(t.estado);
-    var pasos = t.pasos || [], ultimos = pasos.slice(-4);
-    var cambios = (t.cambios || []).map(function (c) { return "<li><b>" + esc(c.repo) + "</b>: " + c.archivos.map(function (a) { return "<code>" + esc(a) + "</code>"; }).join(" ") + "</li>"; }).join("");
-    return '<li class="es-trabajo"><div class="es-cab"><b>' + esc(t.etiqueta) + '</b><span class="fd-es ' + e[1] + '">' + e[0] + "</span></div>" +
-      (vivo(t) && ultimos.length ? '<ul class="es-pasos">' + ultimos.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
-      (t.estado === "en_cola" ? "<small>" + L("Waits for the previous one to finish.", "Espera a que termine el anterior.") + "</small>" : "") +
-      (t.error ? '<p class="fd-msg error">' + esc(t.error) + "</p>" : "") +
-      (!vivo(t) && t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "") +
-      (!vivo(t) && pasos.length ? '<details class="tf"><summary>' + L("What it did (" + plural(pasos.length, "step", "steps") + ")", "Lo que hizo (" + plural(pasos.length, "paso", "pasos") + ")") + "</summary><ul class=\"es-pasos\">" + pasos.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></details>" : "") +
-      (cambios ? '<div class="es-cambios"><small>' + L("Changed, uncommitted (review it before committing):", "Cambió, sin commitear (revisalo antes de commitear):") + "</small><ul>" + cambios + "</ul></div>" : !vivo(t) && t.estado === "terminado" ? "<small>" + L("It didn't change files in the repos.", "No cambió archivos en los repos.") + "</small>" : "") +
-      '<div class="fd-acc">' + (vivo(t) ? '<button type="button" class="boton" data-acc="cancelar-agente" data-k="' + esc(t.id) + '">' + L("Cancel", "Cancelar") + "</button>" : "") +
-      (t.estado === "terminado" || t.estado === "fallo" ? '<button type="button" class="boton" data-acc="recargar">' + L("Reload to see the changes", "Recargar para ver los cambios") + "</button>" : "") + "</div></li>";
-  }
-  // Las tandas de «Pedir todos» se ven en el panel «Tests pedidos»; acá, los pedidos sueltos.
-  var sueltos = function () { return TRABAJOS.filter(function (t) { return !t.lote && t.tipo !== "asociar"; }); };
-  function htmlAgente() {
-    if (!AG || !sueltos().length) return "";
-    return "<h2>" + L("The agent", "El agente") + '</h2><ul class="lista">' + sueltos().map(unTrabajo).join("") + "</ul>";
-  }
-  function pintarAgente() { var a = elem("es-agente"); if (a) { a.innerHTML = htmlAgente(); a.className = sueltos().length && AG ? "es-agente" : ""; } }
   function buscarRegla(k) { var out = null; FICHAS.forEach(function (f) { specs(f).forEach(function (e) { if (clave(f, e) === k) out = [e, f]; }); }); return out; }
   function ponerManual(k, motivo) {
     var ef = buscarRegla(k);
@@ -830,25 +880,9 @@ export const ESPECIFICACIONES_JS = String.raw`
       ponerManual(k, motivo); return;
     }
     if (acc === "automatico") { ponerManual(k, ""); return; }
-    if (acc === "pedido") {
-      if (PEDIDO && PEDIDO.k === k) { PEDIDO = null; pintarTodo(); return; }
-      var p = PEDIDOS[k];
-      if (!p || p[0] === "test") return;
-      PEDIDO = { k: k, copiado: false }; pintarTodo();
-      // Con el agente a mano, se muestra el pedido y se elige; sin él, se copia directo.
-      if (!AG) copiar(textoDelPedido(p[0], p[1]), function (ok) { if (PEDIDO && PEDIDO.k === k) { PEDIDO.copiado = ok ? true : "no"; pintarTodo(); } });
-      return;
-    }
-    if (acc === "copiar") {
-      var pc = PEDIDOS[k];
-      if (pc) copiar(textoDelPedido(pc[0], pc[1]), function (ok) { if (PEDIDO && PEDIDO.k === k) { PEDIDO.copiado = ok ? true : "no"; pintarTodo(); } });
-      return;
-    }
-    if (acc === "mandar") { mandar(k); return; }
     // Sumar o sacar del pedido: el componente cambia los botones sin repintar (no se cierra lo que se estaba mirando).
-    if (acc === "pedir") { PD.sumar("test", k); return; }
-    if (acc === "cancelar-agente") { pedirAgente("/api/agente/cancelar", { id: k }).then(PD.actualizar, PD.actualizar); return; }
-    if (acc === "recargar") { if (typeof location !== "undefined") location.reload(); return; }
+    // La clave del botón empieza por su tipo: "test|…", "agrupar|…", "escribir|…", "corregir|…".
+    if (acc === "pedir") { PD.sumar(k.slice(0, k.indexOf("|")), k); return; }
   }
   raiz.addEventListener("click", function (ev) {
     if (fl.manejar(ev, "click")) return;

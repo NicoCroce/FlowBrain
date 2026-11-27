@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConsultaError, leerRegistro, type Registro } from "@flowbrain/core";
 import { aplicarCerebro, htmlDelVisor } from "./cerebros.js";
-import { crearAgente, TIPOS_DE_PEDIDO, type Agente, type ArchivoDePedido, type ReglaDePedido, type TipoDePedido } from "./agente.js";
+import { crearAgente, esTipoDePagina, TIPOS_DE_PEDIDO, type Agente, type ArchivoDePedido, type ItemDePagina, type ReglaDePedido, type TipoDePedido } from "./agente.js";
 import { codigoDeArchivo, detalleDeArchivo, editar, type Edicion } from "./edicion.js";
 import { L } from "./idioma.js";
 import { VERSION } from "./init.js";
@@ -161,11 +161,12 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
     }
     if (req.method === "GET" && url.pathname === "/api/agente") return { json: { noDisponible: agente.noDisponible(), proveedores: agente.proveedores(), trabajos: agente.lista(), lotes: agente.lotes() } };
     if (req.method === "POST" && url.pathname === "/api/agente/lote") {
-      // Un lote: reglas a testear (Especificaciones, `tipo` test o sin tipo) o archivos a asociar (Sin asociar). Los dos,
-      // con los mismos límites: hasta 3000 y 2 MB.
+      // Un lote: reglas a testear (Especificaciones, `tipo` test o sin tipo), archivos a asociar (Sin asociar) o
+      // funcionalidades, casos y reglas a agrupar, escribir o corregir (Especificaciones). Todos con los mismos límites:
+      // hasta 3000 y 2 MB.
       const b = await cuerpoJson(req, 2 * 1024 * 1024);
       const tipo = b["tipo"] ?? "test", proveedor = b["proveedor"], modelo = b["modelo"];
-      if (tipo !== "test" && tipo !== "asociar") throw new ErrorHttp(400, `unknown batch type: ${String(tipo)}`);
+      if (tipo !== "test" && tipo !== "asociar" && !esTipoDePagina(tipo)) throw new ErrorHttp(400, `unknown batch type: ${String(tipo)}`);
       if ((proveedor !== undefined && typeof proveedor !== "string") || (modelo !== undefined && typeof modelo !== "string")) throw new ErrorHttp(400, "proveedor and modelo must be text");
       const elegido = { ...(proveedor ? { proveedor } : {}), ...(modelo ? { modelo } : {}) };
       if (tipo === "asociar") {
@@ -183,6 +184,25 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
         const no = agente.noDisponible();
         if (no) throw new ErrorHttp(409, no);
         return { json: agente.encolarLote({ tipo: "asociar", archivos: validos, ...elegido }) };
+      }
+      if (esTipoDePagina(tipo)) {
+        const items = b["items"];
+        if (!Array.isArray(items) || !items.length || items.length > 3000) throw new ErrorHttp(400, "items must be a list of 1 to 3000 items");
+        const vistos = new Set<string>();
+        const texto = (v: unknown) => typeof v === "string" && /^[^\s|]{1,200}$/.test(v);
+        const validos: ItemDePagina[] = items.map((x: Record<string, unknown>) => {
+          const { cerebro, funcionalidad, caso, regla, linea } = x ?? {};
+          // agrupar y escribir: una funcionalidad. corregir: un caso marcado o una regla, de una funcionalidad (uno de los dos).
+          const forma = tipo === "corregir" ? (caso === undefined) !== (regla === undefined) && (caso === undefined || texto(caso)) && (regla === undefined || texto(regla)) : caso === undefined && regla === undefined;
+          if (typeof cerebro !== "string" || !registro.cerebro(cerebro) || !texto(funcionalidad) || !forma || typeof linea !== "string" || !linea.trim() || linea.length > 4000) throw new ErrorHttp(400, `invalid item: ${JSON.stringify(x).slice(0, 160)}`);
+          const k = `${cerebro}|${String(funcionalidad)}|${String(caso ?? "")}|${String(regla ?? "")}`;
+          if (vistos.has(k)) throw new ErrorHttp(400, `repeated item: ${k}`);
+          vistos.add(k);
+          return { cerebro, funcionalidad: funcionalidad as string, ...(typeof caso === "string" ? { caso } : {}), ...(typeof regla === "string" ? { regla } : {}), linea };
+        });
+        const no = agente.noDisponible();
+        if (no) throw new ErrorHttp(409, no);
+        return { json: agente.encolarLote({ tipo, items: validos, ...elegido }) };
       }
       const reglas = b["reglas"];
       if (!Array.isArray(reglas) || !reglas.length || reglas.length > 3000) throw new ErrorHttp(400, "reglas must be a list of 1 to 3000 rules");

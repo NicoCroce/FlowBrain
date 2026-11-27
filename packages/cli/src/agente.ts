@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { cargarContexto, ConsultaError, fidelidadDeArchivos, TEST_REF, type Registro } from "@flowbrain/core";
+import { cargarContexto, ConsultaError, especificaciones, fidelidadDeArchivos, TEST_REF, type Contexto, type Registro } from "@flowbrain/core";
 import { compileDirConVisor } from "@flowbrain/viewer";
 import type { Edicion } from "./edicion.js";
 import { GUIA_ESPECIFICACIONES, GUIA_TESTS } from "./guia.js";
@@ -25,7 +25,12 @@ export { HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento };
  *     editan las páginas `feat-*`/`lib-*` del cerebro, así que las de un cerebro van una detrás de otra y los cerebros,
  *     en paralelo. Al terminar cada tanda el servidor compila el cerebro y mide cuáles de sus archivos dejaron de
  *     estar sin asociar: eso es lo que cuenta el resumen, no lo que diga el agente.
- *   En los dos, una tanda que falla no frena a las demás, y se cancela el lote entero o una tanda.
+ *   - `agrupar`, `escribir` y `corregir` (pantalla Especificaciones, dec. 230): funcionalidades a las que agrupar sus
+ *     reglas sueltas en casos de uso, a las que escribirles casos y reglas, o casos marcados como mal y reglas a
+ *     corregir. Editan las páginas de producto de varios cerebros a la vez (el mismo caso lleva el mismo id en cada
+ *     uno), así que las tandas van una detrás de otra, con lo de una misma funcionalidad junto. Al terminar cada tanda
+ *     el servidor compila sus cerebros y mira en las páginas qué quedó resuelto (`resueltos`) y qué no (`quedan`).
+ *   En todos, una tanda que falla no frena a las demás, y se cancela el lote entero o una tanda.
  */
 
 export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir" | "asociar";
@@ -73,15 +78,31 @@ $ARGUMENTS
 const COMANDOS_ASOCIAR = ["flowbrain compile", "flowbrain unassigned", "flowbrain feature", "flowbrain status", "flowbrain brains", "flowbrain screen", "flowbrain connections", "flowbrain specs --guide", "cd", "ls", "git status", "git diff"];
 
 /**
+ * Comandos que puede correr un pedido sobre las especificaciones (agrupar, escribir, corregir): leer FlowBrain (el
+ * flujo de un endpoint, una pantalla, los casos de test) y compilar; nada de tests ni de promover.
+ */
+const COMANDOS_ESPECIFICACIONES = ["flowbrain compile", "flowbrain specs", "flowbrain feature", "flowbrain flow", "flowbrain screen", "flowbrain status", "flowbrain brains", "flowbrain connections", "cd", "ls", "git status", "git diff"];
+
+/**
  * Los permisos de un pedido. Sin `escritura`, los de siempre (`POLITICA`: edita dentro del proyecto y corre tests).
- * Un pedido «asociar» solo puede escribir las páginas `feat-*` y `lib-*` de sus cerebros y borradores en `_drafts/`.
+ * Un pedido «asociar» solo puede escribir las páginas `feat-*` y `lib-*` de sus cerebros y borradores en `_drafts/`;
+ * uno sobre las especificaciones (agrupar, escribir, corregir), solo las páginas `feat-*` de sus cerebros (y las de
+ * borrador): lo mismo que dice su guía, «no modifiques los repositorios del proyecto».
  */
 export function permisosDelPedido(tipo: TipoDePedido, raices: string[]): { escritura?: string[]; comandos?: string[] } {
-  if (tipo !== "asociar") return {};
-  return {
-    escritura: raices.flatMap((r) => [join(r, "_drafts", "**"), join(r, "product", "feat-*.md"), join(r, "technology", "lib-*.md")]),
-    comandos: COMANDOS_ASOCIAR,
-  };
+  if (tipo === "asociar") {
+    return {
+      escritura: raices.flatMap((r) => [join(r, "_drafts", "**"), join(r, "product", "feat-*.md"), join(r, "technology", "lib-*.md")]),
+      comandos: COMANDOS_ASOCIAR,
+    };
+  }
+  if (esTipoDePagina(tipo)) {
+    return {
+      escritura: raices.flatMap((r) => [join(r, "product", "feat-*.md"), join(r, "_drafts", "product", "feat-*.md")]),
+      comandos: COMANDOS_ESPECIFICACIONES,
+    };
+  }
+  return {};
 }
 
 /** Cómo termina cada regla de un pedido de tests: a y b la verifican; c y d son hallazgos que no se resuelven con un test. */
@@ -120,7 +141,25 @@ export interface ArchivoDePedido {
   linea: string;
 }
 
-export type TipoDeLote = "test" | "asociar";
+/**
+ * Un ítem de un lote sobre las especificaciones: una funcionalidad de un cerebro (agrupar, escribir), o un caso
+ * marcado como mal o una regla a corregir de ella (corregir). `linea` es como lo lee el agente, en inglés.
+ */
+export interface ItemDePagina {
+  cerebro: string;
+  /** Id local de la funcionalidad (`feat-mvp`). */
+  funcionalidad: string;
+  /** corregir: el caso de uso marcado como mal. */
+  caso?: string;
+  /** corregir: la regla que una persona dijo que está mal (su hallazgo, con decisión `regla_mal`). */
+  regla?: string;
+  linea: string;
+}
+export type TipoDePagina = "agrupar" | "escribir" | "corregir";
+export const TIPOS_DE_PAGINA: readonly TipoDePagina[] = ["agrupar", "escribir", "corregir"];
+export const esTipoDePagina = (t: unknown): t is TipoDePagina => TIPOS_DE_PAGINA.includes(t as TipoDePagina);
+
+export type TipoDeLote = "test" | "asociar" | TipoDePagina;
 
 export interface Trabajo {
   id: string;
@@ -158,6 +197,10 @@ export interface Trabajo {
   archivos?: Array<{ cerebro: string; archivo: string }>;
   asociados?: Array<{ cerebro: string; archivo: string }>;
   siguen?: Array<{ cerebro: string; archivo: string }>;
+  /** Tanda de un lote agrupar, escribir o corregir: lo pedido, y después de compilar, qué quedó resuelto en las páginas y qué no. */
+  items?: Array<Omit<ItemDePagina, "linea">>;
+  resueltos?: Array<Omit<ItemDePagina, "linea">>;
+  quedan?: Array<Omit<ItemDePagina, "linea">>;
 }
 
 export interface Lote {
@@ -182,6 +225,12 @@ const MAX_TRABAJOS = 400;
 const TANDA_MAX = 15;
 /** Archivos por tanda de un lote «asociar»: leer y decidir un archivo cuesta menos que testear una regla. */
 export const TANDA_MAX_ASOCIAR = 30;
+
+/**
+ * Ítems por tanda de un lote sobre las especificaciones. Escribir lee el código y los tests de cada funcionalidad
+ * entera: pocas por tanda. Agrupar solo ordena lo escrito; corregir, un caso o una regla.
+ */
+export const TANDA_MAX_PAGINAS: Readonly<Record<TipoDePagina, number>> = { agrupar: 8, escribir: 3, corregir: 10 };
 
 /** Cuántos lleva cada tanda: lo más parejo posible y nunca más de `max` (15 reglas, o 30 archivos). */
 export function tamanioDeTanda(n: number, max = TANDA_MAX): number {
@@ -215,6 +264,66 @@ export function pedidoDeTandaAsociar(archivos: ArchivoDePedido[], repo: string, 
     "",
     ...archivos.map((a) => a.linea),
   ].join("\n");
+}
+
+/**
+ * Las tandas de un lote sobre las especificaciones: lo de una misma funcionalidad (en todos sus cerebros) va junto,
+ * para que el agente use el mismo id de caso de un lado y del otro; las funcionalidades se suman a una tanda mientras
+ * entren en `max` (una que sola lo pasa va en su propia tanda).
+ */
+export function tandasDePaginas<T extends Pick<ItemDePagina, "funcionalidad">>(items: T[], max: number): T[][] {
+  const grupos = new Map<string, T[]>();
+  for (const x of items) grupos.set(x.funcionalidad, [...(grupos.get(x.funcionalidad) ?? []), x]);
+  const tandas: T[][] = [];
+  let actual: T[] = [];
+  for (const g of grupos.values()) {
+    if (actual.length && actual.length + g.length > max) {
+      tandas.push(actual);
+      actual = [];
+    }
+    actual = actual.concat(g);
+  }
+  if (actual.length) tandas.push(actual);
+  return tandas;
+}
+
+/** Lo que encabeza el pedido de una tanda sobre las especificaciones, en inglés: qué hacer con los ítems de abajo. */
+const PEDIDO_DE_PAGINA: Record<TipoDePagina | "reglas", (n: number) => string> = {
+  agrupar: (n) => `Group into use cases the specifications that are not in any use case yet, in ${n === 1 ? "this FlowBrain feature" : `these ${n} FlowBrain features`}, following the guide. The same use case in another brain keeps the same id. Don't change the text of the specifications.`,
+  escribir: (n) => `Write the use cases and specifications of ${n === 1 ? "this FlowBrain feature" : `these ${n} FlowBrain features`}, following the guide.`,
+  corregir: (n) => `Fix ${n === 1 ? "this FlowBrain use case" : `these ${n} FlowBrain use cases`} that a person marked as wrong, following the guide. After fixing each one, delete its problema field from the page.`,
+  reglas: (n) => `Fix the text of ${n === 1 ? "this FlowBrain rule" : `these ${n} FlowBrain rules`}: the agent that tried to test them found that the code does something else, and a person decided the rule is wrong, not the code. Fix the text of each rule (or delete it, if it no longer holds) according to what the code does today, following the guide, and delete its finding (hallazgo). Don't change the product code.`,
+};
+
+/** El pedido de una tanda agrupar, escribir o corregir: qué hacer, los ítems y cómo cerrar. El agente edita las páginas. */
+export function pedidoDeTandaPaginas(tipo: TipoDePagina, items: ItemDePagina[], n: number, de: number): string {
+  const partes: string[] = [];
+  const bloque = (cabeza: string, xs: ItemDePagina[]) => { if (xs.length) partes.push(cabeza, "", ...xs.map((x) => x.linea), ""); };
+  if (tipo === "corregir") {
+    bloque(PEDIDO_DE_PAGINA.corregir(items.filter((x) => !x.regla).length), items.filter((x) => !x.regla));
+    bloque(PEDIDO_DE_PAGINA.reglas(items.filter((x) => x.regla).length), items.filter((x) => x.regla));
+  } else bloque(PEDIDO_DE_PAGINA[tipo](new Set(items.map((x) => x.funcionalidad)).size), items);
+  return [
+    ...(de > 1 ? [`This is batch ${n} of ${de} of the request: other batches cover the rest, only handle these.`, ""] : []),
+    ...partes,
+    "Do NOT modify the project's repositories: only the feature pages of FlowBrain. When done, compile each brain (flowbrain compile inside .flowbrain/<brain>/) and check with flowbrain specs <feature> --brain <brain> that no broken references remain. The server compiles again and checks in the pages what got resolved.",
+  ].join("\n");
+}
+
+/** Si un ítem quedó resuelto en las páginas ya compiladas de su cerebro. Una funcionalidad que ya no está no se puede medir: queda. */
+export function resueltoEnPagina(ctx: Contexto, tipo: TipoDePagina, x: Omit<ItemDePagina, "linea">): boolean {
+  let r: ReturnType<typeof especificaciones>;
+  try {
+    r = especificaciones(ctx, { funcionalidad: x.funcionalidad, budget_tokens: null });
+  } catch {
+    return false;
+  }
+  const f = r as unknown as { total?: number; especificacionesSinCaso?: string[]; casos?: Array<{ id: string; problema?: string }>; especificaciones?: Array<{ id: string; hallazgo?: unknown }> };
+  if (tipo === "agrupar") return !f.especificacionesSinCaso?.length;
+  if (tipo === "escribir") return (f.total ?? 0) > 0;
+  if (x.caso) return !(f.casos ?? []).some((c) => c.id === x.caso && c.problema);
+  // La regla se corrigió (o se borró, si ya no valía) y su hallazgo ya no está.
+  return !(f.especificaciones ?? []).some((e) => e.id === x.regla && e.hallazgo);
 }
 
 /** Lo que el agente respondió: la lista del último bloque ```flowbrain-resultados, ya validada. */
@@ -261,8 +370,11 @@ export interface Agente {
   /** Los proveedores instalados en la máquina, con sus modelos. */
   proveedores(): ProveedorVisible[];
   encolar(p: { tipo: TipoDePedido; pedido: string; etiqueta: string; cerebros: string[]; proveedor?: string; modelo?: string }): Trabajo;
-  /** `test`: reparte las reglas por repo (en paralelo) y cada repo en tandas. `asociar`: los archivos por cerebro (en paralelo) y por repo, en tandas. */
-  encolarLote(p: ({ tipo?: "test"; reglas: ReglaDePedido[] } | { tipo: "asociar"; archivos: ArchivoDePedido[] }) & { proveedor?: string; modelo?: string }): { lote: Lote; trabajos: Trabajo[] };
+  /**
+   * `test`: reparte las reglas por repo (en paralelo) y cada repo en tandas. `asociar`: los archivos por cerebro (en
+   * paralelo) y por repo, en tandas. `agrupar`, `escribir` y `corregir`: los ítems en tandas, una detrás de otra.
+   */
+  encolarLote(p: ({ tipo?: "test"; reglas: ReglaDePedido[] } | { tipo: "asociar"; archivos: ArchivoDePedido[] } | { tipo: TipoDePagina; items: ItemDePagina[] }) & { proveedor?: string; modelo?: string }): { lote: Lote; trabajos: Trabajo[] };
   lista(): Trabajo[];
   lotes(): Lote[];
   cancelar(id: string): Trabajo | null;
@@ -487,9 +599,69 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.asociados?.length ? "fallo" : "terminado";
   }
 
+  /** Una tanda agrupar, escribir o corregir: corre el agente, compila sus cerebros y mira en las páginas qué quedó resuelto. */
+  async function correrTandaPaginas(t: Trabajo & { tipo: TipoDePagina }) {
+    try {
+      const reg = await lanzar(t);
+      // Aun cancelada pudo haber escrito algo: se compila y se mide igual.
+      for (const nombre of t.cerebros) {
+        const c = reg.cerebro(nombre);
+        const suyos = (t.items ?? []).filter((x) => x.cerebro === nombre);
+        if (!c) {
+          t.quedan = [...(t.quedan ?? []), ...suyos];
+          continue;
+        }
+        try {
+          await compileDirConVisor(c.raiz);
+          const ctx = await cargarContexto(c.raiz);
+          for (const x of suyos) (resueltoEnPagina(ctx, t.tipo, x) ? (t.resueltos ??= []) : (t.quedan ??= [])).push(x);
+        } catch (e) {
+          t.quedan = [...(t.quedan ?? []), ...suyos];
+          t.error = `${t.error ? `${t.error}. ` : ""}${nombre} does not compile: ${(e as Error).message.split("\n")[0]}`;
+        }
+      }
+    } catch (e) {
+      t.error = `${t.error ? `${t.error}. ` : ""}${(e as Error).message}`;
+    }
+    t.terminado = Date.now();
+    if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.resueltos?.length ? "fallo" : "terminado";
+  }
+
+  /** Un lote agrupar, escribir o corregir: tandas por funcionalidad, una detrás de otra (editan páginas de varios cerebros). */
+  function encolarLotePaginas(tipo: TipoDePagina, items: ItemDePagina[], elegido: { a: AdaptadorDeAgente; modelo: string | undefined }): { lote: Lote; trabajos: Trabajo[] } {
+    const { a, modelo } = elegido;
+    const cerebros = [...new Set(items.map((x) => x.cerebro))];
+    const lote: Lote = { id: randomBytes(6).toString("hex"), tipo, creado: Date.now(), cerebros, estado: "corriendo" };
+    lotes.push(lote);
+    const partes = tandasDePaginas(items, TANDA_MAX_PAGINAS[tipo]);
+    const que = (xs: ItemDePagina[]) => {
+      if (tipo !== "corregir") { const n = new Set(xs.map((x) => x.funcionalidad)).size; return `${n} ${n === 1 ? "feature" : "features"}`; }
+      return `${xs.length} ${xs.length === 1 ? "use case or rule" : "use cases and rules"}`;
+    };
+    const repo = cerebros.join(", ");
+    const hechos = partes.map((parte, i) => {
+      const n = i + 1, de = partes.length;
+      const t = nuevo({
+        tipo, proveedor: a.id, ...(modelo ? { modelo } : {}), lote: lote.id, repo, tanda: { n, de },
+        etiqueta: `${de > 1 ? `Batch ${n} of ${de} · ` : ""}${que(parte)}`,
+        pedido: pedidoDeTandaPaginas(tipo, parte, n, de), cerebros: [...new Set(parte.map((x) => x.cerebro))],
+        items: parte.map(({ linea: _, ...x }) => x),
+      });
+      adaptadorDe.set(t.id, a);
+      trabajos.push(t);
+      return t;
+    });
+    podar();
+    void (async () => {
+      for (const t of hechos) if (t.estado !== "cancelado") await correrTandaPaginas(t as Trabajo & { tipo: TipoDePagina });
+      await terminarLote(lote);
+    })();
+    return { lote, trabajos: hechos };
+  }
+
   async function terminarLote(l: Lote) {
-    // Cada tanda «asociar» ya compiló su cerebro: no hay tests nuevos que indexar.
-    if (l.tipo === "asociar") {
+    // Cada tanda «asociar», agrupar, escribir o corregir ya compiló sus cerebros: no hay tests nuevos que indexar.
+    if (l.tipo !== "test") {
       l.estado = "terminado";
       return;
     }
@@ -525,8 +697,13 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     encolarLote(p) {
       const no = noDisponible();
       if (no) throw new Error(no);
+      if (esTipoDePagina(p.tipo)) {
+        const q = p as { tipo: TipoDePagina; items: ItemDePagina[] };
+        if (!q.items.length) throw new ConsultaError("parametro_invalido", "there is nothing to request");
+        return encolarLotePaginas(q.tipo, q.items, elegir(p.proveedor, p.modelo));
+      }
       const asociar = p.tipo === "asociar";
-      const items: Array<ReglaDePedido | (ArchivoDePedido & { repo: string })> = p.tipo === "asociar" ? p.archivos.map((a) => ({ ...a, repo: a.archivo.split(":")[0]! })) : p.reglas;
+      const items: Array<ReglaDePedido | (ArchivoDePedido & { repo: string })> = p.tipo === "asociar" ? p.archivos.map((a) => ({ ...a, repo: a.archivo.split(":")[0]! })) : (p as { reglas: ReglaDePedido[] }).reglas;
       if (!items.length) throw new ConsultaError("parametro_invalido", asociar ? "there are no files to request" : "there are no rules to request");
       const { a, modelo } = elegir(p.proveedor, p.modelo);
       const cerebros = [...new Set(items.map((r) => r.cerebro))];
