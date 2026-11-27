@@ -76,7 +76,7 @@ async function main() {
     pkg.version = version;
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
     correr("git", ["add", pkgPath, changelogPath]);
-    correr("git", ["commit", "-q", "-m", `Versión ${version}`]);
+    correr("git", ["commit", "-q", "-m", `Version ${version}`]);
   }
   paso("Push de main");
   correr("git", ["push", "-q", "origin", "main"]);

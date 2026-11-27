@@ -1,5 +1,13 @@
 # Cambios
 
+## 0.2.0 · 2026-11-27
+
+- El menú (`flowbrain`) avisa cuando hay una versión nueva publicada y recomienda actualizar.
+- «Actualizar FlowBrain» vuelve a registrar el servidor MCP con la versión nueva (`flowbrain setup --mcp`); si ya tenés la última, lo dice y no reinstala.
+- «Analizar el proyecto completo» suma un cuarto paso: deduce las especificaciones de cada funcionalidad.
+- Mientras desarrolla, el agente agrega casos de uso y especificaciones al borrador de una funcionalidad nueva y actualiza las de una que cambia.
+- Contratos no se rompe con una llamada ambigua: lista los endpoints candidatos de cada llamada pendiente.
+
 ## 0.1.1 · 2026-11-25
 
 - El README del paquete es el mismo del repo (inglés y castellano), con imágenes y links que funcionan en npm.
