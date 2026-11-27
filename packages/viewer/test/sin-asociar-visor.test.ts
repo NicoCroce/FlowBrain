@@ -33,6 +33,10 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; l
       html = v;
       const i = v.indexOf('<div id="sa-lista">');
       el("sa-lista").innerHTML = i < 0 ? "" : v.slice(i);
+      const p = v.match(/<aside id="sa-panel"[^>]*>([\s\S]*)<\/aside>/);
+      el("sa-panel").innerHTML = p ? p[1]! : "";
+      const b = v.match(/<span id="sa-bandeja">([\s\S]*?)<\/span><\/div>/);
+      el("sa-bandeja").innerHTML = b ? b[1]! : "";
     },
   });
   window.brainSinAsociar!.mostrar();
@@ -40,6 +44,8 @@ function montar(datos: Record<string, unknown>, opciones: { edicion?: unknown; l
   return {
     pagina: () => raiz.innerHTML,
     lista: () => el("sa-lista").innerHTML,
+    panel: () => el("sa-panel").innerHTML,
+    bandeja: () => el("sa-bandeja").innerHTML,
     carpetas: () => [...el("sa-lista").innerHTML.matchAll(/<h3><code>([^<]+)<\/code>/g)].map((m) => m[1]),
     archivos: () => [...el("sa-lista").innerHTML.matchAll(/<li class="sa-fila"><div class="sa-que"><code title="[^"]*">([^<]+)<\/code>/g)].map((m) => m[1]),
     cambiar: (id: string, value: string) => raiz.oyentes["change"]!({ target: { id, value } }),
@@ -127,19 +133,75 @@ describe("pantalla Sin asociar", () => {
     expect(v.archivos()).toEqual(["Texto.php"]);
   });
 
-  it("arma el pedido para el agente con los archivos de la lista y su recomendación", () => {
-    const v = montar(datos());
-    v.tocar({ "data-acc": "pedido" });
-    const l = v.lista();
-    expect(l).toContain("Assign these 5 files");
-    expect(l).toContain("- repo-web:src/shared/dinero.ts (brain front): recommended feat-pagos (imported by 2 files of Pagos); others: feat-envios");
-    expect(l).toContain("- repo-web:src/shared/fecha.ts (brain front): shared code, used by 3 features");
-    expect(l).toContain("- repo-api:src/Util/Texto.php (brain back): no hint");
-    // El pedido es para el modelo: va en inglés aunque el visor esté en castellano.
+  it("suma al pedido de a un archivo, por carpeta o la lista filtrada; el panel lateral se abre, quita, vacía y se recuerda", () => {
+    const local = new Map<string, string>();
+    const v = montar(datos(), { local });
+    // Sin nada sumado no hay botón del panel, y cada fila, carpeta y la lista tienen su «Sumar» celeste.
+    expect(v.bandeja()).toBe("");
+    expect(v.lista()).toContain(`data-acc="sumar" data-k="a|${W}src/shared/dinero.ts" data-et="Add to the request" aria-pressed="false"`);
+    expect(v.lista()).toMatch(/class="boton es-pedir" data-acc="sumar" data-k="c\|0\|front\/repo-web:src\/shared"[^>]*>Add the folder \(3\)<\/button>/);
+    expect(v.lista()).toContain(">Add the 5 in the list</button>");
+    // Un archivo: el botón pasa a «En el pedido» y el panel se abre con él.
+    v.tocar({ "data-acc": "sumar", "data-k": `a|${W}src/shared/dinero.ts` });
+    expect(v.lista()).toMatch(/class="boton es-pedir en-lista" data-acc="sumar" data-k="a\|front\/repo-web:src\/shared\/dinero.ts"[^>]*>✔ In the request<\/button>/);
+    expect(v.panel()).toContain("<h2>Agent request</h2>");
+    expect(v.panel()).toContain("<b>1 file</b>");
+    expect(v.panel()).toContain("→ Pagos</span>");
+    expect(v.panel()).toContain(">High confidence</span>");
+    expect(v.panel()).toContain('<small class="es-archivo"><code>repo-web:src/shared/dinero.ts</code></small>');
+    expect(v.bandeja()).toContain('data-acc="panel" aria-expanded="true">Agent request (1)</button>');
+    // La carpeta suma los que faltan; tocarla otra vez los saca.
+    v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
+    expect(v.panel()).toContain("<b>3 files</b>");
+    expect(v.panel()).toContain("2 with a recommendation · 1 shared · 0 with no hint");
+    v.tocar({ "data-acc": "sumar", "data-k": "c|0|front/repo-web:src/shared" });
+    expect(v.panel()).toContain("The list is empty. Click «Add to the request» on a file, on a folder or on the filtered list");
+    // La lista filtrada entera.
+    v.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    expect(v.panel()).toContain("<b>5 files</b>");
+    // Estática: el panel arma el texto para copiar (en inglés: es para el modelo) y dice por qué no se manda.
+    let p = v.panel();
+    expect(p).toContain("This page is static, so it can't send the request");
+    expect(p).toContain('data-acc="copiar-lista">Copy the text</button>');
+    expect(p).not.toContain('data-acc="mandar-lista"');
+    expect(p).toContain("Assign these 5 files");
+    expect(p).toContain("- repo-web:src/shared/dinero.ts (brain front): recommended feat-pagos (imported by 2 files of Pagos); others: feat-envios");
+    expect(p).toContain("- repo-web:src/shared/fecha.ts (brain front): shared code, used by 3 features");
+    expect(p).toContain("- repo-api:src/Util/Texto.php (brain back): no hint");
+    // Quitar de a uno.
+    v.tocar({ "data-acc": "quitar", "data-k": "back|repo-api:src/Util/Texto.php" });
+    expect(v.panel()).toContain("<b>4 files</b>");
+    expect(v.panel()).not.toContain("Texto.php");
+    // La lista y el panel abierto se recuerdan: otra página, el mismo navegador.
+    expect(JSON.parse(local.get("flowbrain.sinasociar.pedidos")!)).toHaveLength(4);
+    expect(local.get("flowbrain.sinasociar.panel")).toBe("true");
+    const otra = montar(datos(), { local });
+    expect(otra.pagina()).toContain('<aside id="sa-panel" class="es-panel abierto"');
+    expect(otra.panel()).toContain("<b>4 files</b>");
+    // Lo que ya no está sin asociar sale del pedido al abrir.
+    const d = datos();
+    d.sinAsociar = d.sinAsociar.filter((x) => !x.a.endsWith("dinero.ts"));
+    expect(montar(d, { local }).panel()).toContain("<b>3 files</b>");
+    // Cerrar el panel lo recuerda cerrado; el botón junto al título lo vuelve a abrir.
+    otra.tocar({ "data-acc": "cerrar-panel" });
+    expect(local.get("flowbrain.sinasociar.panel")).toBe("false");
+    expect(otra.bandeja()).toContain('aria-expanded="false">Agent request (4)</button>');
+    otra.tocar({ "data-acc": "panel" });
+    expect(local.get("flowbrain.sinasociar.panel")).toBe("true");
+    otra.tocar({ "data-acc": "vaciar" });
+    expect(otra.panel()).toContain("The list is empty.");
+    expect(JSON.parse(local.get("flowbrain.sinasociar.pedidos")!)).toEqual([]);
+    // En castellano, los mismos textos que «Tests pedidos»; el texto para el agente, en inglés.
     const es = montar(datos(), { lang: "es" });
-    es.tocar({ "data-acc": "pedido" });
-    expect(es.lista()).toContain("<h2>Pedido para el agente</h2>");
-    expect(es.lista()).toContain("Assign these 5 files");
+    expect(es.lista()).toContain(">Sumar al pedido</button>");
+    expect(es.lista()).toContain(">Sumar la carpeta (3)</button>");
+    expect(es.lista()).toContain(">Sumar los 5 de la lista</button>");
+    es.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    expect(es.lista()).toContain(">✔ En el pedido</button>");
+    expect(es.panel()).toContain("<h2>Pedido al agente</h2>");
+    expect(es.panel()).toContain("3 con recomendación · 1 compartido · 1 sin pista");
+    expect(es.panel()).toContain(">Vaciar la lista</button>");
+    expect(es.panel()).toContain("Assign these 5 files");
   });
 
   it("sin índice, sin funcionalidades o sin nada que asociar explica qué pasa", () => {
@@ -263,7 +325,7 @@ describe("pantalla Sin asociar", () => {
     expect(v.lista()).toContain("There is no code to show for <code>repo-web:src/pagos/nota.ts</code>: the file is not in the clone");
   });
 
-  it("manda el lote al agente como Pedir todos: proveedor y modelo, tandas, avance, Cancelar todo y el resumen; sin agente o estática, solo copia", async () => {
+  it("manda la lista del panel como Pedir todos: proveedor y modelo, tandas, avance, Cancelar todo y el resumen; sin agente, solo copia", async () => {
     const pedidos: Array<Record<string, any>> = [];
     let recargas = 0;
     const estado: { trabajos: Array<Record<string, unknown>>; lotes: Array<Record<string, unknown>> } = { trabajos: [{ id: "otro", tipo: "test", lote: "LT", estado: "corriendo", etiqueta: "De otra pantalla", pasos: [] }], lotes: [{ id: "LT", tipo: "test", estado: "corriendo" }] };
@@ -282,78 +344,88 @@ describe("pantalla Sin asociar", () => {
     await esperar();
     // Al abrir, mira cómo está el agente; los lotes de tests son de Especificaciones y no se muestran acá.
     expect(pedidos[0]).toMatchObject({ url: "/api/agente", metodo: "GET" });
-    expect(v.lista()).not.toContain("De otra pantalla");
-    expect(v.pagina()).toContain('data-acc="pedido">Send to the agent…</button>');
-    v.tocar({ "data-acc": "pedido" });
-    let l = v.lista();
-    expect(l).toContain('<option value="claude-code" selected>Claude Code</option>');
-    expect(l).toContain('<option value="claude-opus-5-5" selected>Opus 5.5 (default)</option>');
-    expect(l).toContain("<b>5 files</b>");
-    expect(l).toContain("3 with a recommendation · 1 shared · 1 with no hint");
+    expect(v.pagina()).not.toContain("De otra pantalla");
+    // Ya no hay un recuadro del pedido en medio de la página: se suma y se manda desde el panel.
+    expect(v.pagina()).not.toContain('data-acc="pedido"');
+    // Se suman 4 de los 5: sin dinero.ts.
+    v.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    v.tocar({ "data-acc": "quitar", "data-k": "front|repo-web:src/shared/dinero.ts" });
+    let p = v.panel();
+    expect(p).toContain('<option value="claude-code" selected>Claude Code</option>');
+    expect(p).toContain('<option value="claude-opus-5-5" selected>Opus 5.5 (default)</option>');
+    expect(p).toContain("<b>4 files</b>");
+    expect(p).toContain("2 with a recommendation · 1 shared · 1 with no hint");
     // front/repo-web y back/repo-api: dos tandas.
-    expect(l).toContain("In 2 batches");
-    expect(l).toContain('data-acc="mandar">Send to the agent (5 files)</button>');
-    expect(l).toContain('data-acc="copiar">Copy the text</button>');
-    expect(l).toContain("It runs Claude Code (Opus 5.5) in this project. It can only write the brain's feature and library pages and drafts");
+    expect(p).toContain("In 2 batches of up to 30 files of the same repo");
+    expect(p).toContain('data-acc="mandar-lista">Send to the agent (4)</button>');
+    expect(p).toContain('data-acc="copiar-lista">Copy the text</button>');
+    expect(p).toContain("It runs Claude Code (Opus 5.5) in this project. It can only write the brain's feature and library pages and drafts");
+    // Con agente, el texto no se muestra; si el portapapeles no deja copiar, aparece para copiarlo a mano.
+    expect(p).not.toContain("<textarea");
+    v.tocar({ "data-acc": "copiar-lista" });
+    expect(v.panel()).toContain("Could not copy automatically: select the text and copy it.");
+    expect(v.panel()).toContain("Assign these 4 files");
     // El modelo elegido se recuerda en este navegador.
     v.cambiar("sa-ag-modelo", "claude-sonnet-5-5");
     expect(JSON.parse(local.get("flowbrain.sinasociar.modelo")!)).toEqual({ proveedor: "claude-code", modelo: "claude-sonnet-5-5" });
-    expect(v.lista()).toContain("It runs Claude Code (Sonnet 5.5)");
-    expect(montar(datos(), { edicion: { token: "s", sinAplicar: [], agente }, local }).pagina()).toBeDefined();
+    expect(v.panel()).toContain("It runs Claude Code (Sonnet 5.5)");
 
-    v.tocar({ "data-acc": "mandar" });
+    v.tocar({ "data-acc": "mandar-lista" });
     estado.lotes = [{ id: "L1", tipo: "asociar", estado: "corriendo", cerebros: ["front", "back"] }, ...estado.lotes];
     estado.trabajos = [
-      { id: "t1", tipo: "asociar", lote: "L1", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: ["Lee src/shared/fecha.ts"], archivos: [1, 2, 3, 4].map((i) => ({ cerebro: "front", archivo: `repo-web:x${i}` })) },
+      { id: "t1", tipo: "asociar", lote: "L1", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: ["Lee src/shared/fecha.ts"], archivos: ["moneda", "fecha"].map((n) => ({ cerebro: "front", archivo: `repo-web:src/shared/${n}.ts` })).concat([{ cerebro: "front", archivo: "repo-web:src/pagos/nota.ts" }]) },
       { id: "t2", tipo: "asociar", lote: "L1", repo: "repo-api", tanda: { n: 1, de: 1 }, estado: "en_cola", pasos: [], archivos: [{ cerebro: "back", archivo: "repo-api:src/Util/Texto.php" }] },
       ...estado.trabajos,
     ];
     await esperar();
+    // Manda lo que está en la lista, no todo lo filtrado.
     const post = pedidos.find((x) => x.url === "/api/agente/lote")!;
     expect(post).toMatchObject({ tipo: "asociar", proveedor: "claude-code", modelo: "claude-sonnet-5-5" });
-    expect(post["archivos"]).toHaveLength(5);
-    expect(post["archivos"][0]).toEqual({ cerebro: "front", archivo: "repo-web:src/shared/dinero.ts", linea: "- repo-web:src/shared/dinero.ts (brain front): recommended feat-pagos (imported by 2 files of Pagos); others: feat-envios" });
-    expect(post["archivos"].map((a: { cerebro: string }) => a.cerebro)).toContain("back");
-    l = v.lista();
-    expect(l).toContain("Assigning 5 files in 2 repos");
-    expect(l).toContain("0 of 2 batches");
-    expect(l).toContain("Lee src/shared/fecha.ts");
-    expect(l).toContain("Waits for the previous batch of this brain to finish.");
-    expect(l).toContain('data-acc="cancelar-lote" data-k="L1">Cancel all</button>');
-    expect(l).not.toContain("<h2>Request for the agent</h2>");
-    // Con un lote en curso no se manda otro.
-    v.tocar({ "data-acc": "pedido" });
-    expect(v.lista()).toMatch(/data-acc="mandar" disabled/);
-    expect(v.lista()).toContain("Another batch is running");
-    v.tocar({ "data-acc": "pedido" });
+    expect(post["archivos"]).toHaveLength(4);
+    expect(post["archivos"].map((a: { archivo: string }) => a.archivo)).not.toContain("repo-web:src/shared/dinero.ts");
+    expect(post["archivos"][0]).toEqual({ cerebro: "front", archivo: "repo-web:src/shared/moneda.ts", linea: "- repo-web:src/shared/moneda.ts (brain front): recommended feat-pagos (lo importa 1 archivo de Pagos)" });
+    p = v.panel();
+    expect(p).toContain("Assigning 4 files in 2 repos");
+    expect(p).toContain("0 of 2 batches");
+    expect(p).toContain("Lee src/shared/fecha.ts");
+    expect(p).toContain("Waits for the previous batch of this brain to finish.");
+    expect(p).toContain('data-acc="cancelar-lote" data-k="L1">Cancel all</button>');
+    // Lo que está en una tanda no se puede quitar, y con un lote en curso no se manda otro ni se vacía.
+    expect(p).toContain(">Assigning…</span>");
+    expect(p).toMatch(/data-acc="quitar" data-k="back\|repo-api:src\/Util\/Texto.php"[^>]*disabled/);
+    expect(p).toMatch(/data-acc="mandar-lista" disabled/);
+    expect(p).toMatch(/data-acc="vaciar" disabled/);
+    expect(p).toContain("A batch is running");
     v.tocar({ "data-acc": "cancelar-lote", "data-k": "L1" });
     await esperar();
     expect(pedidos.find((x) => x.url === "/api/agente/lote/cancelar")).toMatchObject({ id: "L1" });
 
-    // Se sigue aunque se recargue: otra página, el mismo navegador, lo ve al abrir.
+    // Se sigue aunque se recargue: otra página, el mismo navegador, lo ve al abrir. Lo asociado sale de la lista.
     estado.lotes[0]!["estado"] = "terminado";
-    estado.trabajos[0] = { ...estado.trabajos[0], estado: "terminado", costoUsd: 0.3, resultado: "Asocié 3; dejé x4: es un script.", asociados: [1, 2, 3].map((i) => ({ cerebro: "front", archivo: `repo-web:x${i}` })), siguen: [{ cerebro: "front", archivo: "repo-web:x4" }] };
+    estado.trabajos[0] = { ...estado.trabajos[0], estado: "terminado", costoUsd: 0.3, resultado: "Asocié 2; dejé nota.ts: no sé de quién es.", asociados: ["moneda", "fecha"].map((n) => ({ cerebro: "front", archivo: `repo-web:src/shared/${n}.ts` })), siguen: [{ cerebro: "front", archivo: "repo-web:src/pagos/nota.ts" }] };
     estado.trabajos[1] = { ...estado.trabajos[1], estado: "cancelado" };
     const otra = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, recargar: () => void recargas++, local });
     await esperar();
-    l = otra.lista();
-    expect(l).toContain("Finished");
-    expect(l).toContain("2 of 2 batches");
-    expect(l).toContain("Actual cost: US$ 0.30");
-    expect(l).toContain("3 assigned · 1 still unassigned (proposed as a draft, not product, or left: each batch says why) · 1 batch canceled.");
-    expect(l).toContain("Asocié 3; dejé x4: es un script.");
-    expect(l).toContain('data-acc="recargar">Reload to see the changes</button>');
-    // No recarga sola: como en Especificaciones, se recarga con el botón.
+    p = otra.panel();
+    expect(p).toContain("Finished");
+    expect(p).toContain("2 of 2 batches");
+    expect(p).toContain("Actual cost: US$ 0.30");
+    expect(p).toContain("2 assigned · 1 still unassigned (proposed as a draft, not product, or left: each batch says why; they stay in the list) · 1 batch canceled.");
+    expect(p).toContain("Asocié 2; dejé nota.ts: no sé de quién es.");
+    expect(p).toContain('data-acc="recargar">Reload to see the changes</button>');
+    expect(p).toContain("<b>2 files</b>");
+    expect(JSON.parse(local.get("flowbrain.sinasociar.pedidos")!).map((e: { k: string }) => e.k)).toEqual(["front|repo-web:src/pagos/nota.ts", "back|repo-api:src/Util/Texto.php"]);
     expect(recargas).toBe(0);
     otra.tocar({ "data-acc": "recargar" });
     expect(recargas).toBe(1);
     otra.tocar({ "data-acc": "cerrar-lote", "data-k": "L1" });
-    expect(otra.lista()).not.toContain("es-lote");
+    expect(otra.panel()).not.toContain("es-lote");
     expect(JSON.parse(local.get("flowbrain.sinasociar.lotes")!)).toEqual(["L1"]);
 
-    // «Proponer funcionalidad nueva» sigue siendo un pedido suelto, con el modelo elegido.
+    // «Proponer funcionalidad nueva» sigue siendo un pedido suelto, junto a su fila, con el modelo elegido.
     otra.tocar({ "data-acc": "nueva-feat", "data-a": "back/repo-api:src/Util/Texto.php" });
-    expect(otra.lista()).toContain('<select id="sa-ag-modelo">');
+    expect(otra.lista()).toMatch(/Texto\.php[\s\S]*<h2>Propose a new feature<\/h2>/);
+    expect(otra.lista()).toContain('<select id="sa-ped-modelo">');
     otra.tocar({ "data-acc": "mandar" });
     await esperar();
     expect(pedidos.filter((x) => x.url === "/api/agente" && x.metodo === "POST").pop()).toMatchObject({ tipo: "asociar", cerebros: ["back"], modelo: "claude-sonnet-5-5" });
@@ -361,40 +433,36 @@ describe("pantalla Sin asociar", () => {
     // En castellano, el mismo panel.
     const es = montar(datos(), { lang: "es", edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, local: new Map() });
     await esperar();
-    es.tocar({ "data-acc": "pedido" });
-    expect(es.lista()).toContain("Mandar al agente (5 archivos)");
-    expect(es.lista()).toContain("En 2 tandas");
-    expect(es.lista()).toContain("Costo real: US$ 0.30");
-    expect(es.lista()).toContain("3 asociados · 1 sigue sin asociar");
-    expect(es.lista()).toContain("Recargar para ver los cambios");
-    expect(es.lista()).toContain("3 con recomendación · 1 compartido · 1 sin pista");
+    es.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    expect(es.panel()).toContain("Mandar al agente (5)");
+    expect(es.panel()).toContain("En 2 tandas de hasta 30 archivos de un mismo repo");
+    expect(es.panel()).toContain("Costo real: US$ 0.30");
+    expect(es.panel()).toContain("2 asociados · 1 sigue sin asociar");
+    expect(es.panel()).toContain("Recargar para ver los cambios");
 
-    // Con el servidor pero sin agente: lo dice y ofrece copiar. Estática: copiar es lo único, y explica por qué.
+    // Con el servidor pero sin agente: lo dice y ofrece copiar.
     const sin = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente: { noDisponible: "Claude Code (claude) was not found on this machine", proveedores: [] } }, fetch: fetch as never });
-    sin.tocar({ "data-acc": "pedido" });
-    expect(sin.lista()).toContain("It can't be sent directly: Claude Code (claude) was not found on this machine. Copy it and paste it into your agent.");
-    expect(sin.lista()).not.toContain('data-acc="mandar"');
-    const est = montar(datos(), { lang: "es" });
-    est.tocar({ "data-acc": "pedido" });
-    expect(est.lista()).toContain("Esta página es estática, así que no puede mandar el pedido");
-    expect(est.lista()).not.toContain('data-acc="mandar"');
+    sin.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    expect(sin.panel()).toContain("It can't be sent directly: Claude Code (claude) was not found on this machine. Copy the text and paste it into your agent.");
+    expect(sin.panel()).not.toContain('data-acc="mandar-lista"');
+    expect(sin.panel()).toContain("Assign these 5 files");
   });
 
-  it("el lote lleva toda la lista, sin el tope de 80; el texto para copiar lleva los primeros 80", () => {
+  it("el lote lleva toda la lista, sin el tope de 80; el texto para copiar lleva los primeros 80 y lo dice", () => {
     const d = datos();
     (d as Record<string, unknown>).sinAsociar = Array.from({ length: 85 }, (_, i) => ({ a: `${W}src/x/a${i}.ts`, l: "ts", k: "otros", c: 0 }));
     const v = montar(d, { edicion: { token: "t", sinAplicar: [], agente: { noDisponible: null, proveedores: [{ id: "claude-code", nombre: "Claude Code", modelos: [] }] } } });
-    v.tocar({ "data-acc": "pedido" });
-    const l = v.lista();
-    expect(l).toContain("Send to the agent (85 files)");
-    expect(l).toContain("In 3 batches");
-    expect(l).toContain("«Copy the text» copies the first 80");
+    v.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    const p = v.panel();
+    expect(p).toContain("Send to the agent (85)");
+    expect(p).toContain("In 3 batches");
+    expect(p).toContain("«Copy the text» carries the first 80 of 85");
     // Sin servidor, el texto (el único camino) lleva 80 y dice cuántos quedan.
     const est = montar(d);
-    est.tocar({ "data-acc": "pedido" });
-    expect(est.lista()).toContain("It carries the first 80 of 85");
-    expect(est.lista()).toContain("Assign these 80 files");
-    expect(est.lista()).toContain("5 more remain for another batch.");
+    est.tocar({ "data-acc": "sumar", "data-k": "l|" });
+    expect(est.panel()).toContain("«Copy the text» carries the first 80 of 85");
+    expect(est.panel()).toContain("Assign these 80 files");
+    expect(est.panel()).toContain("5 more remain for another batch.");
   });
 
   it("código compartido: se asocia a una librería del mismo cerebro, o se pide crear una", async () => {

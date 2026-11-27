@@ -11,13 +11,17 @@
  * pedido al agente. «Ver código» muestra el archivo con `/api/archivo?…&contenido=1`: sin servidor no aparece y el
  * aviso de solo lectura dice por qué.
  *
- * «Mandar al agente» funciona como «Pedir todos» de Especificaciones: un lote (`/api/agente/lote`, tipo `asociar`, con
- * permisos acotados: solo páginas `feat-*` y `lib-*` y borradores en `_drafts/`) con todos los archivos de la lista
- * filtrada, que el servidor reparte en tandas de hasta 30 por cerebro y repo. Se elige Proveedor y Modelo (se recuerda
- * en este navegador) y se ve el mismo panel del lote (viewer-lote): «X de N tandas», «Cancelar todo», el resumen
- * (cuántos se asociaron y cuántos siguen), «Recargar para ver los cambios» y «Cerrar el resumen». El lote se sigue
- * aunque se recargue la página. Copiar el texto sigue disponible (los primeros 80), y en la página estática o sin
- * agente es lo único. «Proponer funcionalidad nueva» y «Crear librería» siguen siendo un pedido suelto (`/api/agente`). El código compartido se asocia a
+ * El pedido al agente es la misma experiencia que «Tests pedidos» de Especificaciones (dec. 227): cada archivo tiene
+ * «Sumar al pedido» (celeste), cada carpeta «Sumar la carpeta» y la lista filtrada «Sumar los N de la lista»; tocarlo
+ * otra vez lo saca. Lo sumado se junta en el panel lateral compartido (viewer-lote), que se abre y se cierra con
+ * «Pedido al agente» y se recuerda en este navegador (localStorage), igual que la lista. Desde el panel se quita de a
+ * uno o se vacía, se elige Proveedor y Modelo y se manda el lote (`/api/agente/lote`, tipo `asociar`, con permisos
+ * acotados: solo páginas `feat-*` y `lib-*` y borradores en `_drafts/`) con lo que está en la lista, que el servidor
+ * reparte en tandas de hasta 30 por cerebro y repo; ahí mismo se ve el avance, «Cancelar todo» y el resumen. «Copiar
+ * el texto» (los primeros 80) queda en el panel como alternativa, y en la página estática o sin agente es lo único.
+ * Lo que el agente asoció sale de la lista; lo que sigue sin asociar queda, para decidirlo. «Proponer funcionalidad
+ * nueva» y «Crear librería» son otra instrucción (escriben borradores): siguen siendo un pedido suelto (`/api/agente`)
+ * que se abre junto a la fila o a la lista que lo pidió. El código compartido se asocia a
  * una librería (`lib`) o se pide crear una; lo que no tiene pista se pide como funcionalidad nueva o se marca «No es de
  * producto» (`not-product.yaml` del cerebro, con su motivo), que se deshace desde «Marcados como no de producto».
  */
@@ -37,7 +41,7 @@ export const SIN_ASOCIAR_JS = String.raw`
   // TOPE_PEDIDO: los que lleva el texto para copiar. TOPE_LOTE y TANDA: los límites del lote del servidor.
   var PASO = 30, VISIBLES = 8, TOPE_PEDIDO = 80, TOPE_LOTE = 3000, TANDA = 30;
   var S = null, fl = null;
-  // PEDIDO: el pedido abierto ({ tipo: asociar | feat | lib, xs: los archivos, o null para la lista filtrada, copiado, mandando, error }).
+  // PEDIDO: el pedido suelto abierto ({ tipo: feat | lib, xs: los archivos, donde: el archivo de la fila o "lista", copiado, mandando, error }).
   var OTRA = null, MSG = null, PEDIDO = null, ocupado = false, hechos = 0;
   // Con el visor servido y un agente instalado, el pedido se manda directo; si no, se copia (como en Especificaciones).
   var AG = !!(ED && ED.agente && !ED.agente.noDisponible);
@@ -57,6 +61,12 @@ export const SIN_ASOCIAR_JS = String.raw`
   if (sel0 && typeof sel0 === "object") ELEGIDO = { proveedor: sel0.proveedor || "", modelo: sel0.modelo || "" };
   var VISTOS = leerLocal(CLAVE_VISTOS, []); if (!Array.isArray(VISTOS)) VISTOS = [];
   var OCULTA = {};
+  // La lista del pedido (dec. 227): { k: "cerebro|repo:ruta", cerebro, archivo, nombre, clase, rec, conf, linea }. Dura
+  // en este navegador, igual que si el panel está abierto. PANEL_COPIADO: true, "no" o false; PIDIENDO: mandando el lote.
+  var CLAVE_LISTA = "flowbrain.sinasociar.pedidos", CLAVE_PANEL = "flowbrain.sinasociar.panel";
+  var LISTA = leerLocal(CLAVE_LISTA, []); if (!Array.isArray(LISTA)) LISTA = [];
+  LISTA = LISTA.filter(function (x) { return x && typeof x.k === "string" && typeof x.linea === "string"; });
+  var PANEL = false, PANEL_ERROR = "", PANEL_COPIADO = false, PIDIENDO = false;
   // Marcas «No es de producto» de cada cerebro ({ e: entrada, m: motivo, n: archivos que tapa, c: cerebro }).
   var IGN = D.noProducto ? D.noProducto.slice() : [];
   // NP: archivo con el panel «No es de producto» abierto; LIB: archivo con el selector de librería abierto.
@@ -144,16 +154,17 @@ export const SIN_ASOCIAR_JS = String.raw`
   function cola(out, xs, elegidos) {
     if (xs.length > elegidos.length) out.push("", (xs.length - elegidos.length) + " more remain for another batch.");
   }
-  function textoDelPedido(xs) {
-    var elegidos = xs.slice(0, TOPE_PEDIDO);
+  // lineas: la línea de cada archivo de la lista (lineaDe), tal como la lee el agente.
+  function textoDelPedido(lineas) {
+    var elegidos = lineas.slice(0, TOPE_PEDIDO);
     var out = [
       "Assign these " + elegidos.length + " files to their feature in FlowBrain. Today they belong to no feature or library.",
       "To assign one: add " + "repo:path" + " to the codigo list in the frontmatter of the feature's page (the brain's product/feat-*.md) and compile. If a whole folder belongs to the same feature, add the folder.",
       "The recommendation is a hint: open the file before deciding. Shared code does not go to a feature: add it to the codigo of a lib page or leave it unassigned, and tell me. If no feature covers it, propose a new one as a draft (_drafts/product/feat-<id>.md). Tests, configuration, scripts and generated files are not product: leave them and list them.",
       ""
     ];
-    elegidos.forEach(function (x) { out.push(lineaDe(x)); });
-    cola(out, xs, elegidos);
+    elegidos.forEach(function (l) { out.push(l); });
+    cola(out, lineas, elegidos);
     out.push("", "When done, run " + "flowbrain unassigned" + " to see what is still unassigned and why.");
     return out.join("\n");
   }
@@ -175,61 +186,34 @@ export const SIN_ASOCIAR_JS = String.raw`
     out.push("", "A person reviews the drafts and promotes them with " + "flowbrain promote <id> --write" + ": do not promote them yourself.");
     return out.join("\n");
   }
-  var xsDelPedido = function () { return PEDIDO.xs || filtrados(); };
-  var textoActual = function () { return PEDIDO.tipo === "asociar" ? textoDelPedido(xsDelPedido()) : textoNuevo(PEDIDO.tipo, xsDelPedido()); };
+  var textoActual = function () { return textoNuevo(PEDIDO.tipo, PEDIDO.xs); };
   function copiar(texto, listo) {
     try {
       if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(texto).then(function () { listo(true); }, function () { listo(false); }); return; }
     } catch (e) { /* sin portapapeles */ }
     listo(false);
   }
-  function abrirPedido(tipo, xs) {
-    PEDIDO = { tipo: tipo, xs: xs, copiado: false };
+  function abrirPedido(tipo, xs, donde) {
+    PEDIDO = { tipo: tipo, xs: xs, donde: donde, copiado: false };
     pintarLista();
     // Sin agente, copiar es lo único: se copia al abrir. Con agente, copiar queda como botón.
     if (!AG) copiar(textoActual(), function (ok) { if (PEDIDO) { PEDIDO.copiado = ok ? true : "no"; pintarLista(); } });
   }
   var proveedor = function () { return B().proveedor(PROVS, ELEGIDO); };
   var modelo = function () { return B().modelo(PROVS, ELEGIDO); };
-  // Cuántas tandas arma el servidor: por cerebro y repo, de hasta TANDA archivos.
-  function tandasEstimadas(xs) {
-    var g = {}, n = 0;
-    xs.forEach(function (x) { var k = cerebroDe(x) + "|" + repoDe(x.a, x); g[k] = (g[k] || 0) + 1; });
-    Object.keys(g).forEach(function (k) { n += Math.ceil(g[k] / TANDA); });
-    return n;
-  }
   var copiadoHtml = function () { return PEDIDO.copiado === true ? '<span class="fd-ok">' + L("Copied. Paste it into your agent.", "Copiado. Pegalo en tu agente.") + "</span>" : PEDIDO.copiado === "no" ? '<span class="fd-nota">' + L("Could not copy automatically: select the text and copy it.", "No se pudo copiar solo: seleccioná el texto y copialo.") + "</span>" : ""; };
-  // Con agente, «Mandar al agente» es un lote con toda la lista filtrada, como «Pedir todos» de Especificaciones.
-  function pedidoLote() {
-    var todos = xsDelPedido(), xs = todos.slice(0, TOPE_LOTE), n = xs.length, enCurso = B().loteVivo(loteActual(), TODOS), pr = proveedor(), mo = modelo();
-    var cuenta = function (k) { return xs.filter(function (x) { return clase(x) === k; }).length; };
-    var titulo = L("Request for the agent", "Pedido para el agente");
-    return '<div class="fd-plan sa-pedido"><div class="es-cab"><h2>' + titulo + '</h2><button type="button" class="boton chico" data-acc="cerrar-pedido" aria-label="' + L("Close the request", "Cerrar el pedido") + '">✕</button></div>' +
-      '<p class="fd-nota">' + L("Sends the files in the list below, each with its recommendation, in batches of up to " + TANDA + " files of the same repo. The batches of a brain go one after another; different brains, at the same time. The agent opens each file, decides and assigns it.", "Manda los archivos de la lista de abajo, cada uno con su recomendación, en tandas de hasta " + TANDA + " archivos de un mismo repo. Las tandas de un cerebro van una detrás de otra; las de cerebros distintos, a la vez. El agente abre cada archivo, decide y lo asocia.") +
-      (todos.length > TOPE_LOTE ? " " + L("A request carries up to " + num(TOPE_LOTE) + " files: it takes the first " + num(TOPE_LOTE) + " of " + num(todos.length) + "; send the rest when it finishes.", "Un pedido lleva hasta " + num(TOPE_LOTE) + " archivos: lleva los primeros " + num(TOPE_LOTE) + " de " + num(todos.length) + "; el resto va cuando termine.") : "") + "</p>" +
-      B().selector(PROVS, ELEGIDO, "sa-ag", enCurso) +
-      '<div class="es-totales"><b>' + plural(n, L("file", "archivo"), L("files", "archivos")) + "</b><span>" + L(num(cuenta("recomendada")) + " with a recommendation · " + num(cuenta("compartido")) + " shared · " + num(cuenta("sinpista")) + " with no hint", num(cuenta("recomendada")) + " con recomendación · " + plural(cuenta("compartido"), "compartido", "compartidos") + " · " + num(cuenta("sinpista")) + " sin pista") + "</span>" +
-      "<span>" + L("In " + plural(tandasEstimadas(xs), "batch", "batches"), "En " + plural(tandasEstimadas(xs), "tanda", "tandas")) + "</span></div>" +
-      '<div class="fd-acc"><button type="button" class="boton pri" data-acc="mandar"' + (PEDIDO.mandando || !n || enCurso ? " disabled" : "") + ">" + (PEDIDO.mandando ? L("Sending…", "Mandando…") : L("Send to the agent", "Mandar al agente") + " (" + plural(n, L("file", "archivo"), L("files", "archivos")) + ")") + "</button>" +
-      '<button type="button" class="boton" data-acc="copiar">' + L("Copy the text", "Copiar el texto") + "</button></div>" +
-      (enCurso ? '<p class="fd-nota">' + L("Another batch is running: wait for it to finish, or cancel it above.", "Hay otro lote en curso: esperá a que termine, o cancelalo arriba.") + "</p>" : "") +
-      '<p class="fd-nota">' + L("It runs " + esc(pr ? pr.nombre : "") + (mo ? " (" + esc(mo.nombre) + ")" : "") + " in this project. It can only write the brain's feature and library pages and drafts in <code>_drafts/</code>, never the repos' code. You see the progress above; when it finishes, reload to see the list up to date. «Copy the text» copies the first " + TOPE_PEDIDO + ", to paste into another agent.", "Lo corre " + esc(pr ? pr.nombre : "") + (mo ? " (" + esc(mo.nombre) + ")" : "") + " en este proyecto. Solo puede escribir las páginas de funcionalidades y librerías del cerebro y borradores en <code>_drafts/</code>, nunca el código de los repos. Ves el avance arriba; cuando termina, recargá para ver la lista al día. «Copiar el texto» copia los primeros " + TOPE_PEDIDO + ", para pegarlos en otro agente.") + "</p>" +
-      (PEDIDO.error ? '<p class="fd-msg error">' + L("It could not be sent: ", "No se pudo mandar: ") + esc(PEDIDO.error) + "</p>" : "") + copiadoHtml() + "</div>";
-  }
-  function pedido() {
-    if (!PEDIDO) return "";
-    if (AG && PEDIDO.tipo === "asociar") return pedidoLote();
-    var xs = xsDelPedido(), n = Math.min(xs.length, TOPE_PEDIDO), t = PEDIDO.tipo;
-    var titulo = t === "feat" ? L("Propose a new feature", "Proponer funcionalidad nueva") : t === "lib" ? L("Create a library", "Crear librería") : L("Request for the agent", "Pedido para el agente");
+  // «Proponer funcionalidad nueva» y «Crear librería»: se abre junto a la fila (donde: su archivo) o a la lista que lo pidió.
+  function pedido(donde) {
+    if (!PEDIDO || PEDIDO.donde !== donde) return "";
+    var xs = PEDIDO.xs, n = Math.min(xs.length, TOPE_PEDIDO), t = PEDIDO.tipo;
+    var titulo = t === "feat" ? L("Propose a new feature", "Proponer funcionalidad nueva") : L("Create a library", "Crear librería");
     var que = t === "feat"
       ? L("The agent opens these " + plural(n, "file", "files") + " and writes a draft feature with them in <code>_drafts/product/</code>, with its use cases and specifications. A person reviews and promotes it: until then the files stay here.", "El agente abre " + (n === 1 ? "este archivo" : "estos " + num(n) + " archivos") + " y escribe un borrador de funcionalidad con " + (n === 1 ? "él" : "ellos") + " en <code>_drafts/product/</code>, con sus casos de uso y especificaciones. Una persona lo revisa y lo promueve: hasta entonces siguen acá.")
-      : t === "lib"
-      ? L("The agent adds these " + plural(n, "shared file", "shared files") + " to a library that fits, or writes a draft library in <code>_drafts/</code>. A person reviews and promotes the draft: until then they stay here.", "El agente suma " + (n === 1 ? "este archivo compartido" : "estos " + num(n) + " archivos compartidos") + " a una librería que encaje, o escribe un borrador de librería en <code>_drafts/</code>. Una persona revisa y promueve el borrador: hasta entonces siguen acá.")
-      : L("Brings the files in the list below (up to " + TOPE_PEDIDO + "), each with its recommendation: paste it into your agent; it opens each file, decides and assigns them.", "Trae los archivos de la lista de abajo (hasta " + TOPE_PEDIDO + "), cada uno con su recomendación: pegalo en tu agente; abre cada archivo, decide y los asocia.");
+      : L("The agent adds these " + plural(n, "shared file", "shared files") + " to a library that fits, or writes a draft library in <code>_drafts/</code>. A person reviews and promotes the draft: until then they stay here.", "El agente suma " + (n === 1 ? "este archivo compartido" : "estos " + num(n) + " archivos compartidos") + " a una librería que encaje, o escribe un borrador de librería en <code>_drafts/</code>. Una persona revisa y promueve el borrador: hasta entonces siguen acá.");
     var recorte = xs.length > TOPE_PEDIDO ? " " + L("It carries the first " + TOPE_PEDIDO + " of " + num(xs.length) + ": send the rest in another request once these are done.", "Lleva los primeros " + TOPE_PEDIDO + " de " + num(xs.length) + ": el resto va en otro pedido cuando terminen estos.") : "";
     var pr = proveedor(), mo = modelo();
     var envio = AG
-      ? B().selector(PROVS, ELEGIDO, "sa-ag", false) + '<div class="fd-hacer"><button type="button" class="boton pri" data-acc="mandar"' + (PEDIDO.mandando || !n ? " disabled" : "") + ">" + (PEDIDO.mandando ? L("Sending…", "Mandando…") : L("Send to the agent", "Mandar al agente") + " (" + plural(n, L("file", "archivo"), L("files", "archivos")) + ")") + "</button>" +
+      ? B().selector(PROVS, ELEGIDO, "sa-ped", false) + '<div class="fd-hacer"><button type="button" class="boton pri" data-acc="mandar"' + (PEDIDO.mandando || !n ? " disabled" : "") + ">" + (PEDIDO.mandando ? L("Sending…", "Mandando…") : L("Send to the agent", "Mandar al agente") + " (" + plural(n, L("file", "archivo"), L("files", "archivos")) + ")") + "</button>" +
         '<button type="button" class="boton" data-acc="copiar">' + L("Copy the text", "Copiar el texto") + "</button></div>" +
         '<p class="fd-nota">' + L("It runs " + esc(pr ? pr.nombre : "") + (mo ? " (" + esc(mo.nombre) + ")" : "") + " in this project. It can only write the brain's feature and library pages and drafts in <code>_drafts/</code>, never the repos' code. When it finishes, the page reloads with the list up to date.", "Lo corre " + esc(pr ? pr.nombre : "") + (mo ? " (" + esc(mo.nombre) + ")" : "") + " en este proyecto. Solo puede escribir las páginas de funcionalidades y librerías del cerebro y borradores en <code>_drafts/</code>, nunca el código de los repos. Cuando termina, la página se recarga con la lista al día.") + "</p>"
       : ED
@@ -247,7 +231,113 @@ export const SIN_ASOCIAR_JS = String.raw`
     return '<div class="fd-hacer sa-lote">' +
       (comp >= 2 ? '<button type="button" class="boton" data-acc="crear-lib" data-todos="1">' + L("Create a library with the " + num(comp) + " shared ones", "Crear librería con los " + num(comp) + " compartidos") + "</button>" : "") +
       (sin >= 2 ? '<button type="button" class="boton" data-acc="nueva-feat" data-todos="1">' + L("Propose a feature for the " + num(sin) + " with no hint", "Proponer funcionalidad para los " + num(sin) + " sin pista") + "</button>" : "") +
-      "<small>" + L("With the files in the list below, filters applied.", "Con los archivos de la lista de abajo, con los filtros aplicados.") + "</small></div>";
+      "<small>" + L("With the files in the list below, filters applied.", "Con los archivos de la lista de abajo, con los filtros aplicados.") + "</small></div>" + pedido("lista");
+  }
+
+  // ---------- El pedido al agente: la lista, el panel lateral y el lote (como «Tests pedidos», dec. 227) ----------
+  var claveDe = function (x) { return cerebroDe(x) + "|" + local(x.a, x); };
+  function entradaDe(x) {
+    return { k: claveDe(x), cerebro: cerebroDe(x), archivo: local(x.a, x), nombre: archivoDe(x.a), clase: clase(x), rec: x.g ? nombre(x.g[0]) : "", conf: confDe(x), linea: lineaDe(x) };
+  }
+  // Lo que ya no está sin asociar (se asoció, se marcó como no de producto) sale de la lista; lo que sigue, se pone al día.
+  function podarLista() {
+    if (!U) return;
+    var vigentes = {}; U.forEach(function (x) { vigentes[claveDe(x)] = x; });
+    var antes = LISTA.length;
+    LISTA = LISTA.filter(function (e) { return vigentes[e.k]; }).map(function (e) { return entradaDe(vigentes[e.k]); });
+    return LISTA.length !== antes;
+  }
+  podarLista();
+  PANEL = leerLocal(CLAVE_PANEL, false) === true && LISTA.length > 0;
+  var guardarLista = function () { guardarLocal(CLAVE_LISTA, LISTA); guardarLocal(CLAVE_PANEL, PANEL); };
+  var enLista = function (k) { return LISTA.some(function (e) { return e.k === k; }); };
+  // Lo que suma cada botón celeste, según su data-k: «a|<archivo>», «c|<carpeta>» o «l|» (la lista filtrada).
+  function xsDeBoton(k, carpetasHechas) {
+    if (!k || !U) return [];
+    if (k.indexOf("a|") === 0) { var x = porArchivo(k.slice(2)); return x ? [x] : []; }
+    if (k.indexOf("c|") === 0) { var cs = carpetasHechas || carpetas(U); for (var i = 0; i < cs.length; i++) if (cs[i].k === k.slice(2)) return cs[i].xs; return []; }
+    if (k === "l|") return filtrados();
+    return [];
+  }
+  var todosEnLista = function (xs) { return xs.length > 0 && xs.every(function (x) { return enLista(claveDe(x)); }); };
+  var TEXTOS_SUMAR = {
+    get textoYa() { return L("✔ In the request", "✔ En el pedido"); },
+    get titulo() { return L("Adds it to the agent request: nothing is sent until «Send to the agent», in the panel", "Lo suma al pedido al agente: no se manda nada hasta «Mandar al agente», en el panel"); },
+    get tituloYa() { return L("Click to remove it from the request", "Tocalo para sacarlo del pedido"); }
+  };
+  var botonSumar = function (k, xs, et) { return B().botonSumar({ k: k, et: et, ya: todosEnLista(xs), textoYa: TEXTOS_SUMAR.textoYa, titulo: TEXTOS_SUMAR.titulo, tituloYa: TEXTOS_SUMAR.tituloYa }); };
+  // Si ya estaba todo, lo saca; si no, suma lo que falta y abre el panel.
+  function sumarOQuitar(xs) {
+    if (!xs.length) return;
+    if (todosEnLista(xs)) {
+      var ks = {}; xs.forEach(function (x) { ks[claveDe(x)] = true; });
+      LISTA = LISTA.filter(function (e) { return !ks[e.k]; });
+    } else {
+      xs.forEach(function (x) { if (!enLista(claveDe(x))) LISTA.push(entradaDe(x)); });
+      PANEL = true;
+    }
+    PANEL_COPIADO = false; PANEL_ERROR = "";
+    guardarLista();
+  }
+  // Después de sumar o quitar: sin repintar la lista (no se cierra lo que se estaba mirando), solo los botones y el panel.
+  function alCambiarLista() {
+    var cs = U ? carpetas(U) : [];
+    if (!B().marcarBotones(raiz, function (k) { var xs = xsDeBoton(k, cs); return xs.length ? todosEnLista(xs) : null; }, TEXTOS_SUMAR)) pintarLista();
+    pintarPanel();
+  }
+  var cuentaClase = function (es, k) { return es.filter(function (e) { return e.clase === k; }).length; };
+  // Cuántas tandas arma el servidor con la lista: por cerebro y repo, de hasta TANDA archivos.
+  function tandasDeLista(es) {
+    var g = {}, n = 0;
+    es.forEach(function (e) { var k = e.cerebro + "|" + e.archivo.split(":")[0]; g[k] = (g[k] || 0) + 1; });
+    Object.keys(g).forEach(function (k) { n += Math.ceil(g[k] / TANDA); });
+    return n;
+  }
+  var textoDeLista = function () { return textoDelPedido(LISTA.map(function (e) { return e.linea; })); };
+  function htmlPanel() {
+    var es = LISTA, n = es.length, LT = AG ? loteActual() : null, enCurso = B().loteVivo(LT, TODOS), pr = proveedor(), mo = modelo();
+    var enTanda = {}; if (enCurso) B().tandas(LT, TODOS).forEach(function (t) { if (vivo(t)) (t.archivos || []).forEach(function (a) { enTanda[a.cerebro + "|" + a.archivo] = true; }); });
+    var selector = AG && pr
+      ? B().selector(PROVS, ELEGIDO, "sa-ag", enCurso)
+      : '<p class="fd-nota">' + (ED
+        ? L("It can't be sent directly: ", "No se puede mandar directo: ") + esc((ED.agente && ED.agente.noDisponible) || L("the server did not report any agent", "el servidor no informó ningún agente")) + ". " + L("Copy the text and paste it into your agent.", "Copiá el texto y pegalo en tu agente.")
+        : L("This page is static, so it can't send the request: copy the text and paste it into your agent (with access to the repos, not a web chat). To send it from here, open the page with <code>flowbrain viewer --serve</code>.", "Esta página es estática, así que no puede mandar el pedido: copiá el texto y pegalo en tu agente (con acceso a los repos, no un chat web). Para mandarlo desde acá, abrí la página con <code>flowbrain viewer --serve</code>.")) + "</p>";
+    var totales = '<div class="es-totales"><b>' + plural(n, L("file", "archivo"), L("files", "archivos")) + "</b><span>" +
+      L(num(cuentaClase(es, "recomendada")) + " with a recommendation · " + num(cuentaClase(es, "compartido")) + " shared · " + num(cuentaClase(es, "sinpista")) + " with no hint", num(cuentaClase(es, "recomendada")) + " con recomendación · " + plural(cuentaClase(es, "compartido"), "compartido", "compartidos") + " · " + num(cuentaClase(es, "sinpista")) + " sin pista") + "</span>" +
+      (AG && n ? "<span>" + L("In " + plural(tandasDeLista(es.slice(0, TOPE_LOTE)), "batch", "batches") + " of up to " + TANDA + " files of the same repo", "En " + plural(tandasDeLista(es.slice(0, TOPE_LOTE)), "tanda", "tandas") + " de hasta " + TANDA + " archivos de un mismo repo") + "</span>" : "") + "</div>";
+    var notas = [];
+    if (AG && n > TOPE_LOTE) notas.push(L("A request carries up to " + num(TOPE_LOTE) + " files: it takes the first " + num(TOPE_LOTE) + " of " + num(n) + "; send the rest when it finishes.", "Un pedido lleva hasta " + num(TOPE_LOTE) + " archivos: lleva los primeros " + num(TOPE_LOTE) + " de " + num(n) + "; el resto va cuando termine."));
+    if (enCurso) notas.push(L("A batch is running: wait for it to finish, or cancel it below.", "Hay un lote en curso: esperá a que termine, o cancelalo abajo."));
+    if (AG && pr) notas.push(L("It runs " + esc(pr.nombre) + (mo ? " (" + esc(mo.nombre) + ")" : "") + " in this project. It can only write the brain's feature and library pages and drafts in <code>_drafts/</code>, never the repos' code. When it finishes, reload to see the list up to date.", "Lo corre " + esc(pr.nombre) + (mo ? " (" + esc(mo.nombre) + ")" : "") + " en este proyecto. Solo puede escribir las páginas de funcionalidades y librerías del cerebro y borradores en <code>_drafts/</code>, nunca el código de los repos. Cuando termina, recargá para ver la lista al día."));
+    if (n > TOPE_PEDIDO) notas.push(L("«Copy the text» carries the first " + TOPE_PEDIDO + " of " + num(n) + ", to paste into another agent; the rest, once those are done.", "«Copiar el texto» lleva los primeros " + TOPE_PEDIDO + " de " + num(n) + ", para pegarlos en otro agente; el resto, cuando terminen esos."));
+    var copiado = PANEL_COPIADO === true ? '<span class="fd-ok">' + L("Copied. Paste it into your agent.", "Copiado. Pegalo en tu agente.") + "</span>" : PANEL_COPIADO === "no" ? '<span class="fd-nota">' + L("Could not copy automatically: select the text and copy it.", "No se pudo copiar solo: seleccioná el texto y copialo.") + "</span>" : "";
+    var antes = notas.map(function (t) { return '<p class="fd-nota">' + t + "</p>"; }).join("") + copiado +
+      // Sin agente es el camino; con agente, aparece si el portapapeles no dejó copiar, para seleccionarlo a mano.
+      ((!AG || PANEL_COPIADO === "no") && n ? '<textarea class="fd-texto" readonly rows="8" aria-label="' + L("Text for the agent", "Texto para el agente") + '">' + esc(textoDeLista()) + "</textarea>" : "");
+    var principal = AG
+      ? ["mandar-lista", PIDIENDO ? L("Sending…", "Mandando…") : L("Send to the agent", "Mandar al agente") + (n ? " (" + num(Math.min(n, TOPE_LOTE)) + ")" : ""), !n || enCurso || PIDIENDO]
+      : ["copiar-lista", L("Copy the text", "Copiar el texto"), !n];
+    return B().panel({
+      titulo: L("Agent request", "Pedido al agente"), selector: selector, totales: totales, principal: principal,
+      botones: AG ? [["copiar-lista", L("Copy the text", "Copiar el texto"), !n]] : [], vaciar: !n || enCurso,
+      error: PANEL_ERROR ? L("It could not be sent: ", "No se pudo mandar: ") + PANEL_ERROR : "", antes: antes, lote: htmlLote(),
+      filas: es.map(function (e) {
+        var que = e.clase === "recomendada" ? '<span class="chip" title="' + L("Recommended feature", "Funcionalidad recomendada") + '">→ ' + esc(e.rec) + "</span>" + (e.conf ? '<span class="fd-es ' + CONF_CLASE[e.conf] + ' sa-conf" title="' + esc(confPorQue(e.conf)) + '">' + L(confEt(e.conf) + " confidence", "Confianza " + confEt(e.conf).toLowerCase()) + "</span>" : "")
+          : e.clase === "compartido" ? '<span class="chip">' + L("Shared code", "Código compartido") + "</span>" : '<span class="chip">' + L("No hint", "Sin pista") + "</span>";
+        return { k: e.k, bloqueado: !!enTanda[e.k], html: '<p class="es-texto"><code>' + esc(e.nombre) + '</code></p><div class="chips">' + que + '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(e.cerebro) + "</span>" +
+          (enTanda[e.k] ? '<span class="chip es-ok">' + L("Assigning…", "Asociándose…") + "</span>" : "") + '</div><small class="es-archivo"><code>' + esc(e.archivo) + "</code></small>" };
+      }),
+      vacio: L("The list is empty. Click «Add to the request» on a file, on a folder or on the filtered list: it's added here, and only «Send to the agent» sends it.", "La lista está vacía. Tocá «Sumar al pedido» en un archivo, en una carpeta o en la lista filtrada: se suma acá, y recién «Mandar al agente» lo manda.") +
+        (AG ? "" : " " + L("Here you copy it, to paste into your agent.", "Acá se copia, para pegarlo en tu agente."))
+    });
+  }
+  function htmlBandeja() {
+    if (!LISTA.length && !(AG && loteActual())) return "";
+    return B().bandeja(L("Agent request", "Pedido al agente"), LISTA.length, "", PANEL);
+  }
+  function pintarPanel() {
+    B().pintarPanel(elem("sa-panel"), raiz, PANEL, htmlPanel());
+    var b = elem("sa-bandeja"); if (b) b.innerHTML = htmlBandeja();
   }
 
   // ---------- El agente: lo mandado desde acá, su avance y su cancelación ----------
@@ -260,30 +350,36 @@ export const SIN_ASOCIAR_JS = String.raw`
     for (var i = 0; i < LOTES.length; i++) if (!OCULTA[LOTES[i].id] && VISTOS.indexOf(LOTES[i].id) < 0) return LOTES[i];
     return null;
   }
-  // El lote: todos los archivos de la lista filtrada (hasta TOPE_LOTE), cada uno con la línea que lee el agente.
+  // El lote: los archivos de la lista del panel (hasta TOPE_LOTE), cada uno con la línea que lee el agente.
   function mandarLote() {
-    var xs = xsDelPedido().slice(0, TOPE_LOTE), pr = proveedor(), mo = modelo();
-    if (!xs.length || !pr || PEDIDO.mandando || B().loteVivo(loteActual(), TODOS)) return;
-    PEDIDO.mandando = true; PEDIDO.error = null; pintarLista();
-    llamar("/api/agente/lote", { tipo: "asociar", proveedor: pr.id, modelo: mo ? mo.id : undefined, archivos: xs.map(function (x) { return { cerebro: cerebroDe(x), archivo: local(x.a, x), linea: lineaDe(x) }; }) })
+    var es = LISTA.slice(0, TOPE_LOTE), pr = proveedor(), mo = modelo();
+    if (!es.length || !AG || !pr || PIDIENDO || B().loteVivo(loteActual(), TODOS)) return;
+    PIDIENDO = true; PANEL_ERROR = ""; pintarPanel();
+    llamar("/api/agente/lote", { tipo: "asociar", proveedor: pr.id, modelo: mo ? mo.id : undefined, archivos: es.map(function (e) { return { cerebro: e.cerebro, archivo: e.archivo, linea: e.linea }; }) })
       .then(function (j) {
-        PEDIDO = null; OCULTA = {};
+        PIDIENDO = false; OCULTA = {};
         if (j && j.lote) { LOTES = [j.lote].concat(LOTES.filter(function (l) { return l.id !== j.lote.id; })); TODOS = (j.trabajos || []).concat(TODOS); }
-        repintar(); traerTrabajos();
+        pintarPanel(); traerTrabajos();
       })
-      .catch(function (e) { if (PEDIDO) { PEDIDO.mandando = false; PEDIDO.error = e.message; pintarLista(); } });
+      .catch(function (e) { PIDIENDO = false; PANEL_ERROR = e.message; pintarPanel(); });
+  }
+  // Lo que el agente ya asoció sale de la lista; lo que sigue sin asociar queda, para decidirlo.
+  function limpiarLista() {
+    var hechos = {};
+    LOTES.forEach(function (LT) { B().tandas(LT, TODOS).forEach(function (t) { (t.asociados || []).forEach(function (a) { hechos[a.cerebro + "|" + a.archivo] = true; }); }); });
+    var antes = LISTA.length;
+    LISTA = LISTA.filter(function (e) { return !hechos[e.k]; });
+    if (LISTA.length !== antes) guardarLista();
   }
   function mandar() {
     if (!PEDIDO || !AG || PEDIDO.mandando) return;
-    if (PEDIDO.tipo === "asociar") { mandarLote(); return; }
-    var xs = xsDelPedido().slice(0, TOPE_PEDIDO);
+    var xs = PEDIDO.xs.slice(0, TOPE_PEDIDO);
     if (!xs.length) return;
     var cerebros = [];
     xs.forEach(function (x) { var c = cerebroDe(x); if (c && cerebros.indexOf(c) < 0) cerebros.push(c); });
     var t = PEDIDO.tipo, pr = proveedor(), mo = modelo();
     var etiqueta = t === "feat" ? L("Propose a feature for " + plural(xs.length, "file", "files"), "Proponer funcionalidad para " + plural(xs.length, "archivo", "archivos"))
-      : t === "lib" ? L("Create a library for " + plural(xs.length, "shared file", "shared files"), "Crear librería para " + plural(xs.length, "archivo compartido", "archivos compartidos"))
-      : L("Assign " + plural(xs.length, "unassigned file", "unassigned files"), "Asociar " + plural(xs.length, "archivo sin asociar", "archivos sin asociar"));
+      : L("Create a library for " + plural(xs.length, "shared file", "shared files"), "Crear librería para " + plural(xs.length, "archivo compartido", "archivos compartidos"));
     PEDIDO.mandando = true; PEDIDO.error = null; pintarLista();
     llamar("/api/agente", { tipo: "asociar", pedido: textoActual(), etiqueta: etiqueta, cerebros: cerebros, proveedor: pr ? pr.id : undefined, modelo: mo ? mo.id : undefined })
       .then(function (tr) {
@@ -310,7 +406,8 @@ export const SIN_ASOCIAR_JS = String.raw`
         nuevos.forEach(function (t) { AGS.recargados[t.id] = true; }); guardarAgs();
         if (recargar()) return;
       }
-      repintar();
+      limpiarLista();
+      repintar(); pintarPanel();
       if (TRABAJOS.some(vivo) || LOTES.some(function (l) { return B().loteVivo(l, TODOS); })) ESPERA = setTimeout(traerTrabajos, 2000);
     }).catch(function () { ESPERA = setTimeout(traerTrabajos, 5000); });
   }
@@ -336,7 +433,7 @@ export const SIN_ASOCIAR_JS = String.raw`
     var cuantos = function (t) { return (t.archivos || []).length; };
     var hechos = function (ts, k) { return ts.reduce(function (n, t) { return n + (t[k] || []).length; }, 0); };
     var cifras = function (a, s) { return L(num(a) + " assigned · " + num(s) + " still unassigned", plural(a, "asociado", "asociados") + " · " + num(s) + " " + (s === 1 ? "sigue" : "siguen") + " sin asociar"); };
-    return '<div class="sa-agente">' + B().html(LT, B().tandas(LT, TODOS), {
+    return B().html(LT, B().tandas(LT, TODOS), {
       unidad: ["file", "files", "archivo", "archivos"],
       cuantos: cuantos,
       espera: L("Waits for the previous batch of this brain to finish.", "Espera a que termine la tanda anterior de este cerebro."),
@@ -349,13 +446,14 @@ export const SIN_ASOCIAR_JS = String.raw`
       },
       resumen: function (ts) {
         var s = hechos(ts, "siguen");
-        return cifras(hechos(ts, "asociados"), s) + (s ? L(" (proposed as a draft, not product, or left: each batch says why)", " (propuestos como borrador, no son de producto o quedaron: cada tanda dice por qué)") : "");
+        return cifras(hechos(ts, "asociados"), s) + (s ? L(" (proposed as a draft, not product, or left: each batch says why; they stay in the list)", " (propuestos como borrador, no son de producto o quedaron: cada tanda dice por qué; siguen en la lista)") : "");
       }
-    }) + "</div>";
+    });
   }
+  // Los pedidos sueltos («Proponer funcionalidad», «Crear librería») se ven en la página; el lote, en el panel.
   function htmlAgente() {
-    if (!AG || !TRABAJOS.length) return htmlLote();
-    return htmlLote() + '<div class="sa-agente"><h2>' + L("The agent", "El agente") + '</h2><ul class="lista">' + TRABAJOS.map(unTrabajo).join("") + "</ul></div>";
+    if (!AG || !TRABAJOS.length) return "";
+    return '<div class="sa-agente"><h2>' + L("The agent", "El agente") + '</h2><ul class="lista">' + TRABAJOS.map(unTrabajo).join("") + "</ul></div>";
   }
 
   // ---------- No es de producto ----------
@@ -424,10 +522,11 @@ export const SIN_ASOCIAR_JS = String.raw`
       : x.m ? '<span class="fd-es na">' + L("Shared code", "Código compartido") + "</span> <small>" + L("Used by " + x.m + " features and none dominates: it fits a library, not a feature.", "Lo usan " + x.m + " funcionalidades y ninguna domina: conviene una librería, no una funcionalidad.") +
         (ED && !libsDe(x).length ? " " + L("This brain has no library yet: «Create library» asks the agent for one.", "Este cerebro no tiene librerías todavía: «Crear librería» se la pide al agente.") : "") + "</small>"
       : '<span class="fd-es na">' + L("No hint", "Sin pista") + "</span> <small>" + L("Nothing links it to a feature: no imports, no endpoints, no folder neighbors.", "Nada lo une a una funcionalidad: ni imports, ni endpoints, ni vecinos de carpeta.") + "</small>";
-    var botones = "";
+    // «Sumar al pedido» va primero, como «Pedir el test» en Especificaciones: también sin servidor (ahí se copia).
+    var botones = botonSumar("a|" + x.a, [x], L("Add to the request", "Sumar al pedido"));
     if (ED) {
       var a = ' data-a="' + esc(x.a) + '"' + (ocupado ? " disabled" : "");
-      botones = (x.g ? '<button type="button" class="boton pri" data-acc="asociar" data-f="' + esc(x.g[0]) + '"' + a + ">" + L("Assign to ", "Asociar a ") + esc(nombre(x.g[0])) + "</button>" : "") +
+      botones += (x.g ? '<button type="button" class="boton pri" data-acc="asociar" data-f="' + esc(x.g[0]) + '"' + a + ">" + L("Assign to ", "Asociar a ") + esc(nombre(x.g[0])) + "</button>" : "") +
         (x.o || []).map(function (o) { return '<button type="button" class="boton" data-acc="asociar" data-f="' + esc(o[0]) + '" title="' + esc(motivoDe(o[0], o[1], o[2])) + '"' + a + ">" + esc(nombre(o[0])) + "</button>"; }).join("") +
         '<button type="button" class="boton' + (OTRA === x.a ? " on" : "") + '" data-acc="otra" data-k="' + esc(x.a) + '">' + (x.g ? L("Another…", "Otra…") : L("Choose feature", "Elegir funcionalidad")) + "</button>" +
         '<button type="button" class="boton' + (CODIGO && CODIGO.a === x.a ? " on" : "") + '" data-acc="codigo" data-a="' + esc(x.a) + '">' + (CODIGO && CODIGO.a === x.a ? L("Hide code", "Ocultar código") : L("View code", "Ver código")) + "</button>" +
@@ -439,7 +538,7 @@ export const SIN_ASOCIAR_JS = String.raw`
     if (cl === "compartido") botones += '<button type="button" class="boton" data-acc="crear-lib" data-a="' + esc(x.a) + '" title="' + esc(L("With the shared files of this folder", "Con los archivos compartidos de esta carpeta")) + '">' + L("Create library", "Crear librería") + (nv > 1 ? " (" + num(nv) + ")" : "") + "</button>";
     if (cl === "sinpista") botones += '<button type="button" class="boton" data-acc="nueva-feat" data-a="' + esc(x.a) + '" title="' + esc(L("With the files of this folder that have no hint", "Con los archivos sin pista de esta carpeta")) + '">' + L("Propose new feature", "Proponer funcionalidad nueva") + (nv > 1 ? " (" + num(nv) + ")" : "") + "</button>";
     return '<li class="sa-fila"><div class="sa-que"><code title="' + esc(local(x.a, x)) + '">' + esc(archivoDe(x.a)) + '</code> <span class="capa capa-' + esc(x.k) + '">' + esc(capa(x.k)) + "</span><div>" + que + "</div></div>" +
-      (botones ? '<div class="fd-hacer">' + botones + "</div>" : "") + (OTRA === x.a ? selector(x.a, x) : "") + (LIB === x.a ? selectorLib(x) : "") + (NP === x.a ? panelNoProducto(x) : "") + (CODIGO && CODIGO.a === x.a ? panelCodigo(x) : "") + "</li>";
+      (botones ? '<div class="fd-hacer">' + botones + "</div>" : "") + (OTRA === x.a ? selector(x.a, x) : "") + (LIB === x.a ? selectorLib(x) : "") + (NP === x.a ? panelNoProducto(x) : "") + (CODIGO && CODIGO.a === x.a ? panelCodigo(x) : "") + pedido(x.a) + "</li>";
   }
   // ---------- Ver código ----------
   function panelCodigo(x) {
@@ -482,10 +581,11 @@ export const SIN_ASOCIAR_JS = String.raw`
     var nota = ED && ruta && !g.libre ? '<p class="fd-nota">' + L("Other files in this folder already belong to a feature: here you assign them one by one.", "Otros archivos de esta carpeta ya son de alguna funcionalidad: acá se asocia de a uno.") + "</p>" : "";
     var visibles = g.xs.slice(0, VISIBLES), resto = g.xs.slice(VISIBLES);
     return '<section class="es-feat"><div class="es-cab"><h3><code>' + esc(ruta ? ruta + "/" : L("(repo root)", "(raíz del repo)")) + "</code>" + (repo ? " <small>" + esc(repo) + "</small>" : "") + "</h3>" +
-      '<div class="chips"><span class="chip">' + plural(g.xs.length, L("file", "archivo"), L("files", "archivos")) + "</span>" + rec + (c ? '<span class="chip">' + esc(c) + "</span>" : "") + "</div></div>" +
+      '<div class="es-acciones"><div class="chips"><span class="chip">' + plural(g.xs.length, L("file", "archivo"), L("files", "archivos")) + "</span>" + rec + (c ? '<span class="chip">' + esc(c) + "</span>" : "") + "</div>" +
+      botonSumar("c|" + g.k, g.xs, g.xs.length === 1 ? L("Add to the request", "Sumar al pedido") : L("Add the folder (" + num(g.xs.length) + ")", "Sumar la carpeta (" + num(g.xs.length) + ")")) + "</div></div>" +
       (acciones ? '<div class="fd-hacer sa-acc">' + acciones + "</div>" : "") + (OTRA === g.k ? selector(g.k, x0) : "") + nota +
       '<ul class="lista">' + visibles.map(fila).join("") + "</ul>" +
-      (resto.length ? '<details class="tf"' + (resto.some(function (x) { return OTRA === x.a || LIB === x.a || NP === x.a || (CODIGO && CODIGO.a === x.a); }) ? " open" : "") + "><summary>" + plural(resto.length, L("more file", "archivo más"), L("more files", "archivos más")) + '</summary><ul class="lista">' + resto.map(fila).join("") + "</ul></details>" : "") + "</section>";
+      (resto.length ? '<details class="tf"' + (resto.some(function (x) { return OTRA === x.a || LIB === x.a || NP === x.a || (CODIGO && CODIGO.a === x.a) || (PEDIDO && PEDIDO.donde === x.a); }) ? " open" : "") + "><summary>" + plural(resto.length, L("more file", "archivo más"), L("more files", "archivos más")) + '</summary><ul class="lista">' + resto.map(fila).join("") + "</ul></details>" : "") + "</section>";
   }
 
   // ---------- Filtro y estadística: el componente compartido (viewer-filtros) ----------
@@ -522,7 +622,6 @@ export const SIN_ASOCIAR_JS = String.raw`
         [n("compartido"), L("of shared code", "de código compartido"), "", "compartido"], [n("sinpista"), L("with no hint at all", "sin ninguna pista"), "", "sinpista"], [carpetas(U).length, L("folders", "carpetas")]]
         .concat(IGN.length ? [[totalIgn(), L("marked as not product (not listed)", "marcados como no de producto (no se listan)")]] : []);
     },
-    acciones: function () { var on = PEDIDO && PEDIDO.tipo === "asociar"; return '<button type="button" class="boton' + (on ? " on" : "") + '" data-acc="pedido">' + (on ? L("Hide request", "Ocultar pedido") : AG ? L("Send to the agent…", "Mandar al agente…") : L("Request for the agent", "Pedido para el agente")) + "</button>"; },
     alCambiar: function (todo) { refrescar(todo); }
   };
   // Los textos fijos del filtro, en el idioma actual. Se cambian en el mismo objeto (y la misma lista de unidad), que el
@@ -560,7 +659,9 @@ export const SIN_ASOCIAR_JS = String.raw`
     var msg = MSG ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + "</p>" : "";
     if (!xs.length) return msg + htmlAgente() + fl.vacio(U.length, [L("unassigned file", "archivo sin asociar"), L("unassigned files", "archivos sin asociar")]) + htmlIgnorados();
     var cs = carpetas(xs), visibles = cs.slice(0, S.cuantas);
-    return msg + htmlAgente() + lote(xs) + pedidosDeLista(xs) + pedido() + fl.resultado(xs, L(" in ", " en ") + plural(cs.length, L("folder", "carpeta"), L("folders", "carpetas"))) +
+    // «Sumar los N de la lista»: la lista filtrada entera (los filtros aplicados), al pedido.
+    var sumarLista = botonSumar("l|", xs, xs.length === 1 ? L("Add it to the request", "Sumarlo al pedido") : L("Add the " + num(xs.length) + " in the list", "Sumar los " + num(xs.length) + " de la lista"));
+    return msg + htmlAgente() + lote(xs) + pedidosDeLista(xs) + fl.resultado(xs, L(" in ", " en ") + plural(cs.length, L("folder", "carpeta"), L("folders", "carpetas")), sumarLista) +
       visibles.map(grupo).join("") +
       (cs.length > visibles.length ? '<p class="fd-mas"><button type="button" class="boton" data-acc="mas">' + L("Show " + Math.min(PASO, cs.length - visibles.length) + " more folders", "Mostrar " + Math.min(PASO, cs.length - visibles.length) + " carpetas más") + "</button> <small>" + num(visibles.length) + L(" of ", " de ") + num(cs.length) + "</small></p>" : "") + htmlIgnorados();
   }
@@ -580,8 +681,12 @@ export const SIN_ASOCIAR_JS = String.raw`
   function pintarLista() { var e = elem("sa-lista"); if (e) e.innerHTML = lista(); }
   // Lo que cambia fuera de una acción de la lista (el agente avanza): con la lista vacía no hay #sa-lista, se pinta todo.
   function repintar() { if (U && U.length) pintarLista(); else pintarTodo(); }
-  var titulo = function () { return "<h1>" + L("Unassigned", "Sin asociar") + "</h1>"; };
+  // Como en Especificaciones: el botón que abre el panel del pedido va junto al título.
+  var titulo = function () { return '<div class="es-titulo"><h1>' + L("Unassigned", "Sin asociar") + '</h1><span id="sa-bandeja">' + htmlBandeja() + "</span></div>"; };
+  var aside = function () { return B().aside("sa-panel", PANEL, L("Agent request", "Pedido al agente"), htmlPanel()); };
   function pintarTodo() {
+    // Lo asociado o marcado desde acá sale también del pedido.
+    if (podarLista()) guardarLista();
     if (!U) {
       raiz.innerHTML = titulo() + '<p class="aviso">' + L("There is no code index, so there is no telling which files exist. Run <code>flowbrain index</code> on each repo and then <code>flowbrain compile</code> (or <code>flowbrain brains apply</code>).", "No hay índice de código, así que no se sabe qué archivos hay. Corré <code>flowbrain index</code> sobre cada repo y después <code>flowbrain compile</code> (o <code>flowbrain brains apply</code>).") + "</p>";
       return;
@@ -593,10 +698,12 @@ export const SIN_ASOCIAR_JS = String.raw`
     if (!U.length) {
       var ign = totalIgn();
       raiz.innerHTML = titulo() + COMO() + (MSG ? '<p class="fd-msg' + (MSG.error ? " error" : "") + '">' + esc(MSG.texto) + "</p>" : "") + htmlAgente() + '<p class="aviso">' + (hechos ? L("Done: no unassigned files left.", "Listo: ya no queda ningún archivo sin asociar.") : L("Every file in the index belongs to a feature or library. There is nothing to assign.", "Todos los archivos del índice son de alguna funcionalidad o librería. No hay nada para asociar.")) +
-        (ign ? " " + L(plural(ign, "file is", "files are") + " marked as not product and not listed: see them below.", plural(ign, "archivo está marcado", "archivos están marcados") + " como no de producto y no se " + (ign === 1 ? "lista" : "listan") + ": abajo se ven.") : "") + "</p>" + htmlIgnorados();
+        (ign ? " " + L(plural(ign, "file is", "files are") + " marked as not product and not listed: see them below.", plural(ign, "archivo está marcado", "archivos están marcados") + " como no de producto y no se " + (ign === 1 ? "lista" : "listan") + ": abajo se ven.") : "") + "</p>" + htmlIgnorados() + aside();
+      if (raiz.classList) { if (PANEL) raiz.classList.add("es-con-panel"); else raiz.classList.remove("es-con-panel"); }
       return;
     }
-    raiz.innerHTML = titulo() + COMO() + aviso() + fl.html() + '<div id="sa-lista">' + lista() + "</div>";
+    raiz.innerHTML = titulo() + COMO() + aviso() + fl.html() + '<div id="sa-lista">' + lista() + "</div>" + aside();
+    if (raiz.classList) { if (PANEL) raiz.classList.add("es-con-panel"); else raiz.classList.remove("es-con-panel"); }
   }
   function refrescar(todo) { S.cuantas = PASO; if (PEDIDO) PEDIDO.copiado = false; guardar(); if (todo) pintarTodo(); else pintarLista(); }
   var porArchivo = function (a) { for (var i = 0; i < U.length; i++) if (U[i].a === a) return U[i]; return null; };
@@ -699,25 +806,30 @@ export const SIN_ASOCIAR_JS = String.raw`
     if (!b) return;
     var acc = b.getAttribute("data-acc"), k = b.getAttribute("data-k"), g;
     if (acc === "mas") { S.cuantas += PASO; pintarLista(); return; }
-    if (acc === "pedido") {
-      if (PEDIDO && PEDIDO.tipo === "asociar") { PEDIDO = null; pintarTodo(); return; }
-      abrirPedido("asociar", null); pintarTodo();
-      return;
-    }
+    // El pedido al agente: la lista y el panel lateral (como «Tests pedidos»).
+    if (acc === "sumar") { sumarOQuitar(xsDeBoton(k)); alCambiarLista(); return; }
+    if (acc === "panel") { PANEL = !PANEL; guardarLista(); pintarPanel(); return; }
+    if (acc === "cerrar-panel") { PANEL = false; guardarLista(); pintarPanel(); return; }
+    if (acc === "quitar") { LISTA = LISTA.filter(function (e) { return e.k !== k; }); PANEL_COPIADO = false; guardarLista(); alCambiarLista(); return; }
+    if (acc === "vaciar") { LISTA = []; PANEL_COPIADO = false; guardarLista(); alCambiarLista(); return; }
+    if (acc === "mandar-lista") { mandarLote(); return; }
+    if (acc === "copiar-lista") { if (LISTA.length) copiar(textoDeLista(), function (ok) { PANEL_COPIADO = ok ? true : "no"; pintarPanel(); }); return; }
     if (acc === "nueva-feat" || acc === "crear-lib") {
-      var cl = acc === "nueva-feat" ? "sinpista" : "compartido", x0 = porArchivo(b.getAttribute("data-a"));
-      var xs = b.getAttribute("data-todos") ? filtrados().filter(function (x) { return clase(x) === cl; }) : x0 ? vecinosDe(x0) : [];
-      if (xs.length) abrirPedido(acc === "nueva-feat" ? "feat" : "lib", xs);
+      var cl = acc === "nueva-feat" ? "sinpista" : "compartido", x0 = porArchivo(b.getAttribute("data-a")), todos = !!b.getAttribute("data-todos");
+      var xs = todos ? filtrados().filter(function (x) { return clase(x) === cl; }) : x0 ? vecinosDe(x0) : [];
+      var donde = todos ? "lista" : x0 ? x0.a : "";
+      if (PEDIDO && PEDIDO.donde === donde && PEDIDO.tipo === (acc === "nueva-feat" ? "feat" : "lib")) { PEDIDO = null; pintarLista(); return; }
+      if (xs.length) abrirPedido(acc === "nueva-feat" ? "feat" : "lib", xs, donde);
       return;
     }
-    if (acc === "cerrar-pedido") { PEDIDO = null; pintarTodo(); return; }
+    if (acc === "cerrar-pedido") { PEDIDO = null; pintarLista(); return; }
     if (acc === "copiar") { if (PEDIDO) copiar(textoActual(), function (ok) { if (PEDIDO) { PEDIDO.copiado = ok ? true : "no"; pintarLista(); } }); return; }
     if (acc === "mandar") { mandar(); return; }
     if (acc === "cancelar-agente") { llamar("/api/agente/cancelar", { id: k }).then(traerTrabajos, traerTrabajos); return; }
     if (acc === "cerrar-agente") { delete AGS.mandados[k]; guardarAgs(); TRABAJOS = TRABAJOS.filter(function (t) { return t.id !== k; }); repintar(); return; }
     if (acc === "recargar") { recargar(); return; }
     if (acc === "cancelar-lote") { llamar("/api/agente/lote/cancelar", { id: k }).then(traerTrabajos, traerTrabajos); return; }
-    if (acc === "cerrar-lote") { OCULTA[k] = true; VISTOS.push(k); guardarLocal(CLAVE_VISTOS, VISTOS.slice(-60)); repintar(); return; }
+    if (acc === "cerrar-lote") { OCULTA[k] = true; VISTOS.push(k); guardarLocal(CLAVE_VISTOS, VISTOS.slice(-60)); pintarPanel(); return; }
     if (acc === "lib") { var la = b.getAttribute("data-a"); LIB = LIB === la ? null : la; pintarLista(); return; }
     if (acc === "asociar-lib") { var sl = elem("sa-lib"); asociar(porArchivo(k), sl ? String(sl.value || "") : ""); return; }
     if (acc === "noprod") { var na = b.getAttribute("data-a"); NP = NP === na ? null : na; pintarLista(); return; }
@@ -742,8 +854,9 @@ export const SIN_ASOCIAR_JS = String.raw`
   raiz.addEventListener("change", function (ev) {
     if (fl && fl.manejar(ev, "change")) return;
     var id = ev.target.id;
-    if (id === "sa-ag-prov") { ELEGIDO = { proveedor: String(ev.target.value || ""), modelo: "" }; guardarLocal(CLAVE_ELEGIDO, ELEGIDO); pintarLista(); }
-    else if (id === "sa-ag-modelo") { ELEGIDO.proveedor = proveedor() ? proveedor().id : ""; ELEGIDO.modelo = String(ev.target.value || ""); guardarLocal(CLAVE_ELEGIDO, ELEGIDO); pintarLista(); }
+    // Proveedor y modelo: los mismos en el panel (sa-ag) y en el pedido suelto (sa-ped).
+    if (id === "sa-ag-prov" || id === "sa-ped-prov") { ELEGIDO = { proveedor: String(ev.target.value || ""), modelo: "" }; guardarLocal(CLAVE_ELEGIDO, ELEGIDO); pintarLista(); pintarPanel(); }
+    else if (id === "sa-ag-modelo" || id === "sa-ped-modelo") { ELEGIDO.proveedor = proveedor() ? proveedor().id : ""; ELEGIDO.modelo = String(ev.target.value || ""); guardarLocal(CLAVE_ELEGIDO, ELEGIDO); pintarLista(); pintarPanel(); }
   });
   raiz.addEventListener("input", function (ev) { if (fl) fl.manejar(ev, "input"); });
 

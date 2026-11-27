@@ -250,7 +250,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     // Pedir un test no manda nada: suma la regla a la lista de «Tests pedidos» (celeste, la acción de la pantalla).
     if (tipo === "test") {
       var yaEsta = items.length > 0 && items.every(function (it) { return enLista(it[1].id + "|" + it[0].id); });
-      return '<button type="button" class="boton es-pedir' + (yaEsta ? " en-lista" : "") + '" data-acc="sumar" data-k="' + esc(k) + '" data-et="' + esc(etiqueta) + '" aria-pressed="' + yaEsta + '" title="' + (yaEsta ? L("Click to remove it from the list", "Tocalo para sacarla de la lista") : L("Adds the rule to the requested tests list: nothing is sent until «Request all»", "Suma la regla a la lista de tests pedidos: no se manda nada hasta «Pedir todos»")) + '">' + (yaEsta ? L("✔ In requested tests", "✔ En tests pedidos") : etiqueta) + "</button>";
+      return B().botonSumar({ k: k, et: etiqueta, ya: yaEsta, textoYa: TEXTOS_SUMAR.textoYa, titulo: TEXTOS_SUMAR.titulo, tituloYa: TEXTOS_SUMAR.tituloYa });
     }
     if (AG) etiqueta = etiqueta.replace(/^Copiar pedido/, "Pedírselo al agente").replace(/^Copy request/, "Send request");
     // Pedir un test es la acción de la pantalla: va en celeste, para encontrarla de un vistazo.
@@ -506,7 +506,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     PEDIDOS = {};
     var cabeza = '<div class="es-titulo"><h1>' + L("Specifications", "Especificaciones") + '</h1><span id="es-bandeja">' + htmlBandeja() + "</span></div>" + COMO() + aviso() + (CON_FICHAS.length > 1 ? selectorDeCerebros() : "") + queHacer() +
       '<section id="es-agente" class="' + (AG && sueltos().length ? "es-agente" : "") + '" aria-live="polite">' + htmlAgente() + "</section>" + (hay ? fl.html() + (todosLosCasos().length ? "" : '<p class="fd-nota">' + L("There are no use cases yet: the numbers count rules.", "Todavía no hay casos de uso: los números cuentan reglas.") + "</p>") : "") + nada;
-    raiz.innerHTML = cabeza + '<div id="es-lista">' + lista() + '</div><aside id="es-panel" class="es-panel' + (PANEL ? " abierto" : "") + '" aria-label="' + L("Requested tests", "Tests pedidos") + '">' + htmlPanel() + "</aside>";
+    raiz.innerHTML = cabeza + '<div id="es-lista">' + lista() + '</div>' + B().aside("es-panel", PANEL, L("Requested tests", "Tests pedidos"), htmlPanel());
     if (raiz.classList) { if (PANEL) raiz.classList.add("es-con-panel"); else raiz.classList.remove("es-con-panel"); }
     if (FOCO) { var s = elem("es-" + FOCO); FOCO = null; if (s && s.scrollIntoView) s.scrollIntoView(); }
   }
@@ -577,16 +577,17 @@ export const ESPECIFICACIONES_JS = String.raw`
   }
   // Las de negocio primero: son las que más cuesta que se rompan sin aviso.
   var ordenadas = function () { return LISTA.slice().sort(function (a, b) { return (a.tipo === "negocio" ? 0 : 1) - (b.tipo === "negocio" ? 0 : 1); }); };
+  // Lo que dice el botón celeste (compartido con Sin asociar, viewer-lote): getters, en el idioma de ese momento.
+  var TEXTOS_SUMAR = {
+    get textoYa() { return L("✔ In requested tests", "✔ En tests pedidos"); },
+    get titulo() { return L("Adds the rule to the requested tests list: nothing is sent until «Request all»", "Suma la regla a la lista de tests pedidos: no se manda nada hasta «Pedir todos»"); },
+    get tituloYa() { return L("Click to remove it from the list", "Tocalo para sacarla de la lista"); }
+  };
   function botonesDePedido() {
-    var bs = raiz.querySelectorAll('[data-acc="sumar"]');
-    for (var i = 0; i < bs.length; i++) {
-      var b = bs[i], p = PEDIDOS[b.getAttribute("data-k")];
-      if (!p) continue;
-      var ya = p[1].length > 0 && p[1].every(function (it) { return enLista(it[1].id + "|" + it[0].id); });
-      b.setAttribute("aria-pressed", String(ya));
-      if (b.classList) { if (ya) b.classList.add("en-lista"); else b.classList.remove("en-lista"); }
-      b.textContent = ya ? L("✔ In requested tests", "✔ En tests pedidos") : (b.getAttribute("data-et") || L("Request the test", "Pedir el test"));
-    }
+    B().marcarBotones(raiz, function (k) {
+      var p = PEDIDOS[k];
+      return p ? p[1].length > 0 && p[1].every(function (it) { return enLista(it[1].id + "|" + it[0].id); }) : null;
+    }, TEXTOS_SUMAR);
   }
   function sumarOQuitar(items) {
     var todas = items.length > 0 && items.every(function (it) { return enLista(it[1].id + "|" + it[0].id); });
@@ -784,33 +785,30 @@ export const ESPECIFICACIONES_JS = String.raw`
       : '<p class="fd-nota">' + (ED ? L("There's no agent installed on this machine", "No hay ningún agente instalado en esta máquina") + (ED.agente && ED.agente.noDisponible ? ": " + esc(ED.agente.noDisponible) : "") + "." : L("This page is read-only: it can't send the requests.", "Esta página es de solo lectura: no puede mandar los pedidos.")) + L(" Download the .md and give it to your agent (with access to the repo, not a web chat).", " Descargá el .md y dáselo a tu agente (con acceso al repo, no un chat web).") + "</p>";
     var totales = '<div class="es-totales"><b>' + pl(xs.length, "rule", "rules", "regla", "reglas") + "</b><span>" + L(neg + " business (they go first) · " + (xs.length - neg) + " screen", neg + " de negocio (van primero) · " + (xs.length - neg) + " de pantalla") + "</span>" +
       (AG && mo ? "<span>" + L("Estimated cost: ", "Costo estimado: ") + (xs.length ? "≈ " + dolares(estimado) : dolares(0)) + " <small>(" + L("approx., with ", "aprox., con ") + esc(mo.nombre) + ")</small></span>" : "") + "</div>";
-    var botones = '<div class="fd-acc"><button type="button" class="boton pri" data-acc="pedir-todos"' + (!AG || !xs.length || vivo || PIDIENDO ? " disabled" : "") + ">" + (PIDIENDO ? L("Sending…", "Mandando…") : L("Request all", "Pedir todos") + (xs.length ? " (" + xs.length + ")" : "")) + "</button>" +
-      '<button type="button" class="boton" data-acc="descargar-lista"' + (!xs.length ? " disabled" : "") + ">" + L("Download .md", "Descargar .md") + '</button><button type="button" class="boton" data-acc="vaciar"' + (!xs.length || vivo ? " disabled" : "") + ">" + L("Empty the list", "Vaciar la lista") + "</button></div>";
-    var filas = xs.length
-      ? '<ul class="es-pedidos">' + xs.map(function (x) {
-        return '<li class="es-pedido"><div><p class="es-texto">' + esc(x.texto) + '</p><div class="chips"><span class="chip ' + (x.tipo === "negocio" ? "es-neg" : "") + '" title="' + esc(QUE_ES[x.tipo] || "") + '">' + (x.tipo === "negocio" ? L("Business", "De negocio") : L("Screen", "De pantalla")) + "</span>" +
+    // El panel es el compartido con Sin asociar (viewer-lote): acá van las reglas, sus botones y los resultados.
+    return B().panel({
+      titulo: L("Requested tests", "Tests pedidos"), selector: selector, totales: totales,
+      principal: ["pedir-todos", PIDIENDO ? L("Sending…", "Mandando…") : L("Request all", "Pedir todos") + (xs.length ? " (" + xs.length + ")" : ""), !AG || !xs.length || vivo || PIDIENDO],
+      botones: [["descargar-lista", L("Download .md", "Descargar .md"), !xs.length]], vaciar: !xs.length || vivo,
+      error: PANEL_ERROR, nota: PANEL_NOTA, lote: htmlLote(),
+      filas: xs.map(function (x) {
+        return { k: x.k, bloqueado: !!enTanda[claveDeEntrada(x)], html: '<p class="es-texto">' + esc(x.texto) + '</p><div class="chips"><span class="chip ' + (x.tipo === "negocio" ? "es-neg" : "") + '" title="' + esc(QUE_ES[x.tipo] || "") + '">' + (x.tipo === "negocio" ? L("Business", "De negocio") : L("Screen", "De pantalla")) + "</span>" +
           (x.caso ? '<span class="chip" title="' + L("Use case", "Caso de uso") + '">' + esc(x.casoNombre) + "</span>" : '<span class="chip">' + L("No use case", "Sin caso de uso") + "</span>") + '<span class="chip" title="' + L("Feature", "Funcionalidad") + '">' + esc(x.funcNombre) + '</span><span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span>" +
           (enTanda[claveDeEntrada(x)] ? '<span class="chip es-ok">' + L("Requesting…", "Pidiéndose…") + "</span>" : "") + "</div>" +
-          '<small class="es-archivo">' + (x.archivos.length ? L("Fulfilled by: ", "La cumple: ") + x.archivos.map(function (a) { return "<code>" + esc(a.replace(/#L\d+$/, "")) + "</code>"; }).join(" ") : L("Doesn't say which file fulfills it", "No dice qué archivo la cumple")) + "</small></div>" +
-          '<button type="button" class="boton chico" data-acc="quitar" data-k="' + esc(x.k) + '" aria-label="' + L("Remove from the list", "Quitar de la lista") + '"' + (enTanda[claveDeEntrada(x)] ? " disabled" : "") + ">" + L("Remove", "Quitar") + "</button></li>";
-      }).join("") + "</ul>"
-      : '<p class="fd-nota">' + L("The list is empty. Click «Request the test» on a rule, on a brain's row or on a whole use case: it's added here, and only «Request all» sends it.", "La lista está vacía. Tocá «Pedir el test» en una regla, en la fila de un cerebro o en un caso entero: se suma acá, y recién «Pedir todos» lo manda.") + "</p>";
-    return '<div class="es-panel-cab"><h2>' + L("Requested tests", "Tests pedidos") + '</h2><button type="button" class="boton chico" data-acc="cerrar-panel" aria-label="' + L("Close the panel", "Cerrar el panel") + '">✕</button></div>' + selector + totales + botones +
-      (PANEL_ERROR ? '<p class="fd-msg error">' + esc(PANEL_ERROR) + "</p>" : PANEL_NOTA ? '<p class="fd-nota">' + esc(PANEL_NOTA) + "</p>" : "") + htmlLote() + filas + htmlResultados();
+          '<small class="es-archivo">' + (x.archivos.length ? L("Fulfilled by: ", "La cumple: ") + x.archivos.map(function (a) { return "<code>" + esc(a.replace(/#L\d+$/, "")) + "</code>"; }).join(" ") : L("Doesn't say which file fulfills it", "No dice qué archivo la cumple")) + "</small>" };
+      }),
+      vacio: L("The list is empty. Click «Request the test» on a rule, on a brain's row or on a whole use case: it's added here, and only «Request all» sends it.", "La lista está vacía. Tocá «Pedir el test» en una regla, en la fila de un cerebro o en un caso entero: se suma acá, y recién «Pedir todos» lo manda."),
+      despues: htmlResultados()
+    });
   }
   function pintarPanel() {
-    var e = elem("es-panel"); if (!e) return;
-    var antes = typeof e.scrollTop === "number" ? e.scrollTop : 0;
-    e.innerHTML = htmlPanel();
-    e.className = "es-panel" + (PANEL ? " abierto" : "");
-    if (typeof e.scrollTop === "number") e.scrollTop = antes;
-    if (raiz.classList) { if (PANEL) raiz.classList.add("es-con-panel"); else raiz.classList.remove("es-con-panel"); }
+    B().pintarPanel(elem("es-panel"), raiz, PANEL, htmlPanel());
     var b = elem("es-bandeja"); if (b) b.innerHTML = htmlBandeja();
   }
   function htmlBandeja() {
     var hs = hallazgos(), n = LISTA.length, pend = paraDecidir(hs).length;
     if (!n && !hs.length && !loteActual()) return "";
-    return '<button type="button" class="boton es-pedir" data-acc="panel" aria-expanded="' + PANEL + '">' + L("Requested tests", "Tests pedidos") + (n ? " (" + n + ")" : "") + (pend ? " · " + L(pend + " to decide", pend + " para decidir") : "") + "</button>";
+    return B().bandeja(L("Requested tests", "Tests pedidos"), n, pend ? L(pend + " to decide", pend + " para decidir") : "", PANEL);
   }
 
   // ---------- El agente: mandar pedidos y ver cómo van ----------

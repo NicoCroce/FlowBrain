@@ -448,7 +448,7 @@ button.pestana { border-top: 0; border-left: 0; border-right: 0; background: non
 .es-panel { display: none; position: fixed; top: 56px; right: 0; bottom: 0; width: min(440px, 100vw); overflow-y: auto; padding: 16px; background: var(--panel); border-left: 1px solid var(--borde2, var(--borde)); box-shadow: -8px 0 24px rgba(0, 0, 0, .35); z-index: 30; }
 .es-panel.abierto { display: block; } .es-panel > * + * { margin-top: 12px; }
 .es-panel-cab { display: flex; align-items: center; justify-content: space-between; } .es-panel-cab h2 { margin: 0; font-size: 16px; }
-@media (min-width: 1100px) { #especificaciones.es-con-panel { padding-right: 460px; } }
+@media (min-width: 1100px) { #especificaciones.es-con-panel, #sinasociar.es-con-panel { padding-right: 460px; } }
 .es-agsel { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .es-agsel label { display: grid; gap: 4px; font-size: 12px; color: var(--suave); } .es-agsel select { width: 100%; }
 .es-totales { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); font-size: 13px; } .es-totales b { font-size: 15px; } .es-totales span { color: var(--suave); } .es-totales small { color: var(--suave); }
 .es-pedidos { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }

@@ -6,7 +6,13 @@
  * - el panel del lote (`html`): «X de N tandas», el avance por repo y tanda, el costo, el resumen al terminar y los
  *   botones «Cancelar todo» (`cancelar-lote`), «Recargar para ver los cambios» (`recargar`) y «Cerrar el resumen»
  *   (`cerrar-lote`). Cada pantalla atiende esos `data-acc` y pone lo propio (qué cuenta, qué dice cada tanda, el
- *   resumen) con las opciones de `html`.
+ *   resumen) con las opciones de `html`;
+ * - la lista que se va armando y su panel lateral (dec. 227): el botón celeste que suma o saca de la lista
+ *   (`botonSumar`, `data-acc="sumar"`, y `marcarBotones` para cambiarlos sin repintar), el botón que abre el panel
+ *   (`bandeja`, `data-acc="panel"`), el panel (`aside`, `panel`: título y ✕ `cerrar-panel`, proveedor y modelo, los
+ *   totales, los botones, el lote, cada ítem con «Quitar» `quitar` y lo que la pantalla agregue) y `pintarPanel`.
+ *   La lista y si el panel está abierto los guarda cada pantalla en este navegador (localStorage). Lo usan
+ *   Especificaciones («Tests pedidos») y Sin asociar («Pedido al agente»): cada una pone sus textos y sus ítems.
  * JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
 export const LOTE_JS = String.raw`
@@ -69,6 +75,59 @@ export const LOTE_JS = String.raw`
       '<progress max="' + Math.max(1, ts.length) + '" value="' + hechas + '"></progress>' + cuerpo + fin +
       '<div class="fd-acc">' + (v ? '<button type="button" class="boton" data-acc="cancelar-lote" data-k="' + esc(LT.id) + '">' + L("Cancel all", "Cancelar todo") + "</button>" : '<button type="button" class="boton" data-acc="recargar">' + L("Reload to see the changes", "Recargar para ver los cambios") + '</button><button type="button" class="boton" data-acc="cerrar-lote" data-k="' + esc(LT.id) + '">' + L("Close the summary", "Cerrar el resumen") + "</button>") + "</div></section>";
   }
-  window.brainLote = { vivo: vivo, estado: estado, dolares: dolares, tandas: tandas, loteVivo: loteVivo, proveedor: proveedor, modelo: modelo, selector: selector, html: html };
+  // ---------- La lista y el panel lateral ----------
+  // o: { k, et: lo que dice sin sumar, ya: si ya está todo en la lista, textoYa, titulo, tituloYa }. Tocarlo suma lo que
+  // falta o, si ya estaba todo, lo saca: la pantalla decide qué entra con su data-k.
+  function botonSumar(o) {
+    return '<button type="button" class="boton es-pedir' + (o.ya ? " en-lista" : "") + '" data-acc="sumar" data-k="' + esc(o.k) + '" data-et="' + esc(o.et) + '" aria-pressed="' + !!o.ya + '" title="' + esc(o.ya ? o.tituloYa : o.titulo) + '">' + esc(o.ya ? o.textoYa : o.et) + "</button>";
+  }
+  // Cambia los botones «sumar» ya pintados (sin repintar la lista, así no se cierra lo que se estaba mirando).
+  // ya(k): si lo de ese botón ya está todo en la lista (null: no se toca).
+  function marcarBotones(raiz, ya, o) {
+    if (!raiz || !raiz.querySelectorAll) return false;
+    var bs = raiz.querySelectorAll('[data-acc="sumar"]');
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i], y = ya(b.getAttribute("data-k"));
+      if (y === null) continue;
+      b.setAttribute("aria-pressed", String(y));
+      b.setAttribute("title", y ? o.tituloYa : o.titulo);
+      if (b.classList) { if (y) b.classList.add("en-lista"); else b.classList.remove("en-lista"); }
+      b.textContent = y ? o.textoYa : (b.getAttribute("data-et") || "");
+    }
+    return true;
+  }
+  function bandeja(titulo, n, extra, abierto) {
+    return '<button type="button" class="boton es-pedir" data-acc="panel" aria-expanded="' + !!abierto + '">' + titulo + (n ? " (" + num(n) + ")" : "") + (extra ? " · " + extra : "") + "</button>";
+  }
+  function aside(id, abierto, etiqueta, contenido) {
+    return '<aside id="' + id + '" class="es-panel' + (abierto ? " abierto" : "") + '" aria-label="' + etiqueta + '">' + contenido + "</aside>";
+  }
+  var boton = function (b, pri) { return '<button type="button" class="boton' + (pri ? " pri" : "") + '" data-acc="' + b[0] + '"' + (b[2] ? " disabled" : "") + ">" + b[1] + "</button>"; };
+  // o: { titulo, selector (proveedor y modelo, o la nota de por qué no se manda), totales (html), principal: [acc, texto,
+  // deshabilitado], botones: [[acc, texto, deshabilitado]], vaciar: deshabilitado, error, nota, antes (html bajo los
+  // botones), lote (html), filas: [{ html, k, bloqueado }], vacio (por qué no hay nada y cómo se suma), despues (html) }.
+  function panel(o) {
+    var filas = o.filas.length
+      ? '<ul class="es-pedidos">' + o.filas.map(function (f) {
+        return '<li class="es-pedido"><div>' + f.html + '</div><button type="button" class="boton chico" data-acc="quitar" data-k="' + esc(f.k) + '" aria-label="' + L("Remove from the list", "Quitar de la lista") + '"' + (f.bloqueado ? " disabled" : "") + ">" + L("Remove", "Quitar") + "</button></li>";
+      }).join("") + "</ul>"
+      : '<p class="fd-nota">' + o.vacio + "</p>";
+    var botones = '<div class="fd-acc">' + (o.principal ? boton(o.principal, true) : "") + (o.botones || []).map(function (b) { return boton(b, false); }).join("") +
+      boton(["vaciar", L("Empty the list", "Vaciar la lista"), o.vaciar], false) + "</div>";
+    return '<div class="es-panel-cab"><h2>' + o.titulo + '</h2><button type="button" class="boton chico" data-acc="cerrar-panel" aria-label="' + L("Close the panel", "Cerrar el panel") + '">✕</button></div>' +
+      (o.selector || "") + (o.totales || "") + botones +
+      (o.error ? '<p class="fd-msg error">' + esc(o.error) + "</p>" : o.nota ? '<p class="fd-nota">' + esc(o.nota) + "</p>" : "") + (o.antes || "") + (o.lote || "") + filas + (o.despues || "");
+  }
+  // Repinta el panel guardando dónde estaba el scroll, y deja lugar a la derecha de la página mientras está abierto.
+  function pintarPanel(el, raiz, abierto, contenido) {
+    if (!el) return;
+    var antes = typeof el.scrollTop === "number" ? el.scrollTop : 0;
+    el.innerHTML = contenido;
+    el.className = "es-panel" + (abierto ? " abierto" : "");
+    if (typeof el.scrollTop === "number") el.scrollTop = antes;
+    if (raiz && raiz.classList) { if (abierto) raiz.classList.add("es-con-panel"); else raiz.classList.remove("es-con-panel"); }
+  }
+  window.brainLote = { vivo: vivo, estado: estado, dolares: dolares, tandas: tandas, loteVivo: loteVivo, proveedor: proveedor, modelo: modelo, selector: selector, html: html,
+    botonSumar: botonSumar, marcarBotones: marcarBotones, bandeja: bandeja, aside: aside, panel: panel, pintarPanel: pintarPanel };
 })();
 `;
