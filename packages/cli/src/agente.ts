@@ -1,12 +1,13 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { cargarContexto, CIERRE_DE_DERIVA, COMO_RESOLVER_DERIVA, ConsultaError, especificaciones, REGLAS_DE_DERIVA, fidelidadDeArchivos, planDeFidelidad, TEST_REF, type Contexto, type FidelidadArchivo, type Registro, type Signal } from "@flowbrain/core";
+import { cargarContexto, CIERRE_DE_DERIVA, parsePagina, COMO_RESOLVER_DERIVA, ConsultaError, especificaciones, REGLAS_DE_DERIVA, fidelidadDeArchivos, planDeFidelidad, TEST_REF, type Contexto, type FidelidadArchivo, type Registro, type Signal } from "@flowbrain/core";
 import type { DerivaVisor } from "@flowbrain/viewer";
 import { compileDirConVisor } from "@flowbrain/viewer";
 import { aplicarCerebro, derivaDelCerebro } from "./cerebros.js";
 import type { Edicion } from "./edicion.js";
-import { GUIA_ESPECIFICACIONES, GUIA_TESTS } from "./guia.js";
+import { GUIA_ESPECIFICACIONES, GUIA_FUNCIONALIDADES, GUIA_TESTS } from "./guia.js";
 import { claudeCode, HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento, PROVEEDORES, type AdaptadorDeAgente, type ModeloDeAgente } from "./proveedores.js";
 
 export { HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento };
@@ -41,11 +42,16 @@ export { HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento };
  *     arreglan la llamada en el código del repo o declaran su destino en `calls.yaml`, y lo que proponen borrar lo
  *     dejan en una nota (nunca borran). Las de un cerebro van una detrás de otra; los cerebros, en paralelo. Al terminar
  *     cada tanda el servidor reindexa el cerebro, rehace su deriva y mide qué problemas ya no están (`corregidos`).
+ *   - `funcionalidad` (pantalla Funcionalidades, dec. 233): funcionalidades sin nombre de negocio ni descripción, o
+ *     un cerebro sin ninguna al que proponérselas (ítem sin `funcionalidad`). Van como las de Especificaciones (mismo
+ *     motor de tandas), pero con la guía de `flowbrain features --guide` y escribiendo SOLO borradores en
+ *     `_drafts/product/`: una persona los revisa y los promueve. Al terminar cada tanda el servidor mira los borradores:
+ *     resuelto es un borrador de esa funcionalidad (o, en una propuesta, alguno nuevo) con nombre y resumen de verdad.
  *   En todos, una tanda que falla no frena a las demás, y se cancela el lote entero o una tanda.
  */
 
-export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir" | "asociar" | "fidelidad" | "deriva";
-export const TIPOS_DE_PEDIDO: readonly TipoDePedido[] = ["test", "agrupar", "escribir", "corregir", "asociar", "fidelidad", "deriva"];
+export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir" | "funcionalidad" | "asociar" | "fidelidad" | "deriva";
+export const TIPOS_DE_PEDIDO: readonly TipoDePedido[] = ["test", "agrupar", "escribir", "corregir", "funcionalidad", "asociar", "fidelidad", "deriva"];
 
 /**
  * Guía de un pedido «asociar» (pantalla Sin asociar): asociar archivos a su funcionalidad o librería, o proponer un
@@ -150,12 +156,18 @@ const COMANDOS_ASOCIAR = ["flowbrain compile", "flowbrain unassigned", "flowbrai
 const COMANDOS_ESPECIFICACIONES = ["flowbrain compile", "flowbrain specs", "flowbrain feature", "flowbrain flow", "flowbrain screen", "flowbrain status", "flowbrain brains", "flowbrain connections", "cd", "ls", "git status", "git diff"];
 
 /**
+ * Comandos que puede correr un pedido «funcionalidad»: leer FlowBrain (estado, pantallas, conexiones, lo sin asociar),
+ * proponer borradores desde las carpetas (`flowbrain draft`) y compilar; nada de tests ni de promover.
+ */
+const COMANDOS_FUNCIONALIDADES = ["flowbrain status", "flowbrain brains", "flowbrain draft", "flowbrain feature", "flowbrain screen", "flowbrain connections", "flowbrain unassigned", "flowbrain search", "flowbrain compile", "flowbrain specs --guide", "cd", "ls", "git status", "git diff"];
+
+/**
  * Los permisos de un pedido. Sin `escritura`, los de siempre (`POLITICA`: edita dentro del proyecto y corre tests).
  * Un pedido «asociar» solo puede escribir las páginas `feat-*` y `lib-*` de sus cerebros y borradores en `_drafts/`;
  * uno sobre las especificaciones (agrupar, escribir, corregir), solo las páginas `feat-*` de sus cerebros (y las de
  * borrador); uno de «fidelidad», solo lo que su plan deja declarar: `calls.yaml`, los extractores y las páginas de
  * tablas. Uno de «deriva», el código del repo de su tanda (`repos`) y, en sus cerebros, `calls.yaml` y las notas en
- * `_drafts/`. Lo mismo que dice cada guía, «no modifiques los repositorios del proyecto» (salvo la deriva, en su repo).
+ * `_drafts/`. Uno de «funcionalidad», solo borradores en `_drafts/product/` (una persona los promueve). Lo mismo que dice cada guía, «no modifiques los repositorios del proyecto» (salvo la deriva, en su repo).
  */
 export function permisosDelPedido(tipo: TipoDePedido, raices: string[], repos: string[] = []): { escritura?: string[]; comandos?: string[] } {
   if (tipo === "asociar") {
@@ -163,6 +175,9 @@ export function permisosDelPedido(tipo: TipoDePedido, raices: string[], repos: s
       escritura: raices.flatMap((r) => [join(r, "_drafts", "**"), join(r, "product", "feat-*.md"), join(r, "technology", "lib-*.md")]),
       comandos: COMANDOS_ASOCIAR,
     };
+  }
+  if (tipo === "funcionalidad") {
+    return { escritura: raices.map((r) => join(r, "_drafts", "product", "**")), comandos: COMANDOS_FUNCIONALIDADES };
   }
   if (esTipoDePagina(tipo)) {
     return {
@@ -223,11 +238,13 @@ export interface ArchivoDePedido {
 
 /**
  * Un ítem de un lote sobre las especificaciones: una funcionalidad de un cerebro (agrupar, escribir), o un caso
- * marcado como mal o una regla a corregir de ella (corregir). `linea` es como lo lee el agente, en inglés.
+ * marcado como mal o una regla a corregir de ella (corregir). También el de «funcionalidad»: una a la que escribirle
+ * nombre y descripción, o (con `funcionalidad` vacía) un cerebro al que proponerle sus funcionalidades. `linea` es
+ * como lo lee el agente, en inglés.
  */
 export interface ItemDePagina {
   cerebro: string;
-  /** Id local de la funcionalidad (`feat-mvp`). */
+  /** Id local de la funcionalidad (`feat-mvp`); vacío en una propuesta de funcionalidades para el cerebro. */
   funcionalidad: string;
   /** corregir: el caso de uso marcado como mal. */
   caso?: string;
@@ -235,8 +252,8 @@ export interface ItemDePagina {
   regla?: string;
   linea: string;
 }
-export type TipoDePagina = "agrupar" | "escribir" | "corregir";
-export const TIPOS_DE_PAGINA: readonly TipoDePagina[] = ["agrupar", "escribir", "corregir"];
+export type TipoDePagina = "agrupar" | "escribir" | "corregir" | "funcionalidad";
+export const TIPOS_DE_PAGINA: readonly TipoDePagina[] = ["agrupar", "escribir", "corregir", "funcionalidad"];
 export const esTipoDePagina = (t: unknown): t is TipoDePagina => TIPOS_DE_PAGINA.includes(t as TipoDePagina);
 
 /**
@@ -369,9 +386,10 @@ export const TANDA_MAX_DERIVA = 10;
 
 /**
  * Ítems por tanda de un lote sobre las especificaciones. Escribir lee el código y los tests de cada funcionalidad
- * entera: pocas por tanda. Agrupar solo ordena lo escrito; corregir, un caso o una regla.
+ * entera: pocas por tanda. Agrupar solo ordena lo escrito; corregir, un caso o una regla. Describir una funcionalidad
+ * lee sus pantallas y endpoints (no sus tests); proponer las de un cerebro entero va sola en su tanda.
  */
-export const TANDA_MAX_PAGINAS: Readonly<Record<TipoDePagina, number>> = { agrupar: 8, escribir: 3, corregir: 10 };
+export const TANDA_MAX_PAGINAS: Readonly<Record<TipoDePagina, number>> = { agrupar: 8, escribir: 3, corregir: 10, funcionalidad: 5 };
 
 /** Cuántos lleva cada tanda: lo más parejo posible y nunca más de `max` (15 reglas, o 30 archivos). */
 export function tamanioDeTanda(n: number, max = TANDA_MAX): number {
@@ -380,7 +398,7 @@ export function tamanioDeTanda(n: number, max = TANDA_MAX): number {
 
 /** El texto que recibe el agente: la guía del tipo de pedido, con el pedido en lugar de `$ARGUMENTS`. */
 export function indicacionesDelPedido(tipo: TipoDePedido, pedido: string): string {
-  const guia = (tipo === "test" ? GUIA_TESTS : tipo === "asociar" ? GUIA_ASOCIAR : tipo === "fidelidad" ? GUIA_FIDELIDAD : tipo === "deriva" ? GUIA_DERIVA : GUIA_ESPECIFICACIONES).replace(/^---\n[\s\S]*?\n---\n/, "");
+  const guia = (tipo === "test" ? GUIA_TESTS : tipo === "funcionalidad" ? GUIA_FUNCIONALIDADES : tipo === "asociar" ? GUIA_ASOCIAR : tipo === "fidelidad" ? GUIA_FIDELIDAD : tipo === "deriva" ? GUIA_DERIVA : GUIA_ESPECIFICACIONES).replace(/^---\n[\s\S]*?\n---\n/, "");
   return guia.replace("$ARGUMENTS", `What the person asks for, from the FlowBrain viewer:\n\n${pedido.trim()}\n`);
 }
 
@@ -454,9 +472,11 @@ export function fidelidadResuelta(medido: Pick<FidelidadArchivo, "tareas"> | und
  * para que el agente use el mismo id de caso de un lado y del otro; las funcionalidades se suman a una tanda mientras
  * entren en `max` (una que sola lo pasa va en su propia tanda).
  */
-export function tandasDePaginas<T extends Pick<ItemDePagina, "funcionalidad">>(items: T[], max: number): T[][] {
+export function tandasDePaginas<T extends Pick<ItemDePagina, "funcionalidad"> & { cerebro?: string }>(items: T[], max: number): T[][] {
   const grupos = new Map<string, T[]>();
-  for (const x of items) grupos.set(x.funcionalidad, [...(grupos.get(x.funcionalidad) ?? []), x]);
+  // Una propuesta (sin funcionalidad) es de un cerebro entero: su grupo es el cerebro.
+  const de = (x: T) => x.funcionalidad || `@${x.cerebro ?? ""}`;
+  for (const x of items) grupos.set(de(x), [...(grupos.get(de(x)) ?? []), x]);
   const tandas: T[][] = [];
   let actual: T[] = [];
   for (const g of grupos.values()) {
@@ -471,10 +491,12 @@ export function tandasDePaginas<T extends Pick<ItemDePagina, "funcionalidad">>(i
 }
 
 /** Lo que encabeza el pedido de una tanda sobre las especificaciones, en inglés: qué hacer con los ítems de abajo. */
-const PEDIDO_DE_PAGINA: Record<TipoDePagina | "reglas", (n: number) => string> = {
+const PEDIDO_DE_PAGINA: Record<TipoDePagina | "reglas" | "proponer", (n: number) => string> = {
   agrupar: (n) => `Group into use cases the specifications that are not in any use case yet, in ${n === 1 ? "this FlowBrain feature" : `these ${n} FlowBrain features`}, following the guide. The same use case in another brain keeps the same id. Don't change the text of the specifications.`,
   escribir: (n) => `Write the use cases and specifications of ${n === 1 ? "this FlowBrain feature" : `these ${n} FlowBrain features`}, following the guide.`,
   corregir: (n) => `Fix ${n === 1 ? "this FlowBrain use case" : `these ${n} FlowBrain use cases`} that a person marked as wrong, following the guide. After fixing each one, delete its problema field from the page.`,
+  funcionalidad: (n) => `Complete ${n === 1 ? "this FlowBrain feature" : `these ${n} FlowBrain features`} with a business name, a one-line summary and the "what it is" section, following the guide. Write each one as a draft: copy its page to .flowbrain/<brain>/_drafts/product/<id>.md (same id, same codigo) and complete it there. Don't merge, rename or delete features.`,
+  proponer: (n) => `${n === 1 ? "This FlowBrain brain has" : `These ${n} FlowBrain brains have`} no features yet. Propose them, following the guide: if there are no drafts, flowbrain draft <repo> proposes them from the folders; then turn them into product features (merge duplicates, group loose screens, leave out what is not product), each one with a business name, a one-line summary, the "what it is" section and all of its code.`,
   reglas: (n) => `Fix the text of ${n === 1 ? "this FlowBrain rule" : `these ${n} FlowBrain rules`}: the agent that tried to test them found that the code does something else, and a person decided the rule is wrong, not the code. Fix the text of each rule (or delete it, if it no longer holds) according to what the code does today, following the guide, and delete its finding (hallazgo). Don't change the product code.`,
 };
 
@@ -485,7 +507,18 @@ export function pedidoDeTandaPaginas(tipo: TipoDePagina, items: ItemDePagina[], 
   if (tipo === "corregir") {
     bloque(PEDIDO_DE_PAGINA.corregir(items.filter((x) => !x.regla).length), items.filter((x) => !x.regla));
     bloque(PEDIDO_DE_PAGINA.reglas(items.filter((x) => x.regla).length), items.filter((x) => x.regla));
+  } else if (tipo === "funcionalidad") {
+    const describir = items.filter((x) => x.funcionalidad), proponer = items.filter((x) => !x.funcionalidad);
+    bloque(PEDIDO_DE_PAGINA.funcionalidad(new Set(describir.map((x) => x.funcionalidad)).size), describir);
+    bloque(PEDIDO_DE_PAGINA.proponer(proponer.length), proponer);
   } else bloque(PEDIDO_DE_PAGINA[tipo](new Set(items.map((x) => x.funcionalidad)).size), items);
+  if (tipo === "funcionalidad") {
+    return [
+      ...(de > 1 ? [`This is batch ${n} of ${de} of the request: other batches cover the rest, only handle these.`, ""] : []),
+      ...partes,
+      "Do NOT modify the project's repositories, and do NOT edit product/ or promote anything: write ONLY drafts in .flowbrain/<brain>/_drafts/product/ (feat-<id>.md, tipo: feat). A person reviews and promotes them. The server then checks in the drafts what got done.",
+    ].join("\n");
+  }
   return [
     ...(de > 1 ? [`This is batch ${n} of ${de} of the request: other batches cover the rest, only handle these.`, ""] : []),
     ...partes,
@@ -507,6 +540,36 @@ export function resueltoEnPagina(ctx: Contexto, tipo: TipoDePagina, x: Omit<Item
   if (x.caso) return !(f.casos ?? []).some((c) => c.id === x.caso && c.problema);
   // La regla se corrigió (o se borró, si ya no valía) y su hallazgo ya no está.
   return !(f.especificaciones ?? []).some((e) => e.id === x.regla && e.hallazgo);
+}
+
+/** Si el resumen de una página es de verdad: no está vacío ni es el de un borrador sin completar («Draft: …»). */
+const resumenDeVerdad = (r: unknown) => typeof r === "string" && !!r.trim() && !/^(Borrador|Draft):/.test(r.trim());
+
+/**
+ * Si un ítem «funcionalidad» quedó hecho en los borradores de su cerebro (`raiz`): la funcionalidad tiene su borrador
+ * `_drafts/product/<id>.md` con nombre y resumen de verdad; una propuesta, algún borrador `feat-*` así escrito desde
+ * `desde` (lo de antes, como los que deja `flowbrain draft`, no cuenta).
+ */
+export async function resueltoEnBorrador(raiz: string, x: Pick<ItemDePagina, "funcionalidad">, desde = 0): Promise<boolean> {
+  const carpeta = join(raiz, "_drafts", "product");
+  const completo = async (archivo: string, despues: number) => {
+    try {
+      if (despues && (await stat(join(carpeta, archivo))).mtimeMs < despues) return false;
+      const d = parsePagina(archivo, await readFile(join(carpeta, archivo), "utf8")).data as Record<string, unknown> | null;
+      return !!d && typeof d["nombre"] === "string" && !!d["nombre"].trim() && resumenDeVerdad(d["resumen"]);
+    } catch {
+      return false;
+    }
+  };
+  if (x.funcionalidad) return completo(`${x.funcionalidad}.md`, 0);
+  let nombres: string[] = [];
+  try {
+    nombres = (await readdir(carpeta)).filter((n) => /^feat-.+\.md$/.test(n));
+  } catch {
+    return false;
+  }
+  for (const n of nombres) if (await completo(n, desde)) return true;
+  return false;
 }
 
 /** Lo que el agente respondió: la lista del último bloque ```flowbrain-resultados, ya validada. */
@@ -869,6 +932,11 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
           continue;
         }
         try {
+          if (t.tipo === "funcionalidad") {
+            // Escribe solo borradores: no hay páginas nuevas que compilar; se miran los borradores.
+            for (const x of suyos) ((await resueltoEnBorrador(c.raiz, x, (t.empezado ?? 0) - 1000)) ? (t.resueltos ??= []) : (t.quedan ??= [])).push(x);
+            continue;
+          }
           await compileDirConVisor(c.raiz);
           const ctx = await cargarContexto(c.raiz);
           for (const x of suyos) (resueltoEnPagina(ctx, t.tipo, x) ? (t.resueltos ??= []) : (t.quedan ??= [])).push(x);
@@ -892,6 +960,10 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     lotes.push(lote);
     const partes = tandasDePaginas(items, TANDA_MAX_PAGINAS[tipo]);
     const que = (xs: ItemDePagina[]) => {
+      if (tipo === "funcionalidad") {
+        const n = new Set(xs.filter((x) => x.funcionalidad).map((x) => x.funcionalidad)).size, p = xs.filter((x) => !x.funcionalidad).length;
+        return [n ? `${n} ${n === 1 ? "feature" : "features"}` : "", p ? `proposal for ${p} ${p === 1 ? "brain" : "brains"}` : ""].filter(Boolean).join(" · ");
+      }
       if (tipo !== "corregir") { const n = new Set(xs.map((x) => x.funcionalidad)).size; return `${n} ${n === 1 ? "feature" : "features"}`; }
       return `${xs.length} ${xs.length === 1 ? "use case or rule" : "use cases and rules"}`;
     };

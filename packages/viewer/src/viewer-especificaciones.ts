@@ -220,8 +220,15 @@ export const ESPECIFICACIONES_JS = String.raw`
     PEDIDOS[k] = { tipo: tipo, xs: xs, entradas: null };
     return PD.boton({ tipo: tipo, k: k, et: etiqueta });
   }
+  // «escribir|<id>» también se pide desde la ficha de la funcionalidad (viewer-producto): misma clave, mismos ítems,
+  // aunque esta pantalla todavía no haya pintado su botón.
+  var deOtraPantalla = function (k) {
+    var m = /^escribir\|(.+)$/.exec(k), P = null;
+    if (m) PRODUCTO.forEach(function (x) { if (x.id === m[1] && !conSpecs(x)) P = x; });
+    return P ? (PEDIDOS[k] = { tipo: "escribir", xs: [P], entradas: null }) : null;
+  };
   var delBoton = function (k) {
-    var p = PEDIDOS[k];
+    var p = PEDIDOS[k] || deOtraPantalla(k);
     if (!p) return [];
     if (!p.entradas) p.entradas = ENTRADAS[p.tipo](p.xs);
     return p.entradas;

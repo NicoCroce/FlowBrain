@@ -403,6 +403,7 @@ button.pestana { border-top: 0; border-left: 0; border-right: 0; background: non
 .es-cuerpo { margin: 12px 0 0 24px; } .es-resumen { margin: 0 0 8px; color: var(--medio); font-size: 13px; }
 .es-cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 8px; }
 .es-cab h3, .es-cab h4, .es-cab p { margin: 0; }
+.fu-pedir { margin: 0 0 16px; } .fu-pedir > p { flex: 1 1 320px; } .fu-proponer { margin: 0 0 16px; } .fu-proponer .es-cab { margin: 0 0 8px; }
 .es-caso { display: flex; flex-direction: column; gap: 8px; padding: 14px 0 !important; scroll-margin-top: 84px; }
 .es-cabeza { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .es-cabeza small { color: var(--suave); }

@@ -162,7 +162,8 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
     if (req.method === "GET" && url.pathname === "/api/agente") return { json: { noDisponible: agente.noDisponible(), proveedores: agente.proveedores(), trabajos: agente.lista(), lotes: agente.lotes() } };
     if (req.method === "POST" && url.pathname === "/api/agente/lote") {
       // Un lote: reglas a testear (Especificaciones, `tipo` test o sin tipo), archivos a asociar (Sin asociar),
-      // funcionalidades, casos y reglas a agrupar, escribir o corregir (Especificaciones), archivos a llevar a 100
+      // funcionalidades, casos y reglas a agrupar, escribir o corregir (Especificaciones), funcionalidades a describir o
+      // cerebros a los que proponerles las suyas (Funcionalidades), archivos a llevar a 100
       // (Fidelidad) o problemas de la deriva (Contratos). Todos con los mismos límites: hasta 3000 y 2 MB.
       const b = await cuerpoJson(req, 2 * 1024 * 1024);
       const tipo = b["tipo"] ?? "test", proveedor = b["proveedor"], modelo = b["modelo"];
@@ -235,12 +236,14 @@ export function crearServidorVisor(carpeta: string, opciones: { token?: string; 
         const validos: ItemDePagina[] = items.map((x: Record<string, unknown>) => {
           const { cerebro, funcionalidad, caso, regla, linea } = x ?? {};
           // agrupar y escribir: una funcionalidad. corregir: un caso marcado o una regla, de una funcionalidad (uno de los dos).
+          // funcionalidad: una funcionalidad a describir o, sin ella, el cerebro al que proponerle las suyas.
           const forma = tipo === "corregir" ? (caso === undefined) !== (regla === undefined) && (caso === undefined || texto(caso)) && (regla === undefined || texto(regla)) : caso === undefined && regla === undefined;
-          if (typeof cerebro !== "string" || !registro.cerebro(cerebro) || !texto(funcionalidad) || !forma || typeof linea !== "string" || !linea.trim() || linea.length > 4000) throw new ErrorHttp(400, `invalid item: ${JSON.stringify(x).slice(0, 160)}`);
+          const propuesta = tipo === "funcionalidad" && funcionalidad === undefined;
+          if (typeof cerebro !== "string" || !registro.cerebro(cerebro) || (!propuesta && !texto(funcionalidad)) || !forma || typeof linea !== "string" || !linea.trim() || linea.length > 4000) throw new ErrorHttp(400, `invalid item: ${JSON.stringify(x).slice(0, 160)}`);
           const k = `${cerebro}|${String(funcionalidad)}|${String(caso ?? "")}|${String(regla ?? "")}`;
           if (vistos.has(k)) throw new ErrorHttp(400, `repeated item: ${k}`);
           vistos.add(k);
-          return { cerebro, funcionalidad: funcionalidad as string, ...(typeof caso === "string" ? { caso } : {}), ...(typeof regla === "string" ? { regla } : {}), linea };
+          return { cerebro, funcionalidad: propuesta ? "" : (funcionalidad as string), ...(typeof caso === "string" ? { caso } : {}), ...(typeof regla === "string" ? { regla } : {}), linea };
         });
         const no = agente.noDisponible();
         if (no) throw new ErrorHttp(409, no);

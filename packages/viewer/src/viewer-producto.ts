@@ -2,6 +2,11 @@
  * Vista de producto del visor: catálogo de funcionalidades y ficha de cada una. Corre en el navegador sobre los
  * datos embebidos (`window.brainVisor.D`); la navegación por `location.hash` está en `viewer-mapa.ts`. Sin dependencias ni red.
  *
+ * Pide al agente con el pedido único (`window.brainPedido`, dec. 229 y 233): registra el tipo `funcionalidad`
+ * (describir las que no tienen nombre de negocio ni descripción, o proponer las de un cerebro que no tiene ninguna,
+ * siempre como borradores en `_drafts/product/`) y, en la ficha, pone el botón del tipo `escribir` de Especificaciones
+ * con su misma clave (`escribir|<id>`), así está «✔ En el pedido» en las dos pantallas.
+ *
  * Es JavaScript plano dentro de `String.raw`: sin backticks ni `${` (los backticks de Markdown van como \x60).
  */
 export const PRODUCTO_JS = String.raw`
@@ -19,6 +24,7 @@ export const PRODUCTO_JS = String.raw`
   var consumidoras = {};
   fichas.forEach(function (f) { f.usa.forEach(function (u) { if (u.endpoint) (consumidoras[u.endpoint] = consumidoras[u.endpoint] || []).push(f.id); }); });
   var raiz = document.getElementById("producto");
+  var PD = window.brainPedido || null, CEREBROS = D.cerebros || [];
 
   var nombre = function (id) { return porId[id] ? porId[id].n : id; };
   var pendiente = function (r) { return !r || /^(Borrador|Draft):/.test(r); };
@@ -161,23 +167,165 @@ export const PRODUCTO_JS = String.raw`
   function tarjetas() {
     var lista = fl.filtrar().map(function (x) { return x.g; }).sort(function (a, b) { return nombre(a[0].id).localeCompare(nombre(b[0].id), L("en", "es")); });
     if (!lista.length) return fl.vacio(itemsFu().length);
-    return fl.resultado(lista.length) + '<div class="tarjetas">' + lista.map(tarjeta).join("") + "</div>";
+    return fl.resultado(lista.length) + barraSinDescripcion() + '<div class="tarjetas">' + lista.map(tarjeta).join("") + "</div>";
   }
   function pintarCatalogo() {
     if (!fichas.length) {
-      raiz.innerHTML = "<h1>" + L("Features", "Funcionalidades") + "</h1>" +
-        '<p class="aviso">' + L("No features yet. <code>flowbrain draft &lt;repo&gt;</code> proposes them from the <code>features/</code>, <code>modules/</code> or <code>domains/</code> folders (or, without them, <code>pages/</code>, <code>screens/</code> or <code>views/</code>) in <code>_drafts/product/</code>. To complete them with a business name and description, run <code>/flowbrain-features</code> in Claude Code, or review them by hand and move them to <code>product/</code> with <code>flowbrain promote</code>.",
-          "Todavía no hay funcionalidades. <code>flowbrain draft &lt;repo&gt;</code> las propone a partir de las carpetas <code>features/</code>, <code>modules/</code> o <code>domains/</code> (o, sin ellas, <code>pages/</code>, <code>screens/</code> o <code>views/</code>) en <code>_drafts/product/</code>. Para completarlas con nombre de negocio y descripción, corré <code>/flowbrain-features</code> en Claude Code, o revisalas a mano y pasalas a <code>product/</code> con <code>flowbrain promote</code>.") + "</p>";
+      raiz.innerHTML = "<h1>" + L("Features", "Funcionalidades") + "</h1>" + vacioConAgente();
       return;
     }
     raiz.innerHTML = "<h1>" + L("Features", "Funcionalidades") + "</h1>" +
       '<p class="subtitulo">' + L("What the product lets its users do, one card per feature: which brains it belongs to, how much code it has, which tables and endpoints it touches and whether it has tests. Click one to see its card.",
         "Lo que el producto le permite hacer a quien lo usa, una tarjeta por funcionalidad: de qué cerebros es, cuánto código tiene, qué tablas y endpoints toca y si tiene tests. Tocá una para ver su ficha.") + "</p>" +
-      fl.html() + '<div id="tarjetas">' + tarjetas() + "</div>";
+      cerebrosSinFuncionalidades() + fl.html() + '<div id="tarjetas">' + tarjetas() + "</div>";
   }
-  if (raiz) raiz.addEventListener("click", function (ev) { fl.manejar(ev, "click"); });
+  // Cómo se hace sin el agente: desde la terminal (o a mano). Es la explicación de siempre.
+  function porTerminal() {
+    return L("<code>flowbrain draft &lt;repo&gt;</code> proposes them from the <code>features/</code>, <code>modules/</code> or <code>domains/</code> folders (or, without them, <code>pages/</code>, <code>screens/</code> or <code>views/</code>) in <code>_drafts/product/</code>. To complete them with a business name and description, run <code>/flowbrain-features</code> in Claude Code, or review them by hand and move them to <code>product/</code> with <code>flowbrain promote</code>.",
+          "<code>flowbrain draft &lt;repo&gt;</code> las propone a partir de las carpetas <code>features/</code>, <code>modules/</code> o <code>domains/</code> (o, sin ellas, <code>pages/</code>, <code>screens/</code> o <code>views/</code>) en <code>_drafts/product/</code>. Para completarlas con nombre de negocio y descripción, corré <code>/flowbrain-features</code> en Claude Code, o revisalas a mano y pasalas a <code>product/</code> con <code>flowbrain promote</code>.");
+  }
+  if (raiz) raiz.addEventListener("click", function (ev) {
+    if (fl.manejar(ev, "click")) return;
+    // «Pedir»: suma al pedido único o saca lo que ya estaba; el componente cambia los botones sin repintar.
+    var b = ev.target && ev.target.closest ? ev.target.closest('[data-acc="pedir"]') : null;
+    if (b && !b.disabled && PD) PD.sumar(b.getAttribute("data-tipo"), b.getAttribute("data-k"));
+  });
   if (raiz) raiz.addEventListener("change", function (ev) { fl.manejar(ev, "change"); });
   if (raiz) raiz.addEventListener("input", function (ev) { fl.manejar(ev, "input"); });
+
+  // ---------- El pedido al agente: tipo «funcionalidad» (dec. 233) ----------
+  // Dos clases de ítem, en un solo tipo y una sola guía (flowbrain features --guide): describir una funcionalidad sin
+  // nombre de negocio ni descripción (k = id de la ficha) o proponer las de un cerebro que no tiene ninguna
+  // (k = "proponer|<cerebro>", sin funcionalidad). El agente escribe solo borradores en _drafts/product/.
+  // Lo que va al modelo, solo en inglés (dec. 214).
+  var GUIA_F = "following the flowbrain features --guide guide (in Claude Code: /flowbrain-features)";
+  var reposDe = function (c) {
+    var i = -1; CEREBROS.forEach(function (x, j) { if (x.nombre === c) i = j; });
+    return D.nodes.filter(function (n) { return n.t === "repo" && (i < 0 || n.c === i); }).map(function (n) { return n.n; });
+  };
+  var conFichas = function (c) { return fichas.some(function (f) { return cerebroDe(f.id) === c; }); };
+  // Los cerebros sin ninguna funcionalidad, a los que se les puede pedir que las propongan.
+  var sinFuncionalidades = function () { return CEREBROS.map(function (c) { return c.nombre; }).filter(function (c) { return c && !conFichas(c); }); };
+  function itemDescribir(f) {
+    var c = cerebroDe(f.id), fid = idBase(f.id), n = nombre(f.id);
+    var que = [f.expone.length ? f.expone.length + (f.expone.length === 1 ? " endpoint" : " endpoints") : "", f.archivos + (f.archivos === 1 ? " file" : " files")].filter(Boolean).join(", ");
+    return { tipo: "funcionalidad", k: f.id, cerebro: c, repo: null, datos: { cerebro: c, funcionalidad: fid, nombre: n, archivos: f.archivos,
+      linea: "- " + fid + " (today: " + n + "), brain " + c + ": " + que + ". No business name or description yet." } };
+  }
+  function itemProponer(c) {
+    var rs = reposDe(c);
+    return { tipo: "funcionalidad", k: "proponer|" + c, cerebro: c, repo: null, datos: { cerebro: c, funcionalidad: "", repos: rs,
+      linea: "- brain " + c + (rs.length ? " (repos: " + rs.join(", ") + ")" : "") + ": it has no features yet." } };
+  }
+  // Las fichas sin descripción del catálogo, con los filtros de ahora.
+  var fichasSinDescripcion = function () {
+    var out = [];
+    fl.filtrar().forEach(function (x) { x.g.forEach(function (f) { if (pendiente((porId[f.id] || {}).r)) out.push(f); }); });
+    return out;
+  };
+  // Lo que suma cada botón: "f|<id>" (una ficha), "sindesc" (las del catálogo filtrado), "proponer|<cerebro>" o "proponer|" (todos).
+  function itemsDelBoton(k) {
+    if (k === "sindesc") return fichasSinDescripcion().map(itemDescribir);
+    if (k.indexOf("f|") === 0) { var f = porFicha[k.slice(2)]; return f && pendiente((porId[f.id] || {}).r) ? [itemDescribir(f)] : []; }
+    if (k.indexOf("proponer|") === 0) { var c = k.slice(9); return (c ? [c] : sinFuncionalidades()).filter(function (x) { return !conFichas(x); }).map(itemProponer); }
+    return [];
+  }
+  var boton = function (k, et) { return PD ? PD.boton({ tipo: "funcionalidad", k: k, et: et }) : ""; };
+  function barraSinDescripcion() {
+    var n = PD ? fichasSinDescripcion().length : 0;
+    if (!n) return "";
+    return '<div class="es-cab fu-pedir"><p><small>' + L(plural(n, "card", "cards") + " without a business name or description in this list: the agent writes " + (n === 1 ? "it" : "them") + " from the code, as " + (n === 1 ? "a draft." : "drafts."),
+      (n === 1 ? "Una ficha" : num(n) + " fichas") + " sin nombre de negocio ni descripción en esta lista: el agente " + (n === 1 ? "la escribe" : "las escribe") + " a partir del código, como " + (n === 1 ? "borrador." : "borradores.")) + "</small></p>" +
+      boton("sindesc", L(n === 1 ? "Request it" : "Request the " + num(n), n === 1 ? "Pedirla" : "Pedir las " + num(n))) + "</div>";
+  }
+  // Con funcionalidades en unos cerebros y en otros no: el pedido para los que no tienen.
+  function cerebrosSinFuncionalidades() {
+    var cs = PD ? sinFuncionalidades() : [];
+    if (!cs.length) return "";
+    return '<section class="fu-proponer"><p class="aviso">' + L(cs.length === 1 ? "The brain " + esc(cs[0]) + " has no features yet." : "These brains have no features yet: " + esc(cs.join(", ")) + ".", cs.length === 1 ? "El cerebro " + esc(cs[0]) + " todavía no tiene funcionalidades." : "Estos cerebros todavía no tienen funcionalidades: " + esc(cs.join(", ")) + ".") + "</p>" +
+      '<ul class="lista">' + cs.map(filaProponer).join("") + "</ul></section>";
+  }
+  function filaProponer(c) {
+    var rs = reposDe(c);
+    return '<li class="es-fila"><span><strong>' + esc(c) + "</strong>" + (rs.length ? " <small>" + esc(rs.join(", ")) + "</small>" : "") + "</span>" +
+      boton("proponer|" + c, L("Ask the agent to propose the features", "Pedir al agente que proponga las funcionalidades")) + "</li>";
+  }
+  // No hay ninguna funcionalidad: el pedido por cerebro, y la terminal como alternativa (o la única, sin cerebros).
+  function vacioConAgente() {
+    var cs = PD ? sinFuncionalidades() : [];
+    if (!cs.length) return '<p class="aviso">' + L("No features yet. ", "Todavía no hay funcionalidades. ") + porTerminal() + "</p>";
+    return '<p class="aviso">' + L("No features yet. The agent can propose them from the code of each brain: what the people who use the product can do, with a business name and a description. It writes them as drafts in <code>_drafts/product/</code>, never the repos' code; a person reviews and promotes them.",
+        "Todavía no hay funcionalidades. El agente puede proponerlas a partir del código de cada cerebro: lo que puede hacer quien usa el producto, con nombre de negocio y descripción. Las escribe como borradores en <code>_drafts/product/</code>, nunca en el código de los repos; una persona las revisa y las promueve.") + "</p>" +
+      '<section class="fu-proponer">' + (cs.length > 1 ? '<div class="es-cab"><h3>' + L("Brains (", "Cerebros (") + num(cs.length) + ")</h3>" + boton("proponer|", L("Request them all", "Pedir todos")) + "</div>" : "") +
+      '<ul class="lista">' + cs.map(filaProponer).join("") + "</ul></section>" +
+      (PD && PD.agente ? '<details class="tf"><summary>' + L("Or from the terminal", "O desde la terminal") + "</summary><p><small>" + porTerminal() + "</small></p></details>"
+        : '<p><small>' + L("Without an agent on this machine, the panel downloads the request as .md for your agent. Or from the terminal: ", "Sin un agente en esta máquina, el panel baja el pedido como .md para tu agente. O desde la terminal: ") + porTerminal() + "</small></p>");
+  }
+  var clave = function (x) { return x.cerebro + "|" + (x.funcionalidad || ""); };
+  var cuenta = function (ts, campo) { return ts.reduce(function (n, t) { return n + (t[campo] || []).length; }, 0); };
+  var cifras = function (r, q) { return L(num(r) + " done · " + num(q) + " left", num(r) + " hechos · " + num(q) + " quedan"); };
+  function mdFuncionalidades(its) {
+    var desc = its.filter(function (it) { return it.datos.funcionalidad; }), prop = its.filter(function (it) { return !it.datos.funcionalidad; }), out = [];
+    if (desc.length) out.push("Complete " + (desc.length === 1 ? "this FlowBrain feature" : "these " + desc.length + " FlowBrain features") + " with a business name, a one-line summary and the \"what it is\" section, " + GUIA_F + ". Write each one as a draft: copy its page to .flowbrain/<brain>/_drafts/product/<id>.md (same id, same codigo) and complete it there.", "", desc.map(function (it) { return it.datos.linea; }).join("\n"), "");
+    if (prop.length) out.push((prop.length === 1 ? "This FlowBrain brain has" : "These " + prop.length + " FlowBrain brains have") + " no features yet. Propose them " + GUIA_F + ": each one with a business name, a one-line summary, the \"what it is\" section and all of its code.", "", prop.map(function (it) { return it.datos.linea; }).join("\n"), "");
+    out.push("Do NOT modify the project's repositories, and do NOT edit product/ or promote anything: write ONLY drafts in .flowbrain/<brain>/_drafts/product/. A person reviews and promotes them.", "");
+    return out.join("\n");
+  }
+  if (PD && raiz) {
+    PD.raiz(raiz);
+    PD.registrar("funcionalidad", {
+      get nombre() { return L("Features", "Funcionalidades"); },
+      unidad: ["task", "tasks", "tarea", "tareas"],
+      raiz: raiz,
+      claves: function (k) { return itemsDelBoton(k).map(function (it) { return it.k; }); },
+      items: itemsDelBoton,
+      // Primero las propuestas (un cerebro entero), después las fichas por nombre.
+      orden: function (a, b) { return (a.datos.funcionalidad ? 1 : 0) - (b.datos.funcionalidad ? 1 : 0) || String(a.datos.nombre || a.datos.cerebro).localeCompare(String(b.datos.nombre || b.datos.cerebro)); },
+      resumen: function (its) {
+        var p = its.filter(function (it) { return !it.datos.funcionalidad; }).length, d = its.length - p;
+        return [[d ? L(plural(d, "card to describe", "cards to describe"), plural(d, "ficha a describir", "fichas a describir")) : "", p ? L(plural(p, "brain to propose features for", "brains to propose features for"), plural(p, "cerebro al que proponerle funcionalidades", "cerebros a los que proponerles funcionalidades")) : ""].filter(Boolean).join(" · "),
+          L("Only drafts in _drafts/product/: a person promotes them", "Solo borradores en _drafts/product/: una persona los promueve")];
+      },
+      costo: function (mo, it) { var c = mo.costoPorPaginaUsd, v = c ? c[it && !it.datos.funcionalidad ? "proponer" : "funcionalidad"] : null; return typeof v === "number" ? v : null; },
+      lote: function (its) {
+        return { tipo: "funcionalidad", items: its.map(function (it) { var x = it.datos, o = { cerebro: x.cerebro, linea: x.linea }; if (x.funcionalidad) o.funcionalidad = x.funcionalidad; return o; }) };
+      },
+      md: { archivo: "funcionalidades.md", texto: mdFuncionalidades },
+      clave: function (it) { return clave(it.datos); },
+      enTanda: function (t) { return (t.items || []).map(clave); },
+      hechos: function (t) { return (t.resueltos || []).map(clave); },
+      seguimiento: {
+        cuantos: function (t) { return (t.items || []).length; },
+        get espera() { return L("Waits for the previous batch to finish.", "Espera a que termine la tanda anterior."); },
+        get reindexando() { return L("Finishing…", "Terminando…"); },
+        pidiendo: function (n) { return L("Writing " + plural(n, "draft task", "draft tasks"), "Escribiendo " + plural(n, "tarea de borrador", "tareas de borrador")); },
+        extraTanda: function (t) {
+          if (PD.vivo(t) || (!t.resueltos && !t.quedan)) return "";
+          return "<small>" + cifras((t.resueltos || []).length, (t.quedan || []).length) + "</small>" +
+            (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
+        },
+        resumen: function (ts) {
+          var q = cuenta(ts, "quedan");
+          return cifras(cuenta(ts, "resueltos"), q) + L(". The drafts are in _drafts/product/: review them and promote them with flowbrain promote", ". Los borradores están en _drafts/product/: revisalos y promovelos con flowbrain promote") +
+            (q ? L(" (what is left stays in the list to request it again)", " (lo que queda sigue en la lista para pedirlo de nuevo)") : "");
+        }
+      },
+      tarjeta: function (it, enTanda) {
+        var x = it.datos;
+        return '<p class="es-texto">' + esc(x.funcionalidad ? x.nombre : L("Propose the features of " + x.cerebro, "Proponer las funcionalidades de " + x.cerebro)) + '</p><div class="chips">' +
+          '<span class="chip">' + (x.funcionalidad ? L("No description", "Sin descripción") : L("No features", "Sin funcionalidades")) + "</span>" +
+          (x.funcionalidad ? "" : (x.repos || []).map(function (r) { return '<span class="chip">' + esc(r) + "</span>"; }).join("")) +
+          '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span>" +
+          (enTanda ? '<span class="chip es-ok">' + L("Writing…", "Escribiéndose…") + "</span>" : "") + "</div>";
+      }
+    });
+    // Lo que ya no está pendiente sale de la lista: la ficha ya tiene descripción o el cerebro ya tiene funcionalidades.
+    PD.podar("funcionalidad", function (it) {
+      var x = it.datos;
+      if (!x.funcionalidad) return conFichas(x.cerebro) ? null : it;
+      return porFicha[it.k] && !pendiente((porId[it.k] || {}).r) ? null : it;
+    });
+  }
 
   // De qué cerebro es esta ficha y en cuáles más está la misma funcionalidad (el front que la muestra, el back que la atiende).
   function chipCerebro(id, actual) {
@@ -256,6 +404,13 @@ export const PRODUCTO_JS = String.raw`
   }
 
   // ---------- Ficha ----------
+  // Sin casos de uso ni reglas (en ningún cerebro): el mismo pedido «escribir» que Especificaciones, con su clave.
+  function sinCasos(f) {
+    var nadie = fichas.filter(function (x) { return idBase(x.id) === idBase(f.id); }).every(function (x) { return !(x.especificaciones || []).length; });
+    var pedir = nadie && PD ? PD.boton({ tipo: "escribir", k: "escribir|" + idBase(f.id), et: L("Request use cases and specifications", "Pedir casos de uso y especificaciones") }) : "";
+    return '<div class="es-cab fu-pedir"><p class="aviso">' + L("Nobody has written yet what can be done with this feature. The agent deduces it from the code and the tests; ", "Nadie escribió todavía qué se puede hacer con esta funcionalidad. Lo deduce el agente a partir del código y de los tests; ") +
+      '<a href="#/especificaciones">' + L("Specifications", "Especificaciones") + "</a>" + L(" has the same request for every feature.", " tiene el mismo pedido para todas.") + "</p>" + pedir + "</div>";
+  }
   function seccion(titulo, cuerpo) { return cuerpo ? "<section><h2>" + titulo + "</h2>" + cuerpo + "</section>" : ""; }
   function lista(items) { return items.length ? '<ul class="lista">' + items.join("") + "</ul>" : ""; }
   function ficha(id) {
@@ -303,7 +458,7 @@ export const PRODUCTO_JS = String.raw`
       '<a class="volver" href="#/funcionalidades">← ' + L("Features", "Funcionalidades") + "</a>" +
       "<h1>" + esc(n.n) + "</h1>" +
       enCerebros(f) +
-      (pendiente(n.r) ? '<p class="subtitulo pendiente">' + L("No description yet", "Sin descripción todavía") + "</p>" : '<p class="subtitulo">' + esc(n.r) + "</p>") +
+      (pendiente(n.r) ? '<div class="es-cab fu-pedir"><p class="subtitulo pendiente">' + L("No description yet", "Sin descripción todavía") + "</p>" + boton("f|" + id, L("Request description", "Pedir descripción")) + "</div>" : '<p class="subtitulo">' + esc(n.r) + "</p>") +
       (cuerpo || '<p class="aviso">' + L("The page has no text. Write what it is and how it's used in ", "La página no tiene texto. Escribí qué es y cómo se usa en ") + "<code>" + esc(n.p || "") + "</code>.</p>") +
       (window.brainPantallas ? window.brainPantallas.seccionFicha(f) : "") +
       seccion(L("What it consumes (", "Qué consume (") + num(consume.length) + ")", lista(consume)) +
@@ -311,7 +466,7 @@ export const PRODUCTO_JS = String.raw`
       construida(f) +
       "<section><h2>" + L("Use cases (", "Casos de uso (") + num((f.casos || []).length) + ")</h2>" + ((f.especificaciones || []).length
         ? "<p>" + ((f.casos || []).length ? (f.casos || []).map(function (c) { return esc(c.nombre); }).join(" · ") + ". " : (function (nr, ns) { return L("Not grouped into use cases yet: there are " + num(nr) + " written rules, " + num(ns) + " untested. ", "Todavía no están agrupadas en casos de uso: hay " + nr + " reglas escritas, " + ns + " sin test. "); })((f.especificaciones || []).length, (f.especificaciones || []).filter(function (e) { return !e.tests.length; }).length)) + '<a href="#/especificaciones/' + esc(f.id) + '">' + L("See whether they're met", "Ver si están cumplidos") + "</a></p>"
-        : '<p class="aviso">' + L("Nobody has written yet what can be done with this feature. ", "Nadie escribió todavía qué se puede hacer con esta funcionalidad. ") + '<a href="#/especificaciones">' + L("Specifications", "En Especificaciones") + "</a>" + L(" has the request for the agent to deduce it from the code and tests.", " está el pedido para que el agente lo deduzca del código y de los tests.") + "</p>") + "</section>" +
+        : sinCasos(f)) + "</section>" +
       "<section><h2>Tests (" + (tests.length ? plural(totalCasos, L("case", "caso"), L("cases", "casos")) + L(" in ", " en ") + plural(tests.length, L("file", "archivo"), L("files", "archivos")) : L("none", "ninguno")) + ")</h2>" + pruebas + "</section>" +
       "</div><div>" +
       seccion(L("Related to", "Se relaciona con"), relacion) +

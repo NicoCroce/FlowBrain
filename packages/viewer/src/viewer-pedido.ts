@@ -20,7 +20,8 @@
  * - `raiz`: el elemento de la pantalla con sus botones `pedir`; `claves(k)`: las claves de ítem que suma el botón `k`;
  *   `items(k)`: esos ítems armados (`claves(k, memo)`: memo dura una pasada sobre los botones); `repintar?()`: si los botones no se pueden marcar sin repintar;
  * - `tarjeta(item, enTanda)`: el HTML de la tarjeta; `orden?(a, b)`; `resumen?(items)`: textos bajo el total del tipo;
- *   `notas?(items)`: avisos del tipo; `costo(modelo)`: US$ por ítem estimado, o null si ese modelo no tiene estimación;
+ *   `notas?(items)`: avisos del tipo; `costo(modelo, item)`: US$ estimado de ese ítem (el mismo para todos, si el tipo
+ *   no distingue), o null si ese modelo no tiene estimación;
  * - `lote(items)`: el cuerpo de `/api/agente/lote` sin proveedor ni modelo (`{ tipo, reglas }` o `{ tipo, archivos }`);
  *   `md`: `{ archivo, texto(items) }`, el .md para cualquier agente (en inglés);
  * - el seguimiento: `clave?(item)` (con qué se reconoce el ítem en una tanda; por defecto `k`), `enTanda(t)` y
@@ -29,6 +30,10 @@
  * - `despues?()`: lo que va al final del panel (los resultados de los tests; puede llevar botones `boton(...)`, que el
  *   panel atiende igual que en la pantalla); `bandeja?()`: lo que suma la bandeja («2 para decidir»);
  *   `accion?(acc, k, boton)`: los botones propios dentro del panel (true si lo atendió).
+ *
+ * Un botón de un tipo puede estar en otra pantalla que la que lo registró (la ficha de una funcionalidad pide
+ * «escribir», que es de Especificaciones: mismo tipo y clave, así el botón dice «✔ En el pedido» en las dos). Esa
+ * pantalla avisa dónde pinta con `raiz(el)`, y el componente marca ahí también los botones de cualquier tipo.
  *
  * Lo que va al modelo, solo en inglés (dec. 214). JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
@@ -97,7 +102,7 @@ export const PEDIDO_JS = String.raw`
   indexar();
 
   // ---------- Los tipos ----------
-  var TIPOS = {}, ORDEN = [];
+  var TIPOS = {}, ORDEN = [], RAICES = [];
   var def = function (tipo) { return TIPOS[tipo] || null; };
   var itemsDe = function (tipo) {
     var xs = E.items.filter(function (x) { return x.tipo === tipo; }), d = def(tipo);
@@ -249,9 +254,10 @@ export const PEDIDO_JS = String.raw`
   // Cambia los botones ya pintados sin repintar la pantalla (así no se cierra lo que se estaba mirando).
   function marcar() {
     ORDEN.forEach(function (tipo) {
-      var d = def(tipo), raiz = d.raiz;
-      if (!raiz || !raiz.querySelectorAll) { if (d.repintar) d.repintar(); return; }
-      var bs = raiz.querySelectorAll('[data-acc="pedir"]'), memo = {};
+      var d = def(tipo), raices = [d.raiz].concat(RAICES).filter(function (r, i, xs) { return r && r.querySelectorAll && xs.indexOf(r) === i; });
+      if (!d.raiz || !d.raiz.querySelectorAll) { if (d.repintar) d.repintar(); }
+      var bs = [], memo = {};
+      raices.forEach(function (r) { var xs = r.querySelectorAll('[data-acc="pedir"]'); for (var j = 0; j < xs.length; j++) bs.push(xs[j]); });
       for (var i = 0; i < bs.length; i++) {
         var b = bs[i];
         if (b.getAttribute("data-tipo") !== tipo) continue;
@@ -353,9 +359,10 @@ export const PEDIDO_JS = String.raw`
     // El resumen, agrupado por tipo, con su costo; abajo, el total si hay más de uno.
     var costoTotal = 0, sinEstimar = false;
     var totales = ts.map(function (t) {
-      var d = def(t), xs = itemsDe(t), lleva = Math.min(xs.length, TOPE), c = d && d.costo && mo ? d.costo(mo) : null;
-      if (typeof c === "number") costoTotal += lleva * c; else sinEstimar = true;
-      var costo = AG && mo ? "<span>" + L("Estimated cost: ", "Costo estimado: ") + (typeof c !== "number" ? L("no estimate for this model: the actual cost shows while it runs", "sin estimación para este modelo: el costo real se ve mientras corre") : (lleva ? "≈ " + dolares(lleva * c) : dolares(0)) + " <small>(" + L("approx., with ", "aprox., con ") + esc(mo.nombre) + ")</small>") + "</span>" : "";
+      // El costo del tipo: la suma de lo que estima cada ítem que lleva el pedido (null si alguno no tiene estimación).
+      var d = def(t), xs = itemsDe(t), c = d && d.costo && mo ? xs.slice(0, TOPE).reduce(function (s, x) { var u = s === null ? null : d.costo(mo, x); return typeof u === "number" ? s + u : null; }, 0) : null;
+      if (typeof c === "number") costoTotal += c; else sinEstimar = true;
+      var costo = AG && mo ? "<span>" + L("Estimated cost: ", "Costo estimado: ") + (typeof c !== "number" ? L("no estimate for this model: the actual cost shows while it runs", "sin estimación para este modelo: el costo real se ve mientras corre") : (c ? "≈ " + dolares(c) : dolares(0)) + " <small>(" + L("approx., with ", "aprox., con ") + esc(mo.nombre) + ")</small>") + "</span>" : "";
       return '<div class="es-totales" data-tipo="' + esc(t) + '"><b>' + pl(xs.length, unidadDe(t)) + "</b>" + (ts.length > 1 ? "<small>" + esc(nombreDe(t)) + "</small>" : "") +
         (d && d.resumen ? d.resumen(xs).filter(Boolean).map(function (s) { return "<span>" + s + "</span>"; }).join("") : "") + costo + "</div>";
     }).join("");
@@ -457,6 +464,8 @@ export const PEDIDO_JS = String.raw`
   window.brainPedido = {
     // Registrar un tipo (ver def arriba). Se puede llamar una vez por tipo; vuelve a pintar.
     registrar: function (tipo, d) { if (!TIPOS[tipo]) ORDEN.push(tipo); TIPOS[tipo] = d; pintar(); },
+    // Otra pantalla con botones «Pedir» (de cualquier tipo): el componente los marca ahí también.
+    raiz: function (el) { if (el && RAICES.indexOf(el) < 0) RAICES.push(el); },
     boton: boton, sumar: sumar, quitar: quitar, esta: esta, podar: podar, items: itemsDe, pintar: pintar, abrir: abrir,
     escuchar: function (f) { OYENTES.push(f); },
     // El agente, para todo el visor.

@@ -27,9 +27,11 @@ export interface ModeloDeAgente {
   /**
    * Dólares por ítem de un pedido sobre las especificaciones (dec. 230), aproximado: agrupar las reglas sueltas de una
    * funcionalidad (ordenar lo escrito), escribir los casos y reglas de una funcionalidad (leer su código y sus tests) y
-   * corregir un caso marcado o una regla. Estimación inicial, a ajustar con el costo real que muestra cada lote.
+   * corregir un caso marcado o una regla. Y los de la pantalla Funcionalidades (dec. 233): describir una funcionalidad
+   * (nombre de negocio y descripción, leyendo sus pantallas y endpoints) y proponer las de un cerebro entero.
+   * Estimación inicial, a ajustar con el costo real que muestra cada lote.
    */
-  costoPorPaginaUsd: { agrupar: number; escribir: number; corregir: number };
+  costoPorPaginaUsd: { agrupar: number; escribir: number; corregir: number; funcionalidad: number; proponer: number };
   /**
    * Dólares por archivo de un pedido de fidelidad (dec. 231), aproximado: abrir el código en cada línea que falta,
    * declararla en `calls.yaml` (o escribir un extractor) y comprobarla. Estimación inicial, a ajustar con el costo real.
@@ -177,10 +179,10 @@ export function claudeCode(comando = process.env["FLOWBRAIN_AGENTE"] ?? "claude"
       return visto;
     },
     modelos: () => [
-      { id: "claude-fable-5-2", nombre: "Fable 5.2", costoPorReglaUsd: 0.9, costoPorArchivoUsd: 0.2, costoPorPaginaUsd: { agrupar: 0.35, escribir: 2.7, corregir: 0.55 }, costoPorFidelidadUsd: 0.6, costoPorDerivaUsd: 0.7 },
-      { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true, costoPorReglaUsd: 0.4, costoPorArchivoUsd: 0.08, costoPorPaginaUsd: { agrupar: 0.15, escribir: 1.2, corregir: 0.25 }, costoPorFidelidadUsd: 0.25, costoPorDerivaUsd: 0.3 },
-      { id: "claude-sonnet-5-5", nombre: "Sonnet 5.5", costoPorReglaUsd: 0.15, costoPorArchivoUsd: 0.03, costoPorPaginaUsd: { agrupar: 0.06, escribir: 0.45, corregir: 0.09 }, costoPorFidelidadUsd: 0.1, costoPorDerivaUsd: 0.12 },
-      { id: "claude-haiku-5-5", nombre: "Haiku 5.5", costoPorReglaUsd: 0.04, costoPorArchivoUsd: 0.01, costoPorPaginaUsd: { agrupar: 0.015, escribir: 0.12, corregir: 0.025 }, costoPorFidelidadUsd: 0.03, costoPorDerivaUsd: 0.035 },
+      { id: "claude-fable-5-2", nombre: "Fable 5.2", costoPorReglaUsd: 0.9, costoPorArchivoUsd: 0.2, costoPorPaginaUsd: { agrupar: 0.35, escribir: 2.7, corregir: 0.55, funcionalidad: 0.5, proponer: 6.0 }, costoPorFidelidadUsd: 0.6, costoPorDerivaUsd: 0.7 },
+      { id: "claude-opus-5-5", nombre: "Opus 5.5", porDefecto: true, costoPorReglaUsd: 0.4, costoPorArchivoUsd: 0.08, costoPorPaginaUsd: { agrupar: 0.15, escribir: 1.2, corregir: 0.25, funcionalidad: 0.22, proponer: 2.5 }, costoPorFidelidadUsd: 0.25, costoPorDerivaUsd: 0.3 },
+      { id: "claude-sonnet-5-5", nombre: "Sonnet 5.5", costoPorReglaUsd: 0.15, costoPorArchivoUsd: 0.03, costoPorPaginaUsd: { agrupar: 0.06, escribir: 0.45, corregir: 0.09, funcionalidad: 0.08, proponer: 0.95 }, costoPorFidelidadUsd: 0.1, costoPorDerivaUsd: 0.12 },
+      { id: "claude-haiku-5-5", nombre: "Haiku 5.5", costoPorReglaUsd: 0.04, costoPorArchivoUsd: 0.01, costoPorPaginaUsd: { agrupar: 0.015, escribir: 0.12, corregir: 0.025, funcionalidad: 0.02, proponer: 0.25 }, costoPorFidelidadUsd: 0.03, costoPorDerivaUsd: 0.035 },
     ],
     armar: (o) => ({
       comando,
