@@ -90,7 +90,9 @@ beforeAll(async () => {
     `const pagina = join(process.env.FLOWBRAIN_ROOT, cerebro, "product", cerebro === "admin" ? "feat-usuarios.md" : "feat-pedidos.md");`,
     'const nuevos = archivos.filter((x) => !x.includes("deja")).map((x) => "  - " + x + "\\n").join("");',
     'writeFileSync(pagina, readFileSync(pagina, "utf8").replace("codigo:\\n", "codigo:\\n" + nuevos));',
-    'console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "Asocié " + archivos.length + "; dejé los que dicen deja.", total_cost_usd: 0.05 }));',
+    'const dejados = archivos.filter((x) => x.includes("deja")).map((x) => ({ ref: x, reason: "It is shared code, not a feature" }));',
+    'const fin = dejados.length ? "\\n```flowbrain-pending\\n" + JSON.stringify(dejados) + "\\n```" : "";',
+    'console.log(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "Asocié " + archivos.length + "; dejé los que dicen deja." + fin, total_cost_usd: 0.05 }));',
   ].join("\n"));
   await chmod(falso, 0o755);
   s = crearServidorVisor(reg, { agente: crearAgente(() => leerRegistro(reg), { proveedores: [claudeCode(falso)] }) });
@@ -136,6 +138,13 @@ describe("lote asociar", () => {
     expect(admin["estado"]).toBe("fallo");
     expect(admin["error"]).toContain("se cayó el agente");
     expect(admin["siguen"]).toHaveLength(2);
+    // Cada ítem termina con su desenlace (dec. 235): lo resuelto con lo que cambió; lo demás, con el motivo del agente.
+    const ds = api1["desenlaces"] as Tr[];
+    expect(ds).toHaveLength(18);
+    expect(ds.filter((d) => d["resuelto"]).every((d) => d["cambio"].asociado === true)).toBe(true);
+    expect(ds.find((d) => !d["resuelto"])).toEqual({ item: { cerebro: "tienda", archivo: "repo-api:src/extra/a5-deja.ts" }, resuelto: false, motivo: { codigo: "sigue", agente: "It is shared code, not a feature" } });
+    expect((admin["desenlaces"] as Tr[]).map((d) => [d["resuelto"], d["motivo"].codigo, String(d["motivo"].detalle).includes("se cayó")])).toEqual([[false, "fallo", true], [false, "fallo", true]]);
+    expect(pedidoDeTandaAsociar([archivo("tienda", "repo-api:src/x.ts")], "repo-api", "tienda", 1, 1)).toContain("flowbrain-pending");
     expect(await readFile(join(reg, "tienda/product/feat-pedidos.md"), "utf8")).toContain("  - repo-web:src/web/w2.ts");
     const quedan = JSON.parse((await ejecutar(["unassigned", "--root", join(reg, "tienda")], {}, dir)).stdout) as { total: number };
     expect(quedan.total).toBe(1);

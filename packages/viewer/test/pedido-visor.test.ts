@@ -60,15 +60,14 @@ function registrar(P: Pedido) {
     nombre: "Tests", unidad: ["rule", "rules", "regla", "reglas"],
     claves: (k: string) => (BOTONES[k] ?? []).filter((x) => x.tipo === "test").map((x) => x.k),
     items: (k: string) => (BOTONES[k] ?? []).filter((x) => x.tipo === "test"),
-    tarjeta: (it: Item, enTanda: boolean) => `<p>${String(it.datos["texto"])}</p>${enTanda ? "<i>en tanda</i>" : ""}`,
+    tarjeta: (it: Item) => `<p>${String(it.datos["texto"])}</p>`,
     resumen: (xs: Item[]) => [`${xs.length} de negocio`],
     costo: (mo: { costoPorReglaUsd?: number }) => mo.costoPorReglaUsd ?? null,
     lote: (xs: Item[]) => ({ tipo: "test", reglas: xs.map((x) => ({ regla: x.datos["regla"] })) }),
     md: { archivo: "tests-pedidos.md", texto: (xs: Item[]) => `# Tests\n${xs.map((x) => `- ${String(x.datos["regla"])}`).join("\n")}\n` },
     clave: (it: Item) => String(it.datos["regla"]),
-    enTanda: (t: { reglas?: string[] }) => t.reglas ?? [],
-    hechos: (t: { resultados?: string[] }) => t.resultados ?? [],
-    seguimiento: { cuantos: (t: { reglas?: string[] }) => (t.reglas ?? []).length, reindexando: "Reindexando", pidiendo: (n: number) => `Pidiendo ${n} reglas`, resumen: () => "listo" },
+    tanda: { lista: "reglas", clave: (x: string) => x },
+    seguimiento: { reindexando: "Reindexando", pidiendo: (n: number) => `Pidiendo ${n} reglas`, resumen: () => "listo" },
     despues: () => "<p>Resultados de los tests</p>",
     bandeja: () => "1 to decide",
   });
@@ -80,8 +79,8 @@ function registrar(P: Pedido) {
     costo: (mo: { costoPorArchivoUsd?: number }) => mo.costoPorArchivoUsd ?? null,
     lote: (xs: Item[]) => ({ tipo: "asociar", archivos: xs.map((x) => ({ archivo: x.datos["archivo"] })) }),
     md: { archivo: "archivos-pedidos.md", texto: (xs: Item[]) => `# Files\n${xs.map((x) => `- ${String(x.datos["archivo"])}`).join("\n")}\n` },
-    enTanda: () => [], hechos: (t: { asociados?: string[] }) => t.asociados ?? [],
-    seguimiento: { cuantos: () => 1, reindexando: "", pidiendo: (n: number) => `Asociando ${n}`, resumen: () => "ok" },
+    tanda: { lista: "archivos", clave: (x: string) => x },
+    seguimiento: { pidiendo: (n: number) => `Asociando ${n}` },
   });
 }
 const esperar = async () => { for (let i = 0; i < 6; i++) await new Promise((ok) => setTimeout(ok, 0)); };
@@ -221,7 +220,7 @@ describe("el pedido al agente (componente único)", () => {
     estado.lotes = [{ id: "LT", tipo: "test", estado: "corriendo" }, { id: "LA", tipo: "asociar", estado: "corriendo" }];
     estado.trabajos = [
       { id: "t1", lote: "LT", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: ["Corre los tests"], reglas: ["r1", "r2"] },
-      { id: "a1", lote: "LA", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: [] },
+      { id: "a1", lote: "LA", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: [], archivos: ["web|repo-web:src/a.ts"] },
     ];
     await esperar();
     const lotes = llamadas.filter((x) => x.url === "/api/agente/lote").map((x) => x.cuerpo);
@@ -234,27 +233,55 @@ describe("el pedido al agente (componente único)", () => {
     expect(p).toContain("<h3>Asociando 1</h3>");
     expect(p).toContain("Corre los tests");
     // Lo que va en una tanda no se quita; con los dos lotes en curso no se manda otro.
-    expect(p).toContain("<i>en tanda</i>");
+    expect(p).toContain('<p class="pd-estado na">The agent is working on it…</p>');
     expect(p).toMatch(/data-acc="quitar" data-tipo="test" data-k="web\/feat\|r1"[^>]*disabled/);
     expect(p).toMatch(/data-acc="pedir-todos" disabled/);
     expect(v.bandeja()).toContain("Request (3) · running");
 
-    // Terminan: r1 se resolvió, r2 no volvió; el archivo se asoció.
+    // Terminan: r1 se resolvió, r2 no volvió; el archivo se asoció. Cada ítem trae su desenlace.
     estado.lotes = [{ id: "LT", tipo: "test", estado: "terminado" }, { id: "LA", tipo: "asociar", estado: "terminado" }];
-    estado.trabajos = [{ ...estado.trabajos[0], estado: "terminado", costoUsd: 0.5, resultados: ["r1"] }, { ...estado.trabajos[1], estado: "terminado", asociados: ["web|repo-web:src/a.ts"] }];
+    estado.trabajos = [
+      { ...estado.trabajos[0], estado: "terminado", costoUsd: 0.5, resultado: "Listo.", desenlaces: [{ item: "r1", resuelto: true, cambio: { resultado: "a", tests: ["repo-web:a.test.ts::r1"] } }, { item: "r2", resuelto: false, motivo: { codigo: "sin_respuesta", agente: "Needs a database", detalle: "the agent did not return a valid outcome for this rule" } }] },
+      { ...estado.trabajos[1], estado: "terminado", desenlaces: [{ item: "web|repo-web:src/a.ts", resuelto: true, cambio: { asociado: true } }] },
+    ];
     v.tocar({ "data-acc": "cancelar-lote", "data-k": "LT" });
     await esperar();
     expect(llamadas.find((x) => x.url === "/api/agente/lote/cancelar")!.cuerpo).toEqual({ id: "LT" });
     p = v.panel();
     expect(p).toContain("Finished · Tests");
     expect(p).toContain("Actual cost: US$ 0.50");
-    expect(v.P.items("test").map((x) => x.k)).toEqual(["web/feat|r2"]);
+    // Todo lo de las tandas sale de la lista y queda con su desenlace (dec. 235), igual para los dos tipos.
+    expect(v.P.items("test")).toEqual([]);
     expect(v.P.items("asociar")).toEqual([]);
     expect(avisos).toContain("trabajos");
     expect(avisos).toContain("lista");
-    // Lo que queda se puede volver a pedir; cerrar un resumen lo oculta (y se recuerda).
-    expect(p).toContain('data-acc="pedir-todos">Request all (1)</button>');
+    expect(p).toContain("<span>1 resolved · 1 could not be resolved · listo.</span>");
+    expect(p).toContain("<small>1 resolved · 1 could not be resolved</small>");
+    expect(p).toContain('<summary>What the agent said</summary><p class="es-resultado">Listo.</p>');
+    expect(p).toContain('<p class="pd-estado no">✕ It could not resolve it: the agent didn\'t return a valid result. The agent says: «Needs a database» <small>(the agent did not return a valid outcome for this rule)</small></p>');
+    expect(p).toContain('<button type="button" class="boton chico" data-acc="otra-vez" data-tipo="test" data-k="web/feat|r2">Request again</button>');
+    expect(p).toContain('<p class="pd-estado ok">✔ Resolved by the agent · new test <code>repo-web:a.test.ts::r1</code></p>');
+    expect(p).toContain('<p class="pd-estado ok">✔ Resolved by the agent · file assigned</p>');
+    expect(p).not.toContain("Reload to see the changes");
+    // La misma marca junto a cada botón «Pedir»: resuelto, o no (y el botón dice «Pedir de nuevo»).
+    expect(v.P.boton({ tipo: "test", k: "r1", et: "Request" })).toContain('>Request</button><span class="pd-marca ok" title="Resolved by the agent: new test repo-web:a.test.ts::r1">✔ Resolved by the agent · new test <code>repo-web:a.test.ts::r1</code></span>');
+    expect(v.P.boton({ tipo: "test", k: "caso", et: "Request both" })).toContain('>Request again</button><span class="pd-marca no" title="the agent didn&#39;t return a valid result. The agent says: «Needs a database» (the agent did not return a valid outcome for this rule)">✕ It could not resolve it</span>');
+    expect(v.P.boton({ tipo: "asociar", k: "a", et: "Request" })).toContain("✔ Resolved by the agent · file assigned");
+    // La bandeja avisa que terminó (la pantalla del tipo no se estaba mirando) hasta que se abre el panel.
+    expect(v.bandeja()).toContain('<span class="pd-aviso"');
+    expect(v.bandeja()).toContain("finished: ✔ 2 · ✕ 1</span>");
+    v.tocar({ "data-acc": "panel" });
+    v.tocar({ "data-acc": "panel" });
+    expect(v.bandeja()).not.toContain("pd-aviso");
+    // «Pedir de nuevo» lo vuelve a sumar, con su marca fuera.
+    v.tocar({ "data-acc": "otra-vez", "data-tipo": "test", "data-k": "web/feat|r2" });
+    expect(v.P.items("test").map((x) => x.k)).toEqual(["web/feat|r2"]);
+    expect(v.P.boton({ tipo: "test", k: "caso", et: "Request both" })).not.toContain("pd-marca");
+    expect(v.panel()).toContain('data-acc="pedir-todos">Request all (1)</button>');
+    // Cerrar un resumen lo oculta (y se recuerda), con los desenlaces de ese lote.
     v.tocar({ "data-acc": "cerrar-lote", "data-k": "LT" });
+    expect(v.P.boton({ tipo: "test", k: "r1", et: "Request" })).not.toContain("pd-marca");
+    expect(v.P.boton({ tipo: "asociar", k: "a", et: "Request" })).toContain("pd-marca ok");
     expect(v.panel()).not.toContain('data-tipo="test"><div class="es-cab"><h3>Finished');
     expect(v.guardado().ocultos).toEqual(["LT"]);
     // Una tanda limpia la lista una sola vez: si se vuelve a pedir r1, queda.

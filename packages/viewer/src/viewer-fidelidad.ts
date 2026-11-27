@@ -261,8 +261,6 @@ export const FIDELIDAD_JS = String.raw`
     Object.keys(g).forEach(function (k) { n += Math.ceil(g[k] / TANDA); });
     return n;
   }
-  var cifrasLote = function (c, p) { return L(num(c) + " without the requested gaps · " + num(p) + " with gaps left", plural(c, "sin las faltas pedidas", "sin las faltas pedidas") + " · " + plural(p, "con faltas todavía", "con faltas todavía")); };
-  var cuentaDe = function (ts, k) { return ts.reduce(function (n, t) { return n + (t[k] || []).length; }, 0); };
   if (F) PD.registrar("fidelidad", {
     get nombre() { return L("Files to bring to 100", "Archivos a llevar a 100"); },
     unidad: ["file", "files", "archivo", "archivos"],
@@ -282,31 +280,17 @@ export const FIDELIDAD_JS = String.raw`
     },
     md: { archivo: "fidelity-plan.md", texto: function (es) { return textoDelPlan(es.map(function (e) { return e.datos; })); } },
     clave: function (it) { return claveServidor(it.datos); },
-    enTanda: function (t) { return (t.archivos || []).map(claveServidor); },
-    hechos: function (t) { return (t.completados || []).map(claveServidor); },
+    tanda: { lista: "archivos", clave: claveServidor },
     seguimiento: {
-      cuantos: function (t) { return (t.archivos || []).length; },
-      get espera() { return L("Waits for the previous batch of this brain to finish.", "Espera a que termine la tanda anterior de este cerebro."); },
-      get reindexando() { return L("Finishing…", "Terminando…"); },
       pidiendo: function (n, repos) { return L("Bringing " + plural(n, "file", "files") + " to 100 in " + plural(repos, "repo", "repos"), "Llevando " + plural(n, "archivo", "archivos") + " a 100 en " + plural(repos, "repo", "repos")); },
-      extraTanda: function (t) {
-        if (PD.vivo(t) || (!t.completados && !t.pendientes)) return "";
-        return "<small>" + cifrasLote((t.completados || []).length, (t.pendientes || []).length) + "</small>" +
-          (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
-      },
-      resumen: function (ts) {
-        var p = cuentaDe(ts, "pendientes");
-        return cifrasLote(cuentaDe(ts, "completados"), p) + (p ? L(" (what is left stays in the list: each batch says why)", " (lo que quedó sigue en la lista: cada tanda dice por qué)") : "");
-      }
     },
     // La tarjeta: el archivo, su puntaje, qué le falta (por relación, con sus líneas) y el cerebro.
-    tarjeta: function (it, enTanda) {
+    tarjeta: function (it) {
       var d = it.datos, x = porArchivo(d.a), ps = x ? partes(x) : { ruta: d.archivo, repo: "" };
       var faltas = d.t.map(function (t) { return '<span class="chip" title="' + esc(t[1]) + '">' + esc(SIGNAL(t[0])) + (t[2].length ? " · " + lineas(t[2]) : "") + "</span>"; }).join("");
       return '<p class="es-texto"><code>' + esc(ps.ruta) + "</code>" + (ps.repo ? " <small>" + esc(ps.repo) + "</small>" : "") + "</p>" +
         '<div class="chips"><span class="chip" style="color:' + tono(d.p) + ";border-color:" + tono(d.p) + '" title="' + L("Fidelity score", "Puntaje de fidelidad") + '">' + d.p + "/100</span>" + faltas +
-        (CEREBROS.length > 1 ? '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(d.cerebro) + "</span>" : "") +
-        (enTanda ? '<span class="chip es-ok">' + L("Resolving…", "Resolviéndose…") + "</span>" : "") + "</div>";
+        (CEREBROS.length > 1 ? '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(d.cerebro) + "</span>" : "") + "</div>";
     }
   });
   // Arriba de la lista: qué relaciones pedir y «Pedir los N de la lista».

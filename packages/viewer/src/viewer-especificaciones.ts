@@ -719,27 +719,22 @@ export const ESPECIFICACIONES_JS = String.raw`
     costo: function (mo) { return typeof mo.costoPorReglaUsd === "number" ? mo.costoPorReglaUsd : null; },
     lote: function (its) { return { tipo: "test", reglas: its.map(function (it) { var x = it.datos; return { cerebro: x.cerebro, funcionalidad: x.funcionalidad, regla: x.regla, repo: x.repo, linea: lineaDeRegla(x) }; }) }; },
     md: { archivo: "tests-pedidos.md", texto: function (its) { return mdDeLista(its.map(function (it) { return it.datos; })); } },
-    // En una tanda, la regla se reconoce por cerebro, funcionalidad y regla: lo que tiene resultado sale de la lista.
+    // En una tanda, la regla se reconoce por cerebro, funcionalidad y regla.
     clave: function (it) { return claveDeEntrada(it.datos); },
-    enTanda: function (t) { return (t.reglas || []).map(claveDeEntrada); },
-    hechos: function (t) { return (t.resultados || []).map(claveDeEntrada); },
+    tanda: { lista: "reglas", clave: claveDeEntrada },
     seguimiento: {
-      cuantos: function (t) { return (t.reglas || []).length; },
       get reindexando() { return L("Updating the index so the new tests count…", "Actualizando el índice para que los tests nuevos cuenten…"); },
       pidiendo: function (n, repos) { return L("Requesting " + plural(n, "rule", "rules") + " in " + plural(repos, "repo", "repos") + " at once", "Pidiendo " + plural(n, "regla", "reglas") + " en " + plural(repos, "repo", "repos") + " a la vez"); },
-      extraTanda: function (t) { return (t.sinResultado || []).length ? '<p class="fd-nota">' + L("No result: ", "Sin resultado: ") + pl(t.sinResultado.length, "rule", "rules", "regla", "reglas") + L(". They stay in the list to request them again. ", ". Siguen en la lista para pedirlas de nuevo. ") + esc(t.sinResultado[0].motivo) + "</p>" : ""; },
       resumen: function (ts) {
         var R = resumenDeLote(ts);
         return L(R.a + " verified with a new test · " + R.b + " already covered · " + R.c + " with code that doesn't fulfill it · " + R.d + " that can't be tested without touching code",
-          R.a + " verificadas con un test nuevo · " + R.b + " ya cubiertas · " + R.c + " con el código que no la cumple · " + R.d + " que no se pueden testear sin tocar código") +
-          (R.sin ? " · " + L(R.sin + " without a result", R.sin + " sin resultado") : "");
+          R.a + " verificadas con un test nuevo · " + R.b + " ya cubiertas · " + R.c + " con el código que no la cumple · " + R.d + " que no se pueden testear sin tocar código");
       }
     },
-    tarjeta: function (it, enTanda) {
+    tarjeta: function (it) {
       var x = it.datos;
       return '<p class="es-texto">' + esc(x.texto) + '</p><div class="chips"><span class="chip ' + (x.tipo === "negocio" ? "es-neg" : "") + '" title="' + esc(QUE_ES[x.tipo] || "") + '">' + (x.tipo === "negocio" ? L("Business", "De negocio") : L("Screen", "De pantalla")) + "</span>" +
-          (x.caso ? '<span class="chip" title="' + L("Use case", "Caso de uso") + '">' + esc(x.casoNombre) + "</span>" : '<span class="chip">' + L("No use case", "Sin caso de uso") + "</span>") + '<span class="chip" title="' + L("Feature", "Funcionalidad") + '">' + esc(x.funcNombre) + '</span><span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span>" +
-          (enTanda ? '<span class="chip es-ok">' + L("Requesting…", "Pidiéndose…") + "</span>" : "") + "</div>" +
+          (x.caso ? '<span class="chip" title="' + L("Use case", "Caso de uso") + '">' + esc(x.casoNombre) + "</span>" : '<span class="chip">' + L("No use case", "Sin caso de uso") + "</span>") + '<span class="chip" title="' + L("Feature", "Funcionalidad") + '">' + esc(x.funcNombre) + '</span><span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span></div>" +
           '<small class="es-archivo">' + (x.archivos.length ? L("Fulfilled by: ", "La cumple: ") + x.archivos.map(function (a) { return "<code>" + esc(a.replace(/#L\d+$/, "")) + "</code>"; }).join(" ") : L("Doesn't say which file fulfills it", "No dice qué archivo la cumple")) + "</small>";
     },
     // Los resultados del último lote: verificadas, para decidir, la regla se corrige y para desarrollo.
@@ -757,10 +752,7 @@ export const ESPECIFICACIONES_JS = String.raw`
   // ---------- Agrupar, escribir y corregir: tipos del pedido al agente (dec. 230) ----------
   // Igual que los tests: «Pedir» suma al pedido y «Pedir todos» los manda en lote; el servidor los reparte en tandas,
   // compila y mira en las páginas qué quedó resuelto (eso sale de la lista; lo demás queda para pedirlo de nuevo).
-  var cifrasPaginas = function (r, q) { return L(num(r) + " resolved · " + num(q) + " left", num(r) + " resueltos · " + num(q) + " quedan"); };
-  var cuentaDe = function (ts, campo) { return ts.reduce(function (n, t) { return n + (t[campo] || []).length; }, 0); };
   var chipCerebro = function (x) { return '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span>"; };
-  var chipTanda = function (enTanda, en, es) { return enTanda ? '<span class="chip es-ok">' + L(en, es) + "</span>" : ""; };
   function registrarPaginas(tipo, d) {
     PD.registrar(tipo, {
       get nombre() { return d.nombre(); },
@@ -781,23 +773,8 @@ export const ESPECIFICACIONES_JS = String.raw`
       },
       md: { archivo: d.archivo, texto: function (its) { return mdDePaginas(tipo, its); } },
       clave: function (it) { return claveDePagina(it.datos); },
-      enTanda: function (t) { return (t.items || []).map(claveDePagina); },
-      hechos: function (t) { return (t.resueltos || []).map(claveDePagina); },
-      seguimiento: {
-        cuantos: function (t) { return (t.items || []).length; },
-        get espera() { return L("Waits for the previous batch to finish: they edit the same pages.", "Espera a que termine la tanda anterior: editan las mismas páginas."); },
-        get reindexando() { return L("Finishing…", "Terminando…"); },
-        pidiendo: d.pidiendo,
-        extraTanda: function (t) {
-          if (PD.vivo(t) || (!t.resueltos && !t.quedan)) return "";
-          return "<small>" + cifrasPaginas((t.resueltos || []).length, (t.quedan || []).length) + "</small>" +
-            (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
-        },
-        resumen: function (ts) {
-          var q = cuentaDe(ts, "quedan");
-          return cifrasPaginas(cuentaDe(ts, "resueltos"), q) + (q ? L(" (each batch says why; they stay in the list to request them again)", " (cada tanda dice por qué; siguen en la lista para pedirlos de nuevo)") : "");
-        }
-      },
+      tanda: { lista: "items", clave: claveDePagina },
+      seguimiento: { pidiendo: d.pidiendo },
       tarjeta: d.tarjeta
     });
   }
@@ -807,9 +784,9 @@ export const ESPECIFICACIONES_JS = String.raw`
     unidad: FEAT, archivo: "agrupar-casos.md",
     resumen: function (its) { var n = its.reduce(function (s, it) { return s + it.datos.n; }, 0); return [pl(n, "rule without a use case", "rules without a use case", "regla sin caso de uso", "reglas sin caso de uso")]; },
     pidiendo: function (n) { return L("Grouping the rules of " + plural(n, "feature", "features"), "Agrupando las reglas de " + plural(n, "funcionalidad", "funcionalidades")); },
-    tarjeta: function (it, enTanda) {
+    tarjeta: function (it) {
       var x = it.datos;
-      return '<p class="es-texto">' + esc(x.nombre) + '</p><div class="chips"><span class="chip es-aviso">' + pl(x.n, "rule without a use case", "rules without a use case", "regla sin caso de uso", "reglas sin caso de uso") + "</span>" + chipCerebro(x) + chipTanda(enTanda, "Grouping…", "Agrupándose…") + "</div>";
+      return '<p class="es-texto">' + esc(x.nombre) + '</p><div class="chips"><span class="chip es-aviso">' + pl(x.n, "rule without a use case", "rules without a use case", "regla sin caso de uso", "reglas sin caso de uso") + "</span>" + chipCerebro(x) + "</div>";
     }
   });
   registrarPaginas("escribir", {
@@ -818,9 +795,9 @@ export const ESPECIFICACIONES_JS = String.raw`
     orden: function (a, b) { return b.datos.n - a.datos.n; },
     resumen: function (its) { var sin = its.filter(function (it) { return !it.datos.n; }).length; return [L("The ones with more tests go first", "Las que más tests tienen van primero"), sin ? pl(sin, "without tests: deduced from the code", "without tests: deduced from the code", "sin tests: se deduce del código", "sin tests: se deducen del código") : ""]; },
     pidiendo: function (n) { return L("Writing the use cases of " + plural(n, "feature", "features"), "Escribiendo los casos de uso de " + plural(n, "funcionalidad", "funcionalidades")); },
-    tarjeta: function (it, enTanda) {
+    tarjeta: function (it) {
       var x = it.datos;
-      return '<p class="es-texto">' + esc(x.nombre) + '</p><div class="chips"><span class="chip">' + (x.n ? pl(x.n, "test case", "test cases", "caso de test", "casos de test") : L("No tests", "Sin tests")) + "</span>" + chipCerebro(x) + chipTanda(enTanda, "Writing…", "Escribiéndose…") + "</div>";
+      return '<p class="es-texto">' + esc(x.nombre) + '</p><div class="chips"><span class="chip">' + (x.n ? pl(x.n, "test case", "test cases", "caso de test", "casos de test") : L("No tests", "Sin tests")) + "</span>" + chipCerebro(x) + "</div>";
     }
   });
   registrarPaginas("corregir", {
@@ -828,9 +805,9 @@ export const ESPECIFICACIONES_JS = String.raw`
     unidad: ["fix", "fixes", "corrección", "correcciones"], archivo: "corregir.md",
     resumen: function (its) { var r = its.filter(function (it) { return it.datos.regla; }).length; return [pl(its.length - r, "use case marked as wrong", "use cases marked as wrong", "caso marcado como mal", "casos marcados como mal") + " · " + pl(r, "rule that is wrong", "rules that are wrong", "regla que está mal", "reglas que están mal")]; },
     pidiendo: function (n) { return L("Fixing " + plural(n, "use case or rule", "use cases and rules"), "Corrigiendo " + plural(n, "caso o regla", "casos y reglas")); },
-    tarjeta: function (it, enTanda) {
+    tarjeta: function (it) {
       var x = it.datos;
-      return '<p class="es-texto">' + esc(x.regla ? x.texto : x.casoNombre) + '</p><div class="chips"><span class="chip es-falta">' + (x.regla ? L("The rule is wrong", "La regla está mal") : L("Marked as wrong", "Marcado como mal")) + '</span><span class="chip" title="' + L("Feature", "Funcionalidad") + '">' + esc(x.nombre) + "</span>" + chipCerebro(x) + chipTanda(enTanda, "Fixing…", "Corrigiéndose…") + "</div>" +
+      return '<p class="es-texto">' + esc(x.regla ? x.texto : x.casoNombre) + '</p><div class="chips"><span class="chip es-falta">' + (x.regla ? L("The rule is wrong", "La regla está mal") : L("Marked as wrong", "Marcado como mal")) + '</span><span class="chip" title="' + L("Feature", "Funcionalidad") + '">' + esc(x.nombre) + "</span>" + chipCerebro(x) + "</div>" +
         "<small>" + (x.regla ? L("The code today: ", "Hoy el código: ") + esc(x.hoy) : "«" + esc(x.problema) + "»") + "</small>";
     }
   });

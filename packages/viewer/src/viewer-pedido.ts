@@ -19,14 +19,15 @@
  *   es varios] («rule», «rules», «regla», «reglas»);
  * - `raiz`: el elemento de la pantalla con sus botones `pedir`; `claves(k)`: las claves de ítem que suma el botón `k`;
  *   `items(k)`: esos ítems armados (`claves(k, memo)`: memo dura una pasada sobre los botones); `repintar?()`: si los botones no se pueden marcar sin repintar;
- * - `tarjeta(item, enTanda)`: el HTML de la tarjeta; `orden?(a, b)`; `resumen?(items)`: textos bajo el total del tipo;
+ * - `tarjeta(item)`: el HTML de la tarjeta (el estado, «El agente lo está resolviendo…» o cómo terminó, lo pone el componente); `orden?(a, b)`; `resumen?(items)`: textos bajo el total del tipo;
  *   `notas?(items)`: avisos del tipo; `costo(modelo, item)`: US$ estimado de ese ítem (el mismo para todos, si el tipo
  *   no distingue), o null si ese modelo no tiene estimación;
  * - `lote(items)`: el cuerpo de `/api/agente/lote` sin proveedor ni modelo (`{ tipo, reglas }` o `{ tipo, archivos }`);
  *   `md`: `{ archivo, texto(items) }`, el .md para cualquier agente (en inglés);
- * - el seguimiento: `clave?(item)` (con qué se reconoce el ítem en una tanda; por defecto `k`), `enTanda(t)` y
- *   `hechos(t)` (las claves que la tanda lleva y las que resolvió: salen de la lista), y `seguimiento` (lo que dice el
- *   lote: `cuantos(t)`, `pidiendo(n, repos)`, `reindexando`, `espera?`, `extraTanda?(t)`, `resumen(ts)`);
+ * - el seguimiento: `clave?(item)` (con qué se reconoce el ítem de la lista en una tanda; por defecto `k`), `tanda`
+ *   (`{ lista, clave }`: en qué campo de la tanda vienen sus ítems y la clave de cada uno, la misma que `clave(item)`),
+ *   y `seguimiento` (lo que dice el lote: `pidiendo(n, repos)`, `reindexando?`, `resumen?(ts)`: lo que el tipo suma
+ *   al resumen común);
  * - `despues?()`: lo que va al final del panel (los resultados de los tests; puede llevar botones `boton(...)`, que el
  *   panel atiende igual que en la pantalla); `bandeja?()`: lo que suma la bandeja («2 para decidir»); `enlace?()`: un
  *   enlace que va al lado de la bandeja, fuera del botón («3 borradores para revisar», cuando un lote dejó borradores);
@@ -35,6 +36,14 @@
  * Un botón de un tipo puede estar en otra pantalla que la que lo registró (la ficha de una funcionalidad pide
  * «escribir», que es de Especificaciones: mismo tipo y clave, así el botón dice «✔ En el pedido» en las dos). Esa
  * pantalla avisa dónde pinta con `raiz(el)`, y el componente marca ahí también los botones de cualquier tipo.
+ *
+ * Cómo termina cada ítem (dec. 235): el servidor devuelve en cada tanda sus `desenlaces` (`{ item, resuelto, cambio,
+ * motivo }`, igual para todos los tipos). Al terminar la tanda, sus ítems salen de la lista y quedan en `res` con su
+ * estado: «✔ Resuelto por el agente» (con lo que cambió) o «No lo pudo resolver» (con el motivo y «Pedir de nuevo»,
+ * que lo vuelve a sumar). El estado se ve en el panel y junto a cada botón «Pedir» de las pantallas (`marca`, pintada
+ * por `boton` y puesta al día por `marcar`, sin repintar). Al terminar un lote que cambió algo, la página se recarga
+ * sola (cuando nadie está escribiendo) y vuelve a la misma pantalla y scroll: los filtros y la lista ya viven en este
+ * navegador. Si terminó mientras se miraba otra pantalla (o con el panel cerrado), la bandeja lo avisa.
  *
  * Lo que va al modelo, solo en inglés (dec. 214). JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
@@ -59,7 +68,9 @@ export const PEDIDO_JS = String.raw`
   var leer = function (k) { try { if (typeof localStorage !== "undefined") { var v = localStorage.getItem(k); if (v !== null) return JSON.parse(v); } } catch (e) { /* sin almacenamiento */ } return null; };
   var borrar = function (k) { try { if (typeof localStorage !== "undefined" && localStorage.removeItem) localStorage.removeItem(k); } catch (e) { /* sin almacenamiento */ } };
   var valido = function (x) { return x && typeof x.tipo === "string" && typeof x.k === "string" && x.datos && typeof x.datos === "object"; };
-  // E: { items, panel (abierto), elegido: { proveedor, modelo }, limpios: tandas cuyo resultado ya limpió la lista, ocultos: lotes con el resumen cerrado }.
+  // E: { items, panel (abierto), elegido: { proveedor, modelo }, limpios: tandas cuyo resultado ya limpió la lista, ocultos: lotes con el resumen cerrado,
+  // res: "tipo|k" → cómo terminó ese ítem { l: lote, ok, c: cambio, m: motivo, it: el ítem, para pedirlo de nuevo }, seguidos: lotes vistos
+  // corriendo (al terminar se avisa y se recarga), avisos: lotes que terminaron sin que se los mirara { l, ok, no } }.
   var E = leer(CLAVE);
   if (!E || typeof E !== "object") E = migrar();
   E = {
@@ -67,12 +78,15 @@ export const PEDIDO_JS = String.raw`
     panel: E.panel === true,
     elegido: E.elegido && typeof E.elegido === "object" ? { proveedor: String(E.elegido.proveedor || ""), modelo: String(E.elegido.modelo || "") } : { proveedor: "", modelo: "" },
     limpios: Array.isArray(E.limpios) ? E.limpios : [],
-    ocultos: Array.isArray(E.ocultos) ? E.ocultos : []
+    ocultos: Array.isArray(E.ocultos) ? E.ocultos : [],
+    res: E.res && typeof E.res === "object" && !Array.isArray(E.res) ? E.res : {},
+    seguidos: Array.isArray(E.seguidos) ? E.seguidos : [],
+    avisos: Array.isArray(E.avisos) ? E.avisos : []
   };
   if (!E.items.length) E.panel = false;
   // Las listas de antes (una por pantalla) pasan a la clave nueva, con su tipo; las claves viejas se borran.
   function migrar() {
-    var out = { items: [], panel: false, elegido: null, limpios: [], ocultos: [] };
+    var out = { items: [], panel: false, elegido: null, limpios: [], ocultos: [], res: {}, seguidos: [], avisos: [] };
     var viejas = [["flowbrain.especificaciones.pedidos", "test"], ["flowbrain.sinasociar.pedidos", "asociar"]];
     viejas.forEach(function (v) {
       var xs = leer(v[0]);
@@ -95,7 +109,7 @@ export const PEDIDO_JS = String.raw`
     return out;
   }
   function guardar() {
-    try { if (typeof localStorage !== "undefined") localStorage.setItem(CLAVE, JSON.stringify({ v: 1, items: E.items, panel: E.panel, elegido: E.elegido, limpios: E.limpios.slice(-400), ocultos: E.ocultos.slice(-60) })); } catch (e) { /* sin almacenamiento */ }
+    try { if (typeof localStorage !== "undefined") localStorage.setItem(CLAVE, JSON.stringify({ v: 1, items: E.items, panel: E.panel, elegido: E.elegido, limpios: E.limpios.slice(-400), ocultos: E.ocultos.slice(-60), res: E.res, seguidos: E.seguidos.slice(-20), avisos: E.avisos.slice(-10) })); } catch (e) { /* sin almacenamiento */ }
   }
   // Índice tipo|k → ítem, para saber de un vistazo si algo ya está en la lista.
   var INDICE = {};
@@ -175,32 +189,69 @@ export const PEDIDO_JS = String.raw`
     p.then(function (j) {
       TRABAJOS = j.trabajos || []; LOTES = j.lotes || [];
       limpiar();
+      var recargar = terminar();
       avisar("trabajos"); pintar();
+      if (recargar) { recargarSola(); return; }
       if (TRABAJOS.some(vivo) || LOTES.some(loteVivo)) ESPERA = setTimeout(actualizar, 2000);
     }).catch(function () { ESPERA = setTimeout(actualizar, 5000); });
   }
-  // Lo que una tanda ya resolvió sale de la lista, una sola vez por tanda: lo que no volvió queda para reintentar.
+  var loteConId = function (id) { for (var i = 0; i < LOTES.length; i++) if (LOTES[i].id === id) return LOTES[i]; return null; };
+  // Cada tanda que terminó, una sola vez: sus ítems salen de la lista y quedan con su desenlace (resuelto o no, y por
+  // qué). Una tanda sin desenlaces (cancelada antes de empezar) deja lo suyo en la lista.
   function limpiar() {
     var antes = E.items.length, cambio = false;
     TRABAJOS.forEach(function (t) {
       if (!t.lote || vivo(t) || E.limpios.indexOf(t.id) >= 0) return;
-      var LT = null; LOTES.forEach(function (l) { if (l.id === t.lote) LT = l; });
-      var d = LT ? def(tipoDeLote(LT)) : null;
+      var LT = loteConId(t.lote), tipo = LT ? tipoDeLote(LT) : "", d = def(tipo);
       if (!d) return;
       E.limpios.push(t.id); cambio = true;
-      var hechos = {}; (d.hechos ? d.hechos(t) : []).forEach(function (c) { hechos[c] = true; });
-      E.items = E.items.filter(function (x) { return x.tipo !== tipoDeLote(LT) || !hechos[claveDe(x)]; });
+      if (!Array.isArray(t.desenlaces)) return;
+      var porClave = {}, fuera = {}, cl = tandaDe(d).clave;
+      E.items.forEach(function (x) { if (x.tipo === tipo) porClave[claveDe(x)] = x; });
+      t.desenlaces.forEach(function (ds) {
+        var c = cl(ds.item), x = porClave[c];
+        E.res[tipo + "|" + (x ? x.k : c)] = { l: LT.id, ok: !!ds.resuelto, c: ds.cambio || null, m: ds.motivo || null, it: x || null };
+        if (x) fuera[x.k] = true;
+      });
+      E.items = E.items.filter(function (x) { return x.tipo !== tipo || !fuera[x.k]; });
     });
-    if (E.items.length !== antes) { indexar(); avisar("lista"); marcar(); }
-    if (cambio) guardar();
+    if (E.items.length !== antes) { indexar(); avisar("lista"); }
+    if (cambio) { guardar(); marcar(); }
   }
+  // Los lotes que se vieron corriendo y ya terminaron: la bandeja avisa si no se los estaba mirando, y si cambiaron
+  // algo después de que se cargó esta página, hay que traer los datos nuevos (devuelve true).
+  var CARGADA = Date.now();
+  function terminar() {
+    var recargar = false, cambio = false;
+    LOTES.forEach(function (LT) {
+      var i = E.seguidos.indexOf(LT.id);
+      if (loteVivo(LT)) { if (i < 0) { E.seguidos.push(LT.id); cambio = true; } return; }
+      if (i < 0) return;
+      E.seguidos.splice(i, 1); cambio = true;
+      var ts = tandas(LT), c = cuentaRes(LT.id), d = def(tipoDeLote(LT));
+      if (!E.panel || !d || !enPantalla(d.raiz)) E.avisos = E.avisos.filter(function (a) { return a.l !== LT.id; }).concat([{ l: LT.id, ok: c.ok, no: c.no }]);
+      var fin = ts.reduce(function (m, t) { return Math.max(m, t.terminado || 0); }, 0);
+      if (fin >= CARGADA && (c.ok || ts.some(function (t) { return t.cambios && t.cambios.length; }))) recargar = true;
+    });
+    if (cambio) guardar();
+    return recargar;
+  }
+  // Si un elemento se ve: ni él ni lo que lo contiene está oculto (las pantallas que no se miran llevan «oculto»).
+  function enPantalla(el) {
+    for (var n = el; n && n.classList; n = n.parentNode) if (n.classList.contains("oculto")) return false;
+    return !!el;
+  }
+  var cuentaRes = function (l) { var c = { ok: 0, no: 0 }; Object.keys(E.res).forEach(function (k) { var r = E.res[k]; if (r.l === l) c[r.ok ? "ok" : "no"]++; }); return c; };
   var claveDe = function (x) { var d = def(x.tipo); return d && d.clave ? d.clave(x) : x.k; };
+  // Dónde vienen los ítems de un tipo en una tanda, y con qué clave.
+  var tandaDe = function (d) { return d && d.tanda ? d.tanda : { lista: "items", clave: function (x) { return x.k; } }; };
+  var deLaTanda = function (d, t) { var o = tandaDe(d); return t[o.lista] || []; };
   function enTandas() {
     var m = {};
     lotesVisibles().forEach(function (LT) {
       if (!loteVivo(LT)) return;
       var d = def(tipoDeLote(LT));
-      if (d && d.enTanda) tandas(LT).forEach(function (t) { if (vivo(t)) d.enTanda(t).forEach(function (c) { m[tipoDeLote(LT) + "|" + c] = true; }); });
+      if (d) tandas(LT).forEach(function (t) { if (vivo(t)) deLaTanda(d, t).forEach(function (x) { m[tipoDeLote(LT) + "|" + tandaDe(d).clave(x)] = true; }); });
     });
     return m;
   }
@@ -223,10 +274,19 @@ export const PEDIDO_JS = String.raw`
       var fuera = {}; xs.forEach(function (x) { fuera[x.k] = true; });
       E.items = E.items.filter(function (x) { return x.tipo !== tipo || !fuera[x.k]; });
     } else {
-      xs.forEach(function (x) { if (!esta(tipo, x.k)) { E.items.push(x); INDICE[tipo + "|" + x.k] = x; } });
+      xs.forEach(function (x) { if (!esta(tipo, x.k)) { E.items.push(x); INDICE[tipo + "|" + x.k] = x; delete E.res[tipo + "|" + x.k]; } });
       E.panel = true;
     }
     ERROR = "";
+    cambio();
+  }
+  // «Pedir de nuevo» desde el panel: vuelve a la lista el mismo ítem que se había pedido.
+  function otraVez(tipo, k) {
+    var r = E.res[tipo + "|" + k];
+    if (!r || !valido(r.it)) return;
+    delete E.res[tipo + "|" + k];
+    if (!esta(tipo, r.it.k)) E.items.push(r.it);
+    E.panel = true; ERROR = "";
     cambio();
   }
   function quitar(tipo, k) { E.items = E.items.filter(function (x) { return x.tipo !== tipo || x.k !== k; }); cambio(); }
@@ -244,13 +304,49 @@ export const PEDIDO_JS = String.raw`
   var TEXTOS = {
     get ya() { return L("✔ In the request", "✔ En el pedido"); },
     get titulo() { return L("Adds it to the request to the agent: nothing is sent until «Request all», in the panel", "Lo suma al pedido al agente: no se manda nada hasta «Pedir todos», en el panel"); },
-    get tituloYa() { return L("Click to remove it from the request", "Tocalo para sacarlo del pedido"); }
+    get tituloYa() { return L("Click to remove it from the request", "Tocalo para sacarlo del pedido"); },
+    get otraVez() { return L("Request again", "Pedir de nuevo"); },
+    get resuelto() { return L("Resolved by the agent", "Resuelto por el agente"); },
+    get noPudo() { return L("It could not resolve it", "No lo pudo resolver"); },
+    get trabajando() { return L("The agent is working on it…", "El agente lo está resolviendo…"); }
   };
+  // Lo que cambió un ítem resuelto y por qué no se resolvió otro, en el idioma de la página (HTML).
+  function textoCambio(c) {
+    if (!c) return "";
+    var codigo = function (x) { return "<code>" + esc(x) + "</code>"; };
+    if (c.resultado) return ({ a: L("new test", "test nuevo"), b: L("it already had a test", "ya tenía test"), c: L("the code doesn't fulfill it: to decide", "el código no la cumple: para decidir"), d: L("it can't be tested without touching the code", "no se puede testear sin tocar el código") })[c.resultado] + (c.tests && c.tests.length ? " " + c.tests.map(codigo).join(" ") : "");
+    if (c.asociado) return L("file assigned", "archivo asociado");
+    if (c.puntaje) return L("score ", "puntaje ") + num(c.puntaje.antes) + " → " + (c.puntaje.despues === null || c.puntaje.despues === undefined ? "—" : num(c.puntaje.despues));
+    if (c.corregido) return L("no longer in the drift", "ya no está en la deriva");
+    if (c.borrador) return '<a href="#/borradores">' + L("new draft to review", "borrador nuevo para revisar") + "</a>";
+    if (c.pagina) return L("page updated: ", "página actualizada: ") + codigo(c.pagina);
+    return "";
+  }
+  function textoMotivo(m) {
+    if (!m) return "";
+    var T = { sigue: L("after the batch it is still pending", "después de la tanda sigue pendiente"), fallo: L("the batch failed", "la tanda falló"), cancelado: L("the batch was canceled", "la tanda se canceló"), sin_respuesta: L("the agent didn't return a valid result", "el agente no devolvió un resultado válido") };
+    return (T[m.codigo] || esc(m.codigo)) + (m.agente ? ". " + L("The agent says: ", "El agente dice: ") + "«" + esc(m.agente) + "»" : "") + (m.detalle ? ' <small>(' + esc(m.detalle) + ")</small>" : "");
+  }
+  var plano = function (h) { return String(h).replace(/<[^>]+>/g, "").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&"); };
+  // El estado de un botón: null (no hay desenlace de todo lo que suma, o algo está en la lista), resuelto o no.
+  function estadoDe(tipo, ks) {
+    if (!ks || !ks.length || ks.some(function (c) { return esta(tipo, c); })) return null;
+    var rs = ks.map(function (c) { return E.res[tipo + "|" + c]; });
+    if (rs.some(function (r) { return !r; })) return null;
+    var no = rs.filter(function (r) { return !r.ok; });
+    return { ok: !no.length, r: no.length ? no[0] : rs[0], uno: rs.length === 1 };
+  }
+  // La marca junto al botón: la misma en todas las pantallas.
+  function htmlMarca(e) {
+    if (!e) return "";
+    if (e.ok) { var c = e.uno ? textoCambio(e.r.c) : ""; return '<span class="pd-marca ok" title="' + esc(TEXTOS.resuelto + (c ? ": " + plano(c) : "")) + '">✔ ' + TEXTOS.resuelto + (c ? " · " + c : "") + "</span>"; }
+    return '<span class="pd-marca no" title="' + esc(plano(textoMotivo(e.r.m))) + '">✕ ' + TEXTOS.noPudo + "</span>";
+  }
   // o: { tipo, k, et: lo que dice sin sumar, claves?: las claves de ítem que suma (si no, def.claves(k)) }. La
   // pantalla atiende data-acc="pedir" con sumar(tipo, k).
   function boton(o) {
-    var y = ya(o.tipo, o.k, o.claves) === true;
-    return '<button type="button" class="boton es-pedir' + (y ? " en-lista" : "") + '" data-acc="pedir" data-tipo="' + esc(o.tipo) + '" data-k="' + esc(o.k) + '" data-et="' + esc(o.et) + '" aria-pressed="' + y + '" title="' + esc(y ? TEXTOS.tituloYa : TEXTOS.titulo) + '">' + esc(y ? TEXTOS.ya : o.et) + "</button>";
+    var d = def(o.tipo), ks = o.claves || (d && d.claves ? d.claves(o.k, {}) : []), y = ya(o.tipo, o.k, ks) === true, e = y ? null : estadoDe(o.tipo, ks);
+    return '<button type="button" class="boton es-pedir' + (y ? " en-lista" : "") + '" data-acc="pedir" data-tipo="' + esc(o.tipo) + '" data-k="' + esc(o.k) + '" data-et="' + esc(o.et) + '" aria-pressed="' + y + '" title="' + esc(y ? TEXTOS.tituloYa : TEXTOS.titulo) + '">' + esc(y ? TEXTOS.ya : e && !e.ok ? TEXTOS.otraVez : o.et) + "</button>" + htmlMarca(e);
   }
   // Cambia los botones ya pintados sin repintar la pantalla (así no se cierra lo que se estaba mirando).
   function marcar() {
@@ -262,42 +358,78 @@ export const PEDIDO_JS = String.raw`
       for (var i = 0; i < bs.length; i++) {
         var b = bs[i];
         if (b.getAttribute("data-tipo") !== tipo) continue;
-        var y = ya(tipo, b.getAttribute("data-k"), null, memo);
+        var ks = d.claves ? d.claves(b.getAttribute("data-k"), memo) : null, y = ya(tipo, b.getAttribute("data-k"), ks, memo);
         if (y === null) continue;
+        var e = y ? null : estadoDe(tipo, ks);
         b.setAttribute("aria-pressed", String(y));
         b.setAttribute("title", y ? TEXTOS.tituloYa : TEXTOS.titulo);
         if (b.classList) { if (y) b.classList.add("en-lista"); else b.classList.remove("en-lista"); }
-        b.textContent = y ? TEXTOS.ya : (b.getAttribute("data-et") || "");
+        b.textContent = y ? TEXTOS.ya : e && !e.ok ? TEXTOS.otraVez : (b.getAttribute("data-et") || "");
+        ponerMarca(b, htmlMarca(e));
       }
     });
   }
 
+  // La marca va justo después del botón: se cambia, se pone o se saca sin tocar lo demás.
+  function ponerMarca(b, h) {
+    var sig = b.nextElementSibling, tiene = !!(sig && sig.classList && sig.classList.contains("pd-marca"));
+    if (tiene && !h) { sig.parentNode.removeChild(sig); return; }
+    if (!h) return;
+    if (tiene) { if (sig.outerHTML !== h) sig.outerHTML = h; }
+    else if (b.insertAdjacentHTML) b.insertAdjacentHTML("afterend", h);
+  }
+
   // ---------- El seguimiento de un lote ----------
-  function htmlTanda(t, o, u) {
+  function htmlTanda(t, o, u, d) {
     var e = estado(t.estado), pasos = (t.pasos || []).slice(-2);
-    return '<li class="es-tanda"><div class="es-cab"><span>' + (t.tanda.de > 1 ? L("Batch " + t.tanda.n + " of " + t.tanda.de, "Tanda " + t.tanda.n + " de " + t.tanda.de) : L("One batch", "Una tanda")) + " · " + pl(o.cuantos(t), u) + '</span><span class="fd-es ' + e[1] + '">' + e[0] + "</span></div>" +
+    return '<li class="es-tanda"><div class="es-cab"><span>' + (t.tanda.de > 1 ? L("Batch " + t.tanda.n + " of " + t.tanda.de, "Tanda " + t.tanda.n + " de " + t.tanda.de) : L("One batch", "Una tanda")) + " · " + pl(deLaTanda(d, t).length, u) + '</span><span class="fd-es ' + e[1] + '">' + e[0] + "</span></div>" +
       (vivo(t) && pasos.length ? '<ul class="es-pasos">' + pasos.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "") +
-      (t.estado === "en_cola" ? "<small>" + (o.espera || L("Waits for the previous batch of this repo to finish.", "Espera a que termine la tanda anterior de este repo.")) + "</small>" : "") +
-      (t.error ? '<p class="fd-msg error">' + esc(t.error) + "</p>" : "") + (o.extraTanda ? o.extraTanda(t) : "") + "</li>";
+      (t.estado === "en_cola" ? "<small>" + L("Waits for the previous batch to finish.", "Espera a que termine la tanda anterior.") + "</small>" : "") +
+      (t.error ? '<p class="fd-msg error">' + esc(t.error) + "</p>" : "") + (vivo(t) ? "" : cifrasTanda(t)) + "</li>";
+  }
+  // Cómo terminó una tanda: cuántos resolvió y cuántos no, y lo que dijo el agente.
+  function cifrasTanda(t) {
+    var ds = Array.isArray(t.desenlaces) ? t.desenlaces : null, ok = ds ? ds.filter(function (x) { return x.resuelto; }).length : 0;
+    return (ds ? "<small>" + cifras(ok, ds.length - ok) + "</small>" : "") +
+      (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
+  }
+  var cifrasLote = function (ts) { var ok = 0, todos = 0; ts.forEach(function (t) { (t.desenlaces || []).forEach(function (x) { todos++; if (x.resuelto) ok++; }); }); return cifras(ok, todos - ok); };
+  var cifras = function (ok, no) { return L(num(ok) + " resolved · " + num(no) + " could not be resolved", plural(ok, "resuelto", "resueltos") + " · " + num(no) + " sin resolver"); };
+  // Lo que dejó un lote, ítem por ítem: primero lo que no se resolvió (con «Pedir de nuevo»), después lo resuelto.
+  function htmlResultados(LT) {
+    var tipo = tipoDeLote(LT), d = def(tipo), rs = [];
+    Object.keys(E.res).forEach(function (k) { var r = E.res[k]; if (r.l === LT.id) rs.push({ k: k.slice(tipo.length + 1), r: r }); });
+    if (!rs.length) return "";
+    var MAX = 200;
+    var li = function (x) {
+      var r = x.r, cuerpo = r.it && d && d.tarjeta ? d.tarjeta(r.it, false) : "<code>" + esc(x.k) + "</code>";
+      var estado = r.ok ? '<p class="pd-estado ok">✔ ' + TEXTOS.resuelto + (r.c ? " · " + textoCambio(r.c) : "") + "</p>" : '<p class="pd-estado no">✕ ' + TEXTOS.noPudo + ": " + textoMotivo(r.m) + "</p>";
+      return '<li class="es-pedido pd-res' + (r.ok ? " ok" : " no") + '"><div>' + cuerpo + estado + "</div>" + (!r.ok && r.it ? '<button type="button" class="boton chico" data-acc="otra-vez" data-tipo="' + esc(tipo) + '" data-k="' + esc(x.k) + '">' + TEXTOS.otraVez + "</button>" : "") + "</li>";
+    };
+    var no = rs.filter(function (x) { return !x.r.ok; }), ok = rs.filter(function (x) { return x.r.ok; });
+    var mas = function (n) { return n > MAX ? '<p class="fd-nota">' + L("And " + num(n - MAX) + " more.", "Y " + num(n - MAX) + " más.") + "</p>" : ""; };
+    return '<div class="pd-resultados">' +
+      (no.length ? "<h4>" + TEXTOS.noPudo + ' <span class="chip">' + num(no.length) + '</span></h4><ul class="es-pedidos">' + no.slice(0, MAX).map(li).join("") + "</ul>" + mas(no.length) : "") +
+      (ok.length ? '<details class="tf"' + (no.length ? "" : " open") + "><summary>" + TEXTOS.resuelto + ' <span class="chip">' + num(ok.length) + '</span></summary><ul class="es-pedidos">' + ok.slice(0, MAX).map(li).join("") + "</ul>" + mas(ok.length) + "</details>" : "") + "</div>";
   }
   function htmlLote(LT) {
     var d = def(tipoDeLote(LT)); if (!d || !d.seguimiento) return "";
     var o = d.seguimiento, u = unidadDe(tipoDeLote(LT)), ts = tandas(LT);
     var v = LT.estado !== "terminado" || ts.some(vivo), hechas = ts.filter(function (t) { return !vivo(t); }).length;
     var porRepo = {}, repos = []; ts.forEach(function (t) { if (!porRepo[t.repo]) { porRepo[t.repo] = []; repos.push(t.repo); } porRepo[t.repo].push(t); });
-    var cuerpo = repos.map(function (r) { return '<div class="es-repo"><h4>' + esc(r) + "</h4><ul>" + porRepo[r].map(function (t) { return htmlTanda(t, o, u); }).join("") + "</ul></div>"; }).join("");
-    var n = ts.reduce(function (s, t) { return s + o.cuantos(t); }, 0);
+    var cuerpo = repos.map(function (r) { return '<div class="es-repo"><h4>' + esc(r) + "</h4><ul>" + porRepo[r].map(function (t) { return htmlTanda(t, o, u, d); }).join("") + "</ul></div>"; }).join("");
+    var n = ts.reduce(function (s, t) { return s + deLaTanda(d, t).length; }, 0);
     var costo = ts.reduce(function (s, t) { return s + (t.costoUsd || 0); }, 0);
     var fallaron = ts.filter(function (t) { return t.estado === "fallo"; }).length, cancelaron = ts.filter(function (t) { return t.estado === "cancelado"; }).length;
-    var cab = v ? (LT.estado === "reindexando" ? o.reindexando : o.pidiendo(n, repos.length)) : L("Finished", "Terminó") + " · " + esc(nombreDe(tipoDeLote(LT)));
+    var cab = v ? (LT.estado === "reindexando" ? o.reindexando || L("Finishing…", "Terminando…") : o.pidiendo(n, repos.length)) : L("Finished", "Terminó") + " · " + esc(nombreDe(tipoDeLote(LT)));
     var fin = !v
-      ? '<div class="es-fin"><b>' + L("Actual cost: ", "Costo real: ") + dolares(costo) + "</b><span>" + o.resumen(ts) +
+      ? '<div class="es-fin"><b>' + L("Actual cost: ", "Costo real: ") + dolares(costo) + "</b><span>" + cifrasLote(ts) + (o.resumen ? " · " + o.resumen(ts) : "") +
         (fallaron ? " · " + pl(fallaron, ["batch failed", "batches failed", "tanda falló", "tandas fallaron"]) : "") + (cancelaron ? " · " + pl(cancelaron, ["batch canceled", "batches canceled", "tanda cancelada", "tandas canceladas"]) : "") + ".</span>" +
-        (LT.error ? '<p class="fd-msg error">' + esc(LT.error) + "</p>" : "") + "</div>"
+        (LT.error ? '<p class="fd-msg error">' + esc(LT.error) + "</p>" : "") + "</div>" + htmlResultados(LT)
       : '<div class="es-fin"><span>' + L("Cost so far: ", "Costo hasta ahora: ") + dolares(costo) + "</span></div>";
     return '<section class="es-lote" data-tipo="' + esc(tipoDeLote(LT)) + '"><div class="es-cab"><h3>' + cab + '</h3><span class="fd-es ' + (v ? "na" : fallaron ? "no" : "ok") + '">' + L(hechas + " of " + ts.length + " batches", hechas + " de " + ts.length + " tandas") + "</span></div>" +
       '<progress max="' + Math.max(1, ts.length) + '" value="' + hechas + '"></progress>' + cuerpo + fin +
-      '<div class="fd-acc">' + (v ? '<button type="button" class="boton" data-acc="cancelar-lote" data-k="' + esc(LT.id) + '">' + L("Cancel all", "Cancelar todo") + "</button>" : '<button type="button" class="boton" data-acc="recargar">' + L("Reload to see the changes", "Recargar para ver los cambios") + '</button><button type="button" class="boton" data-acc="cerrar-lote" data-k="' + esc(LT.id) + '">' + L("Close the summary", "Cerrar el resumen") + "</button>") + "</div></section>";
+      '<div class="fd-acc">' + (v ? '<button type="button" class="boton" data-acc="cancelar-lote" data-k="' + esc(LT.id) + '">' + L("Cancel all", "Cancelar todo") + "</button>" : '<button type="button" class="boton" data-acc="cerrar-lote" data-k="' + esc(LT.id) + '">' + L("Close the summary", "Cerrar el resumen") + "</button>") + "</div></section>";
   }
 
   // ---------- Pedir todos: un lote por tipo ----------
@@ -379,7 +511,7 @@ export const PEDIDO_JS = String.raw`
         var d = def(t), xs = itemsDe(t);
         return '<section class="pd-grupo" data-tipo="' + esc(t) + '">' + (ts.length > 1 ? '<h3>' + esc(nombreDe(t)) + ' <span class="chip">' + num(xs.length) + "</span></h3>" : "") + '<ul class="es-pedidos">' + xs.map(function (x) {
           var bloq = !!vivos[t + "|" + claveDe(x)];
-          return '<li class="es-pedido"><div>' + (d && d.tarjeta ? d.tarjeta(x, bloq) : "<code>" + esc(x.k) + "</code>") + '</div><button type="button" class="boton chico" data-acc="quitar" data-tipo="' + esc(t) + '" data-k="' + esc(x.k) + '" aria-label="' + L("Remove from the list", "Quitar de la lista") + '"' + (bloq ? " disabled" : "") + ">" + L("Remove", "Quitar") + "</button></li>";
+          return '<li class="es-pedido"><div>' + (d && d.tarjeta ? d.tarjeta(x, bloq) : "<code>" + esc(x.k) + "</code>") + (bloq ? '<p class="pd-estado na">' + TEXTOS.trabajando + "</p>" : "") + '</div><button type="button" class="boton chico" data-acc="quitar" data-tipo="' + esc(t) + '" data-k="' + esc(x.k) + '" aria-label="' + L("Remove from the list", "Quitar de la lista") + '"' + (bloq ? " disabled" : "") + ">" + L("Remove", "Quitar") + "</button></li>";
         }).join("") + "</ul></section>";
       }).join("")
       : '<p class="fd-nota">' + L("The list is empty. Click «Request» on a rule, a file or a folder, on any screen: it's added here, and only «Request all» sends it.", "La lista está vacía. Tocá «Pedir» en una regla, un archivo o una carpeta, en cualquier pantalla: se suma acá, y recién «Pedir todos» lo manda.") + "</p>";
@@ -395,8 +527,11 @@ export const PEDIDO_JS = String.raw`
     ORDEN.forEach(function (t) { var d = def(t), x = d.bandeja ? d.bandeja() : ""; if (x) extras.push(x); });
     var corriendo = lotesVisibles().some(loteVivo), enlaces = "";
     ORDEN.forEach(function (t) { var d = def(t), x = d.enlace ? d.enlace() : ""; if (x) enlaces += x; });
-    if (!n && !extras.length && !lotesVisibles().length) return enlaces;
-    return enlaces + '<button type="button" class="boton es-pedir' + (corriendo ? " pd-corriendo" : "") + '" data-acc="panel" aria-expanded="' + E.panel + '" aria-controls="pedido-panel">' + L("Request", "Pedido") + (n ? " (" + num(n) + ")" : "") + (corriendo ? " · " + L("running", "corriendo") : "") + (extras.length ? " · " + extras.join(" · ") : "") + "</button>";
+    if (!n && !extras.length && !lotesVisibles().length && !E.avisos.length) return enlaces;
+    // Un lote que terminó mientras se miraba otra cosa: cuánto se resolvió, hasta abrir el panel.
+    var av = E.avisos.reduce(function (s, a) { return { ok: s.ok + a.ok, no: s.no + a.no }; }, { ok: 0, no: 0 });
+    var aviso = E.avisos.length ? ' <span class="pd-aviso" title="' + esc(L("A batch finished: open the panel to see what was resolved", "Terminó un lote: abrí el panel para ver qué se resolvió")) + '">' + L("finished", "terminó") + ": ✔ " + num(av.ok) + (av.no ? " · ✕ " + num(av.no) : "") + "</span>" : "";
+    return enlaces + '<button type="button" class="boton es-pedir' + (corriendo ? " pd-corriendo" : "") + '" data-acc="panel" aria-expanded="' + E.panel + '" aria-controls="pedido-panel">' + L("Request", "Pedido") + (n ? " (" + num(n) + ")" : "") + (corriendo ? " · " + L("running", "corriendo") : "") + (extras.length ? " · " + extras.join(" · ") : "") + aviso + "</button>";
   }
   // Repinta el panel (guardando el scroll) y la bandeja, y deja lugar a la derecha de la página mientras está abierto.
   function pintar() {
@@ -417,7 +552,37 @@ export const PEDIDO_JS = String.raw`
     var c = elem("cabecera"), raiz = typeof document !== "undefined" ? document.documentElement : null;
     if (c && c.offsetHeight && raiz && raiz.style && raiz.style.setProperty) raiz.style.setProperty("--alto-cabecera", c.offsetHeight + "px");
   }
-  function abrir(abierto) { E.panel = abierto; guardar(); pintar(); }
+  function abrir(abierto) { E.panel = abierto; if (abierto) E.avisos = []; guardar(); pintar(); }
+
+  // ---------- Los datos nuevos, solos ----------
+  // Cada pantalla arma sus índices una vez, con los datos de la página: traer los nuevos es volver a cargarla. Se
+  // hace sola, cuando nadie está escribiendo, y vuelve a la misma pantalla y al mismo scroll (los filtros y la lista ya
+  // viven en este navegador).
+  var VISTA = "flowbrain.pedido.vista";
+  function editando() {
+    var a = typeof document !== "undefined" ? document.activeElement : null;
+    if (!a) return false;
+    if (a.isContentEditable) return true;
+    var tag = String(a.tagName || "").toLowerCase();
+    return tag === "textarea" ? !!a.value : tag === "input" && /^(text|number|email|url)$/.test(a.type || "text") && !!a.value;
+  }
+  function recargarSola() {
+    if (!(window.location && window.location.reload)) return;
+    if (editando()) { setTimeout(recargarSola, 1500); return; }
+    try {
+      var p = elem("pedido-panel");
+      sessionStorage.setItem(VISTA, JSON.stringify({ h: window.location.hash || "", x: window.scrollX || 0, y: window.scrollY || 0, p: p ? p.scrollTop : 0, n: Date.now() }));
+    } catch (e) { /* sin almacenamiento: se recarga igual */ }
+    window.location.reload();
+  }
+  function restaurarVista() {
+    var v = null;
+    try { if (typeof sessionStorage !== "undefined") { v = JSON.parse(sessionStorage.getItem(VISTA) || "null"); sessionStorage.removeItem(VISTA); } } catch (e) { v = null; }
+    if (!v || Date.now() - v.n > 60000 || !window.location || (window.location.hash || "") !== v.h) return;
+    // Las pantallas pintan al cargar (Borradores, después de pedir su lista): se vuelve al scroll un par de veces.
+    var ir = function () { if (window.scrollTo) window.scrollTo(v.x, v.y); var p = elem("pedido-panel"); if (p) p.scrollTop = v.p; };
+    if (window.addEventListener) window.addEventListener("load", function () { ir(); setTimeout(ir, 300); setTimeout(ir, 900); });
+  }
 
   // ---------- Los botones del panel y de la bandeja ----------
   function accion(b) {
@@ -431,8 +596,14 @@ export const PEDIDO_JS = String.raw`
     if (acc === "pedir-todos") { pedirTodos(); return; }
     if (acc === "descargar-lista") { var m = md(); if (m && !descargar(m.archivo, m.texto)) { ERROR = L("It couldn't be downloaded.", "No se pudo descargar."); pintar(); } return; }
     if (acc === "cancelar-lote") { llamar("/api/agente/lote/cancelar", { id: k }).then(actualizar, actualizar); return; }
-    if (acc === "cerrar-lote") { E.ocultos.push(k); guardar(); pintar(); return; }
-    if (acc === "recargar") { if (window.location && window.location.reload) window.location.reload(); return; }
+    if (acc === "otra-vez") { otraVez(b.getAttribute("data-tipo"), k); return; }
+    // Cerrar el resumen olvida también cómo terminó cada ítem de ese lote (las marcas de las pantallas se van).
+    if (acc === "cerrar-lote") {
+      E.ocultos.push(k);
+      Object.keys(E.res).forEach(function (c) { if (E.res[c].l === k) delete E.res[c]; });
+      E.avisos = E.avisos.filter(function (a) { return a.l !== k; });
+      guardar(); marcar(); pintar(); return;
+    }
     // Lo demás es de un tipo (los resultados de los tests): lo atiende quien lo pintó.
     for (var i = 0; i < ORDEN.length; i++) { var d = def(ORDEN[i]); if (d.accion && d.accion(acc, k, b) === true) return; }
   }
@@ -459,6 +630,9 @@ export const PEDIDO_JS = String.raw`
       if (n.elegido) E.elegido = n.elegido;
       if (Array.isArray(n.limpios)) E.limpios = n.limpios;
       if (Array.isArray(n.ocultos)) E.ocultos = n.ocultos;
+      if (n.res && typeof n.res === "object") E.res = n.res;
+      if (Array.isArray(n.seguidos)) E.seguidos = n.seguidos;
+      if (Array.isArray(n.avisos)) E.avisos = n.avisos;
       indexar(); avisar("lista"); marcar(); pintar();
     } catch (e) { /* no era JSON */ }
   });
@@ -475,8 +649,11 @@ export const PEDIDO_JS = String.raw`
     trabajos: function () { return TRABAJOS; }, lotes: lotesVisibles, lote: loteDe, tandas: tandas, loteVivo: loteVivo,
     // Avisos en el panel (los resultados de un tipo los usan al guardar algo).
     aviso: function (o) { ERROR = o && o.error ? o.error : ""; NOTA = o && o.nota ? o.nota : ""; pintar(); },
-    vivo: vivo, estado: estado, dolares: dolares, descargar: descargar
+    vivo: vivo, estado: estado, dolares: dolares, descargar: descargar,
+    // Cómo terminó un ítem de la lista en su último lote (null si no hay desenlace).
+    resultado: function (tipo, k) { return E.res[tipo + "|" + k] || null; }
   };
+  restaurarVista();
   pintar();
   actualizar();
 })();

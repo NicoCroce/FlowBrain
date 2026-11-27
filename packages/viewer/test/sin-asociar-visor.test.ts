@@ -412,10 +412,10 @@ describe("pantalla Sin asociar", () => {
     expect(p).toContain("Assigning 4 files in 2 repos");
     expect(p).toContain("0 of 2 batches");
     expect(p).toContain("Lee src/shared/fecha.ts");
-    expect(p).toContain("Waits for the previous batch of this brain to finish.");
+    expect(p).toContain("Waits for the previous batch to finish.");
     expect(p).toContain('data-acc="cancelar-lote" data-k="L1">Cancel all</button>');
     // Lo que está en una tanda no se puede quitar, y con un lote en curso no se manda otro ni se vacía.
-    expect(p).toContain(">Assigning…</span>");
+    expect(p).toContain('<p class="pd-estado na">The agent is working on it…</p>');
     expect(p).toMatch(/data-acc="quitar" data-tipo="asociar" data-k="back\|repo-api:src\/Util\/Texto.php"[^>]*disabled/);
     expect(p).toMatch(/data-acc="pedir-todos" disabled/);
     expect(p).toMatch(/data-acc="vaciar" disabled/);
@@ -426,7 +426,11 @@ describe("pantalla Sin asociar", () => {
 
     // Se sigue aunque se recargue: otra página, el mismo navegador, lo ve al abrir. Lo asociado sale de la lista.
     estado.lotes[0]!["estado"] = "terminado";
-    estado.trabajos[0] = { ...estado.trabajos[0], estado: "terminado", costoUsd: 0.3, resultado: "Asocié 2; dejé nota.ts: no sé de quién es.", asociados: ["moneda", "fecha"].map((n) => ({ cerebro: "front", archivo: `repo-web:src/shared/${n}.ts` })), siguen: [{ cerebro: "front", archivo: "repo-web:src/pagos/nota.ts" }] };
+    estado.trabajos[0] = { ...estado.trabajos[0], estado: "terminado", costoUsd: 0.3, resultado: "Asocié 2; dejé nota.ts: no sé de quién es.", terminado: Date.now() + 60_000, asociados: ["moneda", "fecha"].map((n) => ({ cerebro: "front", archivo: `repo-web:src/shared/${n}.ts` })), siguen: [{ cerebro: "front", archivo: "repo-web:src/pagos/nota.ts" }],
+      desenlaces: [
+        ...["moneda", "fecha"].map((n) => ({ item: { cerebro: "front", archivo: `repo-web:src/shared/${n}.ts` }, resuelto: true, cambio: { asociado: true } })),
+        { item: { cerebro: "front", archivo: "repo-web:src/pagos/nota.ts" }, resuelto: false, motivo: { codigo: "sigue", agente: "No feature covers notes" } },
+      ] };
     estado.trabajos[1] = { ...estado.trabajos[1], estado: "cancelado" };
     const otra = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente }, fetch: fetch as never, recargar: () => void recargas++, local });
     await esperar();
@@ -434,14 +438,18 @@ describe("pantalla Sin asociar", () => {
     expect(p).toContain("Finished");
     expect(p).toContain("2 of 2 batches");
     expect(p).toContain("Actual cost: US$ 0.30");
-    expect(p).toContain("2 assigned · 1 still unassigned (proposed as a draft, not product, or left: each batch says why; they stay in the list) · 1 batch canceled.");
+    expect(p).toContain("2 resolved · 1 could not be resolved · 1 batch canceled.");
     expect(p).toContain("Asocié 2; dejé nota.ts: no sé de quién es.");
-    expect(p).toContain('data-acc="recargar">Reload to see the changes</button>');
-    expect(p).toContain("<b>2 files</b>");
-    expect(JSON.parse(local.get("flowbrain.pedido")!).items.map((e: { k: string }) => e.k)).toEqual(["front|repo-web:src/pagos/nota.ts", "back|repo-api:src/Util/Texto.php"]);
-    expect(recargas).toBe(0);
-    otra.tocar({ "data-acc": "recargar" });
-    expect(recargas).toBe(1);
+    expect(p).not.toContain("Reload to see the changes");
+    expect(p).toContain("It could not resolve it: after the batch it is still pending. The agent says: «No feature covers notes»");
+    expect(p).toContain('data-acc="otra-vez" data-tipo="asociar" data-k="front|repo-web:src/pagos/nota.ts">Request again</button>');
+    // Lo de la tanda cancelada antes de empezar sigue en la lista; lo demás salió con su desenlace.
+    expect(p).toContain("<b>1 file</b>");
+    expect(JSON.parse(local.get("flowbrain.pedido")!).items.map((e: { k: string }) => e.k)).toEqual(["back|repo-api:src/Util/Texto.php"]);
+    // La fila del archivo que quedó lleva la marca, y su botón dice «Pedir de nuevo».
+    expect(otra.lista()).toContain('>Request again</button><span class="pd-marca no"');
+    // El lote cambió algo después de cargar la página: los datos nuevos se traen solos (sin «Recargar» a mano).
+    expect(recargas).toBeGreaterThanOrEqual(1);
     otra.tocar({ "data-acc": "cerrar-lote", "data-k": "L1" });
     expect(otra.panel()).not.toContain('<section class="es-lote" data-tipo="asociar"');
     expect(JSON.parse(local.get("flowbrain.pedido")!).ocultos).toEqual(["L1"]);
@@ -461,8 +469,8 @@ describe("pantalla Sin asociar", () => {
     expect(es.panel()).toContain("Pedir todos (5)");
     expect(es.panel()).toContain("En 2 tandas de hasta 30 archivos de un mismo repo");
     expect(es.panel()).toContain("Costo real: US$ 0.30");
-    expect(es.panel()).toContain("2 asociados · 1 sigue sin asociar");
-    expect(es.panel()).toContain("Recargar para ver los cambios");
+    expect(es.panel()).toContain("2 resueltos · 1 sin resolver");
+    expect(es.panel()).not.toContain("Recargar para ver los cambios");
 
     // Con el servidor pero sin agente: lo dice y ofrece el .md.
     const sin = montar(datos(), { edicion: { token: "secreto", sinAplicar: [], agente: { noDisponible: "Claude Code (claude) was not found on this machine", proveedores: [] } }, fetch: fetch as never });

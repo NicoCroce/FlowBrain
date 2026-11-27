@@ -52,7 +52,9 @@ export { HERRAMIENTAS_PERMITIDAS, HERRAMIENTAS_PROHIBIDAS, pasosDeEvento };
  *     («Pedir corrección»), o notas `flowbrain-nota` a resolver. El mismo motor de tandas; escribe SOLO en `_drafts/`
  *     (nunca promueve: lo acepta una persona). Resuelto es el borrador que cambió desde que empezó la tanda (una nota:
  *     también si ya no está).
- *   En todos, una tanda que falla no frena a las demás, y se cancela el lote entero o una tanda.
+ *   En todos, una tanda que falla no frena a las demás, y se cancela el lote entero o una tanda. Al terminar, cada
+ *   tanda dice cómo terminó cada ítem, igual para todos los tipos (`desenlaces`, dec. 235): resuelto con lo que cambió,
+ *   o no, con el motivo (lo que midió el servidor y lo que dijo el agente en su bloque `flowbrain-pending`).
  */
 
 export type TipoDePedido = "test" | "agrupar" | "escribir" | "corregir" | "funcionalidad" | "borrador" | "asociar" | "fidelidad" | "deriva";
@@ -398,6 +400,128 @@ export interface Trabajo {
   problemas?: ProblemaDeDeriva[];
   corregidos?: ProblemaDeDeriva[];
   persisten?: ProblemaDeDeriva[];
+  /**
+   * Cómo terminó cada ítem de la tanda, igual para todos los tipos (dec. 235): lo pone el servidor al terminar la tanda
+   * (no está en una tanda cancelada antes de empezar). El visor lo muestra ítem por ítem en todas las pantallas.
+   */
+  desenlaces?: Desenlace[];
+}
+
+/**
+ * Por qué un ítem quedó sin resolver: `sigue` (el servidor midió después de la tanda y sigue igual), `fallo` (la tanda
+ * falló o no se pudo medir: `detalle`), `cancelado`, `sin_respuesta` (tests: el agente no devolvió un resultado válido).
+ * `agente`: lo que dijo el agente de ese ítem en su bloque `flowbrain-pending`, si lo dijo.
+ */
+export type CodigoDeMotivo = "sigue" | "fallo" | "cancelado" | "sin_respuesta";
+/** Lo que cambió un ítem resuelto, para que el visor lo diga (sin textos: los pone el visor en su idioma). */
+export interface CambioDeDesenlace {
+  /** test: el resultado (a, b, c, d) y sus tests. */
+  resultado?: ResultadoDeTest;
+  tests?: string[];
+  /** asociar: el archivo ya tiene dueño. */
+  asociado?: true;
+  /** fidelidad: el puntaje antes y después (`null` si ya no se mide). */
+  puntaje?: { antes: number; despues: number | null };
+  /** deriva: el problema ya no está. */
+  corregido?: true;
+  /** agrupar, escribir, corregir: la funcionalidad cuya página cambió. */
+  pagina?: string;
+  /** funcionalidad, borrador: el borrador que quedó para revisar (ruta dentro del cerebro). */
+  borrador?: string;
+}
+/** El desenlace de un ítem: `item` es el mismo objeto que lista la tanda (`reglas`, `archivos`, `problemas` o `items`). */
+export interface Desenlace {
+  item: object;
+  resuelto: boolean;
+  cambio?: CambioDeDesenlace;
+  motivo?: { codigo: CodigoDeMotivo; agente?: string; detalle?: string };
+}
+
+/** La lista de ítems de una tanda, según su tipo. */
+export function itemsDeTanda(t: Pick<Trabajo, "tipo" | "reglas" | "archivos" | "problemas" | "items">): object[] {
+  if (t.tipo === "test") return t.reglas ?? [];
+  if (t.tipo === "asociar" || t.tipo === "fidelidad") return t.archivos ?? [];
+  if (t.tipo === "deriva") return t.problemas ?? [];
+  return t.items ?? [];
+}
+
+/** El cierre de cada pedido en lote: cómo decir qué no se pudo resolver y por qué (para el modelo, en inglés). */
+export function cierrePendientes(ref: string): string {
+  return `If you could not resolve some of them, end your answer with a \`\`\`flowbrain-pending block: a JSON list with one {"ref": "...", "reason": "..."} per item you could not resolve, where ref is ${ref} and reason says in one sentence why (what is missing, or what a person would have to decide).`;
+}
+
+/** Lo que el agente dijo que no pudo resolver: el último bloque ```flowbrain-pending (ref → motivo). */
+export function pendientesDelAgente(texto: string | undefined): Map<string, string> {
+  const out = new Map<string, string>();
+  const bloques = [...(texto ?? "").matchAll(/```flowbrain-pending\s*\n([\s\S]*?)```/g)];
+  const ultimo = bloques[bloques.length - 1];
+  if (!ultimo) return out;
+  let lista: unknown;
+  try {
+    lista = JSON.parse(ultimo[1]!);
+  } catch {
+    return out;
+  }
+  if (!Array.isArray(lista)) return out;
+  for (const x of lista as Array<Record<string, unknown>>) {
+    const ref = typeof x?.["ref"] === "string" ? normalRef(x["ref"]) : "", reason = typeof x?.["reason"] === "string" ? x["reason"].trim().slice(0, 600) : "";
+    if (ref && reason && !out.has(ref)) out.set(ref, reason);
+  }
+  return out;
+}
+const normalRef = (s: string) => s.trim().replace(/^`+|`+$/g, "").replace(/#L\d+(-\d+)?$/, "").trim();
+
+/** Con qué se reconoce un ítem en el bloque `flowbrain-pending`: de lo más específico a lo más general. */
+function refsDe(x: Record<string, unknown>): string[] {
+  const s = (k: string) => (typeof x[k] === "string" && x[k] ? normalRef(x[k] as string) : "");
+  const f = s("funcionalidad");
+  return [s("borrador"), s("archivo"), s("ev"), s("endpoint"), s("llamada"), f && (s("caso") || s("regla")) ? `${f}/${s("caso") || s("regla")}` : "", f, f ? "" : s("cerebro")].filter(Boolean);
+}
+
+/**
+ * Los desenlaces de una tanda que terminó, a partir de lo que midió el servidor (`resultados`, `asociados`,
+ * `completados`, `corregidos` o `resueltos`), con el motivo de lo que no se resolvió. `puntajes`: fidelidad, el
+ * puntaje de cada archivo al pedirlo.
+ */
+export function desenlacesDeTanda(t: Trabajo, puntajes: Map<string, number> = new Map()): Desenlace[] {
+  const dichos = pendientesDelAgente(t.resultado);
+  const claveA = (a: { cerebro: string; archivo: string }) => `${a.cerebro}|${a.archivo}`;
+  const claveP = (x: { cerebro: string; funcionalidad: string; caso?: string; regla?: string; borrador?: string }) => `${x.cerebro}|${x.funcionalidad}|${x.caso ?? ""}|${x.regla ?? ""}|${x.borrador ?? ""}`;
+  const hechos = new Map<string, CambioDeDesenlace>(), medidos = new Set<string>(), sinRespuesta = new Map<string, string>();
+  let clave: (x: never) => string;
+  if (t.tipo === "test") {
+    clave = (r: { cerebro: string; funcionalidad: string; regla: string }) => `${r.cerebro}|${r.funcionalidad}|${r.regla}`;
+    for (const r of t.resultados ?? []) hechos.set(clave(r as never), { resultado: r.resultado, ...(r.tests?.length ? { tests: r.tests } : {}) });
+    for (const r of t.sinResultado ?? []) sinRespuesta.set(clave(r as never), r.motivo);
+  } else if (t.tipo === "asociar") {
+    clave = claveA;
+    for (const a of t.asociados ?? []) hechos.set(claveA(a), { asociado: true });
+    for (const a of t.siguen ?? []) medidos.add(claveA(a));
+  } else if (t.tipo === "fidelidad") {
+    clave = claveA;
+    for (const a of t.completados ?? []) hechos.set(claveA(a), { puntaje: { antes: puntajes.get(claveA(a)) ?? 0, despues: a.puntaje } });
+    for (const a of t.pendientes ?? []) if (a.puntaje !== null) medidos.add(claveA(a));
+  } else if (t.tipo === "deriva") {
+    clave = claveDeDeriva;
+    for (const p of t.corregidos ?? []) hechos.set(claveDeDeriva(p), { corregido: true });
+    for (const p of t.persisten ?? []) medidos.add(claveDeDeriva(p));
+  } else {
+    clave = claveP;
+    for (const x of t.resueltos ?? []) {
+      const c: CambioDeDesenlace = t.tipo === "borrador" ? { borrador: x.borrador ?? "" } : t.tipo === "funcionalidad" ? { borrador: x.funcionalidad ? `_drafts/product/${x.funcionalidad}.md` : "_drafts/product/" } : { pagina: x.funcionalidad };
+      hechos.set(claveP(x), c);
+    }
+    for (const x of t.quedan ?? []) medidos.add(claveP(x));
+  }
+  return itemsDeTanda(t).map((item) => {
+    const k = clave(item as never);
+    const cambio = hechos.get(k);
+    if (cambio) return { item, resuelto: true, cambio };
+    const agente = refsDe(item as Record<string, unknown>).map((r) => dichos.get(r)).find(Boolean);
+    const detalle = sinRespuesta.get(k) ?? t.error;
+    const codigo: CodigoDeMotivo = sinRespuesta.has(k) ? "sin_respuesta" : t.estado === "cancelado" ? "cancelado" : !t.error && medidos.has(k) ? "sigue" : "fallo";
+    return { item, resuelto: false, motivo: { codigo, ...(agente ? { agente } : {}), ...(detalle ? { detalle: detalle.slice(0, 600) } : {}) } };
+  });
 }
 
 export interface Lote {
@@ -463,6 +587,7 @@ export function pedidoDeTandaAsociar(archivos: ArchivoDePedido[], repo: string, 
     "To assign one: add repo:path to the codigo list in the frontmatter of the feature's page (the brain's product/feat-*.md) and compile. If a whole folder belongs to the same feature, add the folder.",
     "The recommendation is a hint: open the file before deciding. Shared code does not go to a feature: add it to the codigo of a lib page or leave it unassigned. If no feature covers it, propose a new one as a draft (_drafts/product/feat-<id>.md). Tests, configuration, scripts and generated files are not product: leave them and list them.",
     "Other batches of this request cover the rest of the files: only handle these. The server compiles the brain when you finish and counts what is still unassigned.",
+    cierrePendientes("the file as repo-x:path"),
     "",
     ...archivos.map((a) => a.linea),
   ].join("\n");
@@ -478,6 +603,7 @@ export function pedidoDeTandaFidelidad(archivos: ArchivoDeFidelidad[], repo: str
     contexto: [
       `These files are in ${repo}, brain ${cerebro}: what you declare goes in that brain's folder (\`.flowbrain/${cerebro}/\`), and each brain is reindexed with \`flowbrain brains apply ${cerebro}\`.${de > 1 ? ` This is batch ${n} of ${de} of the request: other batches cover the rest, only handle these.` : ""}`,
       "This is a request from the viewer: when you finish, the server reindexes the brain again and measures which of these gaps are gone.",
+      cierrePendientes("the file as repo-x:path"),
     ],
   });
 }
@@ -491,6 +617,7 @@ export function pedidoDeTandaDeriva(problemas: ProblemaDeDeriva[], repo: string,
     `Fix ${problemas.length === 1 ? "this contract drift problem" : `these ${problemas.length} contract drift problems`} found in ${repo} (brain ${cerebro}${de > 1 ? `, batch ${n} of ${de}` : ""}), following the guide.`,
     `Code changes go only in ${repo}; declarations go in \`.flowbrain/${cerebro}/calls.yaml\` and proposals in \`.flowbrain/${cerebro}/_drafts/drift-notes.md\`. Never delete anything.`,
     "This is a request from the viewer: when you finish, the server reindexes the brain and checks which of these problems are gone from the drift.",
+    cierrePendientes("the location of the problem as repo-x:path#Ln"),
     "",
     ...problemas.map((p) => `- [ ] ${CLASE_EN[p.clase]}: ${p.endpoint ?? p.llamada ?? ""} at ${p.ev}. ${p.que}`),
   ].join("\n");
@@ -561,6 +688,7 @@ export function pedidoDeTandaPaginas(tipo: TipoDePagina, items: ItemDePagina[], 
       ...(de > 1 ? [`This is batch ${n} of ${de} of the request: other batches cover the rest, only handle these.`, ""] : []),
       ...partes,
       "Do NOT modify the project's repositories, and do NOT edit product/ or technology/ or promote anything: write ONLY in .flowbrain/<brain>/_drafts/. A person reviews and accepts the drafts. The server then checks which drafts changed.",
+      cierrePendientes("the path of the draft or note inside the brain folder"),
     ].join("\n");
   }
   if (tipo === "funcionalidad") {
@@ -568,12 +696,14 @@ export function pedidoDeTandaPaginas(tipo: TipoDePagina, items: ItemDePagina[], 
       ...(de > 1 ? [`This is batch ${n} of ${de} of the request: other batches cover the rest, only handle these.`, ""] : []),
       ...partes,
       "Do NOT modify the project's repositories, and do NOT edit product/ or promote anything: write ONLY drafts in .flowbrain/<brain>/_drafts/product/ (feat-<id>.md, tipo: feat). A person reviews and promotes them. The server then checks in the drafts what got done.",
+      cierrePendientes("the feature id (or, for a proposal, the brain name)"),
     ].join("\n");
   }
   return [
     ...(de > 1 ? [`This is batch ${n} of ${de} of the request: other batches cover the rest, only handle these.`, ""] : []),
     ...partes,
     "Do NOT modify the project's repositories: only the feature pages of FlowBrain. When done, compile each brain (flowbrain compile inside .flowbrain/<brain>/) and check with flowbrain specs <feature> --brain <brain> that no broken references remain. The server compiles again and checks in the pages what got resolved.",
+    cierrePendientes("the feature id, followed by /<use case or rule id> when the line has one"),
   ].join("\n");
 }
 
@@ -828,6 +958,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     } catch (e) {
       t.error = `${t.error ? `${t.error}. ` : ""}${(e as Error).message}`;
     }
+    t.desenlaces = desenlacesDeTanda(t);
     t.terminado = Date.now();
     if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.resultados?.length ? "fallo" : "terminado";
   }
@@ -894,6 +1025,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     } catch (e) {
       t.error = `${t.error ? `${t.error}. ` : ""}${(e as Error).message}`;
     }
+    t.desenlaces = desenlacesDeTanda(t);
     t.terminado = Date.now();
     if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.asociados?.length ? "fallo" : "terminado";
   }
@@ -931,6 +1063,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     } catch (e) {
       t.error = `${t.error ? `${t.error}. ` : ""}${(e as Error).message}`;
     }
+    t.desenlaces = desenlacesDeTanda(t, new Map(pedidos.map((a) => [`${a.cerebro}|${a.archivo}`, a.puntaje])));
     pedidoFidelidad.delete(t.id);
     t.terminado = Date.now();
     if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.completados?.length ? "fallo" : "terminado";
@@ -966,6 +1099,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     } catch (e) {
       t.error = `${t.error ? `${t.error}. ` : ""}${(e as Error).message}`;
     }
+    t.desenlaces = desenlacesDeTanda(t);
     t.terminado = Date.now();
     if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.corregidos?.length ? "fallo" : "terminado";
   }
@@ -1004,6 +1138,7 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     } catch (e) {
       t.error = `${t.error ? `${t.error}. ` : ""}${(e as Error).message}`;
     }
+    t.desenlaces = desenlacesDeTanda(t);
     t.terminado = Date.now();
     if ((t.estado as Trabajo["estado"]) !== "cancelado") t.estado = t.error && !t.resueltos?.length ? "fallo" : "terminado";
   }

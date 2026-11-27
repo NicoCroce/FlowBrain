@@ -162,7 +162,7 @@ describe("Funcionalidades vacía: proponerlas por cerebro", () => {
     const v = montar(vacio());
     v.ir("");
     expect(v.botones().map((b) => b.k)).toEqual(["proponer|", "proponer|tienda", "proponer|admin"]);
-    expect(v.botones()[1]!.et).toBe("Ask the agent to propose the features");
+    expect(v.botones()[1]!.et).toBe("Request the features");
     expect(v.pagina()).toContain("repo-api");
     expect(v.pagina()).toContain("flowbrain draft &lt;repo&gt;");
     expect(v.pagina()).toContain("Without an agent on this machine");

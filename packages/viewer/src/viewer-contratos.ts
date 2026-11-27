@@ -334,8 +334,6 @@ export const CONTRATOS_JS = String.raw`
     if (PLAN) { out.push("", "## When done", ""); PLAN.cierre.forEach(function (c, i) { out.push((i + 1) + ". " + c); }); }
     return out.join("\n") + "\n";
   }
-  var cifrasLote = function (c, p) { return L(plural(c, "problem gone", "problems gone") + " · " + plural(p, "still in the drift", "still in the drift"), plural(c, "problema resuelto", "problemas resueltos") + " · " + plural(p, "sigue en la deriva", "siguen en la deriva")); };
-  var cuentaDe = function (ts, k) { return ts.reduce(function (n, t) { return n + (t[k] || []).length; }, 0); };
   if (DERIVA && PD) PD.registrar("deriva", {
     get nombre() { return L("Drift to fix", "Deriva a arreglar"); },
     unidad: ["problem", "problems", "problema", "problemas"],
@@ -356,31 +354,17 @@ export const CONTRATOS_JS = String.raw`
     },
     md: { archivo: "drift-fixes.md", texto: textoMd },
     clave: function (it) { return claveSrv(it.datos); },
-    enTanda: function (t) { return (t.problemas || []).map(claveSrv); },
-    hechos: function (t) { return (t.corregidos || []).map(claveSrv); },
+    tanda: { lista: "problemas", clave: claveSrv },
     seguimiento: {
-      cuantos: function (t) { return (t.problemas || []).length; },
-      get espera() { return L("Waits for the previous batch of this brain to finish.", "Espera a que termine la tanda anterior de este cerebro."); },
-      get reindexando() { return L("Finishing…", "Terminando…"); },
       pidiendo: function (n, repos) { return L("Fixing " + plural(n, "drift problem", "drift problems") + " in " + plural(repos, "repo", "repos"), "Arreglando " + plural(n, "problema", "problemas") + " de la deriva en " + plural(repos, "repo", "repos")); },
-      extraTanda: function (t) {
-        if (PD.vivo(t) || (!t.corregidos && !t.persisten)) return "";
-        return "<small>" + cifrasLote((t.corregidos || []).length, (t.persisten || []).length) + "</small>" +
-          (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
-      },
-      resumen: function (ts) {
-        var p = cuentaDe(ts, "persisten");
-        return cifrasLote(cuentaDe(ts, "corregidos"), p) + (p ? L(" (what is left stays in the list: each batch says why)", " (lo que quedó sigue en la lista: cada tanda dice por qué)") : "");
-      }
     },
     // La tarjeta: qué está roto, la llamada o el endpoint, dónde (repo:ruta#Ln) y el cerebro.
-    tarjeta: function (it, enTanda) {
+    tarjeta: function (it) {
       var d = it.datos;
       return '<p class="es-texto"><code>' + esc(d.clase === "sinLlamadas" ? pieza(d.endpoint) : d.llamada) + "</code></p>" +
         "<p><small><code>" + esc(d.ev) + "</code></small></p>" +
         '<div class="chips"><span class="chip">' + esc(tipoD(d.clase)) + "</span>" +
-        (CEREBROS.length > 1 && d.cerebro ? '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(d.cerebro) + "</span>" : "") +
-        (enTanda ? '<span class="chip es-ok">' + L("Resolving…", "Resolviéndose…") + "</span>" : "") + "</div>";
+        (CEREBROS.length > 1 && d.cerebro ? '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(d.cerebro) + "</span>" : "") + "</div>";
     }
   });
   // Lo que ya no está en la deriva (se arregló, o se marcó sin uso) sale del pedido; lo que sigue, se pone al día.

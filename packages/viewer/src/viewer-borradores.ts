@@ -210,8 +210,6 @@ export const BORRADORES_JS = String.raw`
     return [{ tipo: "borrador", k: k, cerebro: x.cerebro, repo: x.repo, datos: { cerebro: x.cerebro, origen: x.origen, id: x.id, clase: x.clase, nombre: x.nombre || "", nota: nota, linea: linea(x, nota) } }];
   }
   var claveItem = function (o) { return o.cerebro + "|" + (o.origen || o.borrador); };
-  var cuenta = function (ts, campo) { return ts.reduce(function (n, t) { return n + (t[campo] || []).length; }, 0); };
-  var cifras = function (r, q) { return L(num(r) + " revised · " + num(q) + " left", num(r) + " revisados · " + num(q) + " quedan"); };
   function mdBorradores(its) {
     return ["Revise " + (its.length === 1 ? "this FlowBrain draft" : "these " + its.length + " FlowBrain drafts") + " as the person asked (run flowbrain specs --guide for the page format). Each line has the brain, the path inside .flowbrain/<brain>/ and the person's note.", "",
       its.map(function (it) { return it.datos.linea; }).join("\n"), "",
@@ -239,25 +237,14 @@ export const BORRADORES_JS = String.raw`
       lote: function (its) { return { tipo: "borrador", items: its.map(function (it) { var x = it.datos; return { cerebro: x.cerebro, funcionalidad: x.id, borrador: x.origen, linea: x.linea }; }) }; },
       md: { archivo: "borradores.md", texto: mdBorradores },
       clave: function (it) { return claveItem(it.datos); },
-      enTanda: function (t) { return (t.items || []).map(claveItem); },
-      hechos: function (t) { return (t.resueltos || []).map(claveItem); },
+      tanda: { lista: "items", clave: claveItem },
       seguimiento: {
-        cuantos: function (t) { return (t.items || []).length; },
-        get espera() { return L("Waits for the previous batch to finish.", "Espera a que termine la tanda anterior."); },
-        get reindexando() { return L("Finishing…", "Terminando…"); },
-        pidiendo: function (n) { return L("Revising " + plural(n, "draft", "drafts"), "Revisando " + plural(n, "borrador", "borradores")); },
-        extraTanda: function (t) {
-          if (PD.vivo(t) || (!t.resueltos && !t.quedan)) return "";
-          return "<small>" + cifras((t.resueltos || []).length, (t.quedan || []).length) + "</small>" +
-            (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
-        },
-        resumen: function (ts) { return cifras(cuenta(ts, "resueltos"), cuenta(ts, "quedan")) + L(". Review them in Drafts", ". Revisalos en Borradores"); }
+        pidiendo: function (n) { return L("Revising " + plural(n, "draft", "drafts"), "Revisando " + plural(n, "borrador", "borradores")); }
       },
-      tarjeta: function (it, enTanda) {
+      tarjeta: function (it) {
         var x = it.datos;
         return '<p class="es-texto">' + esc(x.nombre || x.id) + " <small><code>" + esc(x.origen) + "</code></small></p>" + (x.nota ? '<p class="es-texto"><small>' + esc(x.nota) + "</small></p>" : "") +
-          '<div class="chips"><span class="chip">' + esc(claseEt(x.clase)) + '</span><span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span>" +
-          (enTanda ? '<span class="chip es-ok">' + L("Revising…", "Revisándose…") + "</span>" : "") + "</div>";
+          '<div class="chips"><span class="chip">' + esc(claseEt(x.clase)) + '</span><span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span></div>";
       },
       despues: function () {
         var n = deLotes().length;
@@ -303,7 +290,7 @@ export const BORRADORES_JS = String.raw`
       '<button type="button" class="boton" data-acc="descartar" data-k="' + esc(k) + '"' + (OCUPADO ? " disabled" : "") + ">" + L("Discard", "Descartar") + "</button>";
     var pedir = "";
     if (abierto && PD) {
-      var et = x.clase === "nota" ? L("Ask the agent to resolve it", "Pedir al agente que la resuelva") : L("Request a fix", "Pedir corrección");
+      var et = x.clase === "nota" ? L("Request it", "Pedirlo") : L("Request a fix", "Pedir corrección");
       pedir = '<div class="bo-pedir"><label class="fd-campo" for="bo-nota-' + i + '"><span class="lbl">' + (x.clase === "nota" ? L("Anything to add (optional)", "Algo para sumar (opcional)") : L("What to fix", "Qué corregir")) + "</span>" +
         '<textarea id="bo-nota-' + i + '" data-k="' + esc(k) + '" rows="2" placeholder="' + esc(x.clase === "nota" ? L("The note already says what's wrong", "La nota ya dice qué está mal") : L("E.g. the name should be the one the menu shows; the second section repeats the first", "P. ej.: el nombre tiene que ser el que muestra el menú; la segunda sección repite la primera")) + '"' + (ya ? " disabled" : "") + ">" + esc(nota) + "</textarea></label>" +
         PD.boton({ tipo: "borrador", k: k, et: et }) + (x.clase !== "nota" && !ya ? " <small>" + L("Write what to fix first: the agent receives it with the draft.", "Escribí primero qué corregir: el agente lo recibe con el borrador.") + "</small>" : "") + "</div>";

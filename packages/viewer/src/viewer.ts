@@ -467,6 +467,14 @@ button.pestana { border-top: 0; border-left: 0; border-right: 0; background: non
 .pedido-bandeja { margin-left: 8px; } .pedido-bandeja:empty { display: none; } .pedido-bandeja .boton { height: 30px; padding: 0 12px; font-size: 12px; white-space: nowrap; }
 .pd-grupo h3 { margin: 4px 0 8px; font-size: 14px; display: flex; align-items: center; gap: 6px; } .es-totales small { text-transform: none; } .pd-total { border-color: var(--pedir-en-lista); }
 .pd-despues { display: grid; gap: 12px; }
+/* Cómo terminó cada ítem (dec. 235): la misma marca junto a «Pedir» en todas las pantallas y el mismo estado en el panel. */
+.pd-marca { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding: 2px 8px; border: 1px solid; border-radius: 999px; font-size: 12px; white-space: nowrap; vertical-align: middle; }
+.pd-marca.ok { color: var(--bien); border-color: var(--bien-borde); background: var(--bien-fondo); } .pd-marca.no { color: var(--mal); border-color: var(--mal-borde); background: var(--mal-fondo); }
+.pd-marca a, .pd-estado a { color: inherit; text-decoration: underline; }
+.pd-estado { margin: 6px 0 0; font-size: 12px; } .pd-estado.ok { color: var(--bien); } .pd-estado.no { color: var(--mal); } .pd-estado.na { color: var(--suave); }
+.pd-resultados { display: grid; gap: 8px; margin-top: 10px; } .pd-resultados h4 { margin: 0; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.pd-res.ok { border-color: var(--bien-borde); } .pd-res.no { border-color: var(--mal-borde); }
+.pd-aviso { margin-left: 4px; padding: 0 6px; border-radius: 999px; background: #FFFFFF; color: var(--pedir); font-size: 11px; font-weight: 600; }
 .es-agsel { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .es-agsel label { display: grid; gap: 4px; font-size: 12px; color: var(--suave); } .es-agsel select { width: 100%; }
 .es-totales { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); font-size: 13px; } .es-totales b { font-size: 15px; } .es-totales span { color: var(--suave); } .es-totales small { color: var(--suave); }
 .es-pedidos { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }

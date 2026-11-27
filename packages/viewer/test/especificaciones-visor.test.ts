@@ -362,7 +362,7 @@ describe("pantalla Especificaciones", () => {
     expect(p).toContain("0 of 1 batches");
     expect(p).toContain("repo-web");
     expect(p).toContain("Corre: npx vitest run");
-    expect(p).toContain("Requesting…");
+    expect(p).toContain("The agent is working on it…");
     expect(p).toContain('data-acc="cancelar-lote"');
     expect(p).toMatch(/data-acc="pedir-todos" disabled/);
 
@@ -370,7 +370,10 @@ describe("pantalla Especificaciones", () => {
     estado.lotes = [{ id: "L1", estado: "terminado", cerebros: ["front"] }];
     estado.trabajos = [{ ...(estado.trabajos[0] as object), estado: "terminado", costoUsd: 0.12, resultados: [
       { cerebro: "front", funcionalidad: "feat-pagos", regla: "motivo", resultado: "a", tests: ["repo-web:src/pagos/Error.test.tsx::muestra el motivo"] },
-      { cerebro: "front", funcionalidad: "feat-pagos", regla: "suelta", resultado: "c", hoy: "src/pagos/Boton.tsx#L9: el botón se ve arriba", cambio: "Mover el botón abajo.", test: "it('abajo', () => {})" }] }];
+      { cerebro: "front", funcionalidad: "feat-pagos", regla: "suelta", resultado: "c", hoy: "src/pagos/Boton.tsx#L9: el botón se ve arriba", cambio: "Mover el botón abajo.", test: "it('abajo', () => {})" }],
+      desenlaces: [
+        { item: { cerebro: "front", funcionalidad: "feat-pagos", regla: "motivo" }, resuelto: true, cambio: { resultado: "a", tests: ["repo-web:src/pagos/Error.test.tsx::muestra el motivo"] } },
+        { item: { cerebro: "front", funcionalidad: "feat-pagos", regla: "suelta" }, resuelto: true, cambio: { resultado: "c" } }] }];
     (v as { cambiar: (a: string, b: string) => void }).cambiar("pedido-modelo", "claude-haiku-5-5");
     // El panel vuelve a pedir el estado cada 2 s; acá se fuerza con otro pedido.
     v.tocar({ "data-acc": "panel", "data-k": "" }); v.tocar({ "data-acc": "panel", "data-k": "" });
@@ -387,8 +390,9 @@ describe("pantalla Especificaciones", () => {
     expect(p).toContain("The test that proves it");
     expect(p).toContain('data-acc="regla-mal"');
     expect(p).toContain('data-acc="codigo-mal"');
-    // Lo que ya tiene resultado sale de la lista.
+    // Lo que ya tiene resultado sale de la lista, con su estado.
     expect(p).toContain("The list is empty");
+    expect(p).toContain("✔ Resolved by the agent · the code doesn't fulfill it: to decide");
 
     // «El código está mal» lo pasa a desarrollo y queda guardado en la página.
     v.tocar({ "data-acc": "codigo-mal", "data-k": "front/feat-pagos|suelta" });

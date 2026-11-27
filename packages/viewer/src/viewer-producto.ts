@@ -248,7 +248,7 @@ export const PRODUCTO_JS = String.raw`
   function filaProponer(c) {
     var rs = reposDe(c);
     return '<li class="es-fila"><span><strong>' + esc(c) + "</strong>" + (rs.length ? " <small>" + esc(rs.join(", ")) + "</small>" : "") + "</span>" +
-      boton("proponer|" + c, L("Ask the agent to propose the features", "Pedir al agente que proponga las funcionalidades")) + "</li>";
+      boton("proponer|" + c, L("Request the features", "Pedir que proponga las funcionalidades")) + "</li>";
   }
   // No hay ninguna funcionalidad: el pedido por cerebro, y la terminal como alternativa (o la única, sin cerebros).
   function vacioConAgente() {
@@ -262,8 +262,6 @@ export const PRODUCTO_JS = String.raw`
         : '<p><small>' + L("Without an agent on this machine, the panel downloads the request as .md for your agent. Or from the terminal: ", "Sin un agente en esta máquina, el panel baja el pedido como .md para tu agente. O desde la terminal: ") + porTerminal() + "</small></p>");
   }
   var clave = function (x) { return x.cerebro + "|" + (x.funcionalidad || ""); };
-  var cuenta = function (ts, campo) { return ts.reduce(function (n, t) { return n + (t[campo] || []).length; }, 0); };
-  var cifras = function (r, q) { return L(num(r) + " done · " + num(q) + " left", num(r) + " hechos · " + num(q) + " quedan"); };
   function mdFuncionalidades(its) {
     var desc = its.filter(function (it) { return it.datos.funcionalidad; }), prop = its.filter(function (it) { return !it.datos.funcionalidad; }), out = [];
     if (desc.length) out.push("Complete " + (desc.length === 1 ? "this FlowBrain feature" : "these " + desc.length + " FlowBrain features") + " with a business name, a one-line summary and the \"what it is\" section, " + GUIA_F + ". Write each one as a draft: copy its page to .flowbrain/<brain>/_drafts/product/<id>.md (same id, same codigo) and complete it there.", "", desc.map(function (it) { return it.datos.linea; }).join("\n"), "");
@@ -292,31 +290,16 @@ export const PRODUCTO_JS = String.raw`
       },
       md: { archivo: "funcionalidades.md", texto: mdFuncionalidades },
       clave: function (it) { return clave(it.datos); },
-      enTanda: function (t) { return (t.items || []).map(clave); },
-      hechos: function (t) { return (t.resueltos || []).map(clave); },
+      tanda: { lista: "items", clave: clave },
       seguimiento: {
-        cuantos: function (t) { return (t.items || []).length; },
-        get espera() { return L("Waits for the previous batch to finish.", "Espera a que termine la tanda anterior."); },
-        get reindexando() { return L("Finishing…", "Terminando…"); },
-        pidiendo: function (n) { return L("Writing " + plural(n, "draft task", "draft tasks"), "Escribiendo " + plural(n, "tarea de borrador", "tareas de borrador")); },
-        extraTanda: function (t) {
-          if (PD.vivo(t) || (!t.resueltos && !t.quedan)) return "";
-          return "<small>" + cifras((t.resueltos || []).length, (t.quedan || []).length) + "</small>" +
-            (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
-        },
-        resumen: function (ts) {
-          var q = cuenta(ts, "quedan");
-          return cifras(cuenta(ts, "resueltos"), q) + L(". The drafts are in _drafts/product/: review them and promote them with flowbrain promote", ". Los borradores están en _drafts/product/: revisalos y promovelos con flowbrain promote") +
-            (q ? L(" (what is left stays in the list to request it again)", " (lo que queda sigue en la lista para pedirlo de nuevo)") : "");
-        }
+        pidiendo: function (n) { return L("Writing " + plural(n, "draft task", "draft tasks"), "Escribiendo " + plural(n, "tarea de borrador", "tareas de borrador")); }
       },
-      tarjeta: function (it, enTanda) {
+      tarjeta: function (it) {
         var x = it.datos;
         return '<p class="es-texto">' + esc(x.funcionalidad ? x.nombre : L("Propose the features of " + x.cerebro, "Proponer las funcionalidades de " + x.cerebro)) + '</p><div class="chips">' +
           '<span class="chip">' + (x.funcionalidad ? L("No description", "Sin descripción") : L("No features", "Sin funcionalidades")) + "</span>" +
           (x.funcionalidad ? "" : (x.repos || []).map(function (r) { return '<span class="chip">' + esc(r) + "</span>"; }).join("")) +
-          '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span>" +
-          (enTanda ? '<span class="chip es-ok">' + L("Writing…", "Escribiéndose…") + "</span>" : "") + "</div>";
+          '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span></div>";
       }
     });
     // Lo que ya no está pendiente sale de la lista: la ficha ya tiene descripción o el cerebro ya tiene funcionalidades.

@@ -285,25 +285,12 @@ export const SIN_ASOCIAR_JS = String.raw`
     costo: function (mo) { return typeof mo.costoPorArchivoUsd === "number" ? mo.costoPorArchivoUsd : null; },
     lote: function (es) { return { tipo: "asociar", archivos: es.map(function (e) { return { cerebro: e.datos.cerebro, archivo: e.datos.archivo, linea: e.datos.linea }; }) }; },
     md: { archivo: "archivos-pedidos.md", texto: function (es) { return mdDeLista(es.map(function (e) { return e.datos; })); } },
-    enTanda: function (t) { return (t.archivos || []).map(function (a) { return a.cerebro + "|" + a.archivo; }); },
-    hechos: function (t) { return (t.asociados || []).map(function (a) { return a.cerebro + "|" + a.archivo; }); },
+    tanda: { lista: "archivos", clave: function (a) { return a.cerebro + "|" + a.archivo; } },
     seguimiento: {
-      cuantos: function (t) { return (t.archivos || []).length; },
-      get espera() { return L("Waits for the previous batch of this brain to finish.", "Espera a que termine la tanda anterior de este cerebro."); },
-      get reindexando() { return L("Finishing…", "Terminando…"); },
       pidiendo: function (n, repos) { return L("Assigning " + plural(n, "file", "files") + " in " + plural(repos, "repo", "repos"), "Asociando " + plural(n, "archivo", "archivos") + " en " + plural(repos, "repo", "repos")); },
-      extraTanda: function (t) {
-        if (PD.vivo(t) || (!t.asociados && !t.siguen)) return "";
-        return "<small>" + cifrasLote((t.asociados || []).length, (t.siguen || []).length) + "</small>" +
-          (t.resultado ? '<details class="tf"><summary>' + L("What the agent said", "Lo que dijo el agente") + '</summary><p class="es-resultado">' + esc(t.resultado) + "</p></details>" : "");
-      },
-      resumen: function (ts) {
-        var s = cuentaDe(ts, "siguen");
-        return cifrasLote(cuentaDe(ts, "asociados"), s) + (s ? L(" (proposed as a draft, not product, or left: each batch says why; they stay in the list)", " (propuestos como borrador, no son de producto o quedaron: cada tanda dice por qué; siguen en la lista)") : "");
-      }
     },
     // La tarjeta de cada archivo: su nombre y motivo, la recomendada con su confianza (o compartido / sin pista) y el cerebro.
-    tarjeta: function (it, enTanda) {
+    tarjeta: function (it) {
       var e = it.datos, x = porArchivoDe(e.k);
       var chips = e.clase === "recomendada"
         ? (e.conf ? '<span class="chip' + (e.conf === "alta" ? " es-ok" : e.conf === "media" ? " es-aviso" : "") + '" title="' + esc(confPorQue(e.conf)) + '">' + L(confEt(e.conf) + " confidence", "Confianza " + confEt(e.conf).toLowerCase()) + "</span>" : "") +
@@ -312,14 +299,11 @@ export const SIN_ASOCIAR_JS = String.raw`
       var motivo = !x ? "" : x.g ? motivoDe(x.g[0], x.g[1], x.g[3])
         : x.m ? L("Used by " + x.m + " features and none dominates: it fits a library.", "Lo usan " + x.m + " funcionalidades y ninguna domina: conviene una librería.")
         : L("Nothing links it to a feature: no imports, no endpoints, no folder neighbors.", "Nada lo une a una funcionalidad: ni imports, ni endpoints, ni vecinos de carpeta.");
-      return '<p class="es-texto"><code>' + esc(e.nombre) + "</code>" + (motivo ? " <small>" + esc(motivo) + "</small>" : "") + '</p><div class="chips">' + chips + '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(e.cerebro) + "</span>" +
-        (enTanda ? '<span class="chip es-ok">' + L("Assigning…", "Asociándose…") + "</span>" : "") + '</div><small class="es-archivo">' + L("File: ", "Archivo: ") + "<code>" + esc(e.archivo) + "</code></small>";
+      return '<p class="es-texto"><code>' + esc(e.nombre) + "</code>" + (motivo ? " <small>" + esc(motivo) + "</small>" : "") + '</p><div class="chips">' + chips + '<span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(e.cerebro) + '</span></div><small class="es-archivo">' + L("File: ", "Archivo: ") + "<code>" + esc(e.archivo) + "</code></small>";
     }
   });
   // El archivo sin asociar de una clave del pedido (para el motivo de la tarjeta).
   function porArchivoDe(k) { if (!U) return null; for (var i = 0; i < U.length; i++) if (claveDe(U[i]) === k) return U[i]; return null; }
-  var cuentaDe = function (ts, k) { return ts.reduce(function (n, t) { return n + (t[k] || []).length; }, 0); };
-  var cifrasLote = function (a, s) { return L(num(a) + " assigned · " + num(s) + " still unassigned", plural(a, "asociado", "asociados") + " · " + num(s) + " " + (s === 1 ? "sigue" : "siguen") + " sin asociar"); };
 
   // ---------- El agente: lo mandado desde acá, su avance y su cancelación ----------
   var llamar = function (ruta, cuerpo) { return PD.llamar(ruta, cuerpo); };
