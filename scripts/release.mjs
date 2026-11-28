@@ -5,7 +5,7 @@
 // Cada paso mira si ya está hecho (versión en npm, tag local, tag en origin), así que se puede repetir si algo falla a
 // mitad. Las versiones van en orden: no publica una menor que la última en npm ni saltea una del CHANGELOG.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -246,7 +246,8 @@ async function publicarDesdeCorte({ pedido: version, desde, seco, preparar }) {
   if (seco) return console.log("\n(--dry-run: no se cambió nada)");
 
   // Worktree temporal con la rama: el checkout de main no se toca.
-  const dir = join(tmpdir(), `flowbrain-release-v${version}`);
+  // En macOS tmpdir() es /var/… pero git registra el worktree con la ruta real (/private/var/…): se compara con la real.
+  const dir = join(realpathSync(tmpdir()), `flowbrain-release-v${version}`);
   git("worktree", "prune");
   const registrado = git("worktree", "list", "--porcelain").split("\n").includes(`worktree ${dir}`);
   if (!registrado) {
