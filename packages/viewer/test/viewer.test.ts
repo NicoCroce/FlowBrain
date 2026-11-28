@@ -3,6 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { Graph } from "@flowbrain/core";
+import { redDeFlujo, trazabilidad } from "@flowbrain/core";
 import { renderViewer } from "../src/index.js";
 
 const RAIZ = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -37,6 +38,21 @@ describe("viewer.html", () => {
     const pedido = html.indexOf("window.brainPedido = {");
     expect(pedido).toBeGreaterThan(0);
     for (const p of ["window.brainEspecificaciones = {", "window.brainSinAsociar = {"]) expect(html.indexOf(p)).toBeGreaterThan(pedido);
+  });
+
+  it("el Mapa 3D trae la trazabilidad completa del core, y con los datos de la página arma la cadena de un endpoint", async () => {
+    const html = renderViewer(await graph());
+    expect(html).toContain("function redDeFlujo(d)");
+    expect(html).toContain("function trazabilidad(red, origen, tope)");
+    expect(html).toContain("Mostrar trazabilidad completa");
+    expect(html).toContain("Salir de la trazabilidad");
+    // Lo mismo que hace el visor con sus datos: la red sale de nodes, edges y fichas tal como los embebe la página.
+    const d = datos(html) as unknown as { nodes: Array<{ id: string; t: string; n: string }>; edges: Array<{ s: string; h: string; v: string; ev: string; p: string | null }> };
+    const red = redDeFlujo({ nodos: d.nodes.map((n) => ({ id: n.id, tipo: n.t, c: 0, nombre: n.n })), aristas: d.edges });
+    const ep = d.nodes.find((n) => n.t === "endpoint" && d.edges.some((e) => e.s === n.id && (e.v === "lee_de" || e.v === "escribe_en")))!;
+    const t = trazabilidad(red, ep.id)!;
+    expect(t.nodos.some((n) => n.tipo === "tabla" && n.lado === "abajo")).toBe(true);
+    expect(t.aristas.every((a) => !a.cruza)).toBe(true);
   });
 
   it("escapa nombres que podrían cerrar el script", async () => {
