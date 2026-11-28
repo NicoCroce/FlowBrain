@@ -8,6 +8,7 @@
  */
 import { RED_FLUJO_JS, TRAZABILIDAD_JS } from "@flowbrain/core";
 import { ORDEN_CEREBROS_JS } from "./orden-cerebros.js";
+import { TRAZA_CSS, TRAZA_VISTAS_JS } from "./viewer-traza.js";
 
 export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD_JS + String.raw`
 (function () {
@@ -473,7 +474,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
   // las trazas entre cerebros y la deriva que ya trae la página. Se dibuja sobre el mismo mapa: lo demás se apaga, la
   // cadena se ve con flechas e impulsos en el sentido del flujo y los saltos entre cerebros van en dorado con el nombre
   // del cerebro al que llegan. Los pasos (métodos, hooks) no son nodos del mapa: se ven en su archivo.
-  var RED = null, TOPE_TZ = 400, MODO_TZ = "carriles", movTz = null;
+  var RED = null, TOPE_TZ = 400, MODO_TZ = "diagrama", TOPE_ETQ = 36;
   var SIN_TZ = { repo: 1, db: 1, team: 1, decision: 1, lib: 1 };
   function redFlujo() {
     if (RED) return RED;
@@ -503,85 +504,48 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
       ya[k] = true;
       es.push({ a: p, b: q, verbo: a.verbo, cruza: p.c !== q.c, c: ((es.length % 7) - 3) * 0.035 });
     });
-    // Carril de cada punto del mapa: la capa más alta de lo que representa (un archivo va con sus pasos: los del front
-    // antes de los endpoints, los del back después).
-    var col = new Map();
-    r.nodos.forEach(function (x) { var n = en3(x.id); if (n && (!col.has(n) || x.capa < col.get(n))) col.set(n, x.capa); });
-    var giraba = TZ ? TZ.giraba : S.rotating;
-    if (TZ) volverDeCarriles(true);
-    TZ = { id: id, r: r, ns: ns, es: es, col: col, hov: null, todas: {}, giraba: giraba, re: 0, plano: null, guardado: null };
-    S.rotating = false; S.selId = id; S.isolate = false; rutaN = rutaE = null; rutaL = [];
+    var giraba = TZ ? TZ.giraba : S.rotating, idx = {};
+    r.nodos.forEach(function (x) { idx[x.id] = x; });
+    // Nombres en «En los cerebros»: solo la cadena, con tope. Primero el origen y las puntas de los saltos entre
+    // cerebros, después lo más cercano al origen (los archivos al final: sus pasos ya se nombran en otro lado).
+    var prio = new Map(), cand = [];
+    var poner = function (n, p) { if (n && (!prio.has(n) || prio.get(n) > p)) prio.set(n, p); };
+    poner(by[id] || en3(id), 0);
+    es.forEach(function (e) { if (e.cruza) { poner(e.a, 1); poner(e.b, 1); } });
+    r.nodos.forEach(function (x) { var n = en3(x.id); if (n) cand.push({ n: n, p: 2 + x.dist + (n.tipo === "archivo" || n.tipo === "test" ? 50 : 0) }); });
+    cand.forEach(function (k) { poner(k.n, k.p); });
+    var etq = new Map();
+    Array.from(prio.keys()).sort(function (a, b) { return prio.get(a) - prio.get(b); }).slice(0, TOPE_ETQ).forEach(function (n) { etq.set(n, prio.get(n)); });
+    TZ = { id: id, r: r, ns: ns, es: es, idx: idx, etq: etq, hov: null, todas: {}, giraba: giraba, re: 0, ficha: id, codigo: null };
+    S.rotating = false; S.selId = by[id] ? id : S.selId; S.isolate = false; rutaN = rutaE = null; rutaL = [];
     pulsos.length = 0;
     actualizarActivos(); reacomodar(0.35);
     // Se vuelve a encuadrar en unos cuadros: al abrir el mapa recién se conoce su tamaño, y los puntos se acomodan.
-    if (MODO_TZ === "carriles") { aplanar(); TZ.re = T + 3; } else { encuadrar(); TZ.re = T + 70; }
+    encuadrar(); TZ.re = T + 70;
+    verDiagrama(MODO_TZ === "diagrama");
     ui();
   }
   function salirTraza() {
     if (!TZ) return;
-    volverDeCarriles(false);
     S.rotating = TZ.giraba; TZ = null; pulsos.length = 0;
+    verDiagrama(false);
     actualizarActivos(); computeRuta(S.selId); reacomodar(0.2);
     if (S.selId && by[S.selId]) focus(by[S.selId]);
     ui();
   }
-  /**
-   * Carriles: la cadena se acomoda en un plano de frente a la cámara, una columna por capa en el orden del flujo
-   * (funcionalidad a la izquierda, tabla a la derecha). Dentro de cada columna, primero lo que llega al origen, por
-   * cerebro y distancia. Al salir, cada punto vuelve a donde estaba.
-   */
-  var FILAS_TZ = 14, DX_TZ = 380, DY_TZ = 46, SUB_TZ = 190;
-  function aplanar() {
-    var cols = {};
-    TZ.ns.forEach(function (n) { var k = TZ.col.get(n); (cols[k] = cols[k] || []).push(n); });
-    var orden = {};
-    TZ.r.nodos.forEach(function (x, i) { var n = en3(x.id); if (n && orden[n.id] === undefined) orden[n.id] = { lado: x.lado === "arriba" ? 0 : x.lado === "origen" ? 1 : 2, dist: x.dist, i: i }; });
-    var ks = Object.keys(cols).map(Number).sort(function (a, b) { return a - b; }), xs = [], x = 0, alto = 0;
-    ks.forEach(function (k) { var sub = Math.ceil(cols[k].length / FILAS_TZ); xs.push(x + (sub - 1) * SUB_TZ / 2); x += (sub - 1) * SUB_TZ + DX_TZ; alto = Math.max(alto, Math.min(FILAS_TZ, cols[k].length)); });
-    // Ejes de la pantalla en el mundo, los mismos de project(): derecha y arriba, sin profundidad.
-    var cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw), cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
-    var ancho = x - DX_TZ, b = { right: [cy, 0, sy], up: [-sy * sp, cp, cy * sp] }, c = centro(Array.from(TZ.ns));
-    var a = { x: c.x, y: c.y, z: c.z };
-    TZ.guardado = new Map(); TZ.plano = { c: a, right: b.right, up: b.up, ancho: ancho, alto: alto, carriles: [] };
-    var destino = new Map();
-    ks.forEach(function (k, i) {
-      var l = cols[k].slice().sort(function (p, q) { var op = orden[p.id], oq = orden[q.id]; return op.lado - oq.lado || p.c - q.c || op.dist - oq.dist || op.i - oq.i; });
-      var sub = Math.ceil(l.length / FILAS_TZ), filas = Math.min(FILAS_TZ, l.length);
-      l.forEach(function (n, j) {
-        var lx = xs[i] - (sub - 1) * SUB_TZ / 2 + Math.floor(j / FILAS_TZ) * SUB_TZ - ancho / 2, ly = ((filas - 1) / 2 - (j % FILAS_TZ)) * DY_TZ;
-        destino.set(n, { x: a.x + b.right[0] * lx + b.up[0] * ly, y: a.y + b.right[1] * lx + b.up[1] * ly, z: a.z + b.right[2] * lx + b.up[2] * ly });
-      });
-      TZ.plano.carriles.push({ capa: k, x: xs[i] - ancho / 2, y: (filas - 1) / 2 * DY_TZ + 46 });
-    });
-    TZ.ns.forEach(function (n) { TZ.guardado.set(n, { x: n.x, y: n.y, z: n.z, pin: n.pin }); n.pin = true; n.vx = n.vy = n.vz = 0; });
-    mover(destino);
-    encuadrar();
-  }
-  /** Devuelve los puntos de la cadena a su lugar (o los deja donde están, si se pasa a otra trazabilidad sin animar). */
-  function volverDeCarriles(sinAnimar) {
-    if (!TZ || !TZ.guardado) return;
-    var destino = new Map(), g = TZ.guardado;
-    g.forEach(function (v, n) { destino.set(n, v); n.pin = v.pin; if (sinAnimar) { n.x = v.x; n.y = v.y; n.z = v.z; } });
-    TZ.guardado = null; TZ.plano = null;
-    if (!sinAnimar) mover(destino);
-  }
-  function mover(destino) {
-    var desde = new Map();
-    destino.forEach(function (_, n) { desde.set(n, { x: n.x, y: n.y, z: n.z }); });
-    movTz = { t: 0, T: QUIETO ? 1 : 38, desde: desde, hasta: destino };
-  }
   function encuadrar() {
     if (!TZ || !TZ.ns.size) return;
-    if (TZ.plano) {
-      var P = TZ.plano, hw = P.ancho / 2 + 160, hh = P.alto * DY_TZ / 2 + 90;
-      // Entra todo (el mapa no se desplaza de costado); no se acerca más de lo que pide que las columnas queden a 260 px.
-      var entra = Math.max(F * hw / (W * 0.46 || 1), F * hh / (H * 0.44 || 1));
-      cam.goal = { x: P.c.x, y: P.c.y, z: P.c.z, dist: Math.max(380, Math.min(9000, Math.max(entra, F * DX_TZ / 260))) };
-      return;
+    if (MODO_TZ === "diagrama") { ajustarDiagrama(); return; }
+    // Entran enteros todos los cerebros que la cadena toca, cada punto en su lugar real.
+    var l = Array.from(TZ.ns), cs = [], c = centro(l), r = 0;
+    l.forEach(function (n) { if (cs.indexOf(n.c) < 0) cs.push(n.c); });
+    if (MULTI && cs.length > 1) {
+      c = { x: 0, y: 0, z: 0 };
+      cs.forEach(function (k) { c.x += OX[k] / cs.length; c.y += OY[k] / cs.length; c.z += OZ[k] / cs.length; });
+      cs.forEach(function (k) { r = Math.max(r, Math.sqrt((OX[k] - c.x) * (OX[k] - c.x) + (OY[k] - c.y) * (OY[k] - c.y) + (OZ[k] - c.z) * (OZ[k] - c.z)) + (BRS[k] || 260)); });
     }
-    var l = Array.from(TZ.ns), c = centro(l), r = 0;
     l.forEach(function (n) { r = Math.max(r, Math.sqrt((n.x - c.x) * (n.x - c.x) + (n.y - c.y) * (n.y - c.y) + (n.z - c.z) * (n.z - c.z))); });
-    cam.goal = { x: c.x, y: c.y, z: c.z, dist: Math.max(420, Math.min(7000, r * 2.7 + 200)) };
+    cam.goal = { x: c.x, y: c.y, z: c.z, dist: Math.max(420, Math.min(9000, r * 2.5 + 200)) };
   }
 
   function step() {
@@ -590,12 +554,6 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
     if (!BR) { medirCerebros(false); c.dist = Math.max(c.dist, BR * 2.9); } else if (T % 20 === 0) medirCerebros(true);
     if (S.rotating && !ptr) c.yaw += 0.0016;
     if (TZ && TZ.re && T >= TZ.re) { TZ.re = 0; encuadrar(); }
-    if (movTz) {
-      movTz.t++;
-      var mk = 1 - Math.pow(1 - Math.min(1, movTz.t / movTz.T), 3);
-      movTz.hasta.forEach(function (h, n) { var d0 = movTz.desde.get(n); n.x = d0.x + (h.x - d0.x) * mk; n.y = d0.y + (h.y - d0.y) * mk; n.z = d0.z + (h.z - d0.z) * mk; n.vx = n.vy = n.vz = 0; });
-      if (movTz.t >= movTz.T) movTz = null;
-    }
     if (alpha > 0.01) { simStep(alpha); if (activos.length <= 900) simStep(alpha); alpha *= 0.975; }
     for (var i = anims.length - 1; i >= 0; i--) {
       var a = anims[i], e0 = 1 - Math.pow(1 - a.t / a.T, 3); a.t++;
@@ -789,31 +747,29 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
       ctx.globalAlpha = 1;
     }
     ctx.font = "500 11.5px " + color("sans"); ctx.textBaseline = "middle"; ctx.lineJoin = "round";
-    for (var l = 0; l < P.length; l++) {
-      var p3 = P[l], n3 = p3.n;
+    // En la trazabilidad se nombra solo la cadena, con tope y por prioridad (origen, saltos, cercanía), sin que un
+    // nombre pise a otro: el de menos prioridad se calla.
+    var nombres = P;
+    if (TZ) nombres = P.filter(function (p3) { return p3.n === hov || p3.n === TZ.hov || TZ.etq.has(p3.n); }).sort(function (a, b) { var pa = a.n === hov || a.n === TZ.hov ? -1 : TZ.etq.get(a.n), pb = b.n === hov || b.n === TZ.hov ? -1 : TZ.etq.get(b.n); return pa - pb; });
+    var puestos = [];
+    for (var l = 0; l < nombres.length; l++) {
+      var p3 = nombres[l], n3 = p3.n;
       var show = n3 === sel || n3 === hov || (sel && rutaN && rutaN.has(n3) && (rutaN.size <= 40 || n3.tipo === "tabla" || n3.c !== sel.c)) || S.labels === "todas" || (S.labels === "grandes" && p3.r > 8.5) || (match && match.has(n3));
       if (S.labels === "ninguna" && n3 !== sel && n3 !== hov) show = false;
       // Con un recorrido aislado queda poco en pantalla: ahí los nombres se prenden solos.
       if (S.isolate && isoSet) show = true;
-      // En la trazabilidad, los nombres de la cadena se ven solos (los archivos, si son pocos o bajo el cursor de la lista).
-      if (TZ) show = n3 === hov || n3 === TZ.hov || (TZ.ns.has(n3) && (TZ.ns.size <= 45 || (n3.tipo !== "archivo" && n3.tipo !== "test") || by[TZ.id] === n3));
+      if (TZ) show = true;
       if (!show || p3.a < 0.3) continue;
-      ctx.globalAlpha = Math.min(1, p3.a + 0.15); ctx.lineWidth = 3.5; ctx.strokeStyle = "rgba(10,12,17,.9)";
       var lx = p3.sx + p3.r + 6;
       var txt = TZ && (n3.tipo === "archivo" || n3.tipo === "test") ? n3.nombre.slice(n3.nombre.lastIndexOf("/") + 1) : n3.nombre;
-      var corto = TZ && TZ.plano ? Math.max(8, Math.min(34, Math.floor((F * DX_TZ / cam.dist - 34) / 6.4))) : 34;
-      if (TZ && txt.length > corto && n3 !== hov && n3 !== TZ.hov) txt = txt.slice(0, corto - 1) + "…";
+      if (TZ && txt.length > 34 && n3 !== hov && n3 !== TZ.hov) txt = txt.slice(0, 33) + "…";
+      if (TZ) {
+        var caja = { x: lx - 2, y: p3.sy - 8, w: ctx.measureText(txt).width + 4, h: 16 };
+        if (n3 !== hov && n3 !== TZ.hov && puestos.some(function (q) { return caja.x < q.x + q.w && q.x < caja.x + caja.w && caja.y < q.y + q.h && q.y < caja.y + caja.h; })) continue;
+        puestos.push(caja);
+      }
+      ctx.globalAlpha = Math.min(1, p3.a + 0.15); ctx.lineWidth = 3.5; ctx.strokeStyle = "rgba(10,12,17,.9)";
       ctx.strokeText(txt, lx, p3.sy); ctx.fillStyle = n3 === sel ? "#FFFFFF" : "#D5DAE4"; ctx.fillText(txt, lx, p3.sy); ctx.globalAlpha = 1;
-    }
-    // Encabezado de cada carril, arriba de su columna.
-    if (TZ && TZ.plano && !movTz) {
-      ctx.font = "600 11px " + color("sans"); ctx.textAlign = "center";
-      TZ.plano.carriles.forEach(function (k) {
-        var P = TZ.plano, q = project(P.c.x + P.right[0] * k.x + P.up[0] * k.y, P.c.y + P.right[1] * k.x + P.up[1] * k.y, P.c.z + P.right[2] * k.x + P.up[2] * k.y);
-        if (!q) return;
-        ctx.globalAlpha = 0.85; ctx.fillStyle = "#8A93A6"; ctx.fillText(L(CAPAS_TZ[k.capa][0], CAPAS_TZ[k.capa][1]).toUpperCase(), q.sx, q.sy);
-      });
-      ctx.textAlign = "start"; ctx.globalAlpha = 1;
     }
     pastillas.forEach(function (q) {
       var txt = "→ " + CEREBROS[q.a].nombre;
@@ -856,6 +812,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
   function loop() {
     requestAnimationFrame(loop);
     if (!canvas.offsetParent) return;
+    if (TZ && MODO_TZ === "diagrama") return;
     var padre = canvas.parentElement, dpr = window.devicePixelRatio || 1;
     W = padre.clientWidth; H = padre.clientHeight; F = Math.min(W, H) * 1.15;
     if (canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr)) { canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); }
@@ -907,7 +864,9 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
     var P = ptr; ptr = null; canvas.style.cursor = "grab";
     if (!P) return;
     if (P.cerebro >= 0) { medirCerebros(false); return; }
-    if (P.hit) seleccionar(P.hit.id);
+    if (P.hit && TZ && P.moved < 5 && (TZ.idx[P.hit.id] || TZ.ns.has(P.hit))) elegirEnTraza(P.hit.id);
+    else if (P.hit) seleccionar(P.hit.id);
+    else if (TZ) return;
     else if (P.moved < 5) { S.selId = null; S.isolate = false; computeRuta(null); ui(); }
     else if (P.hit) ui();
   }
@@ -1029,9 +988,12 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
     if (t.indexOf("sin_resolver:") === 0) return L("Unresolved call in this file: ", "Llamada sin resolver en este archivo: ") + t.slice(13);
     return t;
   }
+`
+  + TRAZA_VISTAS_JS +
+  String.raw`
   /** La trazabilidad puesta: la cadena por capa, con el cerebro y la evidencia de cada paso, los huecos y lo que quedó afuera. */
   function panelTraza() {
-    var r = TZ.r, o = by[TZ.id], ev = {};
+    var r = TZ.r, o = TZ.idx[TZ.id], ev = {};
     // Evidencia de cada elemento: la suya (un paso) o la de la arista que lo une a la cadena, del lado del origen.
     r.aristas.forEach(function (a) { if (a.ev && !ev[a.hasta]) ev[a.hasta] = a.ev; });
     r.aristas.forEach(function (a) { if (a.ev && !ev[a.desde]) ev[a.desde] = a.ev; });
@@ -1049,7 +1011,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
     var fila = function (x) {
       var n3 = en3(x.id), e = x.ev || ev[x.id] || (porId[x.id] && porId[x.id].at && porId[x.id].at.evidencia) || "";
       var sw0 = x.tipo === "metodo" ? sw(x.capa === 2 ? "componente" : "svc") : sw(x.tipo);
-      return '<button type="button" class="nb tz-fila' + (x.lado === "origen" ? " on" : "") + '"' + (n3 ? ' data-tz="' + esc(n3.id) + '"' : " disabled") + ' title="' + esc(x.id) + '">' + sw0 +
+      return '<button type="button" class="nb tz-fila' + (x.id === TZ.ficha ? " on" : "") + '"' + (n3 || TZ.idx[x.id] ? ' data-tz="' + esc(x.id) + '"' : " disabled") + ' title="' + esc(x.id) + '">' + sw0 +
         '<span class="tz-txt"><span class="corta">' + esc(x.nombre) + "</span>" + (e ? '<code class="tz-ev">' + esc(e) + "</code>" : '<span class="tz-ev">' + L("no evidence", "sin evidencia") + "</span>") + "</span>" +
         '<span class="vb" title="' + (x.lado === "arriba" ? L("reaches it", "llega a él") : x.lado === "abajo" ? L("it reaches", "llega desde él") : L("origin", "origen")) + '">' + flecha(x) + "</span>" + chip(x.c) + "</button>";
     };
@@ -1062,7 +1024,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
     }).join("");
     var nombreDe = function (id) { var x = r.nodos.filter(function (y) { return y.id === id; })[0]; return x ? x.nombre : id; };
     var huecos = r.huecos.length ? '<div class="m3-caja tz-huecos"><span class="lbl">' + L("Gaps in the chain", "Huecos en la cadena") + '<span class="ct">' + r.huecos.length + "</span></span>" +
-      r.huecos.slice(0, 30).map(function (h) { var n3 = en3(h.en); return '<button type="button" class="nb tz-fila"' + (n3 ? ' data-tz="' + esc(n3.id) + '"' : " disabled") + '><span class="tz-txt"><span class="corta">' + esc(nombreDe(h.en)) + '</span><span class="tz-hueco">' + esc(huecoTxt(h.texto)) + "</span>" + (h.ev ? '<code class="tz-ev">' + esc(h.ev) + "</code>" : "") + "</span></button>"; }).join("") +
+      r.huecos.slice(0, 30).map(function (h) { var n3 = en3(h.en); return '<button type="button" class="nb tz-fila"' + (n3 || TZ.idx[h.en] ? ' data-tz="' + esc(h.en) + '"' : " disabled") + '><span class="tz-txt"><span class="corta">' + esc(nombreDe(h.en)) + '</span><span class="tz-hueco">' + esc(huecoTxt(h.texto)) + "</span>" + (h.ev ? '<code class="tz-ev">' + esc(h.ev) + "</code>" : "") + "</span></button>"; }).join("") +
       (r.huecos.length > 30 ? '<p class="vacio">' + L("and " + num(r.huecos.length - 30) + " more.", "y " + (r.huecos.length - 30) + " más.") + "</p>" : "") + "</div>" : "";
     var corte = "";
     if (r.truncado) {
@@ -1073,17 +1035,16 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
     var vacia = r.nodos.length <= 1 ? '<p class="vacio">' + L("No flow relation reaches this piece or leaves it: nothing in the graph calls it, draws it or reads it, and it doesn't call anything. If it should, check Fidelity for this file or feature.",
       "Ninguna relación de flujo llega a esta pieza ni sale de ella: nada del grafo la llama, la dibuja ni la lee, y ella no llama a nada. Si debería, revisá Fidelidad de su archivo o funcionalidad.") + "</p>" : "";
     // Los cerebros en el sentido de los saltos: primero el que más llama a otros y menos recibe.
-    var balance = {};
-    r.aristas.forEach(function (a) { if (!a.cruza) return; var ca = r.nodos.filter(function (y) { return y.id === a.desde; })[0], cb = r.nodos.filter(function (y) { return y.id === a.hasta; })[0]; if (!ca || !cb) return; balance[ca.c] = (balance[ca.c] || 0) - 1; balance[cb.c] = (balance[cb.c] || 0) + 1; });
-    cerebrosEn.sort(function (a, b) { return (balance[a] || 0) - (balance[b] || 0) || a - b; });
+    cerebrosEn = cerebrosEnOrden(r);
     var ruta = MULTI && cerebrosEn.length ? '<div class="tz-ruta">' + cerebrosEn.map(function (c) { return '<span class="tz-cer" style="color:' + colorC(c) + ";border-color:" + colorC(c) + '">' + puntoC(c) + esc(CEREBROS[c].nombre) + "</span>"; }).join('<span class="tz-sig">→</span>') + "</div>" : "";
     return '<div class="m3-cab"><div class="m3-tipo"><span class="sw" style="background:#F5B94A"></span><span class="lbl">' + L("Full traceability", "Trazabilidad completa") + "</span></div>" +
-      '<h2 class="m3-nombre">' + (o ? sw(o.tipo) + " " : "") + esc(o ? o.nombre : TZ.id) + "</h2><code>" + esc(TZ.id) + "</code>" +
+      '<h2 class="m3-nombre">' + (o && by[o.id] ? sw(o.tipo) + " " : "") + esc(o ? o.nombre : TZ.id) + "</h2><code>" + esc(TZ.id) + "</code>" +
       '<p class="m3-resumen">' + L(num(r.nodos.length) + pl(r.nodos.length, " piece", " pieces") + (MULTI ? " in " + cerebrosEn.length + pl(cerebrosEn.length, " brain", " brains") + " · " + saltos + pl(saltos, " jump", " jumps") + " between brains" : "") + ". ↑ reaches it · ↓ it reaches.",
         r.nodos.length + " piezas" + (MULTI ? " en " + cerebrosEn.length + (cerebrosEn.length === 1 ? " cerebro" : " cerebros") + " · " + saltos + (saltos === 1 ? " salto" : " saltos") + " entre cerebros" : "") + ". ↑ llega a ella · ↓ llega desde ella.") + "</p>" + ruta + "</div>" +
-      '<div class="tz-modo"><span class="lbl">' + L("Show", "Ver") + '</span><div class="seg">' + seg("tzmodo", [["carriles", L("In lanes", "En carriles")], ["mapa", L("On the map", "En el mapa")]], MODO_TZ) + "</div></div>" +
+      '<div class="tz-modo"><span class="lbl">' + L("Show", "Ver") + '</span><div class="seg">' + seg("tzmodo", [["diagrama", L("Diagram (2D)", "Diagrama (2D)")], ["cerebros", L("In the brains (3D)", "En los cerebros (3D)")]], MODO_TZ) + "</div></div>" +
       '<div class="m3-acciones"><button type="button" class="btn pri" data-acc="tz-salir">' + L("Exit traceability", "Salir de la trazabilidad") + '</button><button type="button" class="btn" data-acc="tz-encuadrar">' + L("Frame the chain", "Encuadrar la cadena") + "</button></div>" +
-      corte + vacia + huecos + capas +
+      (TZ.ficha ? fichaDe(TZ.ficha) : '<p class="vacio">' + L("Click a piece of the chain (in the diagram, the map or the list) to see its card.", "Hacé clic en una pieza de la cadena (en el diagrama, el mapa o la lista) para ver su ficha.") + "</p>") +
+      corte + vacia + huecos + '<h3 class="lbl tz-cadena">' + L("The chain, by layer", "La cadena, por capa") + "</h3>" + capas +
       (sinMapa ? '<p class="vacio">' + L(num(sinMapa) + pl(sinMapa, " piece of the chain has", " pieces of the chain have") + " no point on the map (their file isn't indexed as a node, or it's a table without a page): they're only listed here.",
         sinMapa + " piezas de la cadena no tienen punto en el mapa (su archivo no está indexado como nodo, o es una tabla sin página): solo se listan acá.") + "</p>" : "");
   }
@@ -1158,10 +1119,16 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
     var b = ev.target.closest ? ev.target.closest("button, a") : null;
     if (!b || b.tagName === "A") return;
     var d = b.dataset, sel = S.selId ? by[S.selId] : null;
-    if (d.tz) { var nz = by[d.tz]; if (nz) { TZ.hov = nz; focus(nz); } return; }
+    if (d.acc === "pedir" && b.closest("#m3-detalle")) { if (window.brainPedido) window.brainPedido.sumar(d.tipo, d.k); ui(); return; }
+    if ((d.tz || d.tzIr) && TZ) {
+      var iz = d.tz || d.tzIr, nz = en3(iz);
+      if (TZ.idx[iz] || by[iz]) elegirEnTraza(iz);
+      if (MODO_TZ === "diagrama") centrarEn(iz, false); else if (nz) { TZ.hov = nz; focus(nz); }
+      return;
+    }
     if (d.tzTodas) { TZ.todas[d.tzTodas] = !TZ.todas[d.tzTodas]; ui(); return; }
     if (d.tzmodo && TZ) {
-      if (d.tzmodo !== MODO_TZ) { MODO_TZ = d.tzmodo; if (MODO_TZ === "carriles") aplanar(); else { volverDeCarriles(false); encuadrar(); TZ.re = T + 45; } }
+      if (d.tzmodo !== MODO_TZ) { MODO_TZ = d.tzmodo; verDiagrama(MODO_TZ === "diagrama"); if (MODO_TZ === "cerebros") { encuadrar(); TZ.re = T + 45; } }
       ui(); return;
     }
     if (d.pick) { irA(d.pick); if (b.closest("#m3-res")) { S.query = ""; $("m3-buscar").value = ""; resultados(); } return; }
@@ -1191,11 +1158,14 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
     else if (d.acc === "tz" && sel) { entrarTraza(sel.id); return; }
     else if (d.acc === "tz-salir") { salirTraza(); return; }
     else if (d.acc === "tz-encuadrar") encuadrar();
+    else if (d.acc === "tz-ficha-cerrar" && TZ) { TZ.ficha = null; TZ.codigo = null; marcarDiagrama(); }
+    else if (d.acc === "tz-codigo" && TZ && TZ.ficha) { verCodigo(TZ.idx[TZ.ficha] || fichaPieza(TZ.ficha)); return; }
+    else if (d.acc === "tz-desde" && TZ && TZ.ficha) { entrarTraza(TZ.ficha); return; }
     else return;
     ui();
   });
   // Pasar el mouse por un paso de la lista lo marca en el mapa (anillo y nombre); hacer clic, además, lo enfoca.
-  $("m3-detalle").addEventListener("mouseover", function (ev) { if (!TZ) return; var b = ev.target.closest ? ev.target.closest("[data-tz]") : null; TZ.hov = b ? by[b.dataset.tz] || null : null; });
+  $("m3-detalle").addEventListener("mouseover", function (ev) { if (!TZ) return; var b = ev.target.closest ? ev.target.closest("[data-tz]") : null; TZ.hov = b ? en3(b.dataset.tz) : null; });
   $("m3-detalle").addEventListener("mouseleave", function () { if (TZ) TZ.hov = null; });
   document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && TZ && canvas.offsetParent) salirTraza(); });
   (function () {
@@ -1205,7 +1175,7 @@ export const GRAFO3D_JS = ORDEN_CEREBROS_JS + RED_FLUJO_JS + "\n" + TRAZABILIDAD
       ".tz-hueco{font:400 12px var(--sans);color:var(--atencion);white-space:normal}.tz-fila .vb{margin-top:3px}.tz-fila .mc{margin-top:2px}" +
       ".tz-ruta{display:flex;flex-wrap:wrap;align-items:center;gap:6px}.tz-cer{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border:1px solid;border-radius:999px;font:600 11px var(--sans)}" +
       ".tz-modo{display:flex;align-items:center;gap:10px}.tz-modo .seg{flex:1}" +
-      ".tz-sig{color:var(--suave)}.tz-corte{border-left:2px solid var(--atencion);padding-left:8px}.tz-huecos{border-color:var(--atencion-borde)}";
+      ".tz-sig{color:var(--suave)}.tz-corte{border-left:2px solid var(--atencion);padding-left:8px}.tz-huecos{border-color:var(--atencion-borde)}" + ` + JSON.stringify(TRAZA_CSS) + String.raw`;
     document.head.appendChild(st);
   })();
   $("presets").addEventListener("click", function (ev) {
