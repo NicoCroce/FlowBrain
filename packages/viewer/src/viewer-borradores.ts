@@ -10,8 +10,14 @@
  * - «Pedir corrección»: suma un ítem `borrador` al pedido al agente, el componente único (`window.brainPedido`), con
  *   la nota de quien revisa. El agente edita solo `_drafts/`.
  * Necesita el visor servido (`flowbrain viewer --serve`): la lista sale de `/api/borradores`. Sin servidor, la pantalla
- * dice por qué y da los comandos de terminal equivalentes. Cuando un lote del agente termina y dejó borradores, la
- * bandeja del pedido lo avisa con un enlace a esta pantalla, y la navegación lleva la cuenta de pendientes.
+ * dice por qué y da los comandos de terminal equivalentes.
+ *
+ * La misma lista es la etapa «A revisar» del botón «Agente» (dec. 236): el tipo `borrador` del pedido la pone con
+ * `revisar()`, con las mismas filas, el mismo diff y los mismos botones que esta pantalla (un solo código para las dos).
+ * Esta pantalla es el detalle (con filtros), sin pestaña en la navegación: se llega con «Abrir la revisión completa».
+ * Un solo número para todo el visor: cuántos borradores hay en `_drafts/` (`cuantos()`), los que esperan que alguien
+ * los acepte o los descarte; el botón, la etapa y el título de esta pantalla muestran ese mismo. Lo que dejó el
+ * último lote del agente no es otro número: es la marca «Del agente» en su fila.
  * Un vacío siempre dice por qué. JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
 export const BORRADORES_JS = String.raw`
@@ -27,13 +33,19 @@ export const BORRADORES_JS = String.raw`
   var elem = function (id) { return document.getElementById(id); };
   var CEREBROS = (D.cerebros || []).map(function (c) { return c.nombre; });
   var AVISO = "flowbrain.borradores.aviso";
+  // En el panel van hasta EN_PANEL filas; el resto, en la revisión completa (esta pantalla, con filtros).
+  var EN_PANEL = 50;
 
   // LISTA: null hasta que el servidor responde. DIFFS: el diff de cada borrador abierto. NOTAS: lo que se escribió para
   // «Pedir corrección». MSG: el resultado de la última acción ({ texto, error, lineas }).
   var LISTA = null, CARGANDO = false, ERROR = "", DIFFS = {}, ABIERTOS = {}, NOTAS = {}, MSG = null, OCUPADO = false;
   var clave = function (x) { return x.cerebro + "|" + x.origen; };
   var porClave = function (k) { var xs = LISTA || []; for (var i = 0; i < xs.length; i++) if (clave(xs[i]) === k) return xs[i]; return null; };
-  var pendientes = function () { return (LISTA || []).filter(function (x) { return x.estado !== "igual"; }); };
+  // EL número de borradores (dec. 236): los de _drafts/ que esperan una decisión de la persona (aceptarlo o
+  // descartarlo; los iguales a su página también, porque eso los saca). Los que se le devolvieron al agente («Pedir
+  // corrección») no: esperan al agente, y se ven en «Por pedir» o «Trabajando». El mismo en el botón, la etapa y el título.
+  var aRevisar = function () { return (LISTA || []).filter(function (x) { return !(PD && PD.esta("borrador", clave(x))); }); };
+  var cuantos = function () { return aRevisar().length; };
   var CLASES = ["funcionalidad", "especificaciones", "libreria", "tecnologia", "nota"];
   function claseEt(c, varios) {
     var T = {
@@ -86,25 +98,18 @@ export const BORRADORES_JS = String.raw`
       LISTA = j.borradores || [];
       // Lo que ya no está (aceptado, descartado o resuelto por el agente) se olvida.
       Object.keys(DIFFS).forEach(function (k) { if (!porClave(k)) { delete DIFFS[k]; delete ABIERTOS[k]; } });
-      podar(); contar(); if (PD) PD.pintar();
+      podar(); if (PD) PD.pintar();
       if (visible()) pintar();
-    }, function (e) { CARGANDO = false; ERROR = e.message; contar(); if (visible()) pintar(); });
+    }, function (e) { CARGANDO = false; ERROR = e.message; if (PD) PD.pintar(); if (visible()) pintar(); });
   }
   var visible = function () { return !raiz.classList || !raiz.classList.contains("oculto"); };
-  // La cuenta en la navegación: los pendientes (los iguales a su página no cuentan).
-  function contar() {
-    var e = elem("nav-borradores"); if (!e) return;
-    var n = pendientes().length;
-    e.textContent = n ? num(n) : "";
-    e.setAttribute("title", n ? L(plural(n, "draft", "drafts") + " to review", plural(n, "borrador", "borradores") + " para revisar") : "");
-  }
-  // Los borradores que dejó un lote del agente ya terminado: los escritos después de que empezó.
+  // Los borradores que dejó un lote del agente ya terminado: los escritos después de que empezó (la marca «Del agente»).
   function deLotes() {
     if (!PD || !PD.lotes || !LISTA) return [];
     var desde = null;
     PD.lotes().forEach(function (LT) { if (!PD.loteVivo(LT) && (desde === null || LT.creado < desde)) desde = LT.creado; });
     if (desde === null) return [];
-    return pendientes().filter(function (x) { return x.modificado >= desde; });
+    return (LISTA || []).filter(function (x) { return x.estado !== "igual" && x.modificado >= desde; });
   }
 
   // ---------- El diff ----------
@@ -143,20 +148,25 @@ export const BORRADORES_JS = String.raw`
       }).join("");
   }
   function abrir(k) {
-    if (ABIERTOS[k]) { delete ABIERTOS[k]; pintarLista(); return; }
+    if (ABIERTOS[k]) { delete ABIERTOS[k]; refrescar(); return; }
     ABIERTOS[k] = true;
     var x = porClave(k);
     if (!x) return;
-    pintarLista();
+    refrescar();
     if (DIFFS[k]) return;
-    llamar("/api/borradores/diff?cerebro=" + encodeURIComponent(x.cerebro) + "&origen=" + encodeURIComponent(x.origen)).then(function (d) { DIFFS[k] = d; pintarLista(); }, function (e) { DIFFS[k] = { error: e.message }; pintarLista(); });
+    llamar("/api/borradores/diff?cerebro=" + encodeURIComponent(x.cerebro) + "&origen=" + encodeURIComponent(x.origen)).then(function (d) { DIFFS[k] = d; refrescar(); }, function (e) { DIFFS[k] = { error: e.message }; refrescar(); });
+  }
+  // Lo mismo se ve en dos lugares (esta pantalla y la etapa «A revisar» del panel): se ponen al día los dos.
+  function refrescar(todo) {
+    if (visible()) { if (todo) pintar(); else pintarLista(); }
+    if (PD) PD.pintar();
   }
 
   // ---------- Aceptar y descartar ----------
   function aceptar(xs) {
     xs = xs.filter(function (x) { return x.clase !== "nota"; });
     if (!xs.length || OCUPADO || !ED) return;
-    OCUPADO = true; MSG = { texto: L("Accepting " + plural(xs.length, "draft", "drafts") + " and compiling…", "Aceptando " + plural(xs.length, "borrador", "borradores") + " y compilando…") }; pintar();
+    OCUPADO = true; MSG = { texto: L("Accepting " + plural(xs.length, "draft", "drafts") + " and compiling…", "Aceptando " + plural(xs.length, "borrador", "borradores") + " y compilando…") }; refrescar(true);
     llamar("/api/borradores/aceptar", { borradores: xs.map(function (x) { return { cerebro: x.cerebro, origen: x.origen }; }) }).then(function (j) {
       OCUPADO = false;
       var movidos = 0, errores = [], salteados = [];
@@ -173,11 +183,12 @@ export const BORRADORES_JS = String.raw`
       }
       MSG = { error: true, texto: (movidos ? L("Accepted " + num(movidos) + ", but not everything: ", "Se aceptaron " + num(movidos) + ", pero no todos: ") : L("Nothing was accepted: ", "No se aceptó nada: ")) +
         (errores.length ? L("the brain stopped compiling, so it was undone. Fix the draft (or ask for a fix) and try again.", "el cerebro dejó de compilar, así que se deshizo. Corregí el borrador (o pedí la corrección) y probá de nuevo.") : L("some were skipped.", "algunos se saltearon.")), lineas: errores.concat(salteados) };
-      cargar(); pintar();
-    }, function (e) { OCUPADO = false; MSG = { error: true, texto: e.message }; pintar(); });
+      cargar(); refrescar(true);
+    }, function (e) { OCUPADO = false; MSG = { error: true, texto: e.message }; refrescar(true); });
   }
-  function aceptarTodo() {
-    var xs = fl.filtrar().filter(function (x) { return x.clase !== "nota"; });
+  // xs: la lista filtrada (en la pantalla) o toda (en el panel).
+  function aceptarTodo(xs) {
+    xs = xs.filter(function (x) { return x.clase !== "nota"; });
     if (!xs.length) return;
     var pisa = xs.filter(function (x) { return x.estado === "distinto"; }).length;
     var pregunta = L("Accept " + plural(xs.length, "draft", "drafts") + "?" + (pisa ? " " + plural(pisa, "page is", "pages are") + " replaced by the draft." : "") + " If a brain stops compiling, its part is undone.",
@@ -192,7 +203,7 @@ export const BORRADORES_JS = String.raw`
     OCUPADO = true;
     llamar("/api/borradores/descartar", { cerebro: x.cerebro, origen: x.origen }).then(function () {
       OCUPADO = false; MSG = { texto: L("Discarded: ", "Descartado: ") + x.origen }; cargar();
-    }, function (e) { OCUPADO = false; MSG = { error: true, texto: e.message }; pintar(); });
+    }, function (e) { OCUPADO = false; MSG = { error: true, texto: e.message }; refrescar(true); });
   }
 
   // ---------- Pedir corrección: el tipo «borrador» del pedido único ----------
@@ -214,11 +225,6 @@ export const BORRADORES_JS = String.raw`
     return ["Revise " + (its.length === 1 ? "this FlowBrain draft" : "these " + its.length + " FlowBrain drafts") + " as the person asked (run flowbrain specs --guide for the page format). Each line has the brain, the path inside .flowbrain/<brain>/ and the person's note.", "",
       its.map(function (it) { return it.datos.linea; }).join("\n"), "",
       "Edit each draft in place (same id, same tipo). For a note in _drafts/notes/, write the fix as a draft and delete the note file. Do NOT modify the project's repositories, and do NOT edit product/ or technology/ or promote anything: write ONLY in .flowbrain/<brain>/_drafts/. A person reviews and accepts the drafts.", ""].join("\n");
-  }
-  function enlace() {
-    var n = deLotes().length;
-    if (!n || /^#\/borradores/.test((window.location && window.location.hash) || "")) return "";
-    return '<a class="boton bo-enlace" href="#/borradores">' + L(plural(n, "new draft", "new drafts") + " to review", plural(n, "borrador nuevo", "borradores nuevos") + " para revisar") + "</a>";
   }
   function podar() {
     if (!PD || !LISTA) return;
@@ -246,11 +252,9 @@ export const BORRADORES_JS = String.raw`
         return '<p class="es-texto">' + esc(x.nombre || x.id) + " <small><code>" + esc(x.origen) + "</code></small></p>" + (x.nota ? '<p class="es-texto"><small>' + esc(x.nota) + "</small></p>" : "") +
           '<div class="chips"><span class="chip">' + esc(claseEt(x.clase)) + '</span><span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span></div>";
       },
-      despues: function () {
-        var n = deLotes().length;
-        return n ? '<p class="fd-nota">' + L("The agent left " + plural(n, "draft", "drafts") + ": ", "El agente dejó " + plural(n, "borrador", "borradores") + ": ") + '<a href="#/borradores">' + L("review, accept or discard them in Drafts", "revisalos, aceptalos o descartalos en Borradores") + "</a>.</p>" : "";
-      },
-      enlace: enlace
+      // La etapa «A revisar» del botón «Agente»: las mismas filas que esta pantalla, sin el filtro.
+      revisar: htmlRevisar,
+      accion: function (acc, k, b) { return atender(acc, k, b, elem("pedido-panel")); }
     });
     // Un lote que termina puede dejar borradores nuevos (o resolver alguno): se vuelve a pedir la lista.
     var vivos = 0;
@@ -263,7 +267,7 @@ export const BORRADORES_JS = String.raw`
   }
 
   // ---------- La pantalla ----------
-  var titulo = function () { return '<div class="es-titulo"><h1>' + L("Drafts", "Borradores") + "</h1></div>"; };
+  var titulo = function () { var n = cuantos(); return '<div class="es-titulo"><h1>' + L("Drafts", "Borradores") + (n ? ' <span class="chip" title="' + esc(L(plural(n, "draft", "drafts") + " to review", plural(n, "borrador", "borradores") + " para revisar")) + '">' + num(n) + "</span>" : "") + "</h1></div>"; };
   var cmd = function (t) { return "<code>" + esc(t) + "</code>"; };
   function porTerminal() {
     var b = CEREBROS.length === 1 ? CEREBROS[0] : "<" + L("brain", "cerebro") + ">";
@@ -282,7 +286,8 @@ export const BORRADORES_JS = String.raw`
     if (MSG) out += '<div class="fd-msg' + (MSG.error ? " error" : "") + '"><span>' + esc(MSG.texto) + "</span>" + (MSG.lineas && MSG.lineas.length ? '<ul class="bo-errores">' + MSG.lineas.slice(0, 20).map(function (l) { return "<li><code>" + esc(l) + "</code></li>"; }).join("") + "</ul>" : "") + "</div>";
     return out;
   }
-  function fila(x, i, recientes) {
+  // pre: lo que distingue los ids de la pantalla («bo») de los del panel («bp»).
+  function fila(x, i, recientes, pre) {
     var k = clave(x), abierto = !!ABIERTOS[k], nuevo = recientes.indexOf(x) >= 0, ya = PD ? PD.esta("borrador", k) : false;
     var nota = NOTAS[k] !== undefined ? NOTAS[k] : ya ? (PD.items("borrador").filter(function (it) { return it.k === k; })[0] || { datos: {} }).datos.nota || "" : "";
     var botones = '<button type="button" class="boton" data-acc="ver" data-k="' + esc(k) + '" aria-expanded="' + abierto + '">' + (abierto ? L("Hide changes", "Ocultar cambios") : x.clase === "nota" ? L("Read the note", "Leer la nota") : L("See changes", "Ver cambios")) + "</button>" +
@@ -291,8 +296,8 @@ export const BORRADORES_JS = String.raw`
     var pedir = "";
     if (abierto && PD) {
       var et = x.clase === "nota" ? L("Request it", "Pedirlo") : L("Request a fix", "Pedir corrección");
-      pedir = '<div class="bo-pedir"><label class="fd-campo" for="bo-nota-' + i + '"><span class="lbl">' + (x.clase === "nota" ? L("Anything to add (optional)", "Algo para sumar (opcional)") : L("What to fix", "Qué corregir")) + "</span>" +
-        '<textarea id="bo-nota-' + i + '" data-k="' + esc(k) + '" rows="2" placeholder="' + esc(x.clase === "nota" ? L("The note already says what's wrong", "La nota ya dice qué está mal") : L("E.g. the name should be the one the menu shows; the second section repeats the first", "P. ej.: el nombre tiene que ser el que muestra el menú; la segunda sección repite la primera")) + '"' + (ya ? " disabled" : "") + ">" + esc(nota) + "</textarea></label>" +
+      pedir = '<div class="bo-pedir"><label class="fd-campo" for="' + pre + "-nota-" + i + '"><span class="lbl">' + (x.clase === "nota" ? L("Anything to add (optional)", "Algo para sumar (opcional)") : L("What to fix", "Qué corregir")) + "</span>" +
+        '<textarea id="' + pre + "-nota-" + i + '" data-k="' + esc(k) + '" rows="2" placeholder="' + esc(x.clase === "nota" ? L("The note already says what's wrong", "La nota ya dice qué está mal") : L("E.g. the name should be the one the menu shows; the second section repeats the first", "P. ej.: el nombre tiene que ser el que muestra el menú; la segunda sección repite la primera")) + '"' + (ya ? " disabled" : "") + ">" + esc(nota) + "</textarea></label>" +
         PD.boton({ tipo: "borrador", k: k, et: et }) + (x.clase !== "nota" && !ya ? " <small>" + L("Write what to fix first: the agent receives it with the draft.", "Escribí primero qué corregir: el agente lo recibe con el borrador.") + "</small>" : "") + "</div>";
     }
     return '<li class="bo-item" data-k="' + esc(k) + '"><div class="es-fila"><span><strong>' + esc(x.nombre || x.id) + "</strong> <small><code>" + esc(x.origen) + "</code></small></span>" +
@@ -305,12 +310,31 @@ export const BORRADORES_JS = String.raw`
     var xs = fl.filtrar(), recientes = deLotes(), aceptables = xs.filter(function (x) { return x.clase !== "nota"; }).length;
     var botones = aceptables ? '<button type="button" class="boton pri" data-acc="aceptar-todo"' + (OCUPADO ? " disabled" : "") + ">" + L("Accept all", "Aceptar todo") + " (" + num(aceptables) + ")</button>" : "";
     if (!xs.length) return fl.vacio(LISTA);
-    return fl.resultado(xs, "", botones) + '<ul class="lista bo-lista">' + xs.map(function (x) { return fila(x, LISTA.indexOf(x), recientes); }).join("") + "</ul>";
+    return fl.resultado(xs, "", botones) + '<ul class="lista bo-lista">' + xs.map(function (x) { return fila(x, LISTA.indexOf(x), recientes, "bo"); }).join("") + "</ul>";
   }
   function pintarLista() { var e = elem("bo-lista"); if (e) e.innerHTML = lista(); else pintar(); }
-  function pintar() {
-    // Lo aceptado antes de recargar: el aviso sobrevive a la recarga una vez.
+  // Lo aceptado antes de recargar: el aviso sobrevive a la recarga una vez (en la pantalla o en el panel).
+  function leerAviso() {
     try { var a = JSON.parse(sessionStorage.getItem(AVISO) || "null"); if (a) { sessionStorage.removeItem(AVISO); MSG = { texto: L("Accepted " + plural(a.n, "draft", "drafts") + ": the brain compiled and the viewer already shows it.", "Se " + (a.n === 1 ? "aceptó 1 borrador" : "aceptaron " + num(a.n) + " borradores") + ": el cerebro compiló y el visor ya lo muestra.") }; } } catch (e) { /* sin almacenamiento */ }
+  }
+  // La etapa «A revisar»: { n, cargando, html } (ver el componente). Sin servidor no hay lista: dice cómo abrir el visor.
+  function htmlRevisar() {
+    if (!ED) return { n: 0, cargando: false, html: '<p class="aviso">' + L("Reviewing the drafts needs the served viewer: this page was opened as a file. Open it from the flowbrain menu («Open the viewer») or with ", "Revisar los borradores necesita el visor servido: esta página se abrió como archivo. Abrilo desde el menú de flowbrain («Abrir el visor») o con ") + "<code>flowbrain viewer --serve</code>.</p>" };
+    var cargando = CARGANDO || (LISTA === null && !ERROR);
+    if (LISTA === null) return { n: 0, cargando: cargando, html: ERROR ? '<p class="fd-msg error">' + L("The drafts could not be read: ", "No se pudieron leer los borradores: ") + esc(ERROR) + ' <button type="button" class="boton chico" data-acc="recargar">' + L("Try again", "Reintentar") + "</button></p>" : '<p class="fd-nota">' + L("Reading the drafts…", "Leyendo los borradores…") + "</p>" };
+    leerAviso();
+    var xs = aRevisar(), n = xs.length, recientes = deLotes(), aceptables = xs.filter(function (x) { return x.clase !== "nota"; }).length;
+    // Ir a la revisión completa cierra el panel: la pantalla muestra lo mismo, con filtros.
+    var completa = '<a class="boton chico" href="#/borradores" data-acc="cerrar-panel">' + L("Open the full review", "Abrir la revisión completa") + "</a>";
+    if (!n) return { n: 0, cargando: cargando, html: MSG ? aviso() : "" };
+    return { n: n, cargando: cargando, html: aviso() +
+      '<div class="fd-acc bp-acc"><span>' + L(plural(n, "draft", "drafts") + " to review", plural(n, "borrador", "borradores") + " para revisar") + "</span>" +
+      (aceptables ? '<button type="button" class="boton pri chico" data-acc="aceptar-todo"' + (OCUPADO ? " disabled" : "") + ">" + L("Accept all", "Aceptar todo") + " (" + num(aceptables) + ")</button>" : "") + completa + "</div>" +
+      '<ul class="lista bo-lista bp-lista">' + xs.slice(0, EN_PANEL).map(function (x) { return fila(x, LISTA.indexOf(x), recientes, "bp"); }).join("") + "</ul>" +
+      (n > EN_PANEL ? '<p class="fd-nota">' + L("And " + num(n - EN_PANEL) + " more: ", "Y " + num(n - EN_PANEL) + " más: ") + '<a href="#/borradores">' + L("open the full review, with filters", "abrí la revisión completa, con filtros") + "</a>.</p>" : "") };
+  }
+  function pintar() {
+    leerAviso();
     if (!ED) {
       raiz.innerHTML = titulo() + COMO() + '<p class="aviso">' + L("This page is read-only (it was opened as a file), so it can't read the drafts or accept them. Open the served viewer to review them here: ", "Esta página es de solo lectura (se abrió como archivo), así que no puede leer los borradores ni aceptarlos. Abrí el visor servido para revisarlos acá: ") + cmd("flowbrain viewer --serve") + L(". Or from the terminal:", ". O desde la terminal:") + "</p>" + porTerminal();
       return;
@@ -327,26 +351,31 @@ export const BORRADORES_JS = String.raw`
     raiz.innerHTML = titulo() + COMO() + aviso() + fl.html() + '<div id="bo-lista">' + lista() + "</div>";
   }
 
+  // Los botones de una fila, en la pantalla o en el panel (donde: el elemento que los contiene). true si lo atendió.
+  function atender(acc, k, b, donde) {
+    if (acc === "ver") { abrir(k); return true; }
+    if (acc === "aceptar") { var x = porClave(k); if (x) aceptar([x]); return true; }
+    if (acc === "aceptar-todo") { aceptarTodo(donde === raiz ? fl.filtrar() : aRevisar()); return true; }
+    if (acc === "descartar") { descartar(porClave(k)); return true; }
+    if (acc === "recargar") { cargar(); return true; }
+    // Sumar o sacar del pedido: con la nota escrita (el componente cambia el botón y el panel).
+    if (acc === "pedir") {
+      if (!PD || (b && b.getAttribute && b.getAttribute("data-tipo") && b.getAttribute("data-tipo") !== "borrador")) return false;
+      var t = donde && donde.querySelector ? donde.querySelector('textarea[data-k="' + (window.CSS && window.CSS.escape ? window.CSS.escape(k) : k) + '"]') : null;
+      if (t && !t.disabled) NOTAS[k] = t.value;
+      var antes = PD.esta("borrador", k);
+      PD.sumar("borrador", k);
+      if (!antes && !PD.esta("borrador", k)) { if (t && t.focus) t.focus(); return true; }
+      refrescar(true);
+      return true;
+    }
+    return false;
+  }
   raiz.addEventListener("click", function (ev) {
     if (fl.manejar(ev, "click")) return;
     var b = ev.target.closest ? ev.target.closest("button") : null;
     if (!b || b.disabled) return;
-    var acc = b.getAttribute("data-acc"), k = b.getAttribute("data-k");
-    if (acc === "ver") { abrir(k); return; }
-    if (acc === "aceptar") { var x = porClave(k); if (x) aceptar([x]); return; }
-    if (acc === "aceptar-todo") { aceptarTodo(); return; }
-    if (acc === "descartar") { descartar(porClave(k)); return; }
-    if (acc === "recargar") { cargar(); return; }
-    // Sumar o sacar del pedido: con la nota escrita (el componente cambia el botón y el panel).
-    if (acc === "pedir") {
-      if (!PD) return;
-      var t = raiz.querySelector ? raiz.querySelector('textarea[data-k="' + (window.CSS && window.CSS.escape ? window.CSS.escape(k) : k) + '"]') : null;
-      if (t && !t.disabled) NOTAS[k] = t.value;
-      var antes = PD.esta("borrador", k);
-      PD.sumar("borrador", k);
-      if (!antes && !PD.esta("borrador", k)) { if (t && t.focus) t.focus(); return; }
-      pintarLista();
-    }
+    atender(b.getAttribute("data-acc"), b.getAttribute("data-k"), b, raiz);
   });
   raiz.addEventListener("change", function (ev) { fl.manejar(ev, "change"); });
   raiz.addEventListener("input", function (ev) {
@@ -354,12 +383,16 @@ export const BORRADORES_JS = String.raw`
     if (t && t.tagName === "TEXTAREA" && t.getAttribute("data-k")) { NOTAS[t.getAttribute("data-k")] = t.value; return; }
     fl.manejar(ev, "input");
   });
-  if (PD) PD.escuchar(function (ev) { if (ev === "lista" && visible()) pintarLista(); });
-
-  // El enlace de la bandeja no se muestra estando en esta pantalla: al cambiar de pantalla se repinta.
-  if (PD && window.addEventListener) window.addEventListener("hashchange", function () { PD.pintar(); });
-  // La cuenta de la navegación se pide al cargar, en cualquier pantalla.
+  // Lo que entra o sale del pedido cambia el número del título: se repinta entera.
+  if (PD) PD.escuchar(function (ev) { if (ev === "lista" && visible()) pintar(); });
+  // La nota de «Pedir corrección» escrita en el panel.
+  var panel = elem("pedido-panel");
+  if (panel && panel.addEventListener) panel.addEventListener("input", function (ev) {
+    var t = ev.target;
+    if (t && t.tagName === "TEXTAREA" && t.getAttribute && t.getAttribute("data-k")) NOTAS[t.getAttribute("data-k")] = t.value;
+  });
+  // El número del botón «Agente» se pide al cargar, en cualquier pantalla.
   cargar();
-  window.brainBorradores = { mostrar: function () { pintar(); cargar(); }, cargar: cargar };
+  window.brainBorradores = { mostrar: function () { pintar(); cargar(); }, cargar: cargar, cuantos: cuantos };
 })();
 `;

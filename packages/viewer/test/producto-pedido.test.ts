@@ -1,5 +1,6 @@
 import { resolveObjectURL } from "node:buffer";
 import { describe, expect, it } from "vitest";
+import { cuentaAgente } from "./ayuda-agente.js";
 import { ESPECIFICACIONES_JS } from "../src/viewer-especificaciones.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
 import { PEDIDO_JS } from "../src/viewer-pedido.js";
@@ -105,10 +106,10 @@ describe("Funcionalidades: el pedido al agente", () => {
     expect(v.panel()).toContain("Pagos");
     expect(v.panel()).toContain("Envíos");
     expect(v.panel()).toContain("Only drafts in _drafts/product/");
-    expect(v.bandeja()).toContain("Request (2)");
+    expect(cuentaAgente(v.bandeja())).toBe("2");
     // Tocarlo otra vez lo saca.
     v.tocar({ "data-acc": "pedir", "data-tipo": "funcionalidad", "data-k": "sindesc" });
-    expect(v.bandeja()).not.toContain("Request (");
+    expect(cuentaAgente(v.bandeja())).toBe("");
   });
 
   it("la ficha pide su descripción y los casos de uso con la misma clave que Especificaciones", () => {
@@ -152,7 +153,7 @@ describe("Funcionalidades: el pedido al agente", () => {
     ] })]]);
     const v = montar(conFuncionalidades(), { local });
     v.ir("");
-    expect(v.bandeja()).toContain("Request (1)");
+    expect(cuentaAgente(v.bandeja())).toBe("1");
     expect(JSON.parse(local.get("flowbrain.pedido")!).items.map((x: { k: string }) => x.k)).toEqual(["front/feat-envios"]);
   });
 });

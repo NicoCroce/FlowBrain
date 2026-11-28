@@ -1,5 +1,6 @@
 import { resolveObjectURL } from "node:buffer";
 import { describe, expect, it } from "vitest";
+import { cuentaAgente } from "./ayuda-agente.js";
 import { PEDIDO_JS } from "../src/viewer-pedido.js";
 
 /** El pedido al agente, el componente único del visor, con un DOM mínimo y dos tipos de prueba registrados. */
@@ -46,7 +47,7 @@ function montar(opciones: { local?: Map<string, string>; agente?: boolean; fetch
     bandeja: () => el("pedido-bandeja").innerHTML,
     tocar: (attrs: Record<string, string>) => el(attrs["data-acc"] === "panel" ? "pedido-bandeja" : "pedido-panel").oyentes["click"]!({ target: boton(attrs) }),
     cambiar: (id: string, value: string) => el("pedido-panel").oyentes["change"]!({ target: { id, value } }),
-    guardado: () => JSON.parse(local.get("flowbrain.pedido")!) as { items: Item[]; panel: boolean; elegido: Record<string, string>; ocultos: string[] },
+    guardado: () => JSON.parse(local.get("flowbrain.pedido")!) as { items: Item[]; panel: boolean; elegido: Record<string, string>; ocultos: string[]; etapa: string },
     bajados,
   };
 }
@@ -55,7 +56,10 @@ function montar(opciones: { local?: Map<string, string>; agente?: boolean; fetch
 const regla = (id: string, cerebro = "web"): Item => ({ tipo: "test", k: `${cerebro}/feat|${id}`, cerebro, repo: "repo-web", datos: { regla: id, texto: `La regla ${id}` } });
 const archivo = (ruta: string): Item => ({ tipo: "asociar", k: `web|repo-web:${ruta}`, cerebro: "web", repo: "repo-web", datos: { archivo: `repo-web:${ruta}` } });
 const BOTONES: Record<string, Item[]> = { r1: [regla("r1")], caso: [regla("r1"), regla("r2")], a: [archivo("src/a.ts")], carpeta: [archivo("src/a.ts"), archivo("src/b.ts"), archivo("src/c.ts")] };
+// Lo que el tipo «test» tiene para revisar (las reglas para decidir): un lote que deja más pasa el panel a «A revisar».
+const REVISAR = { n: 1, cargando: false };
 function registrar(P: Pedido) {
+  REVISAR.n = 1; REVISAR.cargando = false;
   P.registrar("test", {
     nombre: "Tests", unidad: ["rule", "rules", "regla", "reglas"],
     claves: (k: string) => (BOTONES[k] ?? []).filter((x) => x.tipo === "test").map((x) => x.k),
@@ -68,8 +72,7 @@ function registrar(P: Pedido) {
     clave: (it: Item) => String(it.datos["regla"]),
     tanda: { lista: "reglas", clave: (x: string) => x },
     seguimiento: { reindexando: "Reindexando", pidiendo: (n: number) => `Pidiendo ${n} reglas`, resumen: () => "listo" },
-    despues: () => "<p>Resultados de los tests</p>",
-    bandeja: () => "1 to decide",
+    revisar: () => ({ n: REVISAR.n, html: "<p>Resultados de los tests</p>", cargando: REVISAR.cargando }),
   });
   P.registrar("asociar", {
     nombre: "Files to assign", unidad: ["file", "files", "archivo", "archivos"],
@@ -86,12 +89,14 @@ function registrar(P: Pedido) {
 const esperar = async () => { for (let i = 0; i < 6; i++) await new Promise((ok) => setTimeout(ok, 0)); };
 
 describe("el pedido al agente (componente único)", () => {
-  it("una sola lista para todos los tipos: el botón celeste, la bandeja con el contador y el panel agrupado por tipo", () => {
+  it("una sola lista para todos los tipos: el botón celeste, el botón «Agente» con UN número y el panel en tres etapas", () => {
     const v = montar();
     registrar(v.P);
-    // Sin nada pedido, la bandeja solo aparece si un tipo tiene algo que decir («1 to decide»); el botón dice lo suyo.
-    expect(v.bandeja()).toContain(">Request · 1 to decide</button>");
-    expect(montar().bandeja()).toBe("");
+    // El botón «Agente» siempre está; su número es lo que espera a la persona: por pedir + a revisar («1» para decidir).
+    expect(v.bandeja()).toContain('data-acc="panel" aria-expanded="false" aria-controls="pedido-panel"');
+    expect(v.bandeja()).toContain("Agent");
+    expect(cuentaAgente(v.bandeja())).toBe("1");
+    expect(cuentaAgente(montar().bandeja())).toBe("");
     expect(v.P.boton({ tipo: "test", k: "caso", et: "Request the test" })).toContain('data-acc="pedir" data-tipo="test" data-k="caso" data-et="Request the test" aria-pressed="false"');
     v.P.sumar("test", "r1");
     // Ya pedido: el mismo botón dice «✔ In the request»; el del caso entero no, porque le falta r2.
@@ -100,15 +105,27 @@ describe("el pedido al agente (componente único)", () => {
     v.P.sumar("asociar", "carpeta");
     v.P.sumar("test", "caso");
     expect(v.abierto()).toBe(true);
-    // La bandeja suma todo y lo que agrega cada tipo.
-    expect(v.bandeja()).toBe('<button type="button" class="boton es-pedir" data-acc="panel" aria-expanded="true" aria-controls="pedido-panel">Request (5) · 1 to decide</button>');
+    // UN número: 5 por pedir + 1 a revisar; el detalle va en el título y en las etapas.
+    expect(cuentaAgente(v.bandeja())).toBe("6");
+    expect(v.bandeja()).toContain('title="5 to request · 0 working · 1 to review"');
     const p = v.panel();
-    expect(p).toContain("<h2>Request to the agent</h2>");
+    expect(p).toContain("<h2>Agent</h2>");
+    expect(p).toContain('data-acc="etapa" data-k="pedir">To request <span class="pd-num">5</span>');
+    expect(p).toContain('data-acc="etapa" data-k="trabajando">Working <span class="pd-num">0</span>');
+    expect(p).toContain('data-acc="etapa" data-k="revisar">To review <span class="pd-num">1</span>');
+    expect(p).toContain('<div class="pd-etapa" data-etapa="pedir">');
     expect(p).toContain("<b>2 rules</b><small>Tests</small><span>2 de negocio</span>");
     expect(p).toContain("<b>3 files</b><small>Files to assign</small>");
     expect(p).toContain('<section class="pd-grupo" data-tipo="test"><h3>Tests <span class="chip">2</span></h3>');
     expect(p).toContain('<code>repo-web:src/b.ts</code></div><button type="button" class="boton chico" data-acc="quitar" data-tipo="asociar" data-k="web|repo-web:src/b.ts"');
-    expect(p).toContain("<p>Resultados de los tests</p>");
+    // Lo de un tipo para revisar va en «A revisar», no en «Por pedir».
+    expect(p).not.toContain("<p>Resultados de los tests</p>");
+    v.tocar({ "data-acc": "etapa", "data-k": "revisar" });
+    expect(v.panel()).toContain('<div class="pd-etapa" data-etapa="revisar"><section class="pd-revisar" data-tipo="test"><p>Resultados de los tests</p></section></div>');
+    expect(v.guardado().etapa).toBe("revisar");
+    v.tocar({ "data-acc": "etapa", "data-k": "trabajando" });
+    expect(v.panel()).toContain("Nothing runs from this page");
+    v.tocar({ "data-acc": "etapa", "data-k": "pedir" });
     // Sin servidor: no se manda, se baja el .md.
     expect(p).toContain("This page is read-only");
     expect(p).toMatch(/data-acc="pedir-todos" disabled>Request all \(5\)<\/button>/);
@@ -122,13 +139,17 @@ describe("el pedido al agente (componente único)", () => {
     v.tocar({ "data-acc": "pedir", "data-tipo": "test", "data-k": "r1" });
     expect(v.P.items("test").map((x) => x.k)).toEqual(["web/feat|r1"]);
     v.tocar({ "data-acc": "vaciar" });
-    expect(v.panel()).toContain("The list is empty. Click «Request» on a rule, a file or a folder, on any screen");
+    expect(v.panel()).toContain("Nothing to request. Click «Request» on a rule, a file or a folder, on any screen");
+    expect(v.panel()).toContain('data-acc="etapa" data-k="revisar">Review what came back</button>');
     // En castellano.
     const es = montar({ lang: "es" });
     registrar(es.P);
     es.P.sumar("asociar", "a");
-    expect(es.bandeja()).toContain(">Pedido (1) · 1 to decide</button>");
-    expect(es.panel()).toContain("<h2>Pedido al agente</h2>");
+    expect(es.bandeja()).toContain("Agente");
+    expect(cuentaAgente(es.bandeja())).toBe("2");
+    expect(es.panel()).toContain("<h2>Agente</h2>");
+    expect(es.panel()).toContain("Por pedir <span");
+    expect(es.panel()).toContain("A revisar <span");
     expect(es.panel()).toContain("<b>1 archivo</b>");
     expect(es.P.boton({ tipo: "asociar", k: "a", et: "Pedir" })).toContain(">✔ En el pedido</button>");
   });
@@ -143,7 +164,7 @@ describe("el pedido al agente (componente único)", () => {
     expect(v.guardado()).toMatchObject({ panel: true, items: [{ tipo: "test", k: "web/feat|r1", cerebro: "web", repo: "repo-web" }, { tipo: "asociar", k: "web|repo-web:src/a.ts" }] });
     // Otra página, el mismo navegador: la lista vuelve, aunque el tipo todavía no esté registrado.
     const w = montar({ local });
-    expect(w.bandeja()).toContain(">Request (2)</button>");
+    expect(cuentaAgente(w.bandeja())).toBe("2");
     registrar(w.P);
     expect(w.P.esta("test", "web/feat|r1")).toBe(true);
     w.tocar({ "data-acc": "cerrar-panel" });
@@ -178,7 +199,7 @@ describe("el pedido al agente (componente único)", () => {
     expect(g.ocultos).toEqual(["L1", "L2"]);
     // Las claves del pedido de antes se borran; lo que no es del pedido (los cerebros elegidos) queda.
     expect([...local.keys()].sort()).toEqual(["flowbrain.especificaciones.cerebros", "flowbrain.pedido"]);
-    expect(v.bandeja()).toContain(">Request (2)</button>");
+    expect(cuentaAgente(v.bandeja())).toBe("2");
     // Una vez migrado, no se vuelve a migrar.
     local.set("flowbrain.sinasociar.pedidos", JSON.stringify([{ k: "otro", linea: "x" }]));
     expect(montar({ local }).guardado().items).toHaveLength(2);
@@ -232,13 +253,23 @@ describe("el pedido al agente (componente único)", () => {
     expect(p).toContain('<section class="es-lote" data-tipo="test"><div class="es-cab"><h3>Pidiendo 2 reglas</h3>');
     expect(p).toContain("<h3>Asociando 1</h3>");
     expect(p).toContain("Corre los tests");
-    // Lo que va en una tanda no se quita; con los dos lotes en curso no se manda otro.
+    // Al mandar, el panel pasa solo a «Trabajando»: lo que va en una tanda se ve ahí, sin «Quitar», y no suma al botón.
+    expect(p).toContain('<div class="pd-etapa" data-etapa="trabajando">');
+    expect(v.guardado().etapa).toBe("trabajando");
     expect(p).toContain('<p class="pd-estado na">The agent is working on it…</p>');
-    expect(p).toMatch(/data-acc="quitar" data-tipo="test" data-k="web\/feat\|r1"[^>]*disabled/);
-    expect(p).toMatch(/data-acc="pedir-todos" disabled/);
-    expect(v.bandeja()).toContain("Request (3) · running");
+    expect(p).not.toMatch(/data-acc="quitar" data-tipo="test"/);
+    expect(p).toContain('data-k="trabajando">Working <span class="pd-num">3</span>');
+    expect(p).toContain('data-k="pedir">To request <span class="pd-num">0</span>');
+    expect(cuentaAgente(v.bandeja())).toBe("1");
+    expect(v.bandeja()).toContain('<span class="pd-corre"');
+    // Con los dos lotes en curso no se manda otro.
+    v.tocar({ "data-acc": "etapa", "data-k": "pedir" });
+    expect(v.panel()).toContain("Nothing to request");
+    expect(v.panel()).toContain('data-acc="etapa" data-k="trabajando">See what\'s running</button>');
+    v.tocar({ "data-acc": "etapa", "data-k": "trabajando" });
 
-    // Terminan: r1 se resolvió, r2 no volvió; el archivo se asoció. Cada ítem trae su desenlace.
+    // Terminan con el panel cerrado: r1 se resolvió, r2 no volvió; el archivo se asoció. Cada ítem trae su desenlace.
+    v.tocar({ "data-acc": "cerrar-panel" });
     estado.lotes = [{ id: "LT", tipo: "test", estado: "terminado" }, { id: "LA", tipo: "asociar", estado: "terminado" }];
     estado.trabajos = [
       { ...estado.trabajos[0], estado: "terminado", costoUsd: 0.5, resultado: "Listo.", desenlaces: [{ item: "r1", resuelto: true, cambio: { resultado: "a", tests: ["repo-web:a.test.ts::r1"] } }, { item: "r2", resuelto: false, motivo: { codigo: "sin_respuesta", agente: "Needs a database", detalle: "the agent did not return a valid outcome for this rule" } }] },
@@ -248,6 +279,8 @@ describe("el pedido al agente (componente único)", () => {
     await esperar();
     expect(llamadas.find((x) => x.url === "/api/agente/lote/cancelar")!.cuerpo).toEqual({ id: "LT" });
     p = v.panel();
+    // No dejó nada nuevo para revisar: se queda en «Trabajando», que muestra cómo terminó cada ítem.
+    expect(v.guardado().etapa).toBe("trabajando");
     expect(p).toContain("Finished · Tests");
     expect(p).toContain("Actual cost: US$ 0.50");
     // Todo lo de las tandas sale de la lista y queda con su desenlace (dec. 235), igual para los dos tipos.
@@ -267,9 +300,9 @@ describe("el pedido al agente (componente único)", () => {
     expect(v.P.boton({ tipo: "test", k: "r1", et: "Request" })).toContain('>Request</button><span class="pd-marca ok" title="Resolved by the agent: new test repo-web:a.test.ts::r1">✔ Resolved by the agent · new test <code>repo-web:a.test.ts::r1</code></span>');
     expect(v.P.boton({ tipo: "test", k: "caso", et: "Request both" })).toContain('>Request again</button><span class="pd-marca no" title="the agent didn&#39;t return a valid result. The agent says: «Needs a database» (the agent did not return a valid outcome for this rule)">✕ It could not resolve it</span>');
     expect(v.P.boton({ tipo: "asociar", k: "a", et: "Request" })).toContain("✔ Resolved by the agent · file assigned");
-    // La bandeja avisa que terminó (la pantalla del tipo no se estaba mirando) hasta que se abre el panel.
+    // El botón «Agente» avisa que terminó (con el panel cerrado) hasta que se abre el panel.
     expect(v.bandeja()).toContain('<span class="pd-aviso"');
-    expect(v.bandeja()).toContain("finished: ✔ 2 · ✕ 1</span>");
+    expect(v.bandeja()).toContain(">finished</span>");
     v.tocar({ "data-acc": "panel" });
     v.tocar({ "data-acc": "panel" });
     expect(v.bandeja()).not.toContain("pd-aviso");
@@ -277,7 +310,9 @@ describe("el pedido al agente (componente único)", () => {
     v.tocar({ "data-acc": "otra-vez", "data-tipo": "test", "data-k": "web/feat|r2" });
     expect(v.P.items("test").map((x) => x.k)).toEqual(["web/feat|r2"]);
     expect(v.P.boton({ tipo: "test", k: "caso", et: "Request both" })).not.toContain("pd-marca");
+    v.tocar({ "data-acc": "etapa", "data-k": "pedir" });
     expect(v.panel()).toContain('data-acc="pedir-todos">Request all (1)</button>');
+    v.tocar({ "data-acc": "etapa", "data-k": "trabajando" });
     // Cerrar un resumen lo oculta (y se recuerda), con los desenlaces de ese lote.
     v.tocar({ "data-acc": "cerrar-lote", "data-k": "LT" });
     expect(v.P.boton({ tipo: "test", k: "r1", et: "Request" })).not.toContain("pd-marca");
@@ -290,6 +325,45 @@ describe("el pedido al agente (componente único)", () => {
     v.P.sumar("test", "r1");
     await esperar();
     expect(v.P.esta("test", "web/feat|r1")).toBe(true);
+  });
+
+  it("un lote que termina y deja algo nuevo para revisar pasa el panel a «A revisar» (y se recuerda al recargar)", async () => {
+    const estado: { trabajos: Array<Record<string, unknown>>; lotes: Array<Record<string, unknown>> } = { trabajos: [], lotes: [] };
+    const fetch = (url: string, init: { body?: string }) => {
+      const cuerpo = init.body ? (JSON.parse(init.body) as Record<string, any>) : null;
+      const j = url === "/api/agente/lote" ? { lote: { id: "LT", tipo: cuerpo!["tipo"], estado: "corriendo" }, trabajos: [] } : url === "/api/agente" ? estado : {};
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(j) });
+    };
+    const local = new Map<string, string>();
+    const v = montar({ agente: true, fetch, local });
+    registrar(v.P);
+    await esperar();
+    v.P.sumar("test", "r1");
+    estado.lotes = [{ id: "LT", tipo: "test", estado: "corriendo" }];
+    estado.trabajos = [{ id: "t1", lote: "LT", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", reglas: ["r1"] }];
+    v.tocar({ "data-acc": "pedir-todos" });
+    await esperar();
+    expect(v.guardado().etapa).toBe("trabajando");
+    // Termina; mientras la pantalla vuelve a leer lo suyo, el panel espera (no decide con el número viejo).
+    REVISAR.cargando = true;
+    estado.lotes = [{ id: "LT", tipo: "test", estado: "terminado" }];
+    estado.trabajos = [{ ...estado.trabajos[0], estado: "terminado", desenlaces: [{ item: "r1", resuelto: true, cambio: { resultado: "c" } }] }];
+    (v.P as unknown as { actualizar(): void }).actualizar();
+    await esperar();
+    expect(v.guardado().etapa).toBe("trabajando");
+    // Ya leyó: hay una regla más para decidir.
+    REVISAR.n = 2; REVISAR.cargando = false;
+    (v.P as unknown as { pintar(): void }).pintar();
+    await esperar();
+    expect(v.guardado().etapa).toBe("revisar");
+    expect(v.panel()).toContain('<div class="pd-etapa" data-etapa="revisar">');
+    expect(cuentaAgente(v.bandeja())).toBe("2");
+    // Con el panel abierto, la etapa que cambió sola ya lo muestra: el botón no suma el aviso «terminó».
+    expect(v.bandeja()).not.toContain("pd-aviso");
+    // La etapa abierta se recuerda.
+    const otra = montar({ local });
+    registrar(otra.P);
+    expect(otra.panel()).toContain('<div class="pd-etapa" data-etapa="revisar">');
   });
 
   it("el .md lleva cada tipo; con un solo tipo, su archivo", async () => {

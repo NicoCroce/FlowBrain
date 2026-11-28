@@ -28,6 +28,10 @@ describe("viewer.html", () => {
     const cabecera = html.slice(html.indexOf('<header id="cabecera">'), html.indexOf("</header>"));
     expect(cabecera).toContain('<span id="pedido-bandeja" class="pedido-bandeja"></span>');
     expect(html.match(/<aside id="pedido-panel"/g)).toHaveLength(1);
+    // Un solo botón «Agente» (dec. 236): Borradores no tiene pestaña ni cuenta propia en la navegación (su pantalla sigue).
+    expect(cabecera).not.toContain('href="#/borradores"');
+    expect(html).not.toContain('id="nav-borradores"');
+    expect(html).toContain('<div id="borradores" class="pagina oculto"></div>');
     // Ninguna pantalla trae su propio panel.
     expect(html).not.toMatch(/id="(es|sa)-panel"|id="(es|sa)-bandeja"/);
     const pedido = html.indexOf("window.brainPedido = {");

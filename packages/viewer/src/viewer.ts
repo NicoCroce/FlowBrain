@@ -457,13 +457,11 @@ button.pestana { border-top: 0; border-left: 0; border-right: 0; background: non
 .es-panel.abierto { display: block; } .es-panel > * + * { margin-top: 12px; }
 .es-panel-cab { display: flex; align-items: center; justify-content: space-between; } .es-panel-cab h2 { margin: 0; font-size: 16px; }
 @media (min-width: 1100px) { body.con-pedido .pagina { padding-right: 460px; } }
-#cabecera nav .nav-cuenta { margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--pedir); color: #FFFFFF; font-size: 11px; } #cabecera nav .nav-cuenta:empty { display: none; }
 .bo-item { display: grid; gap: 8px; } .bo-item .fd-acc { flex-wrap: wrap; } .bo-detalle { display: grid; gap: 8px; }
 .bo-diff { margin: 0; padding: 8px 0; border: 1px solid var(--borde); border-radius: 8px; background: #0D1016; font: 12px/1.5 var(--mono); overflow-x: auto; white-space: pre; }
 .bo-l { display: block; padding: 0 10px; } .bo-mas { background: var(--bien-fondo); color: var(--bien); } .bo-menos { background: var(--mal-fondo); color: var(--mal); } .bo-igual { color: var(--medio); } .bo-corte { color: var(--suave); font-style: italic; }
 .bo-cambio h4 { margin: 4px 0 6px; font-size: 13px; font-weight: 500; } .bo-pedir { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; } .bo-pedir .fd-campo { flex: 1 1 320px; } .bo-pedir textarea { width: 100%; box-sizing: border-box; }
 .bo-errores { margin: 4px 0 0; padding-left: 18px; flex-basis: 100%; } .bo-terminal li small { display: block; }
-.pedido-bandeja .bo-enlace { margin-right: 6px; }
 .pedido-bandeja { margin-left: 8px; } .pedido-bandeja:empty { display: none; } .pedido-bandeja .boton { height: 30px; padding: 0 12px; font-size: 12px; white-space: nowrap; }
 .pd-grupo h3 { margin: 4px 0 8px; font-size: 14px; display: flex; align-items: center; gap: 6px; } .es-totales small { text-transform: none; } .pd-total { border-color: var(--pedir-en-lista); }
 .pd-despues { display: grid; gap: 12px; }
@@ -475,6 +473,14 @@ button.pestana { border-top: 0; border-left: 0; border-right: 0; background: non
 .pd-resultados { display: grid; gap: 8px; margin-top: 10px; } .pd-resultados h4 { margin: 0; font-size: 13px; display: flex; align-items: center; gap: 6px; }
 .pd-res.ok { border-color: var(--bien-borde); } .pd-res.no { border-color: var(--mal-borde); }
 .pd-aviso { margin-left: 4px; padding: 0 6px; border-radius: 999px; background: #FFFFFF; color: var(--pedir); font-size: 11px; font-weight: 600; }
+/* El botón «Agente» y sus tres etapas (dec. 236): un solo número, el de lo que espera a la persona. */
+.pedido-bandeja .pd-agente { display: inline-flex; align-items: center; gap: 6px; }
+.pd-cuenta { min-width: 18px; padding: 0 6px; border-radius: 999px; background: #FFFFFF; color: var(--pedir); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.pd-corre { font-size: 11px; opacity: .85; }
+.pd-etapas .sb { display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+.pd-num { min-width: 18px; padding: 0 5px; border-radius: 999px; background: #1A2030; color: var(--medio); font-size: 11px; line-height: 18px; } .pd-etapas .sb.on .pd-num { background: var(--pedir); color: #FFFFFF; }
+.pd-etapa > * + * { margin-top: 12px; } .pd-revisar { display: grid; gap: 10px; } .pd-revisar h3 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.bp-acc { align-items: center; flex-wrap: wrap; } .bp-acc a.boton { text-decoration: none; display: inline-flex; align-items: center; } .bp-acc span { color: var(--suave); font-size: 13px; margin-right: auto; } .bp-lista { gap: 8px; } .bp-lista .bo-item { padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); } .bp-lista .es-fila strong { overflow-wrap: anywhere; } .bp-lista .bo-diff { max-height: 320px; overflow: auto; }
 .es-agsel { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .es-agsel label { display: grid; gap: 4px; font-size: 12px; color: var(--suave); } .es-agsel select { width: 100%; }
 .es-totales { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 10px; background: var(--tarjeta); font-size: 13px; } .es-totales b { font-size: 15px; } .es-totales span { color: var(--suave); } .es-totales small { color: var(--suave); }
 .es-pedidos { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -599,12 +605,12 @@ a.nb { text-decoration: none; }
 <body>
 <header id="cabecera">
   <div class="marca"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#9DB4FF" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="7" r="2.2"></circle><circle cx="18" cy="6" r="1.6"></circle><circle cx="12" cy="17" r="3"></circle><path d="M7.8 8.4l2.6 6M16.8 7.2l-3.4 7.4M8.2 7l8.2-.8"></path></svg>FlowBrain</div>
-  <nav ${attr("aria-label", "Sections", "Secciones")}><a href="#/funcionalidades" data-vista="producto" ${dos("Features", "Funcionalidades")}</a><a href="#/pantallas" data-vista="pantallas" ${dos("Screens", "Pantallas")}</a><a href="#/grafo" data-vista="grafo" ${dos("3D map", "Mapa 3D")}</a><a href="#/especificaciones" data-vista="especificaciones" ${dos("Specifications", "Especificaciones")}</a><a href="#/sin-asociar" data-vista="sinasociar" ${dos("Unassigned", "Sin asociar")}</a><a href="#/impacto" data-vista="impacto" ${dos("Impact", "Impacto")}</a><a href="#/contratos" data-vista="contratos" ${dos("Contracts", "Contratos")}</a><a href="#/fidelidad" data-vista="fidelidad" ${dos("Fidelity", "Fidelidad")}</a><a href="#/borradores" data-vista="borradores"><span ${dos("Drafts", "Borradores")}</span><span id="nav-borradores" class="nav-cuenta"></span></a></nav>
+  <nav ${attr("aria-label", "Sections", "Secciones")}><a href="#/funcionalidades" data-vista="producto" ${dos("Features", "Funcionalidades")}</a><a href="#/pantallas" data-vista="pantallas" ${dos("Screens", "Pantallas")}</a><a href="#/grafo" data-vista="grafo" ${dos("3D map", "Mapa 3D")}</a><a href="#/especificaciones" data-vista="especificaciones" ${dos("Specifications", "Especificaciones")}</a><a href="#/sin-asociar" data-vista="sinasociar" ${dos("Unassigned", "Sin asociar")}</a><a href="#/impacto" data-vista="impacto" ${dos("Impact", "Impacto")}</a><a href="#/contratos" data-vista="contratos" ${dos("Contracts", "Contratos")}</a><a href="#/fidelidad" data-vista="fidelidad" ${dos("Fidelity", "Fidelidad")}</a></nav>
   <div id="presets" class="oculto"></div>
   ${SWITCH_IDIOMA}
   <span id="pedido-bandeja" class="pedido-bandeja"></span>
 </header>
-<aside id="pedido-panel" class="es-panel" ${attr("aria-label", "Request to the agent", "Pedido al agente")}></aside>
+<aside id="pedido-panel" class="es-panel" ${attr("aria-label", "Agent", "Agente")}></aside>
 <div id="producto" class="pagina"></div>
 <div id="impacto" class="pagina oculto"></div>
 <div id="fidelidad" class="pagina oculto"></div>

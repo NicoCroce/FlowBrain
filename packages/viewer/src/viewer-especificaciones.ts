@@ -737,9 +737,9 @@ export const ESPECIFICACIONES_JS = String.raw`
           (x.caso ? '<span class="chip" title="' + L("Use case", "Caso de uso") + '">' + esc(x.casoNombre) + "</span>" : '<span class="chip">' + L("No use case", "Sin caso de uso") + "</span>") + '<span class="chip" title="' + L("Feature", "Funcionalidad") + '">' + esc(x.funcNombre) + '</span><span class="chip es-cerebro" title="' + L("Brain", "Cerebro") + '">' + esc(x.cerebro) + "</span></div>" +
           '<small class="es-archivo">' + (x.archivos.length ? L("Fulfilled by: ", "La cumple: ") + x.archivos.map(function (a) { return "<code>" + esc(a.replace(/#L\d+$/, "")) + "</code>"; }).join(" ") : L("Doesn't say which file fulfills it", "No dice qué archivo la cumple")) + "</small>";
     },
-    // Los resultados del último lote: verificadas, para decidir, la regla se corrige y para desarrollo.
-    despues: function () { return htmlResultados(); },
-    bandeja: function () { var pend = paraDecidir(hallazgos()).length; return pend ? L(pend + " to decide", pend + " para decidir") : ""; },
+    // La etapa «A revisar» del botón «Agente» (dec. 236): los resultados del último lote (verificadas, para decidir, la
+    // regla se corrige y para desarrollo). Lo que suma al número son las reglas para decidir: esperan a la persona.
+    revisar: function () { return { n: paraDecidir(hallazgos()).length, html: htmlResultados(), cargando: false }; },
     accion: function (acc, k) {
       if (acc === "regla-mal") decidir(k, "regla_mal");
       else if (acc === "codigo-mal") decidir(k, "codigo_mal");

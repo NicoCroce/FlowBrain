@@ -8,11 +8,18 @@
  * modelo y lotes) se pasa a la clave nueva la primera vez, para no perder nada.
  *
  * Cada pantalla REGISTRA su tipo con `registrar(tipo, def)` y pone su botón con `boton(...)`; el componente hace todo lo
- * demás: el botón celeste «Pedir» / «✔ En el pedido», la bandeja con el contador en la barra superior (`#pedido-bandeja`,
- * visible desde cualquier pantalla), el panel lateral (`#pedido-panel`) con Proveedor y Modelo, el resumen agrupado
- * por tipo con el costo total estimado, «Pedir todos» (un lote por tipo, `/api/agente/lote`), «Descargar .md»,
- * «Vaciar la lista», «Quitar» por tarjeta y el seguimiento de las tandas (avance, «Cancelar todo», resumen). También
- * consulta el estado del agente (`/api/agente`) para todo el visor: las pantallas escuchan con `escuchar`.
+ * demás: el botón celeste «Pedir» / «✔ En el pedido», el botón «Agente» de la barra superior (`#pedido-bandeja`,
+ * visible desde cualquier pantalla) y su panel lateral (`#pedido-panel`). El botón funciona como un carrito (dec. 236):
+ * lleva UN número, lo que espera a la persona (lo que hay por pedir más lo que hay por revisar), y el panel tiene tres
+ * etapas, cada una con su número:
+ * - «Por pedir»: Proveedor y Modelo, el resumen agrupado por tipo con el costo total estimado, «Pedir todos» (un lote
+ *   por tipo, `/api/agente/lote`), «Descargar .md», «Vaciar la lista» y «Quitar» por tarjeta;
+ * - «Trabajando»: el seguimiento de las tandas (avance, «Cancelar todo», lo que lleva cada lote y cómo terminó cada
+ *   ítem); las tandas en curso no suman al número del botón;
+ * - «A revisar»: lo que cada tipo pone con `revisar()` (los borradores, las reglas para decidir).
+ * Al mandar un lote, el panel pasa solo a «Trabajando»; cuando termina y dejó algo nuevo para revisar, a «A revisar».
+ * La etapa abierta se recuerda. También consulta el estado del agente (`/api/agente`) para todo el visor: las
+ * pantallas escuchan con `escuchar`.
  *
  * `def` (lo que cada tipo pone; lo marcado con ? es opcional):
  * - `nombre`: título del grupo en el panel (getter, en el idioma de ese momento); `unidad`: [en uno, en varios, es uno,
@@ -28,10 +35,11 @@
  *   (`{ lista, clave }`: en qué campo de la tanda vienen sus ítems y la clave de cada uno, la misma que `clave(item)`),
  *   y `seguimiento` (lo que dice el lote: `pidiendo(n, repos)`, `reindexando?`, `resumen?(ts)`: lo que el tipo suma
  *   al resumen común);
- * - `despues?()`: lo que va al final del panel (los resultados de los tests; puede llevar botones `boton(...)`, que el
- *   panel atiende igual que en la pantalla); `bandeja?()`: lo que suma la bandeja («2 para decidir»); `enlace?()`: un
- *   enlace que va al lado de la bandeja, fuera del botón («3 borradores para revisar», cuando un lote dejó borradores);
- *   `accion?(acc, k, boton)`: los botones propios dentro del panel (true si lo atendió).
+ * - `revisar?()`: lo que el tipo pone en la etapa «A revisar», `{ n, html, cargando }`: cuántas cosas esperan una
+ *   decisión de la persona (suman al número del botón y de la etapa; el mismo número que muestra la pantalla del tipo),
+ *   su HTML (puede llevar botones `boton(...)`, que el panel atiende igual que en la pantalla) y si todavía se está
+ *   leyendo (el número no es definitivo); `accion?(acc, k, boton)`: los botones propios dentro del panel (true si lo
+ *   atendió; un `pedir` de su tipo pasa primero por acá, por si la pantalla tiene que leer algo antes de sumar).
  *
  * Un botón de un tipo puede estar en otra pantalla que la que lo registró (la ficha de una funcionalidad pide
  * «escribir», que es de Especificaciones: mismo tipo y clave, así el botón dice «✔ En el pedido» en las dos). Esa
@@ -43,7 +51,7 @@
  * que lo vuelve a sumar). El estado se ve en el panel y junto a cada botón «Pedir» de las pantallas (`marca`, pintada
  * por `boton` y puesta al día por `marcar`, sin repintar). Al terminar un lote que cambió algo, la página se recarga
  * sola (cuando nadie está escribiendo) y vuelve a la misma pantalla y scroll: los filtros y la lista ya viven en este
- * navegador. Si terminó mientras se miraba otra pantalla (o con el panel cerrado), la bandeja lo avisa.
+ * navegador. Si terminó mientras se miraba otra pantalla (o con el panel cerrado), el botón «Agente» lo avisa.
  *
  * Lo que va al modelo, solo en inglés (dec. 214). JavaScript plano dentro de `String.raw`: sin backticks ni `${`.
  */
@@ -64,13 +72,15 @@ export const PEDIDO_JS = String.raw`
   var TOPE = 3000;
 
   // ---------- Lo que se guarda: una sola clave ----------
-  var CLAVE = "flowbrain.pedido";
+  var CLAVE = "flowbrain.pedido", ETAPAS = ["pedir", "trabajando", "revisar"];
   var leer = function (k) { try { if (typeof localStorage !== "undefined") { var v = localStorage.getItem(k); if (v !== null) return JSON.parse(v); } } catch (e) { /* sin almacenamiento */ } return null; };
   var borrar = function (k) { try { if (typeof localStorage !== "undefined" && localStorage.removeItem) localStorage.removeItem(k); } catch (e) { /* sin almacenamiento */ } };
   var valido = function (x) { return x && typeof x.tipo === "string" && typeof x.k === "string" && x.datos && typeof x.datos === "object"; };
   // E: { items, panel (abierto), elegido: { proveedor, modelo }, limpios: tandas cuyo resultado ya limpió la lista, ocultos: lotes con el resumen cerrado,
   // res: "tipo|k" → cómo terminó ese ítem { l: lote, ok, c: cambio, m: motivo, it: el ítem, para pedirlo de nuevo }, seguidos: lotes vistos
-  // corriendo (al terminar se avisa y se recarga), avisos: lotes que terminaron sin que se los mirara { l, ok, no } }.
+  // corriendo (al terminar se avisa y se recarga), avisos: lotes que terminaron sin que se los mirara { l, ok, no },
+  // etapa: la etapa abierta del panel (pedir, trabajando o revisar), alTerminar: un lote acaba de terminar { n: lo que
+  // había para revisar antes, l: sus ids }: cuando se sabe lo nuevo, el panel pasa a «A revisar» si apareció algo }.
   var E = leer(CLAVE);
   if (!E || typeof E !== "object") E = migrar();
   E = {
@@ -81,9 +91,10 @@ export const PEDIDO_JS = String.raw`
     ocultos: Array.isArray(E.ocultos) ? E.ocultos : [],
     res: E.res && typeof E.res === "object" && !Array.isArray(E.res) ? E.res : {},
     seguidos: Array.isArray(E.seguidos) ? E.seguidos : [],
-    avisos: Array.isArray(E.avisos) ? E.avisos : []
+    avisos: Array.isArray(E.avisos) ? E.avisos : [],
+    etapa: ETAPAS.indexOf(E.etapa) >= 0 ? E.etapa : "pedir",
+    alTerminar: E.alTerminar && typeof E.alTerminar === "object" && Array.isArray(E.alTerminar.l) ? E.alTerminar : null
   };
-  if (!E.items.length) E.panel = false;
   // Las listas de antes (una por pantalla) pasan a la clave nueva, con su tipo; las claves viejas se borran.
   function migrar() {
     var out = { items: [], panel: false, elegido: null, limpios: [], ocultos: [], res: {}, seguidos: [], avisos: [] };
@@ -109,7 +120,7 @@ export const PEDIDO_JS = String.raw`
     return out;
   }
   function guardar() {
-    try { if (typeof localStorage !== "undefined") localStorage.setItem(CLAVE, JSON.stringify({ v: 1, items: E.items, panel: E.panel, elegido: E.elegido, limpios: E.limpios.slice(-400), ocultos: E.ocultos.slice(-60), res: E.res, seguidos: E.seguidos.slice(-20), avisos: E.avisos.slice(-10) })); } catch (e) { /* sin almacenamiento */ }
+    try { if (typeof localStorage !== "undefined") localStorage.setItem(CLAVE, JSON.stringify({ v: 1, items: E.items, panel: E.panel, elegido: E.elegido, limpios: E.limpios.slice(-400), ocultos: E.ocultos.slice(-60), res: E.res, seguidos: E.seguidos.slice(-20), avisos: E.avisos.slice(-10), etapa: E.etapa, alTerminar: E.alTerminar })); } catch (e) { /* sin almacenamiento */ }
   }
   // Índice tipo|k → ítem, para saber de un vistazo si algo ya está en la lista.
   var INDICE = {};
@@ -218,7 +229,7 @@ export const PEDIDO_JS = String.raw`
     if (E.items.length !== antes) { indexar(); avisar("lista"); }
     if (cambio) { guardar(); marcar(); }
   }
-  // Los lotes que se vieron corriendo y ya terminaron: la bandeja avisa si no se los estaba mirando, y si cambiaron
+  // Los lotes que se vieron corriendo y ya terminaron: el botón «Agente» avisa si no se los estaba mirando, y si cambiaron
   // algo después de que se cargó esta página, hay que traer los datos nuevos (devuelve true).
   var CARGADA = Date.now();
   function terminar() {
@@ -228,7 +239,8 @@ export const PEDIDO_JS = String.raw`
       if (loteVivo(LT)) { if (i < 0) { E.seguidos.push(LT.id); cambio = true; } return; }
       if (i < 0) return;
       E.seguidos.splice(i, 1); cambio = true;
-      var ts = tandas(LT), c = cuentaRes(LT.id), d = def(tipoDeLote(LT));
+      var ts = tandas(LT), c = cuentaRes(LT.id), d = def(tipoDeLote(LT)), rv = porRevisar();
+      E.alTerminar = { n: E.alTerminar ? E.alTerminar.n : rv.n, l: (E.alTerminar ? E.alTerminar.l : []).concat([LT.id]) };
       if (!E.panel || !d || !enPantalla(d.raiz)) E.avisos = E.avisos.filter(function (a) { return a.l !== LT.id; }).concat([{ l: LT.id, ok: c.ok, no: c.no }]);
       var fin = ts.reduce(function (m, t) { return Math.max(m, t.terminado || 0); }, 0);
       if (fin >= CARGADA && (c.ok || ts.some(function (t) { return t.cambios && t.cambios.length; }))) recargar = true;
@@ -275,7 +287,7 @@ export const PEDIDO_JS = String.raw`
       E.items = E.items.filter(function (x) { return x.tipo !== tipo || !fuera[x.k]; });
     } else {
       xs.forEach(function (x) { if (!esta(tipo, x.k)) { E.items.push(x); INDICE[tipo + "|" + x.k] = x; delete E.res[tipo + "|" + x.k]; } });
-      E.panel = true;
+      E.panel = true; E.etapa = "pedir";
     }
     ERROR = "";
     cambio();
@@ -286,7 +298,7 @@ export const PEDIDO_JS = String.raw`
     if (!r || !valido(r.it)) return;
     delete E.res[tipo + "|" + k];
     if (!esta(tipo, r.it.k)) E.items.push(r.it);
-    E.panel = true; ERROR = "";
+    E.panel = true; E.etapa = "pedir"; ERROR = "";
     cambio();
   }
   function quitar(tipo, k) { E.items = E.items.filter(function (x) { return x.tipo !== tipo || x.k !== k; }); cambio(); }
@@ -296,7 +308,7 @@ export const PEDIDO_JS = String.raw`
     var antes = E.items.length, out = [];
     E.items.forEach(function (x) { if (x.tipo !== tipo) { out.push(x); return; } var y = fn(x); if (valido(y)) out.push(y); });
     E.items = out;
-    if (out.length !== antes) { if (!out.length) E.panel = false; cambio(); } else { indexar(); guardar(); }
+    if (out.length !== antes) cambio(); else { indexar(); guardar(); }
   }
   function cambio() { indexar(); guardar(); avisar("lista"); marcar(); pintar(); }
 
@@ -459,6 +471,8 @@ export const PEDIDO_JS = String.raw`
     });
     cadena.then(function () {
       PIDIENDO = false;
+      // Lo que salió se sigue en «Trabajando»; si no salió nada, se queda en «Por pedir» con el error.
+      if (errores.length < ms.length) { E.etapa = "trabajando"; E.panel = true; guardar(); }
       if (errores.length) ERROR = L("It could not be sent: ", "No se pudo mandar: ") + errores.join(" · ");
       pintar(); actualizar();
     });
@@ -480,62 +494,124 @@ export const PEDIDO_JS = String.raw`
     } catch (e) { return false; }
   }
 
-  // ---------- El panel y la bandeja ----------
+  // ---------- El panel y el botón «Agente» ----------
   var botonP = function (b, pri) { return '<button type="button" class="boton' + (pri ? " pri" : "") + '" data-acc="' + b[0] + '"' + (b[2] ? " disabled" : "") + ">" + b[1] + "</button>"; };
-  function htmlPanel() {
-    var ts = tiposEnLista(), pr = proveedor(), mo = modelo(), lotes = lotesVisibles(), corriendo = lotes.some(loteVivo), vivos = enTandas();
-    var total = E.items.length, ms = mandables(), aMandar = ms.reduce(function (s, m) { return s + m.items.length; }, 0);
+  // Lo que cada tipo tiene para revisar: { n: el total, cargando: si algún tipo todavía no lo sabe, tipos: [{ tipo, n, html }] }.
+  function porRevisar() {
+    var out = { n: 0, cargando: false, tipos: [] };
+    ORDEN.forEach(function (t) {
+      var d = def(t), r = d && d.revisar ? d.revisar() : null;
+      if (!r) return;
+      out.n += r.n || 0; if (r.cargando) out.cargando = true;
+      out.tipos.push({ tipo: t, n: r.n || 0, html: r.html || "" });
+    });
+    return out;
+  }
+  // Los números de las etapas: lo que se puede pedir (lo que no está en una tanda), lo que está en una tanda y lo que
+  // espera una decisión. El botón suma el primero y el último: lo que espera a la persona.
+  function cuentas() {
+    var vivos = enTandas(), trabajando = E.items.filter(function (x) { return vivos[x.tipo + "|" + claveDe(x)]; }).length;
+    return { pedir: E.items.length - trabajando, trabajando: trabajando, revisar: porRevisar().n };
+  }
+  function htmlEtapas(c) {
+    var et = { pedir: L("To request", "Por pedir"), trabajando: L("Working", "Trabajando"), revisar: L("To review", "A revisar") };
+    return '<div class="seg pd-etapas" role="tablist" aria-label="' + esc(L("Stages", "Etapas")) + '">' + ETAPAS.map(function (e) {
+      var on = E.etapa === e;
+      return '<button type="button" class="sb' + (on ? " on" : "") + '" role="tab" aria-selected="' + on + '" data-acc="etapa" data-k="' + e + '">' + et[e] + ' <span class="pd-num">' + num(c[e]) + "</span></button>";
+    }).join("") + "</div>";
+  }
+  // Las tarjetas de la lista, agrupadas por tipo. bloqueados: true para lo que lleva una tanda en curso, false para lo demás.
+  function htmlGrupos(bloqueados) {
+    var vivos = enTandas(), ts = tiposEnLista(), out = [];
+    ts.forEach(function (t) {
+      var d = def(t), xs = itemsDe(t).filter(function (x) { return !!vivos[t + "|" + claveDe(x)] === bloqueados; });
+      if (!xs.length) return;
+      out.push({ t: t, d: d, xs: xs });
+    });
+    return out.map(function (g) {
+      return '<section class="pd-grupo" data-tipo="' + esc(g.t) + '">' + (out.length > 1 || bloqueados ? '<h3>' + esc(nombreDe(g.t)) + ' <span class="chip">' + num(g.xs.length) + "</span></h3>" : "") + '<ul class="es-pedidos">' + g.xs.map(function (x) {
+        return '<li class="es-pedido"><div>' + (g.d && g.d.tarjeta ? g.d.tarjeta(x, bloqueados) : "<code>" + esc(x.k) + "</code>") + (bloqueados ? '<p class="pd-estado na">' + TEXTOS.trabajando + "</p>" : "") + "</div>" +
+          (bloqueados ? "" : '<button type="button" class="boton chico" data-acc="quitar" data-tipo="' + esc(g.t) + '" data-k="' + esc(x.k) + '" aria-label="' + L("Remove from the list", "Quitar de la lista") + '">' + L("Remove", "Quitar") + "</button>") + "</li>";
+      }).join("") + "</ul></section>";
+    }).join("");
+  }
+  var irA = function (e, texto) { return '<button type="button" class="boton chico" data-acc="etapa" data-k="' + e + '">' + texto + "</button>"; };
+  // «Por pedir»: lo de siempre (proveedor, modelo, costo, «Pedir todos», .md, «Vaciar»), sin lo que ya está en una tanda.
+  function htmlPedir(c) {
+    var vivos = enTandas(), ts = tiposEnLista().filter(function (t) { return itemsDe(t).some(function (x) { return !vivos[t + "|" + claveDe(x)]; }); });
+    var pr = proveedor(), mo = modelo(), corriendo = lotesVisibles().some(loteVivo);
+    var libres = function (t) { return itemsDe(t).filter(function (x) { return !vivos[t + "|" + claveDe(x)]; }); };
+    var ms = mandables(), aMandar = ms.reduce(function (s, m) { return s + m.items.length; }, 0);
     var sel = AG && pr
       ? selector("pedido", corriendo)
       : '<p class="fd-nota">' + (ED ? L("There's no agent installed on this machine", "No hay ningún agente instalado en esta máquina") + (ED.agente && ED.agente.noDisponible ? ": " + esc(ED.agente.noDisponible) : "") + "." : L("This page is read-only: it can't send the requests.", "Esta página es de solo lectura: no puede mandar los pedidos.")) +
         L(" Download the .md and give it to your agent (with access to the repos, not a web chat).", " Descargá el .md y dáselo a tu agente (con acceso a los repos, no un chat web).") + "</p>";
+    if (!c.pedir) {
+      var vacio = '<p class="fd-nota">' + L("Nothing to request. Click «Request» on a rule, a file or a folder, on any screen: it's added here, and only «Request all» sends it.", "No hay nada por pedir. Tocá «Pedir» en una regla, un archivo o una carpeta, en cualquier pantalla: se suma acá, y recién «Pedir todos» lo manda.") + "</p>";
+      var otras = [];
+      if (c.trabajando || lotesVisibles().length) otras.push(irA("trabajando", L("See what's running", "Ver lo que está en curso")));
+      if (c.revisar) otras.push(irA("revisar", L("Review what came back", "Revisar lo que volvió")));
+      return vacio + (otras.length ? '<div class="fd-acc">' + otras.join("") + "</div>" : "");
+    }
     // El resumen, agrupado por tipo, con su costo; abajo, el total si hay más de uno.
     var costoTotal = 0, sinEstimar = false;
     var totales = ts.map(function (t) {
       // El costo del tipo: la suma de lo que estima cada ítem que lleva el pedido (null si alguno no tiene estimación).
-      var d = def(t), xs = itemsDe(t), c = d && d.costo && mo ? xs.slice(0, TOPE).reduce(function (s, x) { var u = s === null ? null : d.costo(mo, x); return typeof u === "number" ? s + u : null; }, 0) : null;
-      if (typeof c === "number") costoTotal += c; else sinEstimar = true;
-      var costo = AG && mo ? "<span>" + L("Estimated cost: ", "Costo estimado: ") + (typeof c !== "number" ? L("no estimate for this model: the actual cost shows while it runs", "sin estimación para este modelo: el costo real se ve mientras corre") : (c ? "≈ " + dolares(c) : dolares(0)) + " <small>(" + L("approx., with ", "aprox., con ") + esc(mo.nombre) + ")</small>") + "</span>" : "";
+      var d = def(t), xs = libres(t), c2 = d && d.costo && mo ? xs.slice(0, TOPE).reduce(function (s, x) { var u = s === null ? null : d.costo(mo, x); return typeof u === "number" ? s + u : null; }, 0) : null;
+      if (typeof c2 === "number") costoTotal += c2; else sinEstimar = true;
+      var costo = AG && mo ? "<span>" + L("Estimated cost: ", "Costo estimado: ") + (typeof c2 !== "number" ? L("no estimate for this model: the actual cost shows while it runs", "sin estimación para este modelo: el costo real se ve mientras corre") : (c2 ? "≈ " + dolares(c2) : dolares(0)) + " <small>(" + L("approx., with ", "aprox., con ") + esc(mo.nombre) + ")</small>") + "</span>" : "";
       return '<div class="es-totales" data-tipo="' + esc(t) + '"><b>' + pl(xs.length, unidadDe(t)) + "</b>" + (ts.length > 1 ? "<small>" + esc(nombreDe(t)) + "</small>" : "") +
         (d && d.resumen ? d.resumen(xs).filter(Boolean).map(function (s) { return "<span>" + s + "</span>"; }).join("") : "") + costo + "</div>";
     }).join("");
-    if (ts.length > 1 && AG && mo) totales += '<div class="es-totales pd-total"><b>' + L("Total: ", "Total: ") + plural(total, L("item", "ítem"), L("items", "ítems")) + "</b><span>" + L("Estimated cost: ", "Costo estimado: ") + "≈ " + dolares(costoTotal) + (sinEstimar ? L(" (plus what has no estimate)", " (más lo que no tiene estimación)") : "") + "</span></div>";
+    if (ts.length > 1 && AG && mo) totales += '<div class="es-totales pd-total"><b>' + L("Total: ", "Total: ") + plural(c.pedir, L("item", "ítem"), L("items", "ítems")) + "</b><span>" + L("Estimated cost: ", "Costo estimado: ") + "≈ " + dolares(costoTotal) + (sinEstimar ? L(" (plus what has no estimate)", " (más lo que no tiene estimación)") : "") + "</span></div>";
     var notas = [];
-    ts.forEach(function (t) { var d = def(t); if (d && d.notas) notas = notas.concat(d.notas(itemsDe(t))); });
-    ts.forEach(function (t) { if (AG && itemsDe(t).length > TOPE) notas.push(L("A request carries up to " + num(TOPE) + " per type: it takes the first " + num(TOPE) + " of " + num(itemsDe(t).length) + " " + esc(nombreDe(t)) + "; request the rest when it finishes. The .md carries them all.", "Un pedido lleva hasta " + num(TOPE) + " por tipo: lleva los primeros " + num(TOPE) + " de " + num(itemsDe(t).length) + " (" + esc(nombreDe(t)) + "); el resto se pide cuando termine. El .md los lleva todos.")); });
-    if (corriendo) notas.push(L("A batch is running: what it carries stays locked until it finishes; you can cancel it below.", "Hay un lote en curso: lo que lleva queda bloqueado hasta que termine; podés cancelarlo abajo."));
+    ts.forEach(function (t) { var d = def(t); if (d && d.notas) notas = notas.concat(d.notas(libres(t))); });
+    ts.forEach(function (t) { if (AG && libres(t).length > TOPE) notas.push(L("A request carries up to " + num(TOPE) + " per type: it takes the first " + num(TOPE) + " of " + num(libres(t).length) + " " + esc(nombreDe(t)) + "; request the rest when it finishes. The .md carries them all.", "Un pedido lleva hasta " + num(TOPE) + " por tipo: lleva los primeros " + num(TOPE) + " de " + num(libres(t).length) + " (" + esc(nombreDe(t)) + "); el resto se pide cuando termine. El .md los lleva todos.")); });
+    ts.forEach(function (t) { if (AG && loteVivo(loteDe(t))) notas.push(L("A batch of " + esc(nombreDe(t)) + " is running: these go when it finishes (see «Working»).", "Hay un lote de " + esc(nombreDe(t)) + " en curso: estos salen cuando termine (mirá «Trabajando»).")); });
     var botones = '<div class="fd-acc">' + botonP(["pedir-todos", PIDIENDO ? L("Sending…", "Mandando…") : L("Request all", "Pedir todos") + (aMandar ? " (" + num(aMandar) + ")" : ""), !AG || !aMandar || PIDIENDO], true) +
-      botonP(["descargar-lista", L("Download .md", "Descargar .md"), !total], false) + botonP(["vaciar", L("Empty the list", "Vaciar la lista"), !E.items.some(function (x) { return !vivos[x.tipo + "|" + claveDe(x)]; })], false) + "</div>";
-    var grupos = ts.length
-      ? ts.map(function (t) {
-        var d = def(t), xs = itemsDe(t);
-        return '<section class="pd-grupo" data-tipo="' + esc(t) + '">' + (ts.length > 1 ? '<h3>' + esc(nombreDe(t)) + ' <span class="chip">' + num(xs.length) + "</span></h3>" : "") + '<ul class="es-pedidos">' + xs.map(function (x) {
-          var bloq = !!vivos[t + "|" + claveDe(x)];
-          return '<li class="es-pedido"><div>' + (d && d.tarjeta ? d.tarjeta(x, bloq) : "<code>" + esc(x.k) + "</code>") + (bloq ? '<p class="pd-estado na">' + TEXTOS.trabajando + "</p>" : "") + '</div><button type="button" class="boton chico" data-acc="quitar" data-tipo="' + esc(t) + '" data-k="' + esc(x.k) + '" aria-label="' + L("Remove from the list", "Quitar de la lista") + '"' + (bloq ? " disabled" : "") + ">" + L("Remove", "Quitar") + "</button></li>";
-        }).join("") + "</ul></section>";
-      }).join("")
-      : '<p class="fd-nota">' + L("The list is empty. Click «Request» on a rule, a file or a folder, on any screen: it's added here, and only «Request all» sends it.", "La lista está vacía. Tocá «Pedir» en una regla, un archivo o una carpeta, en cualquier pantalla: se suma acá, y recién «Pedir todos» lo manda.") + "</p>";
-    var despues = ORDEN.map(function (t) { var d = def(t), h = d.despues ? d.despues() : ""; return h ? '<div class="pd-despues" data-tipo="' + esc(t) + '">' + h + "</div>" : ""; }).join("");
-    return '<div class="es-panel-cab"><h2>' + L("Request to the agent", "Pedido al agente") + '</h2><button type="button" class="boton chico" data-acc="cerrar-panel" aria-label="' + L("Close the panel", "Cerrar el panel") + '">✕</button></div>' +
-      sel + totales + botones +
+      botonP(["descargar-lista", L("Download .md", "Descargar .md"), !c.pedir], false) + botonP(["vaciar", L("Empty the list", "Vaciar la lista"), !c.pedir], false) + "</div>";
+    return sel + totales + botones + notas.map(function (t) { return '<p class="fd-nota">' + t + "</p>"; }).join("") + htmlGrupos(false);
+  }
+  // «Trabajando»: cada lote con su avance y, al terminar, cómo terminó cada ítem; abajo, lo que llevan las tandas en curso.
+  function htmlTrabajando(c) {
+    var lotes = lotesVisibles();
+    if (!lotes.length && !c.trabajando) {
+      return '<p class="fd-nota">' + (AG ? L("Nothing is running. When you click «Request all» in «To request», the progress of each batch shows here, and then how each item ended.", "No hay nada en curso. Cuando tocás «Pedir todos» en «Por pedir», acá se ve el avance de cada tanda y después cómo terminó cada ítem.")
+        : L("Nothing runs from this page: without the served viewer and an installed agent, the request goes as a .md (in «To request») and the agent works outside.", "Desde esta página no corre nada: sin el visor servido y un agente instalado, el pedido va como .md (en «Por pedir») y el agente trabaja afuera.")) + "</p>" +
+        (c.pedir ? '<div class="fd-acc">' + irA("pedir", L("Go to «To request»", "Ir a «Por pedir»")) + "</div>" : "");
+    }
+    return lotes.map(htmlLote).join("") + htmlGrupos(true);
+  }
+  // «A revisar»: lo que pone cada tipo (los borradores, las reglas para decidir).
+  function htmlRevisar(rv) {
+    var con = rv.tipos.filter(function (x) { return x.html; });
+    if (!con.length) return '<p class="fd-nota">' + L("Nothing to review. What the agent leaves for you to decide (drafts, rules the code doesn't fulfill) shows here.", "No hay nada para revisar. Acá aparece lo que el agente te deja para decidir (borradores, reglas que el código no cumple).") + "</p>";
+    return con.map(function (x) {
+      return '<section class="pd-revisar" data-tipo="' + esc(x.tipo) + '">' + (con.length > 1 ? "<h3>" + esc(nombreDe(x.tipo)) + ' <span class="chip">' + num(x.n) + "</span></h3>" : "") + x.html + "</section>";
+    }).join("");
+  }
+  function htmlPanel() {
+    var c = cuentas(), rv = porRevisar(), e = E.etapa;
+    var cuerpo = e === "trabajando" ? htmlTrabajando(c) : e === "revisar" ? htmlRevisar(rv) : htmlPedir(c);
+    return '<div class="es-panel-cab"><h2>' + L("Agent", "Agente") + '</h2><button type="button" class="boton chico" data-acc="cerrar-panel" aria-label="' + L("Close the panel", "Cerrar el panel") + '">✕</button></div>' +
+      htmlEtapas(c) +
       (ERROR ? '<p class="fd-msg error">' + esc(ERROR) + "</p>" : NOTA ? '<p class="fd-nota">' + esc(NOTA) + "</p>" : "") +
-      notas.map(function (t) { return '<p class="fd-nota">' + t + "</p>"; }).join("") +
-      lotes.map(htmlLote).join("") + grupos + despues;
+      '<div class="pd-etapa" data-etapa="' + e + '">' + cuerpo + "</div>";
   }
+  // El botón de la barra: siempre está (es la puerta al agente), con UN número: lo que espera a la persona.
   function htmlBandeja() {
-    var n = E.items.length, extras = [];
-    ORDEN.forEach(function (t) { var d = def(t), x = d.bandeja ? d.bandeja() : ""; if (x) extras.push(x); });
-    var corriendo = lotesVisibles().some(loteVivo), enlaces = "";
-    ORDEN.forEach(function (t) { var d = def(t), x = d.enlace ? d.enlace() : ""; if (x) enlaces += x; });
-    if (!n && !extras.length && !lotesVisibles().length && !E.avisos.length) return enlaces;
-    // Un lote que terminó mientras se miraba otra cosa: cuánto se resolvió, hasta abrir el panel.
-    var av = E.avisos.reduce(function (s, a) { return { ok: s.ok + a.ok, no: s.no + a.no }; }, { ok: 0, no: 0 });
-    var aviso = E.avisos.length ? ' <span class="pd-aviso" title="' + esc(L("A batch finished: open the panel to see what was resolved", "Terminó un lote: abrí el panel para ver qué se resolvió")) + '">' + L("finished", "terminó") + ": ✔ " + num(av.ok) + (av.no ? " · ✕ " + num(av.no) : "") + "</span>" : "";
-    return enlaces + '<button type="button" class="boton es-pedir' + (corriendo ? " pd-corriendo" : "") + '" data-acc="panel" aria-expanded="' + E.panel + '" aria-controls="pedido-panel">' + L("Request", "Pedido") + (n ? " (" + num(n) + ")" : "") + (corriendo ? " · " + L("running", "corriendo") : "") + (extras.length ? " · " + extras.join(" · ") : "") + aviso + "</button>";
+    var c = cuentas(), n = c.pedir + c.revisar, corriendo = lotesVisibles().some(loteVivo);
+    var titulo = L(c.pedir + " to request · " + c.trabajando + " working · " + c.revisar + " to review", c.pedir + " por pedir · " + c.trabajando + " trabajando · " + c.revisar + " a revisar");
+    var aviso = E.avisos.length ? ' <span class="pd-aviso" title="' + esc(L("A batch finished: open the panel to see how it ended", "Terminó un lote: abrí el panel para ver cómo terminó")) + '">' + L("finished", "terminó") + "</span>" : corriendo ? ' <span class="pd-corre" title="' + esc(L("The agent is working", "El agente está trabajando")) + '">' + L("working…", "trabajando…") + "</span>" : "";
+    return '<button type="button" class="boton es-pedir pd-agente' + (corriendo ? " pd-corriendo" : "") + '" data-acc="panel" aria-expanded="' + E.panel + '" aria-controls="pedido-panel" title="' + esc(titulo) + '">' +
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"></path><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"></path></svg>' +
+      L("Agent", "Agente") + (n ? ' <span class="pd-cuenta" aria-label="' + esc(titulo) + '">' + num(n) + "</span>" : "") + aviso + "</button>";
   }
-  // Repinta el panel (guardando el scroll) y la bandeja, y deja lugar a la derecha de la página mientras está abierto.
+  // Repinta el panel (guardando el scroll) y el botón «Agente», y deja lugar a la derecha de la página mientras está abierto.
   function pintar() {
     var el = elem("pedido-panel");
+    // Alguien escribe en el panel (la nota de «Pedir corrección»): no se le borra el campo; se repinta al salir.
+    if (el && escribiendoEn(el)) { DIFERIDO = true; el = null; }
     if (el) {
       var antes = typeof el.scrollTop === "number" ? el.scrollTop : 0;
       el.innerHTML = htmlPanel();
@@ -546,8 +622,32 @@ export const PEDIDO_JS = String.raw`
     var body = typeof document !== "undefined" ? document.body : null;
     if (body && body.classList) { if (E.panel) body.classList.add("con-pedido"); else body.classList.remove("con-pedido"); }
     ajustarAlto();
+    if (E.alTerminar && !RESOLVIENDO) { RESOLVIENDO = true; setTimeout(resolverEtapa, 0); }
   }
-  // El panel arranca debajo de la barra superior, que en pantallas angostas ocupa más de una línea: así no tapa la bandeja.
+  var DIFERIDO = false;
+  function escribiendoEn(el) {
+    var a = typeof document !== "undefined" ? document.activeElement : null;
+    if (!a || !el.contains || !el.contains(a)) return false;
+    var tag = String(a.tagName || "").toLowerCase();
+    return tag === "textarea" || (tag === "input" && /^(text|number|email|url|search)$/.test(a.type || "text"));
+  }
+  // Un lote terminó: cuando todos los tipos ya saben lo que tienen para revisar (después de que cada pantalla volvió a
+  // leer lo suyo), el panel pasa a «A revisar» si apareció algo nuevo (o el lote dejó un borrador); si no, se queda en
+  // «Trabajando», que muestra cómo terminó cada ítem. Espera a la vuelta siguiente: así todas las pantallas registraron
+  // su tipo y empezaron a leer.
+  var RESOLVIENDO = false;
+  function resolverEtapa() {
+    RESOLVIENDO = false;
+    var a = E.alTerminar, rv = porRevisar();
+    if (!a || rv.cargando) return;
+    var dejo = Object.keys(E.res).some(function (k) { var r = E.res[k]; return a.l.indexOf(r.l) >= 0 && r.ok && r.c && r.c.borrador; });
+    E.alTerminar = null;
+    E.etapa = rv.n && (rv.n > a.n || dejo) ? "revisar" : "trabajando";
+    // Con el panel abierto, la etapa que cambió sola ya muestra cómo terminó: el aviso del botón sobra.
+    if (E.panel) E.avisos = [];
+    guardar(); pintar();
+  }
+  // El panel arranca debajo de la barra superior, que en pantallas angostas ocupa más de una línea: así no tapa el botón «Agente».
   function ajustarAlto() {
     var c = elem("cabecera"), raiz = typeof document !== "undefined" ? document.documentElement : null;
     if (c && c.offsetHeight && raiz && raiz.style && raiz.style.setProperty) raiz.style.setProperty("--alto-cabecera", c.offsetHeight + "px");
@@ -584,14 +684,16 @@ export const PEDIDO_JS = String.raw`
     if (window.addEventListener) window.addEventListener("load", function () { ir(); setTimeout(ir, 300); setTimeout(ir, 900); });
   }
 
-  // ---------- Los botones del panel y de la bandeja ----------
+  // ---------- Los botones del panel y del botón «Agente» ----------
   function accion(b) {
     var acc = b.getAttribute("data-acc"), k = b.getAttribute("data-k");
     if (acc === "panel") { abrir(!E.panel); return; }
+    if (acc === "etapa") { if (ETAPAS.indexOf(k) >= 0) { E.etapa = k; E.avisos = []; guardar(); pintar(); var p = elem("pedido-panel"); if (p && typeof p.scrollTop === "number") p.scrollTop = 0; } return; }
     if (acc === "cerrar-panel") { abrir(false); return; }
     if (acc === "quitar") { quitar(b.getAttribute("data-tipo"), k); return; }
     // Un botón «Pedir» pintado dentro del panel (en lo que un tipo pone al final, como «Pedir la corrección»).
-    if (acc === "pedir") { sumar(b.getAttribute("data-tipo"), k); return; }
+    // Primero lo ve su tipo, por si tiene que leer algo antes (la nota de un borrador).
+    if (acc === "pedir") { var dp = def(b.getAttribute("data-tipo")); if (dp && dp.accion && dp.accion(acc, k, b) === true) return; sumar(b.getAttribute("data-tipo"), k); return; }
     if (acc === "vaciar") { vaciar(); return; }
     if (acc === "pedir-todos") { pedirTodos(); return; }
     if (acc === "descargar-lista") { var m = md(); if (m && !descargar(m.archivo, m.texto)) { ERROR = L("It couldn't be downloaded.", "No se pudo descargar."); pintar(); } return; }
@@ -604,13 +706,14 @@ export const PEDIDO_JS = String.raw`
       E.avisos = E.avisos.filter(function (a) { return a.l !== k; });
       guardar(); marcar(); pintar(); return;
     }
-    // Lo demás es de un tipo (los resultados de los tests): lo atiende quien lo pintó.
+    // Lo demás es de un tipo (los resultados de los tests, los borradores): lo atiende quien lo pintó.
     for (var i = 0; i < ORDEN.length; i++) { var d = def(ORDEN[i]); if (d.accion && d.accion(acc, k, b) === true) return; }
   }
   var alClic = function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest("[data-acc]") : null; if (b && !b.disabled) accion(b); };
   var panelEl = elem("pedido-panel"), bandejaEl = elem("pedido-bandeja");
   if (panelEl && panelEl.addEventListener) {
     panelEl.addEventListener("click", alClic);
+    panelEl.addEventListener("focusout", function () { if (DIFERIDO) setTimeout(function () { if (DIFERIDO && !escribiendoEn(panelEl)) { DIFERIDO = false; pintar(); } }, 0); });
     panelEl.addEventListener("change", function (ev) {
       var id = ev.target ? ev.target.id : "";
       if (id === "pedido-prov") elegir(String(ev.target.value || ""), null);
@@ -633,6 +736,7 @@ export const PEDIDO_JS = String.raw`
       if (n.res && typeof n.res === "object") E.res = n.res;
       if (Array.isArray(n.seguidos)) E.seguidos = n.seguidos;
       if (Array.isArray(n.avisos)) E.avisos = n.avisos;
+      if (ETAPAS.indexOf(n.etapa) >= 0) E.etapa = n.etapa;
       indexar(); avisar("lista"); marcar(); pintar();
     } catch (e) { /* no era JSON */ }
   });
@@ -651,7 +755,9 @@ export const PEDIDO_JS = String.raw`
     aviso: function (o) { ERROR = o && o.error ? o.error : ""; NOTA = o && o.nota ? o.nota : ""; pintar(); },
     vivo: vivo, estado: estado, dolares: dolares, descargar: descargar,
     // Cómo terminó un ítem de la lista en su último lote (null si no hay desenlace).
-    resultado: function (tipo, k) { return E.res[tipo + "|" + k] || null; }
+    resultado: function (tipo, k) { return E.res[tipo + "|" + k] || null; },
+    // La etapa del panel: etapa() la dice, etapa("revisar") la abre (con el panel).
+    etapa: function (e) { if (e && ETAPAS.indexOf(e) >= 0) { E.etapa = e; E.panel = true; guardar(); pintar(); } return E.etapa; }
   };
   restaurarVista();
   pintar();

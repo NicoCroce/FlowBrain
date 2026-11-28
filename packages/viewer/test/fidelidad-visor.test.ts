@@ -1,5 +1,6 @@
 import { resolveObjectURL } from "node:buffer";
 import { describe, expect, it } from "vitest";
+import { cuentaAgente } from "./ayuda-agente.js";
 import { FIDELIDAD_JS } from "../src/viewer-fidelidad.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
 import { PEDIDO_JS } from "../src/viewer-pedido.js";
@@ -260,7 +261,7 @@ describe("pantalla Fidelidad", () => {
     v.marcar("fd-pl-s-http", true);
     v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "a|front/repo-web:src/api.ts" });
     expect(v.lista()).toContain("✔ In the request");
-    expect(v.bandeja()).toContain(">Request (1)</button>");
+    expect(cuentaAgente(v.bandeja())).toBe("1");
     // La tarjeta: el archivo, su puntaje y lo que le falta.
     expect(v.panel()).toContain("<code>src/api.ts</code> <small>repo-web</small>");
     expect(v.panel()).toContain(">50/100</span>");
@@ -269,7 +270,7 @@ describe("pantalla Fidelidad", () => {
     // La lista entera: suma lo que falta (Servicio.php, solo con lo de llamadas si se desmarca datos).
     v.marcar("fd-pl-s-datos", false);
     v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "l|" });
-    expect(v.bandeja()).toContain(">Request (2)</button>");
+    expect(cuentaAgente(v.bandeja())).toBe("2");
     const items = (JSON.parse(local.get("flowbrain.pedido")!) as { items: Array<{ tipo: string; k: string; cerebro: string; repo: string; datos: { archivo: string; p: number; t: unknown[] } }> }).items;
     expect(items.map((x) => [x.tipo, x.k, x.cerebro, x.repo, x.datos.archivo])).toEqual([["fidelidad", "front/repo-web:src/api.ts", "front", "repo-web", "repo-web:src/api.ts"], ["fidelidad", "back/repo-api:src/Servicio.php", "back", "repo-api", "repo-api:src/Servicio.php"]]);
     expect(items[1]!.datos.t).toEqual([["llamadas", "1 llamada que no se sabe a qué método va", [6]]]);
@@ -285,19 +286,19 @@ describe("pantalla Fidelidad", () => {
     expect(md.indexOf("src/api.ts")).toBeLessThan(md.indexOf("src/Servicio.php"));
     // Otra vez la lista entera: ya está todo, así que lo saca.
     v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "l|" });
-    expect(v.bandeja()).not.toContain("Request (");
+    expect(cuentaAgente(v.bandeja())).toBe("");
   });
 
   it("al volver, lo pedido se pone al día con lo que mide la página: lo que ya no falta sale", () => {
     const local = new Map<string, string>();
     const v = montar(datos, { local });
     v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "l|" });
-    expect(v.bandeja()).toContain(">Request (2)</button>");
+    expect(cuentaAgente(v.bandeja())).toBe("2");
     // Se reindexó: api.ts llegó a 100 y Servicio.php ya no tiene la falta de datos.
     const archivos = (datos.fidelidad.archivos as Array<Record<string, unknown>>).map((x) =>
       x["a"] === "front/repo-web:src/api.ts" ? { ...x, p: 100, s: { http: [2, 2] }, t: [] } : x["a"] === "back/repo-api:src/Servicio.php" ? { ...x, t: (x["t"] as T[]).filter((t) => t[0] !== "datos") } : x);
     const otra = montar({ ...datos, fidelidad: { ...datos.fidelidad, archivos } }, { local });
-    expect(otra.bandeja()).toContain(">Request (1)</button>");
+    expect(cuentaAgente(otra.bandeja())).toBe("1");
     const items = (JSON.parse(local.get("flowbrain.pedido")!) as { items: Array<{ k: string; datos: { t: unknown[] } }> }).items;
     expect(items.map((x) => [x.k, x.datos.t.length])).toEqual([["back/repo-api:src/Servicio.php", 1]]);
   });
@@ -353,7 +354,7 @@ describe("pantalla Fidelidad", () => {
     expect(v.lista()).toContain("Qué relaciones pedir");
     expect(v.lista()).toContain('data-et="Pedir los 2 de la lista"');
     v.tocar({ "data-acc": "pedir", "data-tipo": "fidelidad", "data-k": "l|" });
-    expect(v.panel()).toContain("<h2>Pedido al agente</h2>");
+    expect(v.panel()).toContain("<h2>Agente</h2>");
     v.tocar({ "data-acc": "descargar-lista" });
     return v.bajados[0]!.texto().then((md) => expect(md).toContain("# Fidelity plan"));
   });

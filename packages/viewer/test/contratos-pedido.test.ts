@@ -1,5 +1,6 @@
 import { resolveObjectURL } from "node:buffer";
 import { describe, expect, it } from "vitest";
+import { cuentaAgente } from "./ayuda-agente.js";
 import type { Graph, GraphNode } from "@flowbrain/core";
 import { datosDeCerebros } from "../src/cerebros.js";
 import type { DerivaVisor } from "../src/viewer.js";
@@ -98,9 +99,9 @@ describe("Contratos: la deriva en el pedido al agente", () => {
     expect(v.panel()).toContain("Nobody handles them");
     expect(v.panel()).toContain("<code>repo-web:src/cliente.ts#L6</code>");
     expect(v.panel()).toContain('data-acc="quitar" data-tipo="deriva"');
-    expect(v.bandeja()).toContain("Request (1)");
+    expect(cuentaAgente(v.bandeja())).toBe("1");
     v.tocar({ "data-acc": "pedir", "data-tipo": "deriva", "data-k": "s|sinLlamadas" });
-    expect(v.bandeja()).toContain("Request (3)");
+    expect(cuentaAgente(v.bandeja())).toBe("3");
     v.tocar({ "data-acc": "descargar-lista" });
     expect(v.bajados[0]!.nombre).toBe("drift-fixes.md");
     const md = await v.bajados[0]!.texto();
@@ -135,7 +136,7 @@ describe("Contratos: la deriva en el pedido al agente", () => {
     const v = montar(datos(), { edicion: { token: "t", agente }, fetch: responder(pedidos) });
     const k = "sinLlamadas|0|tienda/svc-api:POST:/hook";
     v.tocar({ "data-acc": "pedir", "data-tipo": "deriva", "data-k": "p|" + k });
-    expect(v.bandeja()).toContain("Request (1)");
+    expect(cuentaAgente(v.bandeja())).toBe("1");
     v.tocar({ "data-acc": "sin-uso", "data-k": k });
     await new Promise((ok) => setTimeout(ok, 0));
     expect(pedidos.find((p) => p.url === "/api/editar")!.cuerpo).toEqual({ tipo: "no_producto", cerebro: "tienda", entrada: "svc-api:POST:/hook", motivo: "sin-uso" });
@@ -143,7 +144,7 @@ describe("Contratos: la deriva en el pedido al agente", () => {
     expect(v.pagina()).toContain("Unused on purpose");
     expect(v.pagina()).toContain("is marked as unused on purpose and left the drift");
     expect(v.pagina()).toContain('data-acc="deshacer-sin-uso" data-c="0" data-e="tienda/svc-api:POST:/hook"');
-    expect(v.bandeja()).not.toContain("Request (1)");
+    expect(cuentaAgente(v.bandeja())).not.toBe("1");
     v.tocar({ "data-acc": "deshacer-sin-uso", "data-c": "0", "data-e": "tienda/svc-api:POST:/hook" });
     await new Promise((ok) => setTimeout(ok, 0));
     expect(pedidos.filter((p) => p.url === "/api/editar")[1]!.cuerpo).toEqual({ tipo: "no_producto", cerebro: "tienda", entrada: "svc-api:POST:/hook", motivo: null });
@@ -168,6 +169,6 @@ describe("Contratos: la deriva en el pedido al agente", () => {
     v.tocar({ "data-acc": "pedir", "data-tipo": "deriva", "data-k": K_ROTA });
     const sin = { ...deriva, llamadasSinEndpoint: [] };
     const otra = montar(datos(sin), { local });
-    expect(otra.bandeja()).not.toContain("Request (1)");
+    expect(cuentaAgente(otra.bandeja())).not.toBe("1");
   });
 });

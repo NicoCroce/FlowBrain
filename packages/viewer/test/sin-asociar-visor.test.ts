@@ -1,10 +1,11 @@
 import { resolveObjectURL } from "node:buffer";
 import { describe, expect, it } from "vitest";
+import { cuentaAgente } from "./ayuda-agente.js";
 import { SIN_ASOCIAR_JS } from "../src/viewer-sin-asociar.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
 import { PEDIDO_JS } from "../src/viewer-pedido.js";
 
-const DEL_PEDIDO = new Set(["panel", "cerrar-panel", "quitar", "vaciar", "pedir-todos", "descargar-lista", "cancelar-lote", "cerrar-lote"]);
+const DEL_PEDIDO = new Set(["panel", "etapa", "cerrar-panel", "quitar", "vaciar", "pedir-todos", "descargar-lista", "cancelar-lote", "cerrar-lote"]);
 
 /** La pantalla Sin asociar, corrida con un DOM mínimo: qué agrupa, qué recomienda, qué dice cuando no hay nada y qué manda al asociar. */
 type Oyente = (ev: { target: Record<string, unknown> }) => void;
@@ -142,8 +143,8 @@ describe("pantalla Sin asociar", () => {
   it("suma al pedido de a un archivo, por carpeta o la lista filtrada; el panel lateral se abre, quita, vacía y se recuerda", async () => {
     const local = new Map<string, string>();
     const v = montar(datos(), { local });
-    // Sin nada sumado no hay botón del panel, y cada fila, carpeta y la lista tienen su «Sumar» celeste.
-    expect(v.bandeja()).toBe("");
+    // Sin nada sumado, el botón «Agente» no lleva número, y cada fila, carpeta y la lista tienen su «Sumar» celeste.
+    expect(cuentaAgente(v.bandeja())).toBe("");
     expect(v.lista()).toContain(`data-acc="pedir" data-tipo="asociar" data-k="a|${W}src/shared/dinero.ts" data-et="Request" aria-pressed="false"`);
     expect(v.lista()).toMatch(/class="boton es-pedir" data-acc="pedir" data-tipo="asociar" data-k="c\|0\|front\/repo-web:src\/shared"[^>]*>Request the 3<\/button>/);
     expect(v.lista()).toContain(">Request the 5 in the list</button>");
@@ -151,14 +152,15 @@ describe("pantalla Sin asociar", () => {
     v.tocar({ "data-acc": "pedir", "data-k": `a|${W}src/shared/dinero.ts` });
     expect(v.lista()).toMatch(/class="boton es-pedir en-lista" data-acc="pedir" data-tipo="asociar" data-k="a\|front\/repo-web:src\/shared\/dinero.ts"[^>]*>✔ In the request<\/button>/);
     // El panel es el del pedido al agente, único para todo el visor.
-    expect(v.panel()).toContain("<h2>Request to the agent</h2>");
+    expect(v.panel()).toContain("<h2>Agent</h2>");
     expect(v.panel()).toContain("<b>1 file</b>");
     expect(v.panel()).toContain("→ Pagos</span>");
     expect(v.panel()).toContain(">High confidence</span>");
     // La tarjeta lleva el motivo, como la regla en «Tests pedidos».
     expect(v.panel()).toContain("<code>dinero.ts</code> <small>imported by 2 files of Pagos</small>");
     expect(v.panel()).toContain('<small class="es-archivo">File: <code>repo-web:src/shared/dinero.ts</code></small>');
-    expect(v.bandeja()).toContain('data-acc="panel" aria-expanded="true" aria-controls="pedido-panel">Request (1)</button>');
+    expect(v.bandeja()).toContain('data-acc="panel" aria-expanded="true" aria-controls="pedido-panel"');
+    expect(cuentaAgente(v.bandeja())).toBe("1");
     // La carpeta suma los que faltan; tocarla otra vez los saca.
     v.tocar({ "data-acc": "pedir", "data-k": "c|0|front/repo-web:src/shared" });
     expect(v.panel()).toContain("<b>3 files</b>");
@@ -173,7 +175,7 @@ describe("pantalla Sin asociar", () => {
     v.tocar({ "data-acc": "pedir", "data-k": "c|0|front/repo-web:src/shared" });
     expect(v.panel()).toContain("<b>3 files</b>");
     v.tocar({ "data-acc": "pedir", "data-k": "c|0|front/repo-web:src/shared" });
-    expect(v.panel()).toContain("The list is empty. Click «Request» on a rule, a file or a folder, on any screen");
+    expect(v.panel()).toContain("Nothing to request. Click «Request» on a rule, a file or a folder, on any screen");
     // La lista filtrada entera.
     v.tocar({ "data-acc": "pedir", "data-k": "l|" });
     expect(v.panel()).toContain("<b>5 files</b>");
@@ -211,11 +213,12 @@ describe("pantalla Sin asociar", () => {
     otra.tocar({ "data-acc": "cerrar-panel" });
     expect(guardado().panel).toBe(false);
     expect(otra.panelAbierto()).toBe("es-panel");
-    expect(otra.bandeja()).toContain('aria-expanded="false" aria-controls="pedido-panel">Request (4)</button>');
+    expect(otra.bandeja()).toContain('aria-expanded="false" aria-controls="pedido-panel"');
+    expect(cuentaAgente(otra.bandeja())).toBe("4");
     otra.tocar({ "data-acc": "panel" });
     expect(guardado().panel).toBe(true);
     otra.tocar({ "data-acc": "vaciar" });
-    expect(otra.panel()).toContain("The list is empty.");
+    expect(otra.panel()).toContain("Nothing to request.");
     expect(guardado().items).toEqual([]);
     // En castellano, los mismos textos que «Tests pedidos»; el texto para el agente, en inglés.
     const es = montar(datos(), { lang: "es" });
@@ -224,7 +227,7 @@ describe("pantalla Sin asociar", () => {
     expect(es.lista()).toContain(">Pedir los 5 de la lista</button>");
     es.tocar({ "data-acc": "pedir", "data-k": "l|" });
     expect(es.lista()).toContain(">✔ En el pedido</button>");
-    expect(es.panel()).toContain("<h2>Pedido al agente</h2>");
+    expect(es.panel()).toContain("<h2>Agente</h2>");
     expect(es.panel()).toContain("3 con recomendación · 1 compartido · 1 sin pista");
     expect(es.panel()).toContain(">Descargar .md</button>");
     expect(es.panel()).toContain(">Vaciar la lista</button>");
@@ -414,12 +417,13 @@ describe("pantalla Sin asociar", () => {
     expect(p).toContain("Lee src/shared/fecha.ts");
     expect(p).toContain("Waits for the previous batch to finish.");
     expect(p).toContain('data-acc="cancelar-lote" data-k="L1">Cancel all</button>');
-    // Lo que está en una tanda no se puede quitar, y con un lote en curso no se manda otro ni se vacía.
+    // Al mandar, el panel pasa a «Trabajando»: lo que está en una tanda no se puede quitar, y no queda nada por pedir.
+    expect(p).toContain('<div class="pd-etapa" data-etapa="trabajando">');
     expect(p).toContain('<p class="pd-estado na">The agent is working on it…</p>');
-    expect(p).toMatch(/data-acc="quitar" data-tipo="asociar" data-k="back\|repo-api:src\/Util\/Texto.php"[^>]*disabled/);
-    expect(p).toMatch(/data-acc="pedir-todos" disabled/);
-    expect(p).toMatch(/data-acc="vaciar" disabled/);
-    expect(p).toContain("A batch is running");
+    expect(p).not.toMatch(/data-acc="quitar" data-tipo="asociar" data-k="back\|repo-api:src\/Util\/Texto.php"/);
+    v.tocar({ "data-acc": "etapa", "data-k": "pedir" });
+    expect(v.panel()).toContain("Nothing to request");
+    v.tocar({ "data-acc": "etapa", "data-k": "trabajando" });
     v.tocar({ "data-acc": "cancelar-lote", "data-k": "L1" });
     await esperar();
     expect(pedidos.find((x) => x.url === "/api/agente/lote/cancelar")).toMatchObject({ id: "L1" });
@@ -443,8 +447,8 @@ describe("pantalla Sin asociar", () => {
     expect(p).not.toContain("Reload to see the changes");
     expect(p).toContain("It could not resolve it: after the batch it is still pending. The agent says: «No feature covers notes»");
     expect(p).toContain('data-acc="otra-vez" data-tipo="asociar" data-k="front|repo-web:src/pagos/nota.ts">Request again</button>');
-    // Lo de la tanda cancelada antes de empezar sigue en la lista; lo demás salió con su desenlace.
-    expect(p).toContain("<b>1 file</b>");
+    // Lo de la tanda cancelada antes de empezar sigue en la lista («Por pedir»); lo demás salió con su desenlace.
+    expect(p).toContain('data-k="pedir">To request <span class="pd-num">1</span>');
     expect(JSON.parse(local.get("flowbrain.pedido")!).items.map((e: { k: string }) => e.k)).toEqual(["back|repo-api:src/Util/Texto.php"]);
     // La fila del archivo que quedó lleva la marca, y su botón dice «Pedir de nuevo».
     expect(otra.lista()).toContain('>Request again</button><span class="pd-marca no"');
@@ -468,6 +472,8 @@ describe("pantalla Sin asociar", () => {
     es.tocar({ "data-acc": "pedir", "data-k": "l|" });
     expect(es.panel()).toContain("Pedir todos (5)");
     expect(es.panel()).toContain("En 2 tandas de hasta 30 archivos de un mismo repo");
+    es.tocar({ "data-acc": "etapa", "data-k": "trabajando" });
+    expect(es.panel()).toContain("Trabajando <span");
     expect(es.panel()).toContain("Costo real: US$ 0.30");
     expect(es.panel()).toContain("2 resueltos · 1 sin resolver");
     expect(es.panel()).not.toContain("Recargar para ver los cambios");

@@ -1,3 +1,4 @@
+import { cuentaAgente } from "./ayuda-agente.js";
 import { describe, expect, it } from "vitest";
 import { BORRADORES_JS } from "../src/viewer-borradores.js";
 import { FILTROS_JS } from "../src/viewer-filtros.js";
@@ -6,11 +7,11 @@ import { PEDIDO_JS } from "../src/viewer-pedido.js";
 /**
  * La pantalla Borradores (dec. 234), con el componente único del pedido y el filtro, sobre un DOM mínimo y un servidor
  * falso: lista lo de `_drafts/`, muestra el diff, acepta (y recarga), descarta (preguntando), devuelve al agente con una
- * nota como un ítem `borrador` del pedido, y avisa en la bandeja cuando un lote terminado dejó borradores.
+ * nota como un ítem `borrador` del pedido, y es la etapa «A revisar» del botón «Agente» (dec. 236), con un solo número.
  */
 type Oyente = (ev: { target: Record<string, unknown>; type?: string }) => void;
 interface Llamada { url: string; cuerpo: Record<string, unknown> | null }
-const DEL_PEDIDO = new Set(["panel", "cerrar-panel", "quitar", "vaciar", "pedir-todos", "descargar-lista", "cancelar-lote", "cerrar-lote"]);
+const DEL_PEDIDO = new Set(["panel", "etapa", "cerrar-panel", "quitar", "vaciar", "pedir-todos", "descargar-lista", "cancelar-lote", "cerrar-lote"]);
 
 const B = (o: Record<string, unknown>) => ({ cerebro: "tienda", repo: null, nombre: null, modificado: 1000, ...o });
 const LISTA = [
@@ -25,15 +26,16 @@ const DIFF = {
 };
 const AGENTE = { noDisponible: null, proveedores: [{ id: "claude", nombre: "Claude Code", modelos: [{ id: "opus", nombre: "Opus", porDefecto: true, costoPorPaginaUsd: { borrador: 0.25 } }] }] };
 
-function montar(opciones: { edicion?: boolean; lista?: unknown[]; lotes?: unknown[]; aceptar?: unknown; confirmar?: boolean } = {}) {
+function montar(opciones: { edicion?: boolean; lista?: unknown[]; lotes?: unknown[]; trabajos?: unknown[]; aceptar?: unknown; confirmar?: boolean } = {}) {
   const llamadas: Llamada[] = [];
   let lista = [...((opciones.lista ?? LISTA) as Array<Record<string, unknown>>)];
+  let lotes = opciones.lotes ?? [], trabajos = opciones.trabajos ?? [];
   const responder = (url: string, cuerpo: Record<string, unknown> | null): [number, unknown] => {
     if (url === "/api/borradores") return [200, { borradores: lista }];
     if (url.startsWith("/api/borradores/diff")) return [200, DIFF];
     if (url === "/api/borradores/aceptar") return [200, opciones.aceptar ?? { cerebros: [{ cerebro: "tienda", movidos: (cuerpo!["borradores"] as Array<{ origen: string }>).map((b) => b.origen), salteados: [], errores: [] }] }];
     if (url === "/api/borradores/descartar") { lista = lista.filter((x) => x["origen"] !== cuerpo!["origen"]); return [200, { descartado: cuerpo!["origen"] }]; }
-    if (url === "/api/agente") return [200, { trabajos: [], lotes: opciones.lotes ?? [] }];
+    if (url === "/api/agente") return [200, { trabajos, lotes }];
     if (url === "/api/agente/lote") return [200, { lote: { id: "l1", tipo: "borrador", creado: 1, estado: "corriendo" }, trabajos: [] }];
     return [404, { error: "no" }];
   };
@@ -66,7 +68,7 @@ function montar(opciones: { edicion?: boolean; lista?: unknown[]; lotes?: unknow
     confirm: (p: string) => { preguntas.push(p); return opciones.confirmar !== false; },
     addEventListener() {},
     brainBorradores: null as null | { mostrar(): void },
-    brainPedido: null as null | { pintar(): void },
+    brainPedido: null as null | { pintar(): void; actualizar(): void },
   };
   const documento = { getElementById: el, body: { appendChild() {}, removeChild() {} } };
   const raiz = el("borradores");
@@ -91,7 +93,10 @@ function montar(opciones: { edicion?: boolean; lista?: unknown[]; lotes?: unknow
     mostrar: async () => { window.brainBorradores!.mostrar(); await esperar(); return html; },
     pagina: () => html,
     lista: () => el("bo-lista").innerHTML,
-    cuenta: () => el("nav-borradores").textContent,
+    cuenta: () => cuentaAgente(el("pedido-bandeja").innerHTML),
+    // Un lote del agente que cambia (y lo que hay en _drafts/ después): el componente vuelve a preguntar.
+    agente: async (o: { lotes: unknown[]; trabajos: unknown[]; lista?: unknown[] }) => { lotes = o.lotes; trabajos = o.trabajos; if (o.lista) lista = [...(o.lista as Array<Record<string, unknown>>)]; window.brainPedido!.actualizar(); await esperar(); },
+    guardadoPedido: () => JSON.parse(local.get("flowbrain.pedido") ?? "{}") as { etapa?: string },
     panel: () => el("pedido-panel").innerHTML,
     bandeja: () => el("pedido-bandeja").innerHTML,
     tocar: async (attrs: Record<string, string>) => {
@@ -99,6 +104,8 @@ function montar(opciones: { edicion?: boolean; lista?: unknown[]; lotes?: unknow
       destino.oyentes["click"]!({ target: boton(attrs) });
       await esperar();
     },
+    tocarPanel: async (attrs: Record<string, string>) => { el("pedido-panel").oyentes["click"]!({ target: boton(attrs) }); await esperar(); },
+    escribirPanel: (k: string, texto: string) => el("pedido-panel").oyentes["input"]!({ type: "input", target: { tagName: "TEXTAREA", value: texto, getAttribute: (a: string) => (a === "data-k" ? k : null) } }),
     escribir: (k: string, texto: string) => raiz.oyentes["input"]!({ type: "input", target: { tagName: "TEXTAREA", value: texto, getAttribute: (a: string) => (a === "data-k" ? k : null) } }),
   };
 }
@@ -112,12 +119,18 @@ describe("pantalla Borradores", () => {
     expect(h).toContain("flowbrain viewer --serve");
     expect(h).toContain("flowbrain promote &#60;id...&#62; --write --brain tienda");
     expect(v.llamadas.filter((l) => l.url.startsWith("/api/borradores"))).toEqual([]);
+    // La etapa «A revisar» del botón «Agente» dice lo mismo: hace falta el visor servido.
+    await v.tocar({ "data-acc": "etapa", "data-k": "revisar" });
+    expect(v.panel()).toContain("Reviewing the drafts needs the served viewer");
+    expect(v.panel()).toContain("from the flowbrain menu («Open the viewer»)");
+    expect(v.cuenta()).toBe("");
   });
 
-  it("lista los borradores con su clase y su cambio, cuenta los pendientes en la navegación y filtra por clase", async () => {
+  it("lista los borradores con su clase y su cambio, los cuenta con UN número (botón «Agente» y título) y filtra por clase", async () => {
     const v = montar();
     const h = await v.mostrar();
     expect(v.cuenta()).toBe("4");
+    expect(h).toContain('<h1>Drafts <span class="chip" title="4 drafts to review">4</span></h1>');
     for (const t of ["Avisos", "Checkout", "lib-ui", "tabla-pagos", "New page", "Changes a page", "Note to review", "Accept all (3)"]) expect(h).toContain(t);
     // Los grupos del filtro común: uno por clase con lo que hay.
     expect(h).toContain('data-grupo="nota"');
@@ -196,10 +209,14 @@ describe("pantalla Borradores", () => {
     expect(v.lista()).toContain('data-acc="pedir" data-tipo="borrador"');
     // Sin nota, un borrador no se suma: el agente necesita saber qué corregir.
     await v.tocar({ "data-acc": "pedir", "data-tipo": "borrador", "data-k": k });
-    expect(v.bandeja()).toBe("");
+    expect(v.panel()).toContain('data-k="pedir">To request <span class="pd-num">0</span>');
     v.escribir(k, "El resumen tiene que decir que se paga con tarjeta");
     await v.tocar({ "data-acc": "pedir", "data-tipo": "borrador", "data-k": k });
-    expect(v.bandeja()).toContain("Request (1)");
+    // Devuelto al agente: pasa de «A revisar» a «Por pedir» (espera al agente, no a la persona); el número no cuenta doble.
+    expect(v.panel()).toContain('data-k="pedir">To request <span class="pd-num">1</span>');
+    expect(v.panel()).toContain('data-k="revisar">To review <span class="pd-num">3</span>');
+    expect(v.cuenta()).toBe("4");
+    expect(v.pagina()).toContain('title="3 drafts to review">3</span>');
     expect(v.panel()).toContain("El resumen tiene que decir que se paga con tarjeta");
     expect(v.panel()).toContain("≈ US$ 0.25");
     await v.tocar({ "data-acc": "pedir-todos" });
@@ -209,17 +226,56 @@ describe("pantalla Borradores", () => {
     });
     // Una nota ya dice lo suyo: se pide sin escribir nada.
     await v.tocar({ "data-acc": "pedir", "data-tipo": "borrador", "data-k": K("_drafts/notes/tabla-pagos.md") });
-    expect(v.bandeja()).toContain("Request (2)");
+    expect(v.panel()).toContain('data-k="pedir">To request <span class="pd-num">2</span>');
+    expect(v.panel()).toContain('data-k="revisar">To review <span class="pd-num">2</span>');
   });
 
-  it("cuando un lote terminado dejó borradores, la bandeja enlaza a la pantalla (fuera de ella)", async () => {
+  it("la etapa «A revisar» del botón «Agente»: las mismas filas, diff, corrección y «Aceptar todo»; sin pestaña ni aviso sueltos", async () => {
     const v = montar({ lotes: [{ id: "l0", tipo: "funcionalidad", creado: 4000, estado: "terminado", cerebros: ["tienda"] }] });
     await v.mostrar();
-    // En la pantalla misma no hace falta el enlace; la fila marca lo que dejó el agente.
+    // Ni enlace suelto en la barra ni otro número: lo que dejó el agente es una marca en su fila.
     expect(v.bandeja()).not.toContain('href="#/borradores"');
+    expect(v.bandeja()).not.toContain("new draft");
     expect(v.lista()).toContain("From the agent");
-    expect(v.panel()).toContain("The agent left 1 draft");
-    v.irA("#/funcionalidades");
-    expect(v.bandeja()).toContain('<a class="boton bo-enlace" href="#/borradores">1 new draft to review</a>');
+    await v.tocar({ "data-acc": "etapa", "data-k": "revisar" });
+    let p = v.panel();
+    expect(p).toContain('data-k="revisar">To review <span class="pd-num">4</span>');
+    expect(p).toContain("<span>4 drafts to review</span>");
+    expect(p).toContain('data-acc="aceptar-todo">Accept all (3)</button>');
+    expect(p).toContain('<a class="boton chico" href="#/borradores" data-acc="cerrar-panel">Open the full review</a>');
+    expect(p).toContain("From the agent");
+    expect(p).toContain('data-acc="descartar" data-k="tienda|_drafts/product/feat-checkout.md"');
+    // «Ver cambios» en el panel: el mismo diff que en la pantalla.
+    const k = K("_drafts/product/feat-checkout.md");
+    await v.tocarPanel({ "data-acc": "ver", "data-k": k });
+    expect(v.panel()).toContain("Replaces <code>product/feat-checkout.md</code>");
+    expect(v.panel()).toContain('<textarea id="bp-nota-1"');
+    // «Pedir corrección» desde el panel, con la nota escrita ahí: pasa a «Por pedir».
+    v.escribirPanel(k, "Falta el caso de tarjeta rechazada");
+    await v.tocarPanel({ "data-acc": "pedir", "data-tipo": "borrador", "data-k": k });
+    p = v.panel();
+    expect(v.guardadoPedido().etapa).toBe("pedir");
+    expect(p).toContain("Falta el caso de tarjeta rechazada");
+    expect(p).toContain('data-k="revisar">To review <span class="pd-num">3</span>');
+    // «Aceptar todo» del panel lleva lo que está a revisar (sin las notas ni lo devuelto al agente).
+    await v.tocar({ "data-acc": "etapa", "data-k": "revisar" });
+    await v.tocarPanel({ "data-acc": "aceptar-todo" });
+    expect((v.llamadas.find((l) => l.url === "/api/borradores/aceptar")?.cuerpo?.["borradores"] as Array<{ origen: string }>).map((b) => b.origen)).toEqual([
+      "_drafts/product/feat-avisos.md", "_drafts/repo-tienda/technology/lib-ui.md",
+    ]);
+  });
+
+  it("al terminar un lote que dejó borradores nuevos, el panel pasa solo a «A revisar»", async () => {
+    const v = montar({ lista: LISTA.slice(1) });
+    await v.mostrar();
+    expect(v.cuenta()).toBe("3");
+    const tanda = { id: "t1", lote: "l1", repo: "repo-tienda", tanda: { n: 1, de: 1 }, estado: "corriendo", items: [] };
+    await v.agente({ lotes: [{ id: "l1", tipo: "funcionalidad", creado: 4000, estado: "corriendo" }], trabajos: [tanda] });
+    expect(v.guardadoPedido().etapa).toBe("pedir");
+    await v.agente({ lotes: [{ id: "l1", tipo: "funcionalidad", creado: 4000, estado: "terminado" }], trabajos: [{ ...tanda, estado: "terminado", terminado: 1, desenlaces: [] }], lista: LISTA });
+    expect(v.guardadoPedido().etapa).toBe("revisar");
+    expect(v.cuenta()).toBe("4");
+    expect(v.panel()).toContain('<div class="pd-etapa" data-etapa="revisar">');
+    expect(v.panel()).toContain("From the agent");
   });
 });
