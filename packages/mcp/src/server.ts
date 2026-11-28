@@ -27,6 +27,7 @@ import {
   SIGNALS,
   stringifyCompact,
   trazar,
+  trazabilidadDe,
   VERBOS,
   type Contexto,
 } from "@flowbrain/core";
@@ -107,6 +108,7 @@ export const INSTRUCCIONES = [
   "- Endpoints nobody calls or calls nobody serves: deriva.",
   "- What is left to migrate from one service to another: paridad.",
   "- Where a piece of data travels between services: trazar.",
+  "- The full end-to-end chain through any node (feature → screen → hook → endpoint → method → table, both directions, flow relations only): trazabilidad.",
   "- How a service is built, deployed and configured (image, pipeline, environment variables, proxy, Kubernetes, Helm, Terraform, serverless): infra.",
   "- Neighbors of a node by relation type: recorrer_grafo.",
   "- What a feature must satisfy (business and product requirements), which file satisfies it and which test verifies it: especificaciones.",
@@ -233,6 +235,20 @@ export function crearServidor(obtener: () => Promise<Contexto>, multi?: Multi): 
   );
 
   const presupuesto = { budget_tokens: comunes.budget_tokens };
+
+  server.registerTool(
+    "trazabilidad",
+    {
+      description:
+        "Full end-to-end traceability of any node (feature, screen, component, file, endpoint, service, table, queue): the chain that passes through it in both directions, following only flow relations. Upwards, who reaches it (feature → screen → hook → method); downwards, where it goes (endpoint → method that serves it → methods it calls → table, queue or external). No lateral neighbors. Every step with repo:path#Ln; `huecos` lists known gaps (endpoint without a serving method, truncated walk, unresolved call) and `truncado` what was left out by the cap.",
+      inputSchema: {
+        nodo: z.string().min(1).describe("node id, name or alias"),
+        tope: z.number().int().min(1).max(2000).optional().describe("max nodes in the chain (default 150); the closest ones are kept"),
+        ...deCerebro,
+      },
+    },
+    async (a) => correr("trazabilidad", a, (ctx, args) => trazabilidadDe(ctx, args)),
+  );
 
   server.registerTool(
     "funcionalidad",

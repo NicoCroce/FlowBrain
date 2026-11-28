@@ -25,3 +25,4 @@ export * from "./engine/fidelidad.js";
 export * from "./edicion.js";
 export * from "./guia-tests.js";
 export * from "./progreso.js";
+export * from "./trazabilidad.js";
