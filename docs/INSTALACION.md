@@ -232,3 +232,15 @@ pnpm release patch     # o minor, major, x.y.z; sin argumento, la versión actua
 ```
 
 Antes, agregá en `packages/flowbrain/CHANGELOG.md` una sección `## x.y.z` con lo que cambia (puede quedar sin commitear: va en el commit de la versión). El comando controla que estés en `main`, sin otros cambios y al día con `origin`; sube la versión, la commitea y pushea; corre `npm publish` (typecheck, tests, build y el 2FA); espera a que npm termine de procesar la versión (tarda unos minutos y no hay que volver a publicar); y deja el tag `vx.y.z` en GitHub con las notas del CHANGELOG, más una release si está `gh`. Si algo falla a mitad, se vuelve a correr con la misma versión y sigue desde lo que falta. `--dry-run` muestra qué haría sin tocar nada.
+
+### Publicar una versión desde un commit anterior
+
+Si en `main` se juntaron cambios que conviene publicar como varias versiones, cada una sale de su commit de corte:
+
+```bash
+pnpm release 0.3.0 --desde a4486a8 --dry-run    # qué falta, sin tocar nada
+pnpm release 0.3.0 --desde a4486a8 --preparar   # arma la rama y verifica, sin publicar
+pnpm release 0.3.0 --desde a4486a8              # publica
+```
+
+Antes, el CHANGELOG de `main` (commiteado) tiene que tener la sección `## x.y.z` de cada versión. El comando arma la rama `release/vx.y.z` en un worktree temporal (el checkout de `main` no se toca): el corte más un commit «Version x.y.z» con esa versión en `package.json` y el CHANGELOG hasta esa versión. Corre `npm publish` desde ahí (typecheck, tests, build y el 2FA), espera a que npm muestre la versión, pushea la rama, crea el tag `vx.y.z` en el commit de la versión, lo pushea y crea la release si está `gh`. `--preparar` hace todo hasta antes de publicar: la rama, typecheck, tests, build y `npm pack --dry-run`; no pushea nada. Las versiones van en orden: el comando no publica una menor que la última de npm ni una si falta publicar otra anterior del CHANGELOG. Como el modo normal, se puede repetir si algo falla a mitad.

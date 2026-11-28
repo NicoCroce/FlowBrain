@@ -232,3 +232,15 @@ pnpm release patch     # or minor, major, x.y.z; without an argument, the curren
 ```
 
 First add a `## x.y.z` section to `packages/flowbrain/CHANGELOG.md` with what changes (it can stay uncommitted: it goes into the version commit). The command checks that you are on `main`, with no other changes and up to date with `origin`; bumps the version, commits and pushes it; runs `npm publish` (typecheck, tests, build and 2FA); waits for npm to finish processing the version (it takes a few minutes, and you must not publish again); and creates the `vx.y.z` tag on GitHub with the CHANGELOG notes, plus a release if `gh` is installed. If something fails halfway, run it again with the same version and it picks up where it left off. `--dry-run` shows what it would do without touching anything.
+
+### Publishing a version from an earlier commit
+
+When `main` piled up changes that read better as several versions, each one is published from its cut commit:
+
+```bash
+pnpm release 0.3.0 --desde a4486a8 --dry-run    # what is missing, touches nothing
+pnpm release 0.3.0 --desde a4486a8 --preparar   # builds the branch and checks it, no publishing
+pnpm release 0.3.0 --desde a4486a8              # publishes
+```
+
+First, the committed CHANGELOG on `main` must have the `## x.y.z` section for each version. The command builds the `release/vx.y.z` branch in a temporary worktree (the `main` checkout is not touched): the cut plus a "Version x.y.z" commit with that version in `package.json` and the CHANGELOG up to that version. It runs `npm publish` from there (typecheck, tests, build and 2FA), waits for npm to show the version, pushes the branch, creates the `vx.y.z` tag on the version commit, pushes it and creates the release if `gh` is installed. `--preparar` does everything short of publishing: the branch, typecheck, tests, build and `npm pack --dry-run`; it pushes nothing. Versions go in order: the command refuses one lower than the latest on npm, or one while an earlier CHANGELOG version is still unpublished. Like the normal mode, it can be run again if something fails halfway.
