@@ -1,5 +1,14 @@
 # Cambios
 
+## 0.3.0 · 2026-11-27
+
+- En Sin asociar, cada recomendación dice qué tan segura es (alta, media o baja) y por qué, en el idioma del visor. Se puede filtrar por confianza, y «Aceptar las de confianza alta» asocia de una vez las más seguras, con confirmación.
+- «Ver código» abre el archivo sin asociar debajo de su fila, sin ir al editor (con el visor servido).
+- «Mandar al agente» manda los archivos sin asociar a Claude Code, que solo puede editar las páginas de funcionalidades y librerías de su cerebro y dejar borradores.
+- El código compartido se asocia a una librería («Asociar a una librería…»), o se le pide al agente que la cree. A un archivo sin pista se le puede pedir una funcionalidad nueva, como borrador con casos de uso y especificaciones.
+- «No es de producto…» marca un archivo o una carpeta (tests, configuración, scripts, generados) con su motivo y lo saca de la lista. La marca queda en `not-product.yaml`, sobrevive a reindexar y se deshace desde la misma pantalla. `sin_asociar` (MCP y `flowbrain unassigned`) cuenta lo marcado y suma la confianza de cada recomendación.
+- «Abrir el visor» ya no reusa un visor que corre con una versión anterior de FlowBrain: levanta uno nuevo en el puerto siguiente y avisa dónde está el viejo para cerrarlo.
+
 ## 0.2.0 · 2026-11-27
 
 - El menú (`flowbrain`) avisa cuando hay una versión nueva publicada y recomienda actualizar.
