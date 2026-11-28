@@ -178,7 +178,8 @@ async function publicarDesdeMain({ pedido, seco }) {
   const notas = notasDe(changelog, version);
   if (notas === null) throw new Error(`${PKG_REL}/CHANGELOG.md no tiene "## ${version}": agregá qué cambia en esta versión y volvé a correr`);
   const orden = problemaDeOrden(version, publicadasEnNpm(pkg.name), versionesDelChangelog(changelog));
-  if (orden) throw new Error(orden);
+  if (orden && !seco) throw new Error(orden);
+  if (orden) console.log(`⚠ Todavía no se puede publicar: ${orden}.`);
   const publicada = enNpm(pkg.name, version);
   const tagLocal = git("tag", "--list", tag) === tag;
   const tagRemoto = git("ls-remote", "--tags", "origin", `refs/tags/${tag}`) !== "";
@@ -222,8 +223,10 @@ async function publicarDesdeCorte({ pedido: version, desde, seco, preparar }) {
   if (notas === null) throw new Error(`${PKG_REL}/CHANGELOG.md de main no tiene "## ${version}": escribila en main y commiteala antes`);
   const nombre = JSON.parse(readFileSync(pkgPath, "utf8")).name;
   const publicadas = publicadasEnNpm(nombre);
+  // Preparar o mirar no publica nada: el orden solo se avisa. Publicar sí lo exige.
   const orden = problemaDeOrden(version, publicadas, versionesDelChangelog(changelog));
-  if (orden) throw new Error(orden);
+  if (orden && !(seco || preparar)) throw new Error(orden);
+  if (orden) console.log(`⚠ Todavía no se puede publicar: ${orden}.`);
 
   // Estado: rama, npm y tags.
   const ramaExiste = gitOk("rev-parse", "--verify", "-q", `refs/heads/${rama}`);
