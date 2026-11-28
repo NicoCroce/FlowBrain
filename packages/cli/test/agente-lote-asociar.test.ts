@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { leerRegistro } from "@flowbrain/core";
-import { crearAgente, pedidoDeTandaAsociar, tamanioDeTanda, TANDA_MAX_ASOCIAR } from "../src/agente.js";
+import { crearAgente, dondeEstaElRepo, pedidoDeTandaAsociar, tamanioDeTanda, TANDA_MAX_ASOCIAR } from "../src/agente.js";
 import { ejecutar } from "../src/main.js";
 import { claudeCode } from "../src/proveedores.js";
 import { crearServidorVisor, type ServidorVisor } from "../src/servidor-visor.js";
@@ -85,7 +85,7 @@ beforeAll(async () => {
     "const cerebro = (/\\(brain ([a-z]+)[,)]/.exec(prompt) || [])[1];",
     "const archivos = [...prompt.matchAll(/^- (repo-[a-z]+:\\S+) \\(brain/gm)].map((m) => m[1]);",
     "await new Promise((r) => setTimeout(r, 400));",
-    `appendFileSync(${JSON.stringify(join(dir, "tandas.jsonl"))}, JSON.stringify({ cerebro, archivos, desde, hasta: Date.now(), args: a, guia: prompt.includes("Do not modify the project's repositories") }) + "\\n");`,
+    `appendFileSync(${JSON.stringify(join(dir, "tandas.jsonl"))}, JSON.stringify({ cerebro, archivos, desde, hasta: Date.now(), args: a, guia: prompt.includes("Do not modify the project's repositories"), donde: (/^Where the repo is: (.*)$/m.exec(prompt) || [])[1], compila: prompt.includes("flowbrain compile --brain <brain>") }) + "\\n");`,
     'if (archivos.some((x) => x.includes("FALLA"))) { console.error("se cayó el agente"); process.exit(1); }',
     `const pagina = join(process.env.FLOWBRAIN_ROOT, cerebro, "product", cerebro === "admin" ? "feat-usuarios.md" : "feat-pedidos.md");`,
     'const nuevos = archivos.filter((x) => !x.includes("deja")).map((x) => "  - " + x + "\\n").join("");',
@@ -113,6 +113,12 @@ describe("tandas de asociar", () => {
     expect(p).toContain("Assign this file of repo-api (brain tienda, batch 2 of 3)");
     expect(p).toContain("- repo-api:src/x.ts (brain tienda): no hint");
     expect(p).toContain("only handle these");
+  });
+  it("dice en qué carpeta está el repo: su id no siempre es el nombre de la carpeta", () => {
+    expect(dondeEstaElRepo("repo-tienda", "/p/repos/tienda", "/p")).toBe("Where the repo is: repo-tienda is the folder `repos/tienda/` (from the working folder), so a reference repo-tienda:path is the file `repos/tienda/path`.");
+    expect(dondeEstaElRepo("repo-x", "/p", "/p")).toBe("Where the repo is: repo-x is the folder `./` (from the working folder), so a reference repo-x:path is the file `path`.");
+    // Fuera de la carpeta de trabajo, la ruta absoluta.
+    expect(dondeEstaElRepo("repo-y", "/otro/y", "/p")).toBe("Where the repo is: repo-y is the folder `/otro/y/`, so a reference repo-y:path is the file `/otro/y/path`.");
   });
 });
 
@@ -150,7 +156,7 @@ describe("lote asociar", () => {
     expect(quedan.total).toBe(1);
 
     // Un cerebro, una tanda detrás de otra (editan las mismas páginas); otro cerebro, a la vez.
-    const log = (await readFile(join(dir, "tandas.jsonl"), "utf8")).trim().split("\n").map((l) => JSON.parse(l) as { cerebro: string; archivos: string[]; desde: number; hasta: number; args: string[]; guia: boolean });
+    const log = (await readFile(join(dir, "tandas.jsonl"), "utf8")).trim().split("\n").map((l) => JSON.parse(l) as { cerebro: string; archivos: string[]; desde: number; hasta: number; args: string[]; guia: boolean; donde?: string; compila: boolean });
     const tienda = log.filter((x) => x.cerebro === "tienda").sort((a, b) => a.desde - b.desde);
     expect(tienda).toHaveLength(3);
     for (let i = 1; i < tienda.length; i++) expect(tienda[i]!.desde).toBeGreaterThanOrEqual(tienda[i - 1]!.hasta - 50);
@@ -158,6 +164,10 @@ describe("lote asociar", () => {
     expect(ad.desde).toBeLessThan(tienda[0]!.hasta);
     // Con la guía y los permisos acotados del pedido «asociar»: solo las páginas feat-*/lib-* y _drafts/ de su cerebro.
     expect(log.every((x) => x.guia)).toBe(true);
+    // Cada tanda dice dónde está su repo en disco y cómo compilar con varios cerebros (prueba real con Claude Code).
+    expect(log.find((x) => x.archivos.some((a) => a.startsWith("repo-web:")))!.donde).toContain("repo-web is the folder `repos/web/`");
+    expect(ad.donde).toContain("repo-admin is the folder `repos/admin/`");
+    expect(log.every((x) => x.compila)).toBe(true);
     const permisos = tienda[0]!.args.join(" ");
     expect(permisos).toContain(join(reg, "tienda", "product", "feat-*.md"));
     expect(permisos).not.toContain(join(reg, "admin"));

@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { cargarContexto, CIERRE_DE_DERIVA, parsePagina, COMO_RESOLVER_DERIVA, ConsultaError, especificaciones, REGLAS_DE_DERIVA, fidelidadDeArchivos, planDeFidelidad, TEST_REF, type Contexto, type FidelidadArchivo, type Registro, type Signal } from "@flowbrain/core";
 import type { DerivaVisor } from "@flowbrain/viewer";
 import { compileDirConVisor } from "@flowbrain/viewer";
@@ -92,8 +92,8 @@ $ARGUMENTS
 ## Steps
 
 1. For each file, read it and, if needed, \`flowbrain feature <id> --brain <brain>\` for the candidate feature.
-2. Edit the pages (or write the drafts). After editing pages of a brain, run \`flowbrain compile\` inside
-   \`.flowbrain/<brain>/\`; if it does not compile, fix your edit.
+2. Edit the pages (or write the drafts). After editing pages of a brain, run \`flowbrain compile --brain <brain>\`;
+   if it does not compile, fix your edit.
 3. \`flowbrain unassigned --brain <brain>\` shows what is still unassigned.
 4. Report: what you assigned and where, the drafts you wrote, and what you left and why.
 `;
@@ -569,6 +569,16 @@ export function indicacionesDelPedido(tipo: TipoDePedido, pedido: string): strin
   return guia.replace("$ARGUMENTS", `What the person asks for, from the FlowBrain viewer:\n\n${pedido.trim()}\n`);
 }
 
+/**
+ * Dónde está en disco el repo de una tanda. Las referencias van como `repo-x:ruta` y el id del repo no siempre es el
+ * nombre de su carpeta (`repo-tienda` en `repos/tienda`): sin esto, el agente la adivina o la busca por todo el disco.
+ */
+export function dondeEstaElRepo(repo: string, ruta: string, cwd: string): string {
+  const rel = relative(cwd, ruta);
+  const carpeta = !rel ? "." : rel.startsWith("..") || isAbsolute(rel) ? resolve(ruta) : rel;
+  return `Where the repo is: ${repo} is the folder \`${carpeta}/\`${carpeta === resolve(ruta) ? "" : " (from the working folder)"}, so a reference ${repo}:path is the file \`${carpeta === "." ? "" : `${carpeta}/`}path\`.`;
+}
+
 /** El pedido de una tanda: las reglas y cómo tiene que responder (el servidor anota; el agente no toca las páginas). */
 export function pedidoDeTanda(reglas: ReglaDePedido[], repo: string, n: number, de: number): string {
   return [
@@ -702,7 +712,7 @@ export function pedidoDeTandaPaginas(tipo: TipoDePagina, items: ItemDePagina[], 
   return [
     ...(de > 1 ? [`This is batch ${n} of ${de} of the request: other batches cover the rest, only handle these.`, ""] : []),
     ...partes,
-    "Do NOT modify the project's repositories: only the feature pages of FlowBrain. When done, compile each brain (flowbrain compile inside .flowbrain/<brain>/) and check with flowbrain specs <feature> --brain <brain> that no broken references remain. The server compiles again and checks in the pages what got resolved.",
+    "Do NOT modify the project's repositories: only the feature pages of FlowBrain. When done, compile each brain (flowbrain compile --brain <brain>) and check with flowbrain specs <feature> --brain <brain> that no broken references remain. The server compiles again and checks in the pages what got resolved.",
     cierrePendientes("the feature id, followed by /<use case or rule id> when the line has one"),
   ].join("\n");
 }
@@ -885,7 +895,8 @@ export function crearAgente(registro: () => Promise<Registro>, opciones: Opcione
     const antes = new Map(repos.map((r) => [r, estadoGit(r)]));
     const afuera = todos.filter((r) => !resolve(r).startsWith(cwd + sep));
     const raices = t.cerebros.map((n) => reg.cerebro(n)?.raiz).filter((r): r is string => !!r).map((r) => resolve(r));
-    const { comando, args } = a.armar({ prompt: indicacionesDelPedido(t.tipo, t.pedido), ...(t.modelo ? { modelo: t.modelo } : {}), cwd, carpetasExtra: afuera, ...permisosDelPedido(t.tipo, raices, soloRepo ? [resolve(soloRepo)] : []) });
+    const pedido = soloRepo && t.repo ? `${t.pedido.trim()}\n\n${dondeEstaElRepo(t.repo, soloRepo, cwd)}` : t.pedido;
+    const { comando, args } = a.armar({ prompt: indicacionesDelPedido(t.tipo, pedido), ...(t.modelo ? { modelo: t.modelo } : {}), cwd, carpetasExtra: afuera, ...permisosDelPedido(t.tipo, raices, soloRepo ? [resolve(soloRepo)] : []) });
     await new Promise<void>((listo) => {
       const p = spawn(comando, args, { cwd, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, FLOWBRAIN_ROOT: reg.carpeta } });
       procesos.set(t.id, p);

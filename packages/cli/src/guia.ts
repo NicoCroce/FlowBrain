@@ -270,8 +270,8 @@ $ARGUMENTS
      lets its users do, who uses it and the main flow, with no file or class names. Remove the draft notice and the
      questions you resolved.
 
-4. **Compile and verify.** \`flowbrain compile\` inside \`.flowbrain/<brain>/\` after each batch (if it does not
-   compile, the error says which page to fix). At the end, \`flowbrain status --brain <brain>\`: screens and endpoints
+4. **Compile and verify.** \`flowbrain compile --brain <brain>\` after each batch (if it does not compile,
+   the error says which page to fix). At the end, \`flowbrain status --brain <brain>\`: screens and endpoints
    without a feature must have gone down; review the ones left one by one (is its folder missing from some
    \`codigo\`?). \`flowbrain unassigned --brain <brain>\` lists the files that ended up in no feature, by folder, with
    the recommended feature and the reason: assign the ones that fit (what is marked as shared goes to a \`lib\` page,
@@ -597,7 +597,7 @@ $ARGUMENTS
    case (\`especificacionesSinCaso\` in \`flowbrain specs <feat>\`), group them into use cases without changing their
    text.
 
-4. **Compile and review.** \`flowbrain compile\` inside \`.flowbrain/<brain>/\` (if it does not compile, the error says
+4. **Compile and review.** \`flowbrain compile --brain <brain>\` (if it does not compile, the error says
    which line to fix). Then \`flowbrain specs <feat> --brain <brain>\`: each use case comes with its \`estado\`
    (\`cumplido\`, \`sin_test\`, \`sin_codigo\`) and no \`especificacionesSinCaso\` must be left. \`rotos\` are references the
    index did not find (misspelled path, test case with another name): fix them. Review the \`casosSinEspecificacion\`

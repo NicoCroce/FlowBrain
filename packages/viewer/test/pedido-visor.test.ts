@@ -10,6 +10,7 @@ interface Pedido {
   registrar(tipo: string, def: Record<string, unknown>): void;
   boton(o: { tipo: string; k: string; et: string; claves?: string[] }): string;
   sumar(tipo: string, k: string): void;
+  actualizar(): void;
   esta(tipo: string, k: string): boolean;
   items(tipo: string): Item[];
   podar(tipo: string, fn: (x: Item) => Item | null): void;
@@ -325,6 +326,22 @@ describe("el pedido al agente (componente único)", () => {
     v.P.sumar("test", "r1");
     await esperar();
     expect(v.P.esta("test", "web/feat|r1")).toBe(true);
+
+    // Prueba real: un lote cancelado no informa costo (no muestra «US$ 0» como si no hubiera gastado), y lo que está en
+    // curso va arriba de los resúmenes terminados, para que «Cancelar todo» no quede fuera de la vista.
+    estado.lotes = [{ id: "LT3", tipo: "test", estado: "terminado" }, { id: "LA2", tipo: "asociar", estado: "corriendo" }];
+    estado.trabajos = [
+      { id: "t3", lote: "LT3", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "cancelado", pasos: [], reglas: ["r9"], desenlaces: [{ item: "r9", resuelto: false, motivo: { codigo: "cancelado" } }] },
+      { id: "a2", lote: "LA2", repo: "repo-web", tanda: { n: 1, de: 1 }, estado: "corriendo", pasos: [], archivos: ["web|repo-web:src/b.ts"] },
+    ];
+    v.P.actualizar();
+    await esperar();
+    v.tocar({ "data-acc": "etapa", "data-k": "trabajando" });
+    p = v.panel();
+    const enCurso = p.indexOf('<section class="es-lote" data-tipo="asociar">'), terminado = p.indexOf('<section class="es-lote" data-tipo="test">');
+    expect(enCurso).toBeGreaterThanOrEqual(0);
+    expect(terminado).toBeGreaterThan(enCurso);
+    expect(p).toContain('<small class="pd-sin-costo"> (without the canceled batches: the agent reports no cost for them)</small>');
   });
 
   it("un lote que termina y deja algo nuevo para revisar pasa el panel a «A revisar» (y se recuerda al recargar)", async () => {

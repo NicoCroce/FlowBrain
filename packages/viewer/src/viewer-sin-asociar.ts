@@ -169,7 +169,7 @@ export const SIN_ASOCIAR_JS = String.raw`
       out.push("");
     });
     out.push("## When done", "",
-      "1. Compile each brain: \u0060flowbrain compile\u0060 inside \u0060.flowbrain/<brain>/\u0060 (" + cerebros.map(function (c) { return "\u0060" + c + "\u0060"; }).join(", ") + ").",
+      "1. Compile each brain: \u0060flowbrain compile --brain <brain>\u0060 (" + cerebros.map(function (c) { return "\u0060" + c + "\u0060"; }).join(", ") + ").",
       "2. Run \u0060flowbrain unassigned\u0060 to see what is still unassigned and why.",
       "3. Don't commit: the changes stay for review.", "");
     return out.join("\n");

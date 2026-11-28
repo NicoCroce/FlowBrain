@@ -434,8 +434,11 @@ export const PEDIDO_JS = String.raw`
     var costo = ts.reduce(function (s, t) { return s + (t.costoUsd || 0); }, 0);
     var fallaron = ts.filter(function (t) { return t.estado === "fallo"; }).length, cancelaron = ts.filter(function (t) { return t.estado === "cancelado"; }).length;
     var cab = v ? (LT.estado === "reindexando" ? o.reindexando || L("Finishing…", "Terminando…") : o.pidiendo(n, repos.length)) : L("Finished", "Terminó") + " · " + esc(nombreDe(tipoDeLote(LT)));
+    // Una tanda cancelada no llega a informar su costo: se avisa en vez de mostrarlo como si no hubiera gastado.
+    var sinCosto = ts.filter(function (t) { return t.estado === "cancelado" && typeof t.costoUsd !== "number"; }).length;
     var fin = !v
-      ? '<div class="es-fin"><b>' + L("Actual cost: ", "Costo real: ") + dolares(costo) + "</b><span>" + cifrasLote(ts) + (o.resumen ? " · " + o.resumen(ts) : "") +
+      ? '<div class="es-fin"><b>' + L("Actual cost: ", "Costo real: ") + dolares(costo) + "</b>" +
+        (sinCosto ? '<small class="pd-sin-costo">' + L(" (without the canceled batches: the agent reports no cost for them)", " (sin las tandas canceladas: el agente no informa su costo)") + "</small>" : "") + "<span>" + cifrasLote(ts) + (o.resumen ? " · " + o.resumen(ts) : "") +
         (fallaron ? " · " + pl(fallaron, ["batch failed", "batches failed", "tanda falló", "tandas fallaron"]) : "") + (cancelaron ? " · " + pl(cancelaron, ["batch canceled", "batches canceled", "tanda cancelada", "tandas canceladas"]) : "") + ".</span>" +
         (LT.error ? '<p class="fd-msg error">' + esc(LT.error) + "</p>" : "") + "</div>" + htmlResultados(LT)
       : '<div class="es-fin"><span>' + L("Cost so far: ", "Costo hasta ahora: ") + dolares(costo) + "</span></div>";
@@ -580,7 +583,8 @@ export const PEDIDO_JS = String.raw`
         : L("Nothing runs from this page: without the served viewer and an installed agent, the request goes as a .md (in «To request») and the agent works outside.", "Desde esta página no corre nada: sin el visor servido y un agente instalado, el pedido va como .md (en «Por pedir») y el agente trabaja afuera.")) + "</p>" +
         (c.pedir ? '<div class="fd-acc">' + irA("pedir", L("Go to «To request»", "Ir a «Por pedir»")) + "</div>" : "");
     }
-    return lotes.map(htmlLote).join("") + htmlGrupos(true);
+    // Lo que está en curso arriba: los resúmenes de lotes terminados no lo empujan fuera de la vista.
+    return lotes.filter(loteVivo).concat(lotes.filter(function (LT) { return !loteVivo(LT); })).map(htmlLote).join("") + htmlGrupos(true);
   }
   // «A revisar»: lo que pone cada tipo (los borradores, las reglas para decidir).
   function htmlRevisar(rv) {

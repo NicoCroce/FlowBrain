@@ -192,7 +192,7 @@ describe("pantalla Sin asociar", () => {
     expect(md).toContain("- repo-web:src/shared/dinero.ts (brain front): recommended feat-pagos (imported by 2 files of Pagos); others: feat-envios");
     expect(md).toContain("- repo-web:src/shared/fecha.ts (brain front): shared code, used by 3 features");
     expect(md).toContain("- repo-api:src/Util/Texto.php (brain back): no hint");
-    expect(md).toContain("`flowbrain compile` inside `.flowbrain/<brain>/` (`front`, `back`)");
+    expect(md).toContain("`flowbrain compile --brain <brain>` (`front`, `back`)");
     // Quitar de a uno.
     v.tocar({ "data-acc": "quitar", "data-tipo": "asociar", "data-k": "back|repo-api:src/Util/Texto.php" });
     expect(v.panel()).toContain("<b>4 files</b>");

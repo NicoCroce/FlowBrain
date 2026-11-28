@@ -611,7 +611,7 @@ export const ESPECIFICACIONES_JS = String.raw`
     });
     out.push("## When done", "",
       "1. Record each result in its feature page, \u0060.flowbrain/<brain>/product/<feature>.md\u0060: the tests of a and b in the rule's \u0060tests:\u0060 (\u0060repo:path::test case name\u0060); those of c and d in \u0060hallazgo:\u0060 (\u0060resultado\u0060, \u0060hoy\u0060, \u0060cambio\u0060, \u0060test\u0060).",
-      "2. Compile each brain: \u0060flowbrain compile\u0060 inside \u0060.flowbrain/<brain>/\u0060 (" + cerebros.map(function (c) { return "\u0060" + c + "\u0060"; }).join(", ") + ").",
+      "2. Compile each brain: \u0060flowbrain compile --brain <brain>\u0060 (" + cerebros.map(function (c) { return "\u0060" + c + "\u0060"; }).join(", ") + ").",
       "3. Verify with \u0060flowbrain specs <feature> --brain <brain>\u0060: the rules with a test are no longer untested nor in \u0060rotos\u0060; the findings show with \u0060flowbrain specs --findings\u0060.",
       "4. Don't modify the product code or leave a failing test in the repo. Don't commit: the changes stay for review.", "");
     return out.join("\n");
